@@ -101,3 +101,13 @@ _Avoid_: Freeze, protect
 **Selection**:
 The Objects the user currently has picked in the editor. It is part of the editor, not of the Map, and Commands never refer to it.
 _Avoid_: Focus, active objects
+
+### Saving
+
+**Map file**:
+The single `.ssmap` file that stores one Map together with every Asset and font it uses, so it opens identically anywhere.
+_Avoid_: Project file, save file, document
+
+**Recovery journal**:
+The record of edits made since the last save, kept beside a Map file so that work survives a crash.
+_Avoid_: Autosave file, backup, swap file

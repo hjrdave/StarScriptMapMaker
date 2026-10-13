@@ -15,7 +15,8 @@ The v1 desktop app is a Cargo workspace at the repo root, split into `crates/cor
 | Spatial index | rstar, for picking and culling | `core` |
 | Label text | cosmic-text shaping; glyphs drawn as vector outlines through the same renderer, so halos are strokes and screen matches export | `render` (shaping data may live in `core`) |
 | Images | `image` with only the PNG feature (asset decode, PNG export); SVG Assets via resvg/usvg, per ADR 0003 | `render` |
-| Serialization | `serde` derives on every `core` type; the concrete encoding belongs to the file-format decision | `core` |
+| Serialization | `serde` derives on every `core` type; Map file encoding per ADR 0005 | `core` |
+| Persistence | `rusqlite` with bundled SQLite, per ADR 0005 | `core` (an `io` crate if it grows) |
 
 ## Repo layout
 
