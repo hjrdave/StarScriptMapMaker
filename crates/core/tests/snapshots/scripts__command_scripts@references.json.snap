@@ -1,0 +1,261 @@
+---
+source: crates/core/tests/scripts.rs
+expression: run(script)
+input_file: crates/core/tests/scripts/references.json
+---
+{
+  "log": [
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "delete",
+          "ids": [
+            "00000000-0000-7000-8000-000000000011"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "layers": [
+            {
+              "children": [
+                {
+                  "id": "00000000-0000-7000-8000-000000000012",
+                  "kind": {
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            100.0,
+                            0.0
+                          ],
+                          [
+                            100.0,
+                            100.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                }
+              ],
+              "id": "00000000-0000-7000-8000-000000000010",
+              "locked": false,
+              "name": "Land",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            },
+            {
+              "id": "00000000-0000-7000-8000-000000000020",
+              "locked": false,
+              "name": "Forest",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            },
+            {
+              "clip": "00000000-0000-7000-8000-000000000012",
+              "id": "00000000-0000-7000-8000-000000000030",
+              "locked": false,
+              "name": "Hills",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "delete",
+          "ids": [
+            "00000000-0000-7000-8000-000000000010"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "layers": [
+            {
+              "id": "00000000-0000-7000-8000-000000000020",
+              "locked": false,
+              "name": "Forest",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            },
+            {
+              "id": "00000000-0000-7000-8000-000000000030",
+              "locked": false,
+              "name": "Hills",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_locked",
+          "id": "00000000-0000-7000-8000-000000000020",
+          "locked": true
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000020 is locked"
+      },
+      "step": {
+        "step": {
+          "command": "delete",
+          "ids": [
+            "00000000-0000-7000-8000-000000000011"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "delete",
+          "ids": [
+            "00000000-0000-7000-8000-000000000012"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000020 is locked"
+      },
+      "step": {
+        "step": {
+          "command": "delete",
+          "ids": [
+            "00000000-0000-7000-8000-000000000020",
+            "00000000-0000-7000-8000-000000000011"
+          ]
+        }
+      }
+    }
+  ],
+  "redo_steps": 0,
+  "undo_steps": 2,
+  "view": {
+    "canvas": {
+      "height": 1000,
+      "scale": {
+        "distance_per_unit": 1.0,
+        "unit": "miles"
+      },
+      "width": 1000
+    },
+    "layers": [
+      {
+        "children": [
+          {
+            "id": "00000000-0000-7000-8000-000000000011",
+            "kind": {
+              "geometry": [
+                {
+                  "exterior": [
+                    [
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      100.0,
+                      0.0
+                    ],
+                    [
+                      100.0,
+                      100.0
+                    ]
+                  ]
+                }
+              ],
+              "kind": "landmass"
+            },
+            "locked": false,
+            "type": "object"
+          }
+        ],
+        "id": "00000000-0000-7000-8000-000000000010",
+        "locked": false,
+        "name": "Land",
+        "opacity": 1.0,
+        "type": "layer",
+        "visible": true
+      },
+      {
+        "clip": "00000000-0000-7000-8000-000000000011",
+        "id": "00000000-0000-7000-8000-000000000020",
+        "locked": true,
+        "name": "Forest",
+        "opacity": 1.0,
+        "type": "layer",
+        "visible": true
+      },
+      {
+        "id": "00000000-0000-7000-8000-000000000030",
+        "locked": false,
+        "name": "Hills",
+        "opacity": 1.0,
+        "type": "layer",
+        "visible": true
+      }
+    ]
+  }
+}

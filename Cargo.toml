@@ -14,6 +14,7 @@ publish = false
 ssmap-core = { path = "crates/core" }
 ssmap-render = { path = "crates/render" }
 eframe = "0.36"
+insta = { version = "1.49", features = ["glob", "json"] }
 proptest = "1.12"
 schemars = { version = "1.2", features = ["uuid1"] }
 serde = { version = "1.0", features = ["derive"] }

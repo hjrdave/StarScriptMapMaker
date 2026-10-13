@@ -5,6 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::geometry::MultiPolygon;
+use crate::id::Id;
 
 /// A Layer or an Object.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
@@ -35,6 +36,9 @@ pub struct Layer {
     pub locked: bool,
     /// From 0 (transparent) to 1 (opaque).
     pub opacity: f32,
+    /// The Landmass this Layer is clipped to, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clip: Option<Id>,
 }
 
 impl Layer {
@@ -44,6 +48,7 @@ impl Layer {
             visible: true,
             locked: false,
             opacity: 1.0,
+            clip: None,
         }
     }
 }

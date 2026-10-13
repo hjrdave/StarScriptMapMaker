@@ -123,6 +123,11 @@ impl Map {
         }
     }
 
+    /// Every Layer and Object id, in no particular order.
+    pub fn ids(&self) -> impl Iterator<Item = Id> + '_ {
+        self.entries.keys().copied()
+    }
+
     /// Changes whenever an Op touches the node; derived caches key on it.
     pub fn version(&self, id: Id) -> Option<u64> {
         self.entries.get(&id).map(|entry| entry.version)
