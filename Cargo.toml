@@ -13,13 +13,20 @@ publish = false
 [workspace.dependencies]
 ssmap-core = { path = "crates/core" }
 ssmap-render = { path = "crates/render" }
+bytemuck = { version = "1.25", features = ["derive"] }
 eframe = "0.36"
+image = { version = "0.25", default-features = false, features = ["png"] }
+lyon = "1.0"
+pollster = "1.0"
 proptest = "1.12"
 schemars = { version = "1.2", features = ["uuid1"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
 thiserror = "2.0"
 uuid = { version = "1.28", features = ["v7", "serde"] }
+
+# Must match the wgpu version egui-wgpu uses, so `render` and `app` share one device.
+wgpu = "30.0"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

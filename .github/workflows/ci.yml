@@ -42,17 +42,34 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Golden images need a software adapter: lavapipe on Linux, WARP on Windows.
+          # macOS has none, so its render tests are smoke tests only (ADR 0008).
           - name: Linux x86_64
             os: ubuntu-24.04
+            software_gpu: "1"
           - name: Windows x86_64
             os: windows-2025
+            software_gpu: "1"
           - name: macOS arm64
             os: macos-15
+            software_gpu: ""
     runs-on: ${{ matrix.os }}
+    env:
+      SSMAP_REQUIRE_SOFTWARE_GPU: ${{ matrix.software_gpu }}
     steps:
       - uses: actions/checkout@v4
+      - name: Install lavapipe
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
       - name: Install toolchain
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace --all-targets --locked
       - run: cargo test --workspace --locked
+      - name: Upload failed golden renders
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-actual-${{ runner.os }}
+          path: target/tmp/*.actual.png
+          if-no-files-found: ignore
