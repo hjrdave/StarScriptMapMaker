@@ -80,6 +80,19 @@ pub enum CommandError {
 }
 
 impl Command {
+    /// A short name for menus and the undo history.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Command::CreateLayer { .. } => "Create Layer",
+            Command::RenameLayer { .. } => "Rename Layer",
+            Command::Move { .. } => "Move",
+            Command::SetVisible { .. } => "Change Visibility",
+            Command::SetLocked { .. } => "Change Lock",
+            Command::SetOpacity { .. } => "Change Opacity",
+            Command::Delete { .. } => "Delete",
+        }
+    }
+
     /// Checks the Command against `map` and returns the Ops it applies, in order.
     pub fn compile(&self, map: &Map) -> Result<Vec<Op>, CommandError> {
         match self {
