@@ -1,0 +1,21 @@
+[package]
+name = "starscript-app"
+description = "The StarScript Map Maker desktop app."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "starscript-map-maker"
+path = "src/main.rs"
+
+[dependencies]
+starscript-core.workspace = true
+starscript-render.workspace = true
+eframe.workspace = true
+
+[lints]
+workspace = true

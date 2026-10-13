@@ -1,0 +1,15 @@
+[package]
+name = "starscript-render"
+description = "wgpu rendering of the Canvas and PNG export, without the UI."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+starscript-core.workspace = true
+
+[lints]
+workspace = true
