@@ -111,3 +111,13 @@ _Avoid_: Project file, save file, document
 **Recovery journal**:
 The record of edits made since the last save, kept beside a Map file so that work survives a crash.
 _Avoid_: Autosave file, backup, swap file
+
+### Labels
+
+**Label**:
+An Object that places text on a Map, sized in Canvas units so it is part of the picture.
+_Avoid_: Text, caption, annotation
+
+**Label style**:
+A named set of typography and colour settings stored in a Map, such as "Realm" or "City". Each Label uses one and may override any of its settings.
+_Avoid_: Text style, font preset, class
