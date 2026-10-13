@@ -7,14 +7,7 @@ use ssmap_core::{
 };
 
 fn canvas() -> Canvas {
-    Canvas {
-        width: 4096,
-        height: 3072,
-        scale: Scale {
-            distance_per_unit: 0.5,
-            unit: DistanceUnit::Miles,
-        },
-    }
+    Canvas::new(4096, 3072, Scale::new(0.5, DistanceUnit::Miles))
 }
 
 fn point() -> impl Strategy<Value = Point> {
@@ -30,12 +23,21 @@ fn geometry() -> impl Strategy<Value = MultiPolygon> {
 
 fn object() -> impl Strategy<Value = Object> {
     let kind = prop_oneof![
-        geometry().prop_map(|geometry| ObjectKind::Landmass(Landmass { geometry })),
-        geometry().prop_map(|geometry| ObjectKind::Lake(Lake { geometry })),
-        Just(ObjectKind::Stamp(Stamp {})),
-        Just(ObjectKind::Label(Label {})),
+        geometry().prop_map(|geometry| ObjectKind::Landmass(Landmass {
+            geometry,
+            ..Default::default()
+        })),
+        geometry().prop_map(|geometry| ObjectKind::Lake(Lake {
+            geometry,
+            ..Default::default()
+        })),
+        Just(ObjectKind::Stamp(Stamp::default())),
+        Just(ObjectKind::Label(Label::default())),
     ];
-    (any::<bool>(), kind).prop_map(|(locked, kind)| Object { locked, kind })
+    (any::<bool>(), kind).prop_map(|(locked, kind)| Object {
+        locked,
+        ..Object::new(kind)
+    })
 }
 
 fn layer() -> impl Strategy<Value = Layer> {
@@ -45,7 +47,7 @@ fn layer() -> impl Strategy<Value = Layer> {
             visible,
             locked,
             opacity,
-            clip: None,
+            ..Layer::new(String::new())
         },
     )
 }

@@ -18,8 +18,12 @@ path = "src/main.rs"
 ssmap-core.workspace = true
 ssmap-render.workspace = true
 eframe.workspace = true
+egui-file-dialog.workspace = true
+image.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
+tempfile.workspace = true
 egui_kittest = { version = "0.36", features = ["eframe"] }
 
 [lints]

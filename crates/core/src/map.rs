@@ -6,6 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::extra::Extra;
 use crate::id::Id;
 use crate::node::Node;
 
@@ -17,6 +18,19 @@ pub struct Canvas {
     /// Height in nominal pixels (Canvas units).
     pub height: u32,
     pub scale: Scale,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+impl Canvas {
+    pub fn new(width: u32, height: u32, scale: Scale) -> Self {
+        Self {
+            width,
+            height,
+            scale,
+            extra: Extra::new(),
+        }
+    }
 }
 
 /// How much real-world distance one Canvas unit stands for.
@@ -24,6 +38,18 @@ pub struct Canvas {
 pub struct Scale {
     pub distance_per_unit: f64,
     pub unit: DistanceUnit,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+impl Scale {
+    pub fn new(distance_per_unit: f64, unit: DistanceUnit) -> Self {
+        Self {
+            distance_per_unit,
+            unit,
+            extra: Extra::new(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, JsonSchema)]

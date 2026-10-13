@@ -4,14 +4,11 @@ use ssmap_core::{
 };
 
 fn empty_map() -> Map {
-    Map::new(Canvas {
-        width: 1024,
-        height: 768,
-        scale: Scale {
-            distance_per_unit: 1.0,
-            unit: DistanceUnit::Kilometres,
-        },
-    })
+    Map::new(Canvas::new(
+        1024,
+        768,
+        Scale::new(1.0, DistanceUnit::Kilometres),
+    ))
 }
 
 fn layer(name: &str) -> Subtree {
@@ -54,7 +51,7 @@ fn objects_cannot_sit_at_the_top_level() {
         .apply(Op::Insert {
             parent: None,
             index: 0,
-            subtree: object(ObjectKind::Stamp(Stamp {})),
+            subtree: object(ObjectKind::Stamp(Stamp::default())),
         })
         .unwrap_err();
     assert_eq!(err, OpError::ObjectAtRoot);
@@ -64,7 +61,11 @@ fn objects_cannot_sit_at_the_top_level() {
 fn objects_cannot_hold_children() {
     let mut map = empty_map();
     let land = insert(&mut map, None, layer("Land"));
-    let stamp = insert(&mut map, Some(land), object(ObjectKind::Stamp(Stamp {})));
+    let stamp = insert(
+        &mut map,
+        Some(land),
+        object(ObjectKind::Stamp(Stamp::default())),
+    );
     let err = map
         .apply(Op::Move {
             id: land,
@@ -94,7 +95,11 @@ fn a_layer_cannot_move_into_its_own_descendant() {
 fn objects_only_have_the_locked_property() {
     let mut map = empty_map();
     let land = insert(&mut map, None, layer("Land"));
-    let stamp = insert(&mut map, Some(land), object(ObjectKind::Stamp(Stamp {})));
+    let stamp = insert(
+        &mut map,
+        Some(land),
+        object(ObjectKind::Stamp(Stamp::default())),
+    );
     assert_eq!(
         map.apply(Op::SetProperty {
             id: stamp,
@@ -114,7 +119,11 @@ fn objects_only_have_the_locked_property() {
 fn only_landmasses_and_lakes_have_geometry() {
     let mut map = empty_map();
     let land = insert(&mut map, None, layer("Land"));
-    let stamp = insert(&mut map, Some(land), object(ObjectKind::Stamp(Stamp {})));
+    let stamp = insert(
+        &mut map,
+        Some(land),
+        object(ObjectKind::Stamp(Stamp::default())),
+    );
     assert_eq!(
         map.apply(Op::ReplaceGeometry {
             id: stamp,
@@ -165,7 +174,11 @@ fn moving_touches_both_parents() {
     let mut map = empty_map();
     let a = insert(&mut map, None, layer("A"));
     let b = insert(&mut map, None, layer("B"));
-    let stamp = insert(&mut map, Some(a), object(ObjectKind::Stamp(Stamp {})));
+    let stamp = insert(
+        &mut map,
+        Some(a),
+        object(ObjectKind::Stamp(Stamp::default())),
+    );
     let before = (map.version(a).unwrap(), map.version(b).unwrap());
     map.apply(Op::Move {
         id: stamp,
@@ -183,7 +196,11 @@ fn removing_a_layer_returns_its_whole_branch() {
     let mut map = empty_map();
     let land = insert(&mut map, None, layer("Land"));
     let group = insert(&mut map, Some(land), layer("Group"));
-    let stamp = insert(&mut map, Some(group), object(ObjectKind::Stamp(Stamp {})));
+    let stamp = insert(
+        &mut map,
+        Some(group),
+        object(ObjectKind::Stamp(Stamp::default())),
+    );
     let inverse = map.apply(Op::Remove { id: group }).unwrap();
     assert!(!map.contains(stamp));
     let Op::Insert { subtree, .. } = &inverse else {

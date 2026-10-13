@@ -1,14 +1,7 @@
 use ssmap_core::{Canvas, Command, DistanceUnit, History, Id, Map, Scale};
 
 fn empty_map() -> Map {
-    Map::new(Canvas {
-        width: 100,
-        height: 100,
-        scale: Scale {
-            distance_per_unit: 1.0,
-            unit: DistanceUnit::Miles,
-        },
-    })
+    Map::new(Canvas::new(100, 100, Scale::new(1.0, DistanceUnit::Miles)))
 }
 
 fn create(id: Id, name: &str) -> Command {

@@ -69,18 +69,15 @@ fn a_layer_with_100k_objects_lays_out_only_visible_rows() {
     use ssmap_core::{
         Canvas, DistanceUnit, Id, Layer, Map, Node, Object, ObjectKind, Op, Scale, Stamp, Subtree,
     };
-    let mut map = Map::new(Canvas {
-        width: 1000,
-        height: 1000,
-        scale: Scale {
-            distance_per_unit: 1.0,
-            unit: DistanceUnit::Miles,
-        },
-    });
+    let mut map = Map::new(Canvas::new(
+        1000,
+        1000,
+        Scale::new(1.0, DistanceUnit::Miles),
+    ));
     let stamps = (0..100_000)
         .map(|_| Subtree {
             id: Id::new(),
-            node: Node::Object(Object::new(ObjectKind::Stamp(Stamp {}))),
+            node: Node::Object(Object::new(ObjectKind::Stamp(Stamp::default()))),
             children: Vec::new(),
         })
         .collect();
@@ -108,4 +105,79 @@ fn a_layer_with_100k_objects_lays_out_only_visible_rows() {
         (1..100).contains(&stamp_rows),
         "{stamp_rows} Stamp rows laid out"
     );
+}
+
+#[test]
+fn save_as_then_open_round_trips_the_map() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("world");
+    let mut harness = app();
+    assert_eq!(harness.state().title(), "Untitled — StarScript Map Maker");
+    harness.get_by_label("New Layer").click();
+    harness.run();
+    assert!(harness.state().title().starts_with("Untitled •"));
+
+    assert!(harness.state_mut().save_as_path(&path));
+    harness.run();
+    let saved = dir.path().join("world.ssmap");
+    let editor = harness.state().editor();
+    assert_eq!(harness.state().document().path(), Some(saved.as_path()));
+    assert_eq!(
+        editor.notice().map(|n| n.text.as_str()),
+        Some("Saved “world.ssmap”")
+    );
+    assert_eq!(
+        harness.state().title(),
+        "world.ssmap — StarScript Map Maker"
+    );
+    let saved_view = editor.map.view();
+
+    // More edits, then open the saved file again: they are gone.
+    harness.get_by_label("New Layer").click();
+    harness.run();
+    assert!(harness.state().title().starts_with("world.ssmap •"));
+    assert!(harness.state_mut().open_path(&saved));
+    harness.run();
+    assert_eq!(harness.state().editor().map.view(), saved_view);
+    assert!(!harness.state().editor().can_undo());
+    harness.get_by_label("Layer 1");
+    assert_eq!(harness.state().recent_files(), std::slice::from_ref(&saved));
+
+    // Ctrl+S saves to the open file.
+    harness.get_by_label("New Layer").click();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::S);
+    harness.run();
+    assert_eq!(
+        harness.state().title(),
+        "world.ssmap — StarScript Map Maker"
+    );
+    let (_, reopened) = ssmap_core::file::MapFile::open(&saved).unwrap();
+    assert_eq!(reopened.children(None).len(), 2);
+}
+
+#[test]
+fn saving_an_untitled_map_asks_where() {
+    let mut harness = app();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::S);
+    harness.run();
+    assert!(harness.state().document().path().is_none());
+    harness.get_by_label("Save Map As");
+}
+
+#[test]
+fn a_file_that_fails_to_open_shows_why() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("notes.ssmap");
+    std::fs::write(&path, "plain text ".repeat(100)).unwrap();
+    let mut harness = app();
+    assert!(!harness.state_mut().open_path(&path));
+    harness.run();
+    let message = "Couldn’t open “notes.ssmap”: this is not a StarScript Map file";
+    assert_eq!(
+        harness.state().editor().notice().map(|n| n.text.as_str()),
+        Some(message)
+    );
+    harness.get_by_label(message);
+    assert!(harness.state().document().path().is_none());
 }
