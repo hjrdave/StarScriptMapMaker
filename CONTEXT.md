@@ -53,3 +53,33 @@ _Avoid_: Noise, jitter, fractalisation
 **Shore style**:
 The set of effects drawn along a Coastline: outline, ripple lines and inner shading. A Map has a default, and each Landmass or Lake may override it.
 _Avoid_: Coast effect, border style
+
+### Assets
+
+**Asset**:
+A reusable piece of map art, such as a mountain or a castle, defined in an Asset pack.
+_Avoid_: Symbol, sprite, prop, icon
+
+**Asset pack**:
+A named bundle of Assets with a manifest that records each Asset's metadata, author and licence.
+_Avoid_: Library, set, collection
+
+**Stamp**:
+An Object that places one Asset on a Map, with its own position, scale, rotation, flip, tint, fill colour and opacity.
+_Avoid_: Instance, symbol, placed asset
+
+**Anchor**:
+The point of an Asset that sits on the ground, such as a mountain's base centre. Stamps are positioned, rotated, scaled and depth-sorted by it.
+_Avoid_: Origin, pivot, hotspot
+
+**Variant group**:
+A set of interchangeable Assets, such as six mountain peaks, from which brushes pick at random.
+_Avoid_: Variation, family
+
+**Silhouette**:
+The inside area of an Asset, filled with a colour beneath its line art so that overlapping Stamps hide one another.
+_Avoid_: Mask, backing
+
+**Depth sort**:
+A Layer setting that draws the Stamps directly inside it by their Anchor's height on the Map, lower in front, instead of by tree order.
+_Avoid_: Y-sort, z-sort
