@@ -1,0 +1,278 @@
+//! The Map: a Canvas and one ordered tree of Layers and Objects.
+
+use std::collections::{HashMap, HashSet};
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+use crate::id::Id;
+use crate::node::Node;
+
+/// The bounded drawing area of a Map.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct Canvas {
+    /// Width in nominal pixels (Canvas units).
+    pub width: u32,
+    /// Height in nominal pixels (Canvas units).
+    pub height: u32,
+    pub scale: Scale,
+}
+
+/// How much real-world distance one Canvas unit stands for.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct Scale {
+    pub distance_per_unit: f64,
+    pub unit: DistanceUnit,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DistanceUnit {
+    Miles,
+    Kilometres,
+}
+
+/// A node and all its descendants, in Stacking order (first child draws lowest).
+///
+/// This is both the shape of the read view and the payload Ops use to insert and restore
+/// whole branches of the tree.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct Subtree {
+    pub id: Id,
+    #[serde(flatten)]
+    pub node: Node,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<Subtree>,
+}
+
+/// A serialisable snapshot of a whole Map, for agents, tests and debugging.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct MapView {
+    pub canvas: Canvas,
+    /// The top-level Layers, first drawn lowest.
+    pub layers: Vec<Subtree>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Entry {
+    pub(crate) node: Node,
+    pub(crate) parent: Option<Id>,
+    pub(crate) children: Vec<Id>,
+    pub(crate) version: u64,
+}
+
+/// One Map document. It is changed only by applying [`Op`](crate::Op)s.
+#[derive(Clone, Debug)]
+pub struct Map {
+    pub canvas: Canvas,
+    pub(crate) root: Vec<Id>,
+    pub(crate) entries: HashMap<Id, Entry>,
+    /// Increases with every applied Op; touched nodes take its new value as their version.
+    pub(crate) revision: u64,
+}
+
+impl Map {
+    pub fn new(canvas: Canvas) -> Self {
+        Self {
+            canvas,
+            root: Vec::new(),
+            entries: HashMap::new(),
+            revision: 0,
+        }
+    }
+
+    /// Builds a Map from a read view, as when loading.
+    pub fn from_view(view: MapView) -> Result<Self, InvariantError> {
+        let mut map = Self::new(view.canvas);
+        for subtree in view.layers {
+            if !subtree.node.is_layer() {
+                return Err(InvariantError::ObjectAtRoot(subtree.id));
+            }
+            map.root.push(subtree.id);
+            map.insert_subtree(None, subtree)?;
+        }
+        Ok(map)
+    }
+
+    pub fn view(&self) -> MapView {
+        MapView {
+            canvas: self.canvas.clone(),
+            layers: self.root.iter().map(|&id| self.subtree(id)).collect(),
+        }
+    }
+
+    pub fn contains(&self, id: Id) -> bool {
+        self.entries.contains_key(&id)
+    }
+
+    pub fn node(&self, id: Id) -> Option<&Node> {
+        self.entries.get(&id).map(|entry| &entry.node)
+    }
+
+    /// The parent Layer of `id`, or `None` for a top-level Layer or an unknown id.
+    pub fn parent(&self, id: Id) -> Option<Id> {
+        self.entries.get(&id).and_then(|entry| entry.parent)
+    }
+
+    /// The children of a Layer in Stacking order, or the top-level Layers for `None`.
+    pub fn children(&self, parent: Option<Id>) -> &[Id] {
+        match parent {
+            None => &self.root,
+            Some(id) => self.entries.get(&id).map_or(&[], |entry| &entry.children),
+        }
+    }
+
+    /// Changes whenever an Op touches the node; derived caches key on it.
+    pub fn version(&self, id: Id) -> Option<u64> {
+        self.entries.get(&id).map(|entry| entry.version)
+    }
+
+    /// The number of Ops applied so far.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// The node and all its descendants. Panics if `id` is unknown.
+    pub fn subtree(&self, id: Id) -> Subtree {
+        let entry = &self.entries[&id];
+        Subtree {
+            id,
+            node: entry.node.clone(),
+            children: entry.children.iter().map(|&c| self.subtree(c)).collect(),
+        }
+    }
+
+    /// `ancestor` itself, or any Layer above `id`.
+    pub fn is_ancestor_or_self(&self, ancestor: Id, id: Id) -> bool {
+        let mut current = Some(id);
+        while let Some(node) = current {
+            if node == ancestor {
+                return true;
+            }
+            current = self.parent(node);
+        }
+        false
+    }
+
+    /// Checks the tree's structural rules. A Map built only through Ops always passes.
+    pub fn validate(&self) -> Result<(), InvariantError> {
+        let mut seen = HashSet::new();
+        let mut stack: Vec<(Option<Id>, Id)> = self.root.iter().map(|&id| (None, id)).collect();
+        for &id in &self.root {
+            match self.entries.get(&id) {
+                Some(entry) if !entry.node.is_layer() => {
+                    return Err(InvariantError::ObjectAtRoot(id));
+                }
+                _ => {}
+            }
+        }
+        while let Some((parent, id)) = stack.pop() {
+            if !seen.insert(id) {
+                return Err(InvariantError::DuplicateId(id));
+            }
+            let entry = self.entries.get(&id).ok_or(InvariantError::Missing(id))?;
+            if entry.parent != parent {
+                return Err(InvariantError::WrongParent(id));
+            }
+            if !entry.node.is_layer() && !entry.children.is_empty() {
+                return Err(InvariantError::ObjectWithChildren(id));
+            }
+            stack.extend(entry.children.iter().map(|&child| (Some(id), child)));
+        }
+        if seen.len() != self.entries.len() {
+            let orphan = self.entries.keys().find(|id| !seen.contains(id));
+            return Err(InvariantError::Orphan(*orphan.expect("an unseen entry")));
+        }
+        Ok(())
+    }
+
+    /// Checks that `subtree` could be inserted: fresh, unique ids and no Object with children.
+    pub(crate) fn check_insertable(&self, subtree: &Subtree) -> Result<(), InvariantError> {
+        let mut ids = HashSet::new();
+        let mut stack = vec![subtree];
+        while let Some(tree) = stack.pop() {
+            if self.contains(tree.id) || !ids.insert(tree.id) {
+                return Err(InvariantError::DuplicateId(tree.id));
+            }
+            if !tree.node.is_layer() && !tree.children.is_empty() {
+                return Err(InvariantError::ObjectWithChildren(tree.id));
+            }
+            stack.extend(&tree.children);
+        }
+        Ok(())
+    }
+
+    /// Adds entries for `subtree` under `parent` without touching the parent's child list.
+    fn insert_subtree(
+        &mut self,
+        parent: Option<Id>,
+        subtree: Subtree,
+    ) -> Result<(), InvariantError> {
+        self.check_insertable(&subtree)?;
+        self.insert_entries(parent, subtree);
+        Ok(())
+    }
+
+    /// Adds entries for an already-checked subtree and stamps them with the current revision.
+    pub(crate) fn insert_entries(&mut self, parent: Option<Id>, subtree: Subtree) {
+        let Subtree { id, node, children } = subtree;
+        let child_ids = children.iter().map(|child| child.id).collect();
+        self.entries.insert(
+            id,
+            Entry {
+                node,
+                parent,
+                children: child_ids,
+                version: self.revision,
+            },
+        );
+        for child in children {
+            self.insert_entries(Some(id), child);
+        }
+    }
+
+    /// Removes the entries of `id` and its descendants, returning them as a Subtree.
+    pub(crate) fn remove_entries(&mut self, id: Id) -> Subtree {
+        let entry = self.entries.remove(&id).expect("a known id");
+        Subtree {
+            id,
+            node: entry.node,
+            children: entry
+                .children
+                .into_iter()
+                .map(|child| self.remove_entries(child))
+                .collect(),
+        }
+    }
+
+    pub(crate) fn children_mut(&mut self, parent: Option<Id>) -> &mut Vec<Id> {
+        match parent {
+            None => &mut self.root,
+            Some(id) => &mut self.entries.get_mut(&id).expect("a known id").children,
+        }
+    }
+
+    pub(crate) fn touch(&mut self, id: Option<Id>) {
+        if let Some(entry) = id.and_then(|id| self.entries.get_mut(&id)) {
+            entry.version = self.revision;
+        }
+    }
+}
+
+/// A broken structural rule of the Map tree.
+#[derive(Clone, PartialEq, Eq, Debug, Error)]
+pub enum InvariantError {
+    #[error("id {0} appears more than once")]
+    DuplicateId(Id),
+    #[error("Object {0} is at the top level; only Layers can be")]
+    ObjectAtRoot(Id),
+    #[error("Object {0} has children; only Layers can")]
+    ObjectWithChildren(Id),
+    #[error("node {0} is listed as a child but missing")]
+    Missing(Id),
+    #[error("node {0} records the wrong parent")]
+    WrongParent(Id),
+    #[error("node {0} is not reachable from the top level")]
+    Orphan(Id),
+}
