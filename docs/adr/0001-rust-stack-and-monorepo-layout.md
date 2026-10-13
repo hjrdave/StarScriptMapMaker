@@ -11,7 +11,7 @@ The v1 desktop app is a Cargo workspace at the repo root, split into `crates/cor
 | UI and windowing | egui on eframe (winit + egui-wgpu underneath); drop to raw winit only if eframe gets in the way | `app` |
 | Vector rendering | lyon tessellation, 4x MSAA, behind `VectorRenderer`; Clip via stencil | `render` |
 | Placed assets | Instanced quads from paged atlases; page size from queried wgpu limits (2048 floor); allocator hidden behind the atlas module, `etagere` by default | `render` |
-| Geometry | kurbo (`f64` Bézier paths, hit tests); converted to `f32` only in `render` | `core` |
+| Geometry | kurbo (`f64` Bézier paths, hit tests); converted to `f32` only in `render`. Landmass and Lake outlines are polygons instead, per ADR 0002 | `core` |
 | Spatial index | rstar, for picking and culling | `core` |
 | Label text | cosmic-text shaping; glyphs drawn as vector outlines through the same renderer, so halos are strokes and screen matches export | `render` (shaping data may live in `core`) |
 | Images | `image` with only the PNG feature (asset decode, PNG export); SVG support waits on the asset-format decision | `render` |
