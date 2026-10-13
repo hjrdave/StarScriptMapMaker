@@ -1,0 +1,4 @@
+# Pinned stable toolchain; this is also the MSRV (ADR 0001).
+[toolchain]
+channel = "1.97.0"
+components = ["rustfmt", "clippy"]
