@@ -1,0 +1,265 @@
+---
+source: crates/core/tests/scripts.rs
+expression: run(script)
+input_file: crates/core/tests/scripts/lock.json
+---
+{
+  "log": [
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_layer",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "name": "Land",
+          "parent": null
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_layer",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "name": "Islands",
+          "parent": "00000000-0000-7000-8000-000000000001"
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_layer",
+          "id": "00000000-0000-7000-8000-000000000003",
+          "name": "Reefs",
+          "parent": "00000000-0000-7000-8000-000000000002"
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_locked",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "locked": true
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000001 is locked"
+      },
+      "step": {
+        "step": {
+          "command": "rename_layer",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "name": "Renamed"
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000003 is inside locked Layer 00000000-0000-7000-8000-000000000001"
+      },
+      "step": {
+        "step": {
+          "command": "set_visible",
+          "id": "00000000-0000-7000-8000-000000000003",
+          "visible": false
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000002 is inside locked Layer 00000000-0000-7000-8000-000000000001"
+      },
+      "step": {
+        "step": {
+          "command": "create_layer",
+          "id": "00000000-0000-7000-8000-000000000004",
+          "name": "New",
+          "parent": "00000000-0000-7000-8000-000000000002"
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000003 is inside locked Layer 00000000-0000-7000-8000-000000000001"
+      },
+      "step": {
+        "step": {
+          "command": "move",
+          "id": "00000000-0000-7000-8000-000000000003",
+          "index": 0,
+          "parent": null
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000003 is inside locked Layer 00000000-0000-7000-8000-000000000001"
+      },
+      "step": {
+        "step": {
+          "command": "delete",
+          "ids": [
+            "00000000-0000-7000-8000-000000000003"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000002 is inside locked Layer 00000000-0000-7000-8000-000000000001"
+      },
+      "step": {
+        "step": {
+          "command": "set_locked",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "locked": true
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_locked",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "locked": false
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_locked",
+          "id": "00000000-0000-7000-8000-000000000003",
+          "locked": true
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000001 contains locked 00000000-0000-7000-8000-000000000003"
+      },
+      "step": {
+        "step": {
+          "command": "delete",
+          "ids": [
+            "00000000-0000-7000-8000-000000000001"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000002 contains locked 00000000-0000-7000-8000-000000000003"
+      },
+      "step": {
+        "step": {
+          "command": "move",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "index": 0,
+          "parent": null
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_locked",
+          "id": "00000000-0000-7000-8000-000000000003",
+          "locked": false
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "delete",
+          "ids": [
+            "00000000-0000-7000-8000-000000000001",
+            "00000000-0000-7000-8000-000000000003"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "layers": []
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    }
+  ],
+  "redo_steps": 2,
+  "undo_steps": 6,
+  "view": {
+    "canvas": {
+      "height": 1000,
+      "scale": {
+        "distance_per_unit": 1.0,
+        "unit": "miles"
+      },
+      "width": 1000
+    },
+    "layers": [
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "id": "00000000-0000-7000-8000-000000000003",
+                "locked": true,
+                "name": "Reefs",
+                "opacity": 1.0,
+                "type": "layer",
+                "visible": true
+              }
+            ],
+            "id": "00000000-0000-7000-8000-000000000002",
+            "locked": false,
+            "name": "Islands",
+            "opacity": 1.0,
+            "type": "layer",
+            "visible": true
+          }
+        ],
+        "id": "00000000-0000-7000-8000-000000000001",
+        "locked": false,
+        "name": "Land",
+        "opacity": 1.0,
+        "type": "layer",
+        "visible": true
+      }
+    ]
+  }
+}

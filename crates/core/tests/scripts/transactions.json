@@ -1,0 +1,26 @@
+{
+  "steps": [
+    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000001", "parent": null, "name": "Land"}},
+    {"begin": {"label": "Drag opacity", "selection": ["00000000-0000-7000-8000-000000000001"]}},
+    {"execute": {"command": "set_opacity", "id": "00000000-0000-7000-8000-000000000001", "opacity": 0.9}},
+    {"execute": {"command": "set_opacity", "id": "00000000-0000-7000-8000-000000000001", "opacity": 0.6}},
+    {"execute": {"command": "set_opacity", "id": "00000000-0000-7000-8000-000000000001", "opacity": 0.3}},
+    "undo",
+    "rollback",
+    "snapshot",
+    {"begin": {"label": "Build template", "selection": []}},
+    {"execute": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000002", "parent": null, "name": "Assets"}},
+    {"execute": {"command": "set_opacity", "id": "00000000-0000-7000-8000-000000000002", "opacity": 2.0}},
+    {"execute": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000003", "parent": null, "name": "Labels"}},
+    {"commit": {"selection": ["00000000-0000-7000-8000-000000000003"]}},
+    "snapshot",
+    "undo",
+    "snapshot",
+    "redo",
+    {"begin": {"label": "Nothing", "selection": []}},
+    {"commit": {"selection": []}},
+    {"execute": {"command": "rename_layer", "id": "00000000-0000-7000-8000-000000000001", "name": "Outside a transaction"}},
+    "rollback",
+    {"commit": {"selection": []}}
+  ]
+}

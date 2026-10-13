@@ -45,6 +45,7 @@ fn layer() -> impl Strategy<Value = Layer> {
             visible,
             locked,
             opacity,
+            clip: None,
         },
     )
 }
@@ -117,6 +118,10 @@ enum OpSpec {
         parent: usize,
         index: usize,
     },
+    Clip {
+        layer: usize,
+        target: usize,
+    },
     Unknown,
 }
 
@@ -126,6 +131,7 @@ fn property() -> impl Strategy<Value = Property> {
         any::<bool>().prop_map(Property::Visible),
         any::<bool>().prop_map(Property::Locked),
         (0.0..=1.0f32).prop_map(Property::Opacity),
+        Just(Property::Clip(None)),
     ]
 }
 
@@ -150,6 +156,7 @@ fn op_spec() -> impl Strategy<Value = OpSpec> {
             parent,
             index
         }),
+        (sel(), sel()).prop_map(|(layer, target)| OpSpec::Clip { layer, target }),
         Just(OpSpec::Unknown),
     ]
 }
@@ -233,6 +240,21 @@ impl OpSpec {
                     id: node(n),
                     parent,
                     index: index(i, parent),
+                }
+            }
+            OpSpec::Clip { layer, target } => {
+                let pick = |kind: fn(&Node) -> bool, sel: usize| {
+                    let matching: Vec<Id> = ids
+                        .iter()
+                        .copied()
+                        .filter(|&id| map.node(id).is_some_and(kind))
+                        .collect();
+                    matching.get(sel % matching.len().max(1)).copied()
+                };
+                let is_landmass = |node: &Node| matches!(node, Node::Object(o) if matches!(o.kind, ObjectKind::Landmass(_)));
+                Op::SetProperty {
+                    id: pick(Node::is_layer, layer).unwrap_or_default(),
+                    property: Property::Clip(pick(is_landmass, target)),
                 }
             }
             OpSpec::Unknown => Op::Remove { id: Id::new() },

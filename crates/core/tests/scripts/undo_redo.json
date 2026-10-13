@@ -1,0 +1,22 @@
+{
+  "steps": [
+    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000001", "parent": null, "name": "Land"}},
+    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000002", "parent": null, "name": "Labels"}},
+    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000003", "parent": "00000000-0000-7000-8000-000000000001", "name": "Islands"}},
+    {"step": {"command": "rename_layer", "id": "00000000-0000-7000-8000-000000000003", "name": "Northern islands"}},
+    {"step": {"command": "set_opacity", "id": "00000000-0000-7000-8000-000000000001", "opacity": 0.5}},
+    {"step": {"command": "set_visible", "id": "00000000-0000-7000-8000-000000000002", "visible": false}},
+    {"step": {"command": "move", "id": "00000000-0000-7000-8000-000000000002", "parent": null, "index": 0}},
+    "snapshot",
+    "undo", "undo", "undo", "undo", "undo", "undo", "undo",
+    "undo",
+    "snapshot",
+    "redo", "redo", "redo",
+    "snapshot",
+    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000004", "parent": null, "index": 0, "name": "Ocean"}},
+    "redo",
+    {"step": {"command": "set_opacity", "id": "00000000-0000-7000-8000-000000000001", "opacity": 1.5}},
+    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000004", "parent": null, "name": "Duplicate"}},
+    {"step": {"command": "move", "id": "00000000-0000-7000-8000-000000000001", "parent": "00000000-0000-7000-8000-000000000003", "index": 0}}
+  ]
+}

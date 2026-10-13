@@ -16,6 +16,7 @@ ssmap-render = { path = "crates/render" }
 bytemuck = { version = "1.25", features = ["derive"] }
 eframe = "0.36"
 image = { version = "0.25", default-features = false, features = ["png"] }
+insta = { version = "1.49", features = ["glob", "json"] }
 lyon = "1.0"
 pollster = "1.0"
 proptest = "1.12"
