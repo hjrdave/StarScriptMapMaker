@@ -1,0 +1,14 @@
+# PROTOTYPE - throwaway. Answers map ticket "Prototype: Figma-style three-panel editor shell".
+[package]
+name = "editor-shell-prototype"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+eframe = { version = "0.36", default-features = false, features = ["wgpu", "default_fonts", "x11", "wayland"] }
+egui-wgpu = "0.36"
+bytemuck = { version = "1", features = ["derive"] }
+
+[profile.dev]
+opt-level = 1
