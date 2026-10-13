@@ -135,7 +135,7 @@ impl History {
         command: &Command,
         selection: Selection,
     ) -> Result<(), ExecuteError> {
-        self.begin(command_label(command), selection.clone())?;
+        self.begin(command.label(), selection.clone())?;
         if let Err(err) = self.execute(map, command) {
             self.open = None;
             return Err(err);
@@ -219,18 +219,6 @@ pub enum ExecuteError {
     Command(#[from] CommandError),
     #[error(transparent)]
     History(#[from] HistoryError),
-}
-
-fn command_label(command: &Command) -> &'static str {
-    match command {
-        Command::CreateLayer { .. } => "Create Layer",
-        Command::RenameLayer { .. } => "Rename Layer",
-        Command::Move { .. } => "Move",
-        Command::SetVisible { .. } => "Change Visibility",
-        Command::SetLocked { .. } => "Change Lock",
-        Command::SetOpacity { .. } => "Change Opacity",
-        Command::Delete { .. } => "Delete",
-    }
 }
 
 /// A rough count of the memory a step holds, for the history budget.

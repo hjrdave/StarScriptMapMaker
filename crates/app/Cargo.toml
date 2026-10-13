@@ -7,6 +7,9 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[lib]
+name = "ssmap_app"
+
 [[bin]]
 name = "starscript-map-maker"
 path = "src/main.rs"
@@ -15,6 +18,9 @@ path = "src/main.rs"
 ssmap-core.workspace = true
 ssmap-render.workspace = true
 eframe.workspace = true
+
+[dev-dependencies]
+egui_kittest = { version = "0.36", features = ["eframe"] }
 
 [lints]
 workspace = true
