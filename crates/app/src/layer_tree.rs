@@ -342,14 +342,7 @@ mod tests {
 
     /// Top level, bottom first: A, B, C. B holds b1 (bottom) and b2.
     fn map() -> (Map, [Id; 5]) {
-        let mut map = Map::new(Canvas {
-            width: 10,
-            height: 10,
-            scale: Scale {
-                distance_per_unit: 1.0,
-                unit: DistanceUnit::Miles,
-            },
-        });
+        let mut map = Map::new(Canvas::new(10, 10, Scale::new(1.0, DistanceUnit::Miles)));
         let ids = [Id::new(), Id::new(), Id::new(), Id::new(), Id::new()];
         let [a, b, c, b1, b2] = ids;
         let layer = |id, children| Subtree {
@@ -425,14 +418,11 @@ mod tests {
     #[test]
     fn every_tree_action_undoes_and_redoes_cleanly() {
         use crate::editor::Editor;
-        let mut editor = Editor::new(Map::new(Canvas {
-            width: 10,
-            height: 10,
-            scale: Scale {
-                distance_per_unit: 1.0,
-                unit: DistanceUnit::Miles,
-            },
-        }));
+        let mut editor = Editor::new(Map::new(Canvas::new(
+            10,
+            10,
+            Scale::new(1.0, DistanceUnit::Miles),
+        )));
         let empty = editor.map.view();
         let a = editor.new_layer().unwrap();
         let b = editor.new_layer().unwrap();

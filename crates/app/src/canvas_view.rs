@@ -3,7 +3,10 @@
 
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
-use ssmap_render::{CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, View};
+use ssmap_core::Map;
+use ssmap_render::{
+    CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, RgbaImage, View, render_to_image,
+};
 
 use crate::editor::Editor;
 use crate::handles::{self, Bounds};
@@ -36,6 +39,28 @@ pub fn install(render_state: &egui_wgpu::RenderState) {
         });
 }
 
+/// Renders the whole Canvas, `longest_side` pixels on its longer side, as for the preview
+/// stored in a Map file. Uses the same renderer as the screen.
+pub fn render_whole_canvas(
+    render_state: &egui_wgpu::RenderState,
+    map: &Map,
+    longest_side: u32,
+) -> Option<RgbaImage> {
+    let mut egui_renderer = render_state.renderer.write();
+    let resources = egui_renderer
+        .callback_resources
+        .get_mut::<CanvasResources>()?;
+    let scene = CanvasScene::new(&map.canvas);
+    let view = View::whole_canvas(scene.canvas_size, longest_side);
+    Some(render_to_image(
+        &render_state.device,
+        &render_state.queue,
+        &mut resources.renderer,
+        &scene,
+        &view,
+    ))
+}
+
 pub struct CanvasView {
     /// `None` until the first frame, which fits the Canvas to the panel.
     view: Option<View>,
@@ -46,6 +71,11 @@ pub struct CanvasView {
 impl CanvasView {
     pub fn new(gpu: bool) -> Self {
         Self { view: None, gpu }
+    }
+
+    /// Fits the Canvas to the panel again on the next frame, as after opening a Map.
+    pub fn refit(&mut self) {
+        self.view = None;
     }
 
     /// Zoom as a share of 1:1, in points rather than physical pixels.

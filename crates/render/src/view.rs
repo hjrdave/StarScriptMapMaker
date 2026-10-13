@@ -24,6 +24,18 @@ impl View {
         Self { origin, zoom, size }
     }
 
+    /// The whole Canvas and nothing else, scaled so its longer side is `longest_side` pixels,
+    /// as for the preview stored in a Map file.
+    pub fn whole_canvas(canvas: [f64; 2], longest_side: u32) -> Self {
+        let scale = f64::from(longest_side) / canvas[0].max(canvas[1]);
+        let side = |length: f64| ((length * scale).round() as u32).max(1);
+        Self {
+            origin: [0.0, 0.0],
+            zoom: scale,
+            size: [side(canvas[0]), side(canvas[1])],
+        }
+    }
+
     /// The Canvas point under a target pixel position.
     pub fn to_canvas(&self, pixel: [f64; 2]) -> [f64; 2] {
         [
@@ -88,5 +100,13 @@ mod tests {
         let view = View::fit([1000.0, 500.0], [800, 600], 0.0);
         assert_eq!(view.zoom, 0.8);
         assert_eq!(view.to_canvas([400.0, 300.0]), [500.0, 250.0]);
+    }
+
+    #[test]
+    fn whole_canvas_fits_the_longer_side() {
+        let view = View::whole_canvas([4096.0, 3072.0], 512);
+        assert_eq!(view.size, [512, 384]);
+        assert_eq!(view.to_canvas([512.0, 384.0]), [4096.0, 3072.0]);
+        assert_eq!(View::whole_canvas([100.0, 4000.0], 512).size, [13, 512]);
     }
 }

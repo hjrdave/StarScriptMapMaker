@@ -212,6 +212,14 @@ impl Editor {
             .filter(|notice| notice.shown_at.elapsed() < NOTICE_DURATION)
     }
 
+    pub fn info(&mut self, text: impl Into<String>) {
+        self.notice = Some(Notice {
+            text: text.into(),
+            is_error: false,
+            shown_at: Instant::now(),
+        });
+    }
+
     pub fn error(&mut self, text: impl Into<String>) {
         self.notice = Some(Notice {
             text: text.into(),
@@ -259,14 +267,11 @@ mod tests {
     use ssmap_core::{Canvas, DistanceUnit, Scale};
 
     fn editor() -> Editor {
-        Editor::new(Map::new(Canvas {
-            width: 100,
-            height: 100,
-            scale: Scale {
-                distance_per_unit: 1.0,
-                unit: DistanceUnit::Miles,
-            },
-        }))
+        Editor::new(Map::new(Canvas::new(
+            100,
+            100,
+            Scale::new(1.0, DistanceUnit::Miles),
+        )))
     }
 
     #[test]

@@ -46,14 +46,11 @@ enum Action {
 }
 
 fn run(script: Script) -> Value {
-    let mut map = Map::new(Canvas {
-        width: 1000,
-        height: 1000,
-        scale: Scale {
-            distance_per_unit: 1.0,
-            unit: DistanceUnit::Miles,
-        },
-    });
+    let mut map = Map::new(Canvas::new(
+        1000,
+        1000,
+        Scale::new(1.0, DistanceUnit::Miles),
+    ));
     for op in script.setup {
         map.apply(op).expect("setup Ops apply");
     }

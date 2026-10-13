@@ -132,14 +132,7 @@ fn pixel(image: &RgbaImage, x: u32, y: u32) -> [u8; 4] {
 /// A small Canvas fitted with a margin, so the image shows the pasteboard, the Canvas edge
 /// and the ocean texture.
 fn backdrop_scene() -> (CanvasScene, View) {
-    let scene = CanvasScene::new(&Canvas {
-        width: 800,
-        height: 600,
-        scale: Scale {
-            distance_per_unit: 1.0,
-            unit: DistanceUnit::Miles,
-        },
-    });
+    let scene = CanvasScene::new(&Canvas::new(800, 600, Scale::new(1.0, DistanceUnit::Miles)));
     // 0.4 px per unit puts the Canvas edges exactly on pixel boundaries: 320x240 at (16, 12).
     let view = View {
         origin: [-40.0, -30.0],
@@ -164,5 +157,26 @@ fn ocean_backdrop() {
     );
     if let Gpu::Software(_) = gpu {
         assert_matches_golden("ocean_backdrop", &image);
+    }
+}
+
+#[test]
+fn whole_canvas_preview_shows_no_pasteboard() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let scene = CanvasScene::new(&Canvas::new(
+        4096,
+        3072,
+        Scale::new(1.0, DistanceUnit::Miles),
+    ));
+    let view = View::whole_canvas(scene.canvas_size, 512);
+    let image = render(headless, &scene, &view);
+    assert_eq!([image.width, image.height], [512, 384]);
+    for (x, y) in [(0, 0), (511, 0), (0, 383), (511, 383)] {
+        let corner = pixel(&image, x, y);
+        assert!(
+            corner[2] > corner[0],
+            "corner ({x}, {y}) is water, not pasteboard: {corner:?}"
+        );
     }
 }
