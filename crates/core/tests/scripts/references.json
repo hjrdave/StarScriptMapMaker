@@ -1,0 +1,22 @@
+{
+  "setup": [
+    {"op": "insert", "parent": null, "index": 0, "subtree": {"id": "00000000-0000-7000-8000-000000000010", "type": "layer", "name": "Land", "visible": true, "locked": false, "opacity": 1.0, "children": [
+      {"id": "00000000-0000-7000-8000-000000000011", "type": "object", "locked": false, "kind": {"kind": "landmass", "geometry": [{"exterior": [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0]]}]}},
+      {"id": "00000000-0000-7000-8000-000000000012", "type": "object", "locked": false, "kind": {"kind": "landmass", "geometry": [{"exterior": [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0]]}]}}
+    ]}},
+    {"op": "insert", "parent": null, "index": 1, "subtree": {"id": "00000000-0000-7000-8000-000000000020", "type": "layer", "name": "Forest", "visible": true, "locked": false, "opacity": 1.0, "clip": "00000000-0000-7000-8000-000000000011"}},
+    {"op": "insert", "parent": null, "index": 2, "subtree": {"id": "00000000-0000-7000-8000-000000000030", "type": "layer", "name": "Hills", "visible": true, "locked": false, "opacity": 1.0, "clip": "00000000-0000-7000-8000-000000000012"}}
+  ],
+  "steps": [
+    {"step": {"command": "delete", "ids": ["00000000-0000-7000-8000-000000000011"]}},
+    "snapshot",
+    "undo",
+    {"step": {"command": "delete", "ids": ["00000000-0000-7000-8000-000000000010"]}},
+    "snapshot",
+    "undo",
+    {"step": {"command": "set_locked", "id": "00000000-0000-7000-8000-000000000020", "locked": true}},
+    {"step": {"command": "delete", "ids": ["00000000-0000-7000-8000-000000000011"]}},
+    {"step": {"command": "delete", "ids": ["00000000-0000-7000-8000-000000000012"]}},
+    {"step": {"command": "delete", "ids": ["00000000-0000-7000-8000-000000000020", "00000000-0000-7000-8000-000000000011"]}}
+  ]
+}

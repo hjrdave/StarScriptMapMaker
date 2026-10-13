@@ -1,0 +1,312 @@
+---
+source: crates/core/tests/scripts.rs
+expression: run(script)
+input_file: crates/core/tests/scripts/transactions.json
+---
+{
+  "log": [
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_layer",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "name": "Land",
+          "parent": null
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "begin": {
+          "label": "Drag opacity",
+          "selection": [
+            "00000000-0000-7000-8000-000000000001"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "execute": {
+          "command": "set_opacity",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "opacity": 0.9
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "execute": {
+          "command": "set_opacity",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "opacity": 0.6
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "execute": {
+          "command": "set_opacity",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "opacity": 0.3
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "a transaction is already open"
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": "ok",
+      "step": "rollback"
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "layers": [
+            {
+              "id": "00000000-0000-7000-8000-000000000001",
+              "locked": false,
+              "name": "Land",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "begin": {
+          "label": "Build template",
+          "selection": []
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "execute": {
+          "command": "create_layer",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "name": "Assets",
+          "parent": null
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "opacity must be from 0 to 1, not 2"
+      },
+      "step": {
+        "execute": {
+          "command": "set_opacity",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "opacity": 2.0
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "execute": {
+          "command": "create_layer",
+          "id": "00000000-0000-7000-8000-000000000003",
+          "name": "Labels",
+          "parent": null
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "commit": {
+          "selection": [
+            "00000000-0000-7000-8000-000000000003"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "layers": [
+            {
+              "id": "00000000-0000-7000-8000-000000000001",
+              "locked": false,
+              "name": "Land",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            },
+            {
+              "id": "00000000-0000-7000-8000-000000000002",
+              "locked": false,
+              "name": "Assets",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            },
+            {
+              "id": "00000000-0000-7000-8000-000000000003",
+              "locked": false,
+              "name": "Labels",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "layers": [
+            {
+              "id": "00000000-0000-7000-8000-000000000001",
+              "locked": false,
+              "name": "Land",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": {
+        "selection": [
+          "00000000-0000-7000-8000-000000000003"
+        ]
+      },
+      "step": "redo"
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "begin": {
+          "label": "Nothing",
+          "selection": []
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "commit": {
+          "selection": []
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "no transaction is open"
+      },
+      "step": {
+        "execute": {
+          "command": "rename_layer",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "name": "Outside a transaction"
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "no transaction is open"
+      },
+      "step": "rollback"
+    },
+    {
+      "outcome": {
+        "error": "no transaction is open"
+      },
+      "step": {
+        "commit": {
+          "selection": []
+        }
+      }
+    }
+  ],
+  "redo_steps": 0,
+  "undo_steps": 2,
+  "view": {
+    "canvas": {
+      "height": 1000,
+      "scale": {
+        "distance_per_unit": 1.0,
+        "unit": "miles"
+      },
+      "width": 1000
+    },
+    "layers": [
+      {
+        "id": "00000000-0000-7000-8000-000000000001",
+        "locked": false,
+        "name": "Land",
+        "opacity": 1.0,
+        "type": "layer",
+        "visible": true
+      },
+      {
+        "id": "00000000-0000-7000-8000-000000000002",
+        "locked": false,
+        "name": "Assets",
+        "opacity": 1.0,
+        "type": "layer",
+        "visible": true
+      },
+      {
+        "id": "00000000-0000-7000-8000-000000000003",
+        "locked": false,
+        "name": "Labels",
+        "opacity": 1.0,
+        "type": "layer",
+        "visible": true
+      }
+    ]
+  }
+}

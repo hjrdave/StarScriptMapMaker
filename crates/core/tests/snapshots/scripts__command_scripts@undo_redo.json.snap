@@ -1,0 +1,351 @@
+---
+source: crates/core/tests/scripts.rs
+expression: run(script)
+input_file: crates/core/tests/scripts/undo_redo.json
+---
+{
+  "log": [
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_layer",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "name": "Land",
+          "parent": null
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_layer",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "name": "Labels",
+          "parent": null
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_layer",
+          "id": "00000000-0000-7000-8000-000000000003",
+          "name": "Islands",
+          "parent": "00000000-0000-7000-8000-000000000001"
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "rename_layer",
+          "id": "00000000-0000-7000-8000-000000000003",
+          "name": "Northern islands"
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_opacity",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "opacity": 0.5
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_visible",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "visible": false
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "move",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "index": 0,
+          "parent": null
+        }
+      }
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "layers": [
+            {
+              "id": "00000000-0000-7000-8000-000000000002",
+              "locked": false,
+              "name": "Labels",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": false
+            },
+            {
+              "children": [
+                {
+                  "id": "00000000-0000-7000-8000-000000000003",
+                  "locked": false,
+                  "name": "Northern islands",
+                  "opacity": 1.0,
+                  "type": "layer",
+                  "visible": true
+                }
+              ],
+              "id": "00000000-0000-7000-8000-000000000001",
+              "locked": false,
+              "name": "Land",
+              "opacity": 0.5,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": "nothing to do",
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "layers": []
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "redo"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "redo"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "redo"
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "layers": [
+            {
+              "children": [
+                {
+                  "id": "00000000-0000-7000-8000-000000000003",
+                  "locked": false,
+                  "name": "Islands",
+                  "opacity": 1.0,
+                  "type": "layer",
+                  "visible": true
+                }
+              ],
+              "id": "00000000-0000-7000-8000-000000000001",
+              "locked": false,
+              "name": "Land",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            },
+            {
+              "id": "00000000-0000-7000-8000-000000000002",
+              "locked": false,
+              "name": "Labels",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_layer",
+          "id": "00000000-0000-7000-8000-000000000004",
+          "index": 0,
+          "name": "Ocean",
+          "parent": null
+        }
+      }
+    },
+    {
+      "outcome": "nothing to do",
+      "step": "redo"
+    },
+    {
+      "outcome": {
+        "error": "opacity must be from 0 to 1, not 1.5"
+      },
+      "step": {
+        "step": {
+          "command": "set_opacity",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "opacity": 1.5
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "id 00000000-0000-7000-8000-000000000004 is already in use"
+      },
+      "step": {
+        "step": {
+          "command": "create_layer",
+          "id": "00000000-0000-7000-8000-000000000004",
+          "name": "Duplicate",
+          "parent": null
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "cannot move 00000000-0000-7000-8000-000000000001 into itself or its own descendant"
+      },
+      "step": {
+        "step": {
+          "command": "move",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "index": 0,
+          "parent": "00000000-0000-7000-8000-000000000003"
+        }
+      }
+    }
+  ],
+  "redo_steps": 0,
+  "undo_steps": 4,
+  "view": {
+    "canvas": {
+      "height": 1000,
+      "scale": {
+        "distance_per_unit": 1.0,
+        "unit": "miles"
+      },
+      "width": 1000
+    },
+    "layers": [
+      {
+        "id": "00000000-0000-7000-8000-000000000004",
+        "locked": false,
+        "name": "Ocean",
+        "opacity": 1.0,
+        "type": "layer",
+        "visible": true
+      },
+      {
+        "children": [
+          {
+            "id": "00000000-0000-7000-8000-000000000003",
+            "locked": false,
+            "name": "Islands",
+            "opacity": 1.0,
+            "type": "layer",
+            "visible": true
+          }
+        ],
+        "id": "00000000-0000-7000-8000-000000000001",
+        "locked": false,
+        "name": "Land",
+        "opacity": 1.0,
+        "type": "layer",
+        "visible": true
+      },
+      {
+        "id": "00000000-0000-7000-8000-000000000002",
+        "locked": false,
+        "name": "Labels",
+        "opacity": 1.0,
+        "type": "layer",
+        "visible": true
+      }
+    ]
+  }
+}

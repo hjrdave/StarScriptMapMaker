@@ -1,0 +1,269 @@
+//! Transactions and in-memory undo/redo (ADR 0004).
+//!
+//! A tool opens a transaction, executes Commands live as a gesture goes on, and commits them
+//! as one Undo step; rollback cancels the gesture. History lives in memory under a budget and
+//! is never saved.
+
+use std::collections::VecDeque;
+
+use thiserror::Error;
+
+use crate::command::{Command, CommandError};
+use crate::geometry::MultiPolygon;
+use crate::id::Id;
+use crate::map::{Map, Subtree};
+use crate::node::Node;
+use crate::op::{Op, Property};
+
+/// The Objects and Layers picked in the editor. It is editor state, not part of the Map, but
+/// each Undo step records it so undo and redo can restore it.
+pub type Selection = Vec<Id>;
+
+/// The default memory budget for undo history.
+pub const DEFAULT_BUDGET_BYTES: usize = 256 * 1024 * 1024;
+
+/// The Commands of one gesture or agent action, undone and redone together.
+#[derive(Clone, Debug)]
+pub struct UndoStep {
+    pub label: String,
+    pub selection_before: Selection,
+    pub selection_after: Selection,
+    /// Inverses in the order their Ops were applied.
+    inverses: Vec<Op>,
+    bytes: usize,
+}
+
+#[derive(Debug)]
+struct Transaction {
+    label: String,
+    selection_before: Selection,
+    inverses: Vec<Op>,
+}
+
+#[derive(Clone, PartialEq, Debug, Error)]
+pub enum HistoryError {
+    #[error("a transaction is already open")]
+    TransactionOpen,
+    #[error("no transaction is open")]
+    NoTransaction,
+}
+
+#[derive(Debug)]
+pub struct History {
+    undo: VecDeque<UndoStep>,
+    redo: Vec<UndoStep>,
+    open: Option<Transaction>,
+    budget: usize,
+    used: usize,
+}
+
+impl Default for History {
+    fn default() -> Self {
+        Self::new(DEFAULT_BUDGET_BYTES)
+    }
+}
+
+impl History {
+    pub fn new(budget_bytes: usize) -> Self {
+        Self {
+            undo: VecDeque::new(),
+            redo: Vec::new(),
+            open: None,
+            budget: budget_bytes,
+            used: 0,
+        }
+    }
+
+    /// Opens a transaction. Commands executed until `commit` become one Undo step.
+    pub fn begin(
+        &mut self,
+        label: impl Into<String>,
+        selection: Selection,
+    ) -> Result<(), HistoryError> {
+        if self.open.is_some() {
+            return Err(HistoryError::TransactionOpen);
+        }
+        self.open = Some(Transaction {
+            label: label.into(),
+            selection_before: selection,
+            inverses: Vec::new(),
+        });
+        Ok(())
+    }
+
+    /// Applies a Command inside the open transaction. A failed Command changes nothing and
+    /// leaves the transaction open.
+    pub fn execute(&mut self, map: &mut Map, command: &Command) -> Result<(), ExecuteError> {
+        let transaction = self.open.as_mut().ok_or(HistoryError::NoTransaction)?;
+        let inverses = map.execute(command)?;
+        transaction.inverses.extend(inverses);
+        Ok(())
+    }
+
+    /// Closes the transaction as one Undo step. A transaction that changed nothing leaves no
+    /// step behind.
+    pub fn commit(&mut self, selection: Selection) -> Result<(), HistoryError> {
+        let transaction = self.open.take().ok_or(HistoryError::NoTransaction)?;
+        if transaction.inverses.is_empty() {
+            return Ok(());
+        }
+        let step = UndoStep {
+            bytes: step_bytes(&transaction.inverses),
+            label: transaction.label,
+            selection_before: transaction.selection_before,
+            selection_after: selection,
+            inverses: transaction.inverses,
+        };
+        self.used -= self.redo.drain(..).map(|s| s.bytes).sum::<usize>();
+        self.used += step.bytes;
+        self.undo.push_back(step);
+        self.enforce_budget();
+        Ok(())
+    }
+
+    /// Cancels the transaction, undoing everything it applied.
+    pub fn rollback(&mut self, map: &mut Map) -> Result<(), HistoryError> {
+        let transaction = self.open.take().ok_or(HistoryError::NoTransaction)?;
+        map.revert(transaction.inverses);
+        Ok(())
+    }
+
+    /// Executes one Command as its own Undo step. The Selection is unchanged by it.
+    pub fn execute_step(
+        &mut self,
+        map: &mut Map,
+        command: &Command,
+        selection: Selection,
+    ) -> Result<(), ExecuteError> {
+        self.begin(command_label(command), selection.clone())?;
+        if let Err(err) = self.execute(map, command) {
+            self.open = None;
+            return Err(err);
+        }
+        self.commit(selection)?;
+        Ok(())
+    }
+
+    /// Undoes the latest step and returns the Selection to restore, or `None` if there is
+    /// nothing to undo.
+    pub fn undo(&mut self, map: &mut Map) -> Result<Option<Selection>, HistoryError> {
+        self.ensure_closed()?;
+        let Some(mut step) = self.undo.pop_back() else {
+            return Ok(None);
+        };
+        step.inverses = map.revert(std::mem::take(&mut step.inverses));
+        let selection = step.selection_before.clone();
+        self.redo.push(step);
+        Ok(Some(selection))
+    }
+
+    /// Redoes the latest undone step and returns the Selection to restore.
+    pub fn redo(&mut self, map: &mut Map) -> Result<Option<Selection>, HistoryError> {
+        self.ensure_closed()?;
+        let Some(mut step) = self.redo.pop() else {
+            return Ok(None);
+        };
+        step.inverses = map.revert(std::mem::take(&mut step.inverses));
+        let selection = step.selection_after.clone();
+        self.undo.push_back(step);
+        Ok(Some(selection))
+    }
+
+    pub fn undo_label(&self) -> Option<&str> {
+        self.undo.back().map(|step| step.label.as_str())
+    }
+
+    pub fn redo_label(&self) -> Option<&str> {
+        self.redo.last().map(|step| step.label.as_str())
+    }
+
+    pub fn undo_len(&self) -> usize {
+        self.undo.len()
+    }
+
+    pub fn redo_len(&self) -> usize {
+        self.redo.len()
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.open.is_some()
+    }
+
+    /// Forgets all history, as when the Map closes.
+    pub fn clear(&mut self) {
+        self.undo.clear();
+        self.redo.clear();
+        self.open = None;
+        self.used = 0;
+    }
+
+    fn ensure_closed(&self) -> Result<(), HistoryError> {
+        match self.open {
+            Some(_) => Err(HistoryError::TransactionOpen),
+            None => Ok(()),
+        }
+    }
+
+    /// Drops the oldest steps until history fits the budget, always keeping the newest.
+    fn enforce_budget(&mut self) {
+        while self.used > self.budget && self.undo.len() > 1 {
+            let oldest = self.undo.pop_front().expect("more than one step");
+            self.used -= oldest.bytes;
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Debug, Error)]
+pub enum ExecuteError {
+    #[error(transparent)]
+    Command(#[from] CommandError),
+    #[error(transparent)]
+    History(#[from] HistoryError),
+}
+
+fn command_label(command: &Command) -> &'static str {
+    match command {
+        Command::CreateLayer { .. } => "Create Layer",
+        Command::RenameLayer { .. } => "Rename Layer",
+        Command::Move { .. } => "Move",
+        Command::SetVisible { .. } => "Change Visibility",
+        Command::SetLocked { .. } => "Change Lock",
+        Command::SetOpacity { .. } => "Change Opacity",
+        Command::Delete { .. } => "Delete",
+    }
+}
+
+/// A rough count of the memory a step holds, for the history budget.
+fn step_bytes(ops: &[Op]) -> usize {
+    ops.iter().map(op_bytes).sum()
+}
+
+fn op_bytes(op: &Op) -> usize {
+    std::mem::size_of::<Op>()
+        + match op {
+            Op::Insert { subtree, .. } => subtree_bytes(subtree),
+            Op::SetProperty {
+                property: Property::Name(name),
+                ..
+            } => name.len(),
+            Op::ReplaceGeometry { geometry, .. } => geometry_bytes(geometry),
+            Op::Remove { .. } | Op::SetProperty { .. } | Op::Move { .. } => 0,
+        }
+}
+
+fn subtree_bytes(subtree: &Subtree) -> usize {
+    let own = match &subtree.node {
+        Node::Layer(layer) => layer.name.len(),
+        Node::Object(object) => object.kind.geometry().map_or(0, geometry_bytes),
+    };
+    std::mem::size_of::<Subtree>() + own + subtree.children.iter().map(subtree_bytes).sum::<usize>()
+}
+
+fn geometry_bytes(geometry: &MultiPolygon) -> usize {
+    let points: usize = geometry
+        .0
+        .iter()
+        .map(|polygon| polygon.exterior.len() + polygon.holes.iter().map(Vec::len).sum::<usize>())
+        .sum();
+    points * std::mem::size_of::<crate::geometry::Point>()
+}

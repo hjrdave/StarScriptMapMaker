@@ -1,0 +1,23 @@
+{
+  "steps": [
+    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000001", "parent": null, "name": "Land"}},
+    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000002", "parent": "00000000-0000-7000-8000-000000000001", "name": "Islands"}},
+    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000003", "parent": "00000000-0000-7000-8000-000000000002", "name": "Reefs"}},
+    {"step": {"command": "set_locked", "id": "00000000-0000-7000-8000-000000000001", "locked": true}},
+    {"step": {"command": "rename_layer", "id": "00000000-0000-7000-8000-000000000001", "name": "Renamed"}},
+    {"step": {"command": "set_visible", "id": "00000000-0000-7000-8000-000000000003", "visible": false}},
+    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000004", "parent": "00000000-0000-7000-8000-000000000002", "name": "New"}},
+    {"step": {"command": "move", "id": "00000000-0000-7000-8000-000000000003", "parent": null, "index": 0}},
+    {"step": {"command": "delete", "ids": ["00000000-0000-7000-8000-000000000003"]}},
+    {"step": {"command": "set_locked", "id": "00000000-0000-7000-8000-000000000002", "locked": true}},
+    {"step": {"command": "set_locked", "id": "00000000-0000-7000-8000-000000000001", "locked": false}},
+    {"step": {"command": "set_locked", "id": "00000000-0000-7000-8000-000000000003", "locked": true}},
+    {"step": {"command": "delete", "ids": ["00000000-0000-7000-8000-000000000001"]}},
+    {"step": {"command": "move", "id": "00000000-0000-7000-8000-000000000002", "parent": null, "index": 0}},
+    {"step": {"command": "set_locked", "id": "00000000-0000-7000-8000-000000000003", "locked": false}},
+    {"step": {"command": "delete", "ids": ["00000000-0000-7000-8000-000000000001", "00000000-0000-7000-8000-000000000003"]}},
+    "snapshot",
+    "undo",
+    "undo"
+  ]
+}

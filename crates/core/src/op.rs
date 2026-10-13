@@ -49,6 +49,9 @@ pub enum Property {
     Locked(bool),
     /// Layers only.
     Opacity(f32),
+    /// Layers only. Ops don't check the target, so that inverses always apply; Commands
+    /// keep it pointing at a Landmass.
+    Clip(Option<Id>),
 }
 
 #[derive(Clone, PartialEq, Debug, Error)]
@@ -214,6 +217,7 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
         (Node::Object(_), Property::Name(_)) => Err("name"),
         (Node::Object(_), Property::Visible(_)) => Err("visible"),
         (Node::Object(_), Property::Opacity(_)) => Err("opacity"),
+        (Node::Object(_), Property::Clip(_)) => Err("clip"),
     }
 }
 
@@ -231,6 +235,9 @@ fn set_property(node: &mut Node, property: Property) -> Property {
         }
         (Node::Layer(layer), Property::Opacity(opacity)) => {
             Property::Opacity(std::mem::replace(&mut layer.opacity, opacity))
+        }
+        (Node::Layer(layer), Property::Clip(clip)) => {
+            Property::Clip(std::mem::replace(&mut layer.clip, clip))
         }
         (Node::Object(object), Property::Locked(locked)) => {
             Property::Locked(std::mem::replace(&mut object.locked, locked))
