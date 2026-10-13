@@ -83,3 +83,21 @@ _Avoid_: Mask, backing
 **Depth sort**:
 A Layer setting that draws the Stamps directly inside it by their Anchor's height on the Map, lower in front, instead of by tree order.
 _Avoid_: Y-sort, z-sort
+
+### Editing
+
+**Command**:
+One named edit to a Map, such as placing Stamps or uniting two Landmasses. Every change to a Map, whether from the user or an agent, is a Command.
+_Avoid_: Action, operation, edit, mutation
+
+**Undo step**:
+The group of Commands that one gesture or one agent action produced, undone and redone together.
+_Avoid_: History entry, transaction
+
+**Lock**:
+A setting on a Layer or Object, inherited by everything inside a locked Layer, that makes it refuse all Commands until it is unlocked.
+_Avoid_: Freeze, protect
+
+**Selection**:
+The Objects the user currently has picked in the editor. It is part of the editor, not of the Map, and Commands never refer to it.
+_Avoid_: Focus, active objects
