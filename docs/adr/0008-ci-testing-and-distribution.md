@@ -29,9 +29,9 @@ Comparisons allow a per-pixel tolerance and a cap on the share of pixels that di
   - `.ssmap` is registered on each OS: NSIS registry entries, an `Info.plist` document type, and a `.desktop` file with MIME XML.
   - Built-in Asset packs and fonts install read-only inside the app.
   - User packs and settings live in the platform data and config directories (`directories` crate).
-- **Signing:**
-  - macOS: Developer ID signing and notarisation.
-  - Windows: Azure Trusted Signing. Its eligibility for individual developers must be confirmed when accounts are set up, and a traditional OV certificate is the fallback.
-  - Linux: unsigned, with SHA-256 checksums published.
-- **Releases:** semver. A pushed `vX.Y.Z` tag runs a workflow that builds, signs, notarises and uploads to GitHub Releases on this public repo. GitHub Releases also hosts a small JSON update feed.
+- **No code signing** (amended after acceptance, by the author's decision): no Apple Developer ID, notarisation or Windows certificate. The macOS arm64 build carries only the linker's automatic ad-hoc signature, which Apple Silicon needs to run it at all. Every release publishes SHA-256 checksums, and the download page and release notes explain the first-launch warnings:
+  - macOS Gatekeeper blocks the app; users allow it in System Settings → Privacy & Security → "Open Anyway".
+  - Windows SmartScreen shows "Windows protected your PC"; users choose "More info" → "Run anyway".
+  - Linux needs nothing extra.
+- **Releases:** semver. A pushed `vX.Y.Z` tag runs a workflow that builds, checksums and uploads to GitHub Releases on this public repo. GitHub Releases also hosts a small JSON update feed.
 - **Updates:** the app checks the feed only if the user agreed on first launch (the setting can be turned off) and shows a download link. There is no self-updater.
