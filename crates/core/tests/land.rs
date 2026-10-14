@@ -212,3 +212,29 @@ fn picking_uses_the_roughened_coastline() {
     assert_eq!(rough.pick(point), expected, "at {point:?}");
     assert_ne!(index.pick(point), expected, "the smooth index disagrees");
 }
+
+#[test]
+fn changing_roughness_is_one_undo_step() {
+    let (mut map, island, water, _) = world();
+    let before = map.view();
+    let mut history = History::default();
+    history.begin("Roughness", vec![island, water]).unwrap();
+    history
+        .execute(
+            &mut map,
+            &Command::SetRoughness {
+                ids: vec![island, water],
+                roughness: Some(Roughness::new(8.0, 25.0, 7)),
+            },
+        )
+        .unwrap();
+    history.commit(vec![island, water]).unwrap();
+    assert_ne!(map.view(), before);
+    history.undo(&mut map).unwrap();
+    assert_eq!(map.view(), before);
+    assert_eq!(
+        history.undo(&mut map).unwrap(),
+        None,
+        "nothing else to undo"
+    );
+}
