@@ -61,6 +61,13 @@ input_file: crates/core/tests/scripts/labels.json
             },
             "width": 1000
           },
+          "defaults": {
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            }
+          },
           "layers": [
             {
               "children": [
@@ -284,6 +291,13 @@ input_file: crates/core/tests/scripts/labels.json
             },
             "width": 1000
           },
+          "defaults": {
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            }
+          },
           "layers": [
             {
               "children": [
@@ -347,6 +361,13 @@ input_file: crates/core/tests/scripts/labels.json
         "unit": "miles"
       },
       "width": 1000
+    },
+    "defaults": {
+      "roughness": {
+        "amount": 0.0,
+        "scale": 32.0,
+        "seed": 0
+      }
     },
     "layers": [
       {

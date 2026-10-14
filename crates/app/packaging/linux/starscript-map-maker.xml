@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Registers .ssmap Map files; the .desktop file's MimeType= points here. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-starscript-map">
+    <comment>StarScript Map</comment>
+    <!-- Map files are SQLite databases (ADR 0005); the extension decides, not the content. -->
+    <sub-class-of type="application/vnd.sqlite3"/>
+    <generic-icon name="image-x-generic"/>
+    <glob pattern="*.ssmap" weight="60"/>
+  </mime-type>
+</mime-info>

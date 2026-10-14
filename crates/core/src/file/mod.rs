@@ -3,7 +3,7 @@
 //! Tables:
 //!
 //! - `meta (key, value)`: `format_version` (`"major.minor"`), `save_generation` (a UUID), the
-//!   `canvas` as JSON and a `preview` PNG at most [`PREVIEW_SIZE`] pixels on its longer side.
+//!   `canvas` and the Map-wide `defaults` as JSON, and a `preview` PNG at most [`PREVIEW_SIZE`] pixels on its longer side.
 //! - `nodes (id, parent, ord, kind, props, geometry)`: one row per Layer and Object. `id` and
 //!   `parent` are 16-byte UUIDs, and `parent` is NULL for a top-level Layer. `ord` is the
 //!   index among siblings, 0 drawing lowest. `kind` is `layer` or the Object kind. `props` is
@@ -14,12 +14,20 @@
 //! transaction, so a crash mid-save leaves the previous save intact. Save As and new files
 //! are written beside the destination and renamed over it, for the same reason.
 //!
+//! Between saves, a Recovery journal beside the file records the Ops applied since (see
+//! [`Journal`]).
+//!
 //! Rows, meta keys, columns and tables this version doesn't know are left alone, and unknown
 //! JSON fields ride along in each object's [`Extra`](crate::Extra), so a file from a newer
 //! minor format version round-trips without loss.
 
 mod blob;
+mod journal;
 mod migrate;
+
+pub use journal::{
+    JOURNAL_VERSION, Journal, JournalBase, JournalError, Recovered, recovery_path, remove_journal,
+};
 
 use std::collections::HashMap;
 use std::fmt;
@@ -31,7 +39,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::id::Id;
-use crate::map::{Canvas, Map, MapView, Subtree};
+use crate::map::{Canvas, Map, MapDefaults, MapView, Subtree};
 use crate::node::{Node, Object};
 
 /// The format this version writes. A minor bump only adds optional fields; a major bump is
@@ -156,6 +164,7 @@ pub struct MapFile {
     generation: Uuid,
     saved: HashMap<Id, SavedRow>,
     saved_canvas: Option<Canvas>,
+    saved_defaults: Option<MapDefaults>,
     saved_revision: u64,
 }
 
@@ -179,6 +188,7 @@ impl MapFile {
                 generation: Uuid::nil(),
                 saved: HashMap::new(),
                 saved_canvas: None,
+                saved_defaults: None,
                 saved_revision: 0,
             })
         })
@@ -211,12 +221,19 @@ impl MapFile {
             .ok_or_else(|| FileError::Damaged("the Canvas is missing".into()))?;
         let canvas: Canvas = serde_json::from_str(&canvas_json)
             .map_err(|err| FileError::Damaged(format!("the Canvas: {err}")))?;
+        // Absent from files saved before the Map had defaults.
+        let defaults: MapDefaults = match read_meta::<String>(&conn, "defaults")? {
+            Some(json) => serde_json::from_str(&json)
+                .map_err(|err| FileError::Damaged(format!("the Map defaults: {err}")))?,
+            None => MapDefaults::default(),
+        };
         let generation = read_meta::<String>(&conn, "save_generation")?
             .and_then(|text| Uuid::parse_str(&text).ok())
             .unwrap_or_else(Uuid::nil);
         let (layers, saved) = read_nodes(&conn)?;
         let map = Map::from_view(MapView {
             canvas: canvas.clone(),
+            defaults: defaults.clone(),
             layers,
         })
         .map_err(|err| FileError::Damaged(err.to_string()))?;
@@ -227,6 +244,7 @@ impl MapFile {
             generation,
             saved,
             saved_canvas: Some(canvas),
+            saved_defaults: Some(defaults),
             saved_revision: map.revision(),
         };
         Ok((file, map))
@@ -245,6 +263,10 @@ impl MapFile {
             let canvas = serde_json::to_string(&map.canvas).expect("a Canvas serialises");
             write_meta(&tx, "canvas", &canvas)?;
         }
+        if self.saved_defaults.as_ref() != Some(map.defaults()) {
+            let defaults = serde_json::to_string(map.defaults()).expect("defaults serialise");
+            write_meta(&tx, "defaults", &defaults)?;
+        }
         write_meta(&tx, "format_version", self.version.to_string())?;
         write_meta(&tx, "save_generation", generation.to_string())?;
         match preview {
@@ -257,6 +279,7 @@ impl MapFile {
 
         self.saved = saved;
         self.saved_canvas = Some(map.canvas.clone());
+        self.saved_defaults = Some(map.defaults().clone());
         self.generation = generation;
         self.saved_revision = map.revision();
         Ok(stats)
@@ -287,6 +310,7 @@ impl MapFile {
                 generation: self.generation,
                 saved: self.saved.clone(),
                 saved_canvas: self.saved_canvas.clone(),
+                saved_defaults: self.saved_defaults.clone(),
                 saved_revision: self.saved_revision,
             })
         })?;
@@ -355,6 +379,7 @@ fn save_via_temp(
         generation,
         saved,
         saved_canvas,
+        saved_defaults,
         saved_revision,
         ..
     } = file;
@@ -370,6 +395,7 @@ fn save_via_temp(
         generation,
         saved,
         saved_canvas,
+        saved_defaults,
         saved_revision,
     };
     Ok((file, stats))

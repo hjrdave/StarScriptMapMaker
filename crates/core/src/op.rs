@@ -10,8 +10,9 @@ use thiserror::Error;
 
 use crate::geometry::MultiPolygon;
 use crate::id::Id;
-use crate::map::{InvariantError, Map, Subtree};
+use crate::map::{InvariantError, Map, MapDefaults, Subtree};
 use crate::node::{Label, Node, ObjectKind};
+use crate::roughness::Roughness;
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -35,6 +36,8 @@ pub enum Op {
         parent: Option<Id>,
         index: usize,
     },
+    /// Replaces the Map-wide defaults.
+    SetDefaults { defaults: MapDefaults },
 }
 
 /// A settable property and its new value.
@@ -52,6 +55,8 @@ pub enum Property {
     /// Layers only. Ops don't check the target, so that inverses always apply; Commands
     /// keep it pointing at a Landmass.
     Clip(Option<Id>),
+    /// Landmasses and Lakes only. `None` uses the Map-wide default.
+    Roughness(Option<Roughness>),
     /// Label Objects only: every field of the Label at once.
     Label(Box<Label>),
 }
@@ -140,6 +145,9 @@ impl Map {
                     index: old_index,
                 }
             }
+            Op::SetDefaults { defaults } => Op::SetDefaults {
+                defaults: std::mem::replace(&mut self.defaults, defaults),
+            },
         })
     }
 
@@ -180,6 +188,7 @@ impl Map {
                 }
                 check_index(*index, len)?;
             }
+            Op::SetDefaults { .. } => {}
         }
         Ok(())
     }
@@ -216,11 +225,17 @@ fn check_index(index: usize, len: usize) -> Result<(), OpError> {
 fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> {
     match (node, property) {
         (Node::Layer(_), Property::Label(_)) => Err("label"),
-        (Node::Layer(_), _) | (Node::Object(_), Property::Locked(_)) => Ok(()),
+        (Node::Layer(_), Property::Roughness(_)) => Err("roughness"),
+        (Node::Object(object), Property::Roughness(_)) if object.kind.geometry().is_none() => {
+            Err("roughness")
+        }
         (Node::Object(object), Property::Label(_)) => match object.kind {
             ObjectKind::Label(_) => Ok(()),
             _ => Err("label"),
         },
+        (Node::Layer(_), _) | (Node::Object(_), Property::Locked(_) | Property::Roughness(_)) => {
+            Ok(())
+        }
         (Node::Object(_), Property::Name(_)) => Err("name"),
         (Node::Object(_), Property::Visible(_)) => Err("visible"),
         (Node::Object(_), Property::Opacity(_)) => Err("opacity"),
@@ -248,6 +263,10 @@ fn set_property(node: &mut Node, property: Property) -> Property {
         }
         (Node::Object(object), Property::Locked(locked)) => {
             Property::Locked(std::mem::replace(&mut object.locked, locked))
+        }
+        (Node::Object(object), Property::Roughness(roughness)) => {
+            let slot = object.kind.roughness_mut().expect("checked");
+            Property::Roughness(std::mem::replace(slot, roughness))
         }
         (Node::Object(object), Property::Label(label)) => match &mut object.kind {
             ObjectKind::Label(old) => Property::Label(std::mem::replace(old, label)),

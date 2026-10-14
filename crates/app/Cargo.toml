@@ -17,11 +17,13 @@ path = "src/main.rs"
 [dependencies]
 ssmap-core.workspace = true
 ssmap-render.workspace = true
+directories.workspace = true
 ssmap-fonts.workspace = true
 eframe.workspace = true
 egui-file-dialog.workspace = true
 image.workspace = true
 serde_json.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
@@ -29,3 +31,73 @@ egui_kittest = { version = "0.36", features = ["eframe"] }
 
 [lints]
 workspace = true
+
+# Installable packages, built by `cargo packager --release` from this folder (ADR 0008,
+# docs/packaging.md). Paths are relative to this crate. All packages are unsigned.
+[package.metadata.packager]
+name = "starscript-map-maker"
+product-name = "StarScript Map Maker"
+identifier = "io.github.hjrdave.StarScriptMapMaker"
+publisher = "StarScript Map Maker"
+authors = ["StarScript Map Maker contributors"]
+homepage = "https://github.com/hjrdave/StarScriptMapMaker"
+license-file = "../../LICENSE"
+category = "GraphicsAndDesign"
+before-packaging-command = "cargo build --release --locked -p app"
+out-dir = "../../target/packages"
+formats = ["nsis", "dmg", "appimage", "deb"]
+icons = [
+  "packaging/icons/32x32.png",
+  "packaging/icons/128x128.png",
+  "packaging/icons/256x256.png",
+  "packaging/icons/512x512.png",
+  "packaging/icons/icon.ico",
+]
+# Built-in Asset packs and fonts, read-only inside the install. `install::assets_root` is
+# the one place that knows where each package puts them.
+resources = [{ src = "../../assets", target = "assets" }]
+
+[[package.metadata.packager.file-associations]]
+extensions = ["ssmap"]
+# The Windows ProgID; Explorer shows `description` as the file type.
+name = "StarScriptMapMaker.Map"
+description = "StarScript Map"
+mime-type = "application/x-starscript-map"
+role = "editor"
+
+[package.metadata.packager.nsis]
+# Per-user: installs to %LOCALAPPDATA% and registers .ssmap under HKCU, so no admin.
+installer-mode = "currentUser"
+installer-icon = "packaging/icons/icon.ico"
+
+[package.metadata.packager.macos]
+minimum-system-version = "11.0"
+# Replaces the generated document types to add a UTI for .ssmap files.
+info-plist-path = "packaging/macos/Info.plist"
+
+[package.metadata.packager.deb]
+package-name = "starscript-map-maker"
+# winit and wgpu load these at runtime, so dpkg-shlibdeps can't see them. libc6 matches the
+# nightly build host (ubuntu-22.04).
+depends = [
+  "libc6 (>= 2.35)",
+  "libgcc-s1",
+  "libx11-6",
+  "libx11-xcb1",
+  "libxcb1",
+  "libxcursor1",
+  "libxi6",
+  "libxkbcommon0",
+  "libxkbcommon-x11-0",
+  "libwayland-client0",
+  "libwayland-egl1",
+  "libvulkan1",
+  "libegl1",
+]
+section = "graphics"
+# The default template leaves off the trailing `;` the desktop-entry spec wants on lists.
+desktop-template = "packaging/linux/main.desktop"
+files = { "packaging/linux/starscript-map-maker.xml" = "usr/share/mime/packages/starscript-map-maker.xml" }
+
+[package.metadata.packager.appimage]
+files = { "packaging/linux/starscript-map-maker.xml" = "usr/share/mime/packages/starscript-map-maker.xml" }

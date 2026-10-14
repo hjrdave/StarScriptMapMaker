@@ -6,8 +6,9 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 use ssmap_core::file::{FORMAT_VERSION, FileError, MapFile, SaveStats, read_preview};
 use ssmap_core::{
-    Canvas, Color, DistanceUnit, Halo, Id, Label, Lake, Landmass, Layer, Map, MultiPolygon, Node,
-    Object, ObjectKind, Op, Polygon, Property, Scale, Stamp, Subtree,
+    Canvas, Color, DistanceUnit, Halo, Id, Label, Lake, Landmass, Layer, Map, MapDefaults,
+    MultiPolygon, Node, Object, ObjectKind, Op, Polygon, Property, Roughness, Scale, Stamp,
+    Subtree,
 };
 
 fn insert(map: &mut Map, parent: Option<Id>, node: Node) -> Id {
@@ -50,12 +51,20 @@ fn sample_map() -> (Map, Id, Id) {
         3072,
         Scale::new(0.25, DistanceUnit::Miles),
     ));
+    map.apply(Op::SetDefaults {
+        defaults: MapDefaults {
+            roughness: Roughness::new(4.0, 48.0, 11),
+            ..Default::default()
+        },
+    })
+    .unwrap();
     let land = insert(&mut map, None, Node::Layer(Layer::new("Land")));
     let landmass = insert(
         &mut map,
         Some(land),
         object(ObjectKind::Landmass(Landmass {
             geometry: island(0.0),
+            roughness: Some(Roughness::new(0.1 + 0.2, 1e-3, u32::MAX)),
             ..Default::default()
         })),
     );
@@ -297,6 +306,40 @@ fn save_as_replaces_an_existing_file() {
 }
 
 #[test]
+fn a_changed_default_is_saved_without_rewriting_nodes() {
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = path(&dir, "defaults.ssmap");
+    let (map, _, _) = sample_map();
+    MapFile::create(&file_path, &map, None).unwrap();
+
+    let (mut file, mut opened) = MapFile::open(&file_path).unwrap();
+    let defaults = MapDefaults {
+        roughness: Roughness::new(9.5, 64.0, 3),
+        ..Default::default()
+    };
+    opened
+        .apply(Op::SetDefaults {
+            defaults: defaults.clone(),
+        })
+        .unwrap();
+    assert_eq!(file.save(&opened, None).unwrap(), SaveStats::default());
+    drop(file);
+    let (_, reopened) = MapFile::open(&file_path).unwrap();
+    assert_eq!(reopened.defaults(), &defaults);
+}
+
+#[test]
+fn files_without_defaults_open_with_the_built_in_ones() {
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = path(&dir, "older.ssmap");
+    let (map, _, _) = sample_map();
+    MapFile::create(&file_path, &map, None).unwrap();
+    sql(&file_path, "DELETE FROM meta WHERE key = 'defaults';");
+    let (_, opened) = MapFile::open(&file_path).unwrap();
+    assert_eq!(opened.defaults(), &MapDefaults::default());
+}
+
+#[test]
 fn unknown_fields_from_a_newer_minor_version_round_trip() {
     let dir = tempfile::tempdir().unwrap();
     let file_path = path(&dir, "newer.ssmap");
@@ -319,7 +362,7 @@ fn unknown_fields_from_a_newer_minor_version_round_trip() {
              UPDATE nodes SET props = json_set(props, '$.blend', 'multiply')
                  WHERE id = X'{land_hex}';
              UPDATE nodes SET props = json_set(props, '$.note', 'object field',
-                                               '$.kind.roughness', json('{{\"amount\":0.5}}'))
+                                               '$.kind.tide', json('{{\"height\":0.5}}'))
                  WHERE id = X'{landmass_hex}';"
         ),
     );
@@ -363,7 +406,7 @@ fn unknown_fields_from_a_newer_minor_version_round_trip() {
         assert_eq!(land_view["name"], "Edited");
         let landmass_view = find(&view, landmass);
         assert_eq!(landmass_view["note"], "object field");
-        assert_eq!(landmass_view["kind"]["roughness"], json!({"amount": 0.5}));
+        assert_eq!(landmass_view["kind"]["tide"], json!({"height": 0.5}));
         assert_eq!(meta(file_path, "format_version").as_deref(), Some("1.9"));
         assert_eq!(meta(file_path, "future_key").as_deref(), Some("kept"));
         let conn = Connection::open(file_path).unwrap();

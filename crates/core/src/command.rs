@@ -10,9 +10,10 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::id::Id;
-use crate::map::{Map, Subtree};
+use crate::map::{Map, MapDefaults, Subtree};
 use crate::node::{Label, Layer, Node, Object, ObjectKind};
 use crate::op::{Op, OpError, Property};
+use crate::roughness::Roughness;
 
 /// One edit to a Map. Commands name every id they touch or create, so replaying one gives
 /// the same Map every time.
@@ -57,6 +58,16 @@ pub enum Command {
     Delete {
         ids: Vec<Id>,
     },
+    /// Sets the Roughness of Landmasses and Lakes, or with `None` returns them to the Map-wide
+    /// default.
+    SetRoughness {
+        ids: Vec<Id>,
+        roughness: Option<Roughness>,
+    },
+    /// Sets the Roughness of every Landmass and Lake without its own.
+    SetDefaultRoughness {
+        roughness: Roughness,
+    },
     /// Places a Label with the given id inside Layer `parent`. `index` counts from the bottom
     /// of the Stacking order; omitted, the Label goes on top.
     CreateLabel {
@@ -89,6 +100,10 @@ pub enum CommandError {
     ContainsLocked { target: Id, locked: Id },
     #[error("opacity must be from 0 to 1, not {0}")]
     InvalidOpacity(f32),
+    #[error("{0} is not a Landmass or Lake")]
+    NoOutline(Id),
+    #[error("Roughness needs an amount of 0 or more and a scale above 0, not {amount} and {scale}")]
+    InvalidRoughness { amount: f64, scale: f64 },
     #[error("{0} is not a Label")]
     NotALabel(Id),
     #[error("invalid Label: {0}")]
@@ -108,6 +123,8 @@ impl Command {
             Command::SetLocked { .. } => "Change Lock",
             Command::SetOpacity { .. } => "Change Opacity",
             Command::Delete { .. } => "Delete",
+            Command::SetRoughness { .. } => "Change Roughness",
+            Command::SetDefaultRoughness { .. } => "Change Default Roughness",
             Command::CreateLabel { .. } => "Add Label",
             Command::SetLabel { .. } => "Edit Label",
         }
@@ -178,6 +195,30 @@ impl Command {
                 Ok(vec![set(*id, Property::Opacity(*opacity))])
             }
             Command::Delete { ids } => delete(map, ids),
+            Command::SetRoughness { ids, roughness } => {
+                if let Some(roughness) = roughness {
+                    valid_roughness(roughness)?;
+                }
+                let mut ops = Vec::with_capacity(ids.len());
+                for &id in ids {
+                    match existing(map, id)? {
+                        Node::Object(object) if object.kind.geometry().is_some() => {}
+                        _ => return Err(CommandError::NoOutline(id)),
+                    }
+                    unlocked(map, id)?;
+                    ops.push(set(id, Property::Roughness(roughness.clone())));
+                }
+                Ok(ops)
+            }
+            Command::SetDefaultRoughness { roughness } => {
+                valid_roughness(roughness)?;
+                Ok(vec![Op::SetDefaults {
+                    defaults: MapDefaults {
+                        roughness: roughness.clone(),
+                        ..map.defaults().clone()
+                    },
+                }])
+            }
             Command::CreateLabel {
                 id,
                 parent,
@@ -220,13 +261,30 @@ impl Map {
     /// Applies a Command all or nothing and returns the inverses of its Ops, in the order they
     /// were applied.
     pub fn execute(&mut self, command: &Command) -> Result<Vec<Op>, CommandError> {
+        self.execute_recording(command, None)
+    }
+
+    /// Like `execute`, and also appends the Ops it applied to `applied`. A failed Command
+    /// leaves `applied` as it was.
+    pub(crate) fn execute_recording(
+        &mut self,
+        command: &Command,
+        mut applied: Option<&mut Vec<Op>>,
+    ) -> Result<Vec<Op>, CommandError> {
         let ops = command.compile(self)?;
+        let recorded = applied.as_ref().map_or(0, |applied| applied.len());
         let mut inverses = Vec::with_capacity(ops.len());
         for op in ops {
+            if let Some(applied) = applied.as_deref_mut() {
+                applied.push(op.clone());
+            }
             match self.apply(op) {
                 Ok(inverse) => inverses.push(inverse),
                 Err(err) => {
                     self.revert(inverses);
+                    if let Some(applied) = applied {
+                        applied.truncate(recorded);
+                    }
                     return Err(err.into());
                 }
             }
@@ -278,6 +336,15 @@ fn delete(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
     }
     ops.extend(roots.into_iter().map(|id| Op::Remove { id }));
     Ok(ops)
+}
+
+fn valid_roughness(roughness: &Roughness) -> Result<(), CommandError> {
+    let Roughness { amount, scale, .. } = *roughness;
+    if amount.is_finite() && amount >= 0.0 && scale.is_finite() && scale > 0.0 {
+        Ok(())
+    } else {
+        Err(CommandError::InvalidRoughness { amount, scale })
+    }
 }
 
 /// Checks a Label's values are drawable.

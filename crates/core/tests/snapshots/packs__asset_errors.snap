@@ -1,0 +1,20 @@
+---
+source: crates/core/tests/packs.rs
+expression: "errors(&format!(r#\"{VALID_PACK}\n[[asset]]\nid = \"ok\"\nname = \"Fine\"\ncategory = \"c\"\nfile = \"ok.svg\"\nanchor = [0.5, 1]\nwidth = 4\nauthor = \"Me\"\nmodified = \"2026-01-01\"\n\n[[asset]]\nname = \"No id\"\ncategory = \"c\"\nfile = \"../outside.svg\"\nanchor = [0.5]\nwidth = -1\nauthor = \"Me\"\nmodified = \"2026-13-01\"\n\n[[asset]]\nid = \"ok\"\nname = \"Duplicate\"\ncategory = \"c\"\nfile = \"art\\\\dup.gif\"\nanchor = [1.5, 0.5]\nwidth = \"wide\"\ntags = [\"a\", 2]\nvariant_group = \"Peaks\"\nsource_url = \"ftp://example.com\"\nsilhouette = \"sil.jpg\"\nanchr = [0, 0]\n\"#))"
+---
+bad/pack.toml: Asset `#2`: field `id`: is missing
+bad/pack.toml: Asset `#2`: field `file`: `../outside.svg` must be a relative path inside the pack folder, without `..`
+bad/pack.toml: Asset `#2`: field `anchor`: must be `[x, y]`, each from 0 to 1 across the art's width and height
+bad/pack.toml: Asset `#2`: field `width`: must be greater than 0, not -1
+bad/pack.toml: Asset `#2`: field `modified`: `2026-13-01` must be a date written `YYYY-MM-DD`
+bad/pack.toml: Asset `ok (#3)`: field `anchr`: unknown field; known fields are `id`, `name`, `category`, `tags`, `file`, `anchor`, `width`, `silhouette`, `variant_group`, `author`, `source_url`, `licence`, `modified`
+bad/pack.toml: Asset `ok (#3)`: field `id`: is used by an earlier Asset in this pack
+bad/pack.toml: Asset `ok (#3)`: field `tags`: every entry must be a string, not integer
+bad/pack.toml: Asset `ok (#3)`: field `file`: `art\dup.gif` must use `/` between folders
+bad/pack.toml: Asset `ok (#3)`: field `anchor`: must be `[x, y]`, each from 0 to 1 across the art's width and height
+bad/pack.toml: Asset `ok (#3)`: field `width`: must be a number, not string
+bad/pack.toml: Asset `ok (#3)`: field `silhouette`: `sil.jpg` must be an `.svg` or `.png` file
+bad/pack.toml: Asset `ok (#3)`: field `variant_group`: must start with a lowercase letter or digit, then use only lowercase letters, digits, `-` and `_`
+bad/pack.toml: Asset `ok (#3)`: field `author`: is missing, and `[pack]` has no default for it
+bad/pack.toml: Asset `ok (#3)`: field `source_url`: `ftp://example.com` must start with `https://` or `http://`
+bad/pack.toml: Asset `ok (#3)`: field `modified`: is missing, and `[pack]` has no default for it

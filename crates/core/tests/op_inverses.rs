@@ -2,8 +2,9 @@
 
 use proptest::prelude::*;
 use ssmap_core::{
-    Canvas, DistanceUnit, Id, Label, Lake, Landmass, Layer, Map, MapView, MultiPolygon, Node,
-    Object, ObjectKind, Op, Point, Polygon, Property, Scale, Stamp, Subtree,
+    Canvas, DistanceUnit, Id, Label, Lake, Landmass, Layer, Map, MapDefaults, MapView,
+    MultiPolygon, Node, Object, ObjectKind, Op, Point, Polygon, Property, Roughness, Scale, Stamp,
+    Subtree,
 };
 
 fn canvas() -> Canvas {
@@ -19,6 +20,11 @@ fn geometry() -> impl Strategy<Value = MultiPolygon> {
     let polygon = (ring(), prop::collection::vec(ring(), 0..2))
         .prop_map(|(exterior, holes)| Polygon { exterior, holes });
     prop::collection::vec(polygon, 0..3).prop_map(MultiPolygon)
+}
+
+fn roughness() -> impl Strategy<Value = Roughness> {
+    (0.0..50.0f64, 0.5..500.0f64, any::<u32>())
+        .prop_map(|(amount, scale, seed)| Roughness::new(amount, scale, seed))
 }
 
 fn label() -> impl Strategy<Value = Label> {
@@ -49,14 +55,20 @@ fn label() -> impl Strategy<Value = Label> {
 
 fn object() -> impl Strategy<Value = Object> {
     let kind = prop_oneof![
-        geometry().prop_map(|geometry| ObjectKind::Landmass(Landmass {
-            geometry,
-            ..Default::default()
-        })),
-        geometry().prop_map(|geometry| ObjectKind::Lake(Lake {
-            geometry,
-            ..Default::default()
-        })),
+        (geometry(), prop::option::of(roughness())).prop_map(|(geometry, roughness)| {
+            ObjectKind::Landmass(Landmass {
+                geometry,
+                roughness,
+                ..Default::default()
+            })
+        }),
+        (geometry(), prop::option::of(roughness())).prop_map(|(geometry, roughness)| {
+            ObjectKind::Lake(Lake {
+                geometry,
+                roughness,
+                ..Default::default()
+            })
+        }),
         Just(ObjectKind::Stamp(Stamp::default())),
         label().prop_map(|label| ObjectKind::Label(Box::new(label))),
     ];
@@ -107,9 +119,13 @@ fn leaf(node: Node) -> Subtree {
 }
 
 fn map() -> impl Strategy<Value = Map> {
-    prop::collection::vec(layer_subtree(), 0..4).prop_map(|layers| {
+    (prop::collection::vec(layer_subtree(), 0..4), roughness()).prop_map(|(layers, roughness)| {
         Map::from_view(MapView {
             canvas: canvas(),
+            defaults: MapDefaults {
+                roughness,
+                ..Default::default()
+            },
             layers,
         })
         .expect("generated trees are valid")
@@ -150,6 +166,9 @@ enum OpSpec {
         layer: usize,
         target: usize,
     },
+    SetDefaults {
+        roughness: Roughness,
+    },
     Unknown,
 }
 
@@ -160,6 +179,7 @@ fn property() -> impl Strategy<Value = Property> {
         any::<bool>().prop_map(Property::Locked),
         (0.0..=1.0f32).prop_map(Property::Opacity),
         Just(Property::Clip(None)),
+        prop::option::of(roughness()).prop_map(Property::Roughness),
         label().prop_map(|label| Property::Label(Box::new(label))),
     ]
 }
@@ -186,6 +206,7 @@ fn op_spec() -> impl Strategy<Value = OpSpec> {
             index
         }),
         (sel(), sel()).prop_map(|(layer, target)| OpSpec::Clip { layer, target }),
+        roughness().prop_map(|roughness| OpSpec::SetDefaults { roughness }),
         Just(OpSpec::Unknown),
     ]
 }
@@ -271,6 +292,12 @@ impl OpSpec {
                     index: index(i, parent),
                 }
             }
+            OpSpec::SetDefaults { roughness } => Op::SetDefaults {
+                defaults: MapDefaults {
+                    roughness,
+                    ..Default::default()
+                },
+            },
             OpSpec::Clip { layer, target } => {
                 let pick = |kind: fn(&Node) -> bool, sel: usize| {
                     let matching: Vec<Id> = ids
