@@ -669,3 +669,86 @@ fn missing_art_draws_nothing() {
     let ghost = render_stamps(headless, vec![stamp("no-such/asset", [240.0, 160.0])]);
     assert_eq!(empty.pixels, ghost.pixels);
 }
+
+/// 10k Stamps: renders panned and zoomed frames and reports the time per frame and per pick.
+/// The bound is loose (it must hold on a software adapter); the numbers are in the output of
+/// `cargo test -p ssmap-render --test golden ten_thousand_stamps -- --nocapture`.
+#[test]
+fn ten_thousand_stamps() {
+    use std::time::Instant;
+
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let mut map = Map::new(Canvas::new(
+        4000,
+        2500,
+        Scale::new(1.0, DistanceUnit::Miles),
+    ));
+    let layer = Id::new();
+    map.execute(&Command::CreateLayer {
+        id: layer,
+        parent: None,
+        index: None,
+        name: "Assets".into(),
+    })
+    .unwrap();
+    let assets = ["test-pack/mountain-1", "test-pack/castle", "test-pack/tree"];
+    for i in 0..10_000usize {
+        let mut s = stamp(
+            assets[i % assets.len()],
+            [
+                (i % 100) as f64 * 40.0 + 20.0,
+                (i / 100) as f64 * 25.0 + 12.0,
+            ],
+        );
+        s.rotation = (i % 7) as f64 * 5.0;
+        s.flip = i % 2 == 0;
+        map.execute(&Command::CreateStamp {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            stamp: Box::new(s),
+        })
+        .unwrap();
+    }
+
+    let started = Instant::now();
+    let canvas = scene_of(&map);
+    eprintln!("10k Stamps: scene built in {:?}", started.elapsed());
+    let capabilities = GpuCapabilities::query(&headless.adapter);
+    let mut renderer = CanvasRenderer::new(&headless.device, capabilities);
+    renderer.set_sprites(test_sprites());
+    let mut view = View::whole_canvas(canvas.canvas_size, 960);
+    let frames = 8;
+    let started = Instant::now();
+    for frame in 0..frames {
+        view.pan([12.0, 6.0]);
+        if frame % 2 == 0 {
+            view.zoom_at([480.0, 300.0], 1.1);
+        }
+        render_to_image(
+            &headless.device,
+            &headless.queue,
+            &mut renderer,
+            &canvas,
+            &view,
+        );
+    }
+    let per_frame = started.elapsed() / frames;
+    eprintln!("10k Stamps: {per_frame:?} per frame (including readback)");
+    assert!(per_frame.as_secs_f64() < 5.0, "{per_frame:?} per frame");
+
+    let shape = ssmap_core::SpriteShape {
+        size: [32.0, 32.0],
+        anchor: [0.5, 1.0],
+    };
+    let started = Instant::now();
+    let index = ssmap_core::StampIndex::build(&map, |_| Some(shape));
+    eprintln!("10k Stamps: index built in {:?}", started.elapsed());
+    let started = Instant::now();
+    let picks = 1000;
+    for i in 0..picks {
+        index.pick([(i * 4) as f64, (i * 2) as f64], |_, _| true);
+    }
+    eprintln!("10k Stamps: {:?} per pick", started.elapsed() / picks);
+}
