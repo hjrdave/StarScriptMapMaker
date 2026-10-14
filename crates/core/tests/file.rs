@@ -6,8 +6,9 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 use ssmap_core::file::{FORMAT_VERSION, FileError, MapFile, SaveStats, read_preview};
 use ssmap_core::{
-    Canvas, DistanceUnit, Id, Label, Lake, Landmass, Layer, Map, MapDefaults, MultiPolygon, Node,
-    Object, ObjectKind, Op, Polygon, Property, Roughness, Scale, Stamp, Subtree,
+    Canvas, Color, Command, DistanceUnit, Id, Label, Lake, Landmass, Layer, Map, MapDefaults,
+    MultiPolygon, Node, Object, ObjectKind, Op, Polygon, Property, Roughness, Scale, Stamp,
+    Subtree,
 };
 
 fn insert(map: &mut Map, parent: Option<Id>, node: Node) -> Id {
@@ -614,4 +615,80 @@ fn killing_the_process_mid_save_leaves_the_previous_save_intact() {
         killed_mid_transaction > 0,
         "no kill landed inside a save's transaction"
     );
+}
+
+/// The Map the `land_and_water` Command script builds: an island with a hole, an islet, and
+/// a Lake.
+fn land_and_water() -> Map {
+    let text = include_str!("scripts/land_and_water.json");
+    let script: Value = serde_json::from_str(text).unwrap();
+    let mut map = Map::new(Canvas::new(
+        1000,
+        1000,
+        Scale::new(1.0, DistanceUnit::Miles),
+    ));
+    for step in script["steps"].as_array().unwrap() {
+        let command: Command = serde_json::from_value(step["step"].clone()).unwrap();
+        map.execute(&command).unwrap();
+    }
+    map
+}
+
+#[test]
+fn an_island_with_a_hole_and_a_lake_round_trips() {
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = path(&dir, "island.ssmap");
+    let mut map = land_and_water();
+    let lake = map
+        .ids()
+        .find(|&id| matches!(map.node(id), Some(Node::Object(o)) if o.kind.name() == "lake"))
+        .unwrap();
+    map.execute(&Command::SetFill {
+        ids: vec![lake],
+        fill: Color::rgba(0x20, 0x60, 0xa0, 0xc0),
+    })
+    .unwrap();
+    let landmass = map.draw_order()[0];
+    let Some(Node::Object(object)) = map.node(landmass) else {
+        panic!("a Landmass")
+    };
+    let geometry = object.kind.geometry().unwrap();
+    assert_eq!(geometry.0.len(), 2, "an island and an islet");
+    assert_eq!(geometry.0[0].holes.len(), 1);
+
+    MapFile::create(&file_path, &map, None).unwrap();
+    let (mut file, mut opened) = MapFile::open(&file_path).unwrap();
+    assert_eq!(view_json(&opened), view_json(&map));
+    assert_eq!(opened.view(), map.view());
+
+    // A fill change rewrites just that Object's row.
+    opened
+        .execute(&Command::SetFill {
+            ids: vec![landmass],
+            fill: Color::rgb(0x80, 0xa0, 0x60),
+        })
+        .unwrap();
+    assert_eq!(file.save(&opened, None).unwrap().written, 1);
+    drop(file);
+    let (_, reopened) = MapFile::open(&file_path).unwrap();
+    assert_eq!(reopened.view(), opened.view());
+}
+
+#[test]
+fn outlines_saved_before_fills_existed_open_with_the_default_fill() {
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = path(&dir, "old.ssmap");
+    let (map, _, landmass) = sample_map();
+    MapFile::create(&file_path, &map, None).unwrap();
+    sql(
+        &file_path,
+        "UPDATE nodes SET props = json_remove(props, '$.kind.fill') WHERE geometry IS NOT NULL",
+    );
+    let (_, opened) = MapFile::open(&file_path).unwrap();
+    match opened.node(landmass) {
+        Some(Node::Object(object)) => {
+            assert_eq!(object.kind.fill(), Some(Landmass::DEFAULT_FILL));
+        }
+        _ => panic!("a Landmass"),
+    }
 }

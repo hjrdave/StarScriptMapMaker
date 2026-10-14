@@ -59,6 +59,7 @@ input_file: crates/core/tests/scripts/roughness.json
                 {
                   "id": "00000000-0000-7000-8000-000000000002",
                   "kind": {
+                    "fill": "#d8c49a",
                     "geometry": [
                       {
                         "exterior": [
@@ -90,6 +91,7 @@ input_file: crates/core/tests/scripts/roughness.json
                 {
                   "id": "00000000-0000-7000-8000-000000000003",
                   "kind": {
+                    "fill": "#6fa8c8",
                     "geometry": [
                       {
                         "exterior": [
@@ -121,6 +123,7 @@ input_file: crates/core/tests/scripts/roughness.json
                 {
                   "id": "00000000-0000-7000-8000-000000000004",
                   "kind": {
+                    "fill": "#d8c49a",
                     "geometry": [
                       {
                         "exterior": [
@@ -285,6 +288,7 @@ input_file: crates/core/tests/scripts/roughness.json
                 {
                   "id": "00000000-0000-7000-8000-000000000002",
                   "kind": {
+                    "fill": "#d8c49a",
                     "geometry": [
                       {
                         "exterior": [
@@ -311,6 +315,7 @@ input_file: crates/core/tests/scripts/roughness.json
                 {
                   "id": "00000000-0000-7000-8000-000000000003",
                   "kind": {
+                    "fill": "#6fa8c8",
                     "geometry": [
                       {
                         "exterior": [
@@ -342,6 +347,7 @@ input_file: crates/core/tests/scripts/roughness.json
                 {
                   "id": "00000000-0000-7000-8000-000000000004",
                   "kind": {
+                    "fill": "#d8c49a",
                     "geometry": [
                       {
                         "exterior": [
@@ -429,6 +435,7 @@ input_file: crates/core/tests/scripts/roughness.json
           {
             "id": "00000000-0000-7000-8000-000000000002",
             "kind": {
+              "fill": "#d8c49a",
               "geometry": [
                 {
                   "exterior": [
@@ -455,6 +462,7 @@ input_file: crates/core/tests/scripts/roughness.json
           {
             "id": "00000000-0000-7000-8000-000000000003",
             "kind": {
+              "fill": "#6fa8c8",
               "geometry": [
                 {
                   "exterior": [
@@ -481,6 +489,7 @@ input_file: crates/core/tests/scripts/roughness.json
           {
             "id": "00000000-0000-7000-8000-000000000004",
             "kind": {
+              "fill": "#d8c49a",
               "geometry": [
                 {
                   "exterior": [

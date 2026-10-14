@@ -1,5 +1,5 @@
-//! The Canvas renderer: an offscreen, multisampled target holding the backdrop and, later,
-//! every Layer.
+//! The Canvas renderer: an offscreen, multisampled target holding the backdrop and the Map's
+//! Landmass and Lake fills.
 
 use lyon::math::Box2D;
 use lyon::path::{Path, Winding};
@@ -8,6 +8,7 @@ use wgpu::util::DeviceExt;
 use crate::color::Color;
 use crate::gpu::GpuCapabilities;
 use crate::ocean::{OceanPass, OceanUniform};
+use crate::shapes::Shapes;
 use crate::vector::{FillPath, LyonRenderer, VectorRenderer};
 use crate::view::View;
 
@@ -40,15 +41,33 @@ pub struct CanvasScene {
     pub backdrop: Backdrop,
     /// The area around the Canvas. Editor-only; export never shows it.
     pub pasteboard: Color,
+    /// Landmass and Lake fills, drawn over the backdrop.
+    pub shapes: Shapes,
 }
 
 impl CanvasScene {
+    /// A Canvas with only its backdrop.
     pub fn new(canvas: &ssmap_core::Canvas) -> Self {
         Self {
             canvas_size: [f64::from(canvas.width), f64::from(canvas.height)],
             backdrop: Backdrop::default(),
             pasteboard: Color::rgb(0x1c, 0x1c, 0x1f),
+            shapes: Shapes::default(),
         }
+    }
+
+    /// The whole Map: its Canvas and everything drawn on it, with roughened outlines from
+    /// `roughness`.
+    pub fn from_map(map: &ssmap_core::Map, roughness: &mut ssmap_core::RoughnessCache) -> Self {
+        Self {
+            shapes: Shapes::from_map(map, roughness),
+            ..Self::new(&map.canvas)
+        }
+    }
+
+    /// Whether `other` has the same backdrop, ignoring what is drawn over it.
+    fn same_backdrop(&self, other: &CanvasScene) -> bool {
+        self.canvas_size == other.canvas_size && self.backdrop == other.backdrop
     }
 }
 
@@ -56,8 +75,11 @@ pub struct CanvasRenderer {
     capabilities: GpuCapabilities,
     view_uniform: wgpu::Buffer,
     view_bind_group: wgpu::BindGroup,
+    /// The water fill beneath the ocean texture.
     vector: LyonRenderer,
     ocean: OceanPass,
+    /// Landmass and Lake fills over the ocean.
+    shapes: LyonRenderer,
     scene: Option<CanvasScene>,
     target: Option<Target>,
 }
@@ -89,6 +111,7 @@ impl CanvasRenderer {
         });
         Self {
             vector: LyonRenderer::new(device, &view_layout, samples),
+            shapes: LyonRenderer::new(device, &view_layout, samples),
             ocean: OceanPass::new(device, &view_layout, samples),
             capabilities,
             view_uniform,
@@ -112,9 +135,14 @@ impl CanvasRenderer {
         scene: &CanvasScene,
         view: &View,
     ) -> &wgpu::Texture {
-        if self.scene.as_ref() != Some(scene) {
-            self.set_scene(device, queue, scene);
+        let previous = self.scene.take();
+        if !previous.as_ref().is_some_and(|p| p.same_backdrop(scene)) {
+            self.set_backdrop(device, queue, scene);
         }
+        if previous.is_none_or(|p| p.shapes != scene.shapes) {
+            self.shapes.set_fills(device, &scene.shapes.fill_paths());
+        }
+        self.scene = Some(scene.clone());
         self.ensure_target(device, view.size);
         queue.write_buffer(&self.view_uniform, 0, bytemuck::bytes_of(&view.uniform()));
 
@@ -139,11 +167,12 @@ impl CanvasRenderer {
         pass.set_bind_group(0, &self.view_bind_group, &[]);
         self.vector.draw(&mut pass);
         self.ocean.draw(&mut pass);
+        self.shapes.draw(&mut pass);
         drop(pass);
         &target.resolved
     }
 
-    fn set_scene(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, scene: &CanvasScene) {
+    fn set_backdrop(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, scene: &CanvasScene) {
         let [w, h] = scene.canvas_size.map(|v| v as f32);
         let mut builder = Path::builder();
         builder.add_rectangle(
@@ -165,7 +194,6 @@ impl CanvasRenderer {
                 _pad: 0.0,
             },
         );
-        self.scene = Some(scene.clone());
     }
 
     fn ensure_target(&mut self, device: &wgpu::Device, size: [u32; 2]) {

@@ -1,12 +1,14 @@
 //! Vector fills behind a trait, so the renderer can be swapped (ADR 0001).
 
 use lyon::path::Path;
-use lyon::tessellation::{BuffersBuilder, FillOptions, FillTessellator, FillVertex, VertexBuffers};
+use lyon::tessellation::{
+    BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, VertexBuffers,
+};
 use wgpu::util::DeviceExt;
 
 use crate::color::Color;
 
-/// One filled path in Canvas units.
+/// One filled path in Canvas units, filled even-odd: a subpath inside another is a hole.
 #[derive(Clone, Debug)]
 pub struct FillPath {
     pub path: Path,
@@ -87,7 +89,7 @@ impl VectorRenderer for LyonRenderer {
     fn set_fills(&mut self, device: &wgpu::Device, fills: &[FillPath]) {
         let mut geometry: VertexBuffers<Vertex, u32> = VertexBuffers::new();
         let mut tessellator = FillTessellator::new();
-        let options = FillOptions::tolerance(TOLERANCE);
+        let options = FillOptions::tolerance(TOLERANCE).with_fill_rule(FillRule::EvenOdd);
         for fill in fills {
             let color = fill.color.to_linear_premultiplied();
             // A path lyon cannot fill draws nothing rather than failing the frame.
