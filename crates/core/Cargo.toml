@@ -8,8 +8,8 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-directories.workspace = true
 rstar.workspace = true
+directories.workspace = true
 rusqlite.workspace = true
 schemars.workspace = true
 serde.workspace = true
