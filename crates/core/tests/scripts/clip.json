@@ -1,0 +1,28 @@
+{
+  "setup": [
+    {"op": "insert", "parent": null, "index": 0, "subtree": {"id": "00000000-0000-7000-8000-000000000010", "type": "layer", "name": "Land", "visible": true, "locked": false, "opacity": 1.0}},
+    {"op": "insert", "parent": "00000000-0000-7000-8000-000000000010", "index": 0, "subtree": {"id": "00000000-0000-7000-8000-000000000011", "type": "object", "locked": false, "kind": {"kind": "landmass", "geometry": [{"exterior": [[0, 0], [100, 0], [100, 100], [0, 100]]}]}}},
+    {"op": "insert", "parent": "00000000-0000-7000-8000-000000000010", "index": 1, "subtree": {"id": "00000000-0000-7000-8000-000000000012", "type": "object", "locked": false, "kind": {"kind": "lake", "geometry": [{"exterior": [[20, 20], [40, 20], [40, 40], [20, 40]]}]}}},
+    {"op": "insert", "parent": null, "index": 1, "subtree": {"id": "00000000-0000-7000-8000-000000000020", "type": "layer", "name": "Forest", "visible": true, "locked": false, "opacity": 1.0}},
+    {"op": "insert", "parent": "00000000-0000-7000-8000-000000000020", "index": 0, "subtree": {"id": "00000000-0000-7000-8000-000000000021", "type": "layer", "name": "Trees", "visible": true, "locked": false, "opacity": 1.0}}
+  ],
+  "steps": [
+    {"step": {"command": "set_clip", "id": "00000000-0000-7000-8000-000000000020", "target": "00000000-0000-7000-8000-000000000011"}},
+    {"step": {"command": "set_clip", "id": "00000000-0000-7000-8000-000000000021", "target": "00000000-0000-7000-8000-000000000011"}},
+    "snapshot",
+    "undo",
+    "redo",
+    {"step": {"command": "set_clip", "id": "00000000-0000-7000-8000-000000000020", "target": "00000000-0000-7000-8000-000000000012"}},
+    {"step": {"command": "set_clip", "id": "00000000-0000-7000-8000-000000000020", "target": "00000000-0000-7000-8000-000000000020"}},
+    {"step": {"command": "set_clip", "id": "00000000-0000-7000-8000-000000000010", "target": "00000000-0000-7000-8000-000000000011"}},
+    {"step": {"command": "set_clip", "id": "00000000-0000-7000-8000-000000000011", "target": "00000000-0000-7000-8000-000000000011"}},
+    {"step": {"command": "set_clip", "id": "00000000-0000-7000-8000-000000000020", "target": "00000000-0000-7000-8000-000000000099"}},
+    {"step": {"command": "delete", "ids": ["00000000-0000-7000-8000-000000000011"]}},
+    "snapshot",
+    "undo",
+    "snapshot",
+    {"step": {"command": "set_clip", "id": "00000000-0000-7000-8000-000000000020", "target": null}},
+    {"step": {"command": "set_locked", "id": "00000000-0000-7000-8000-000000000020", "locked": true}},
+    {"step": {"command": "set_clip", "id": "00000000-0000-7000-8000-000000000020", "target": "00000000-0000-7000-8000-000000000011"}}
+  ]
+}

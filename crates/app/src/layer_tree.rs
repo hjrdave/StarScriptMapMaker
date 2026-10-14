@@ -261,7 +261,10 @@ impl LayerTree {
                 }
             }
             _ => {
-                let name = node_name(map, row.id);
+                let mut name = node_name(map, row.id);
+                if layer.is_some_and(|l| l.clip.is_some()) {
+                    name.push_str(" ✂");
+                }
                 let mut text = egui::RichText::new(name);
                 if layer.is_some_and(|l| !l.visible) {
                     text = text.weak();
@@ -276,6 +279,38 @@ impl LayerTree {
         }
         if response.double_clicked() && layer.is_some() {
             actions.push(Action::StartRename(row.id));
+        }
+        if let Some(layer) = layer {
+            response.context_menu(|ui| {
+                ui.menu_button("Clip to Landmass", |ui| {
+                    let choices = editor.landmass_choices();
+                    if choices.is_empty() {
+                        ui.weak("No Landmasses");
+                    }
+                    for (target, name) in choices {
+                        if ui
+                            .selectable_label(layer.clip == Some(target), name)
+                            .clicked()
+                        {
+                            actions.push(Action::Run(Command::SetClip {
+                                id: row.id,
+                                target: Some(target),
+                            }));
+                            ui.close();
+                        }
+                    }
+                });
+                if ui
+                    .add_enabled(layer.clip.is_some(), egui::Button::new("Clear Clip"))
+                    .clicked()
+                {
+                    actions.push(Action::Run(Command::SetClip {
+                        id: row.id,
+                        target: None,
+                    }));
+                    ui.close();
+                }
+            });
         }
         if response.dragged() {
             response.dnd_set_drag_payload(row.id);

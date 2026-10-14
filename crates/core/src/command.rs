@@ -143,6 +143,12 @@ pub enum Command {
         id: Id,
         new_ids: Vec<Id>,
     },
+    /// Clips a Layer to a Landmass, or with `None` clears its Clip. The Layer's content then
+    /// shows only on the Landmass's roughened outline, minus any Lakes over it.
+    SetClip {
+        id: Id,
+        target: Option<Id>,
+    },
     /// Sets the fill colour of Landmasses and Lakes.
     SetFill {
         ids: Vec<Id>,
@@ -195,6 +201,8 @@ pub enum CommandError {
     NodeEdit { id: Id, problem: String },
     #[error("{0} is not a Landmass")]
     NotALandmass(Id),
+    #[error("{0} cannot be clipped to a Landmass inside itself")]
+    ClipInsideItself(Id),
     #[error("{command} needs at least two Landmasses")]
     NeedsTwoLandmasses { command: &'static str },
     #[error("{id} has {parts} parts, so Split Apart needs {} new ids, not {got}", .parts - 1)]
@@ -234,6 +242,10 @@ impl Command {
             Command::Union { .. } => "Union",
             Command::Subtract { .. } => "Subtract",
             Command::SplitApart { .. } => "Split Apart",
+            Command::SetClip {
+                target: Some(_), ..
+            } => "Clip to Landmass",
+            Command::SetClip { target: None, .. } => "Clear Clip",
             Command::SetFill { .. } => "Change Fill",
             Command::SetRoughness { .. } => "Change Roughness",
             Command::SetDefaultRoughness { .. } => "Change Default Roughness",
@@ -382,6 +394,22 @@ impl Command {
             Command::Union { ids } => union_landmasses(map, ids),
             Command::Subtract { ids } => subtract_landmasses(map, ids),
             Command::SplitApart { id, new_ids } => split_apart(map, *id, new_ids),
+            Command::SetClip { id, target } => {
+                layer(map, *id)?;
+                unlocked(map, *id)?;
+                if let Some(target) = *target {
+                    match existing(map, target)? {
+                        Node::Object(o) if matches!(o.kind, ObjectKind::Landmass(_)) => {}
+                        _ => return Err(CommandError::NotALandmass(target)),
+                    }
+                    let inside = std::iter::successors(Some(target), |&n| map.parent(n))
+                        .any(|ancestor| ancestor == *id);
+                    if inside {
+                        return Err(CommandError::ClipInsideItself(*id));
+                    }
+                }
+                Ok(vec![set(*id, Property::Clip(*target))])
+            }
             Command::SetFill { ids, fill } => {
                 let ids = outlined(map, ids)?;
                 Ok(ids

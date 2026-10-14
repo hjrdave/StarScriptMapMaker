@@ -335,6 +335,19 @@ impl Editor {
         }
     }
 
+    /// Every Landmass a Layer can be clipped to, topmost first, with its name.
+    pub fn landmass_choices(&self) -> Vec<(Id, String)> {
+        self.map
+            .draw_order()
+            .into_iter()
+            .rev()
+            .filter(|&id| {
+                matches!(self.map.node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Landmass(_)))
+            })
+            .map(|id| (id, node_name(&self.map, id)))
+            .collect()
+    }
+
     /// The selected Landmasses, topmost first.
     fn selected_landmasses(&self) -> Vec<Id> {
         let order = self.map.draw_order();
@@ -764,5 +777,35 @@ mod tests {
         assert_eq!(editor.selection().len(), 2);
         editor.undo();
         assert_eq!(editor.map.children(Some(layer)).len(), before);
+    }
+
+    #[test]
+    fn clipping_a_layer_and_deleting_its_target_undo_together() {
+        let (mut editor, island) = editor_with_square();
+        let forest = editor.new_layer().unwrap();
+        assert_eq!(editor.landmass_choices().len(), 1);
+        assert!(editor.run(Command::SetClip {
+            id: forest,
+            target: Some(island),
+        }));
+        let clip = |editor: &Editor| match editor.map.node(forest) {
+            Some(Node::Layer(layer)) => layer.clip,
+            _ => panic!("a Layer"),
+        };
+        assert_eq!(clip(&editor), Some(island));
+
+        editor.select(vec![island]);
+        editor.delete_selection();
+        assert_eq!(clip(&editor), None);
+        editor.undo();
+        assert_eq!(clip(&editor), Some(island));
+        assert!(editor.map.contains(island));
+
+        // A Layer cannot be clipped to something that is not a Landmass.
+        assert!(!editor.run(Command::SetClip {
+            id: forest,
+            target: Some(forest),
+        }));
+        assert!(editor.notice().is_some_and(|notice| notice.is_error));
     }
 }

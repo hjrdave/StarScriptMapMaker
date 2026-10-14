@@ -1,12 +1,12 @@
 //! The Map's Landmass and Lake fills, as the Canvas renderer draws them.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use lyon::math::point;
 use lyon::path::Path;
 use ssmap_core::land;
-use ssmap_core::{Id, Map, MultiPolygon, Node, Polygon, RoughnessCache, ShoreStyle};
+use ssmap_core::{Id, Map, MultiPolygon, Node, ObjectKind, Polygon, RoughnessCache, ShoreStyle};
 
 use crate::color::Color;
 use crate::vector::FillPath;
@@ -21,6 +21,9 @@ pub struct ShapeFill {
     pub shore: ShoreStyle,
     /// The Layer holding the Object: its ripples draw beneath every fill of that Layer.
     pub layer: Option<Id>,
+    /// Where this may show: the roughened outline of the Landmass a Layer around it is clipped
+    /// to, minus Lakes over it. Fills of one clip share the `Arc`.
+    pub clip: Option<Arc<MultiPolygon>>,
 }
 
 /// Fills in draw order, first lowest. Clones share one list, and equality is identity (or
@@ -43,15 +46,17 @@ impl Shapes {
     /// Every visible Landmass and Lake of `map`, in [`Map::draw_order`], with its roughened
     /// outline from `roughness`.
     pub fn from_map(map: &Map, roughness: &mut RoughnessCache) -> Self {
-        let fills = map
-            .draw_order()
-            .into_iter()
-            .filter_map(|id| match map.node(id) {
+        let order = map.draw_order();
+        let mut clips = Clips::default();
+        let fills = order
+            .iter()
+            .filter_map(|&id| match map.node(id) {
                 Some(Node::Object(object)) => Some(ShapeFill {
                     color: object.kind.fill()?.into(),
                     geometry: roughness.outline(map, id)?,
                     shore: map.shore(id)?.clone(),
                     layer: map.parent(id),
+                    clip: clips.of(map, roughness, &order, id),
                 }),
                 _ => None,
             })
@@ -68,18 +73,45 @@ impl Shapes {
     /// outline. Fills are one path per part, holding its exterior and holes (even-odd), so
     /// overlapping parts never cancel out.
     pub(crate) fn fill_paths(&self) -> Vec<FillPath> {
+        // One path per distinct clip region, so fills sharing one share a stencil.
+        let mut regions: Vec<(*const MultiPolygon, Arc<Path>)> = Vec::new();
+        let clips: Vec<Option<Arc<Path>>> = self
+            .0
+            .iter()
+            .map(|fill| {
+                let region = fill.clip.as_ref()?;
+                let key = Arc::as_ptr(region);
+                Some(match regions.iter().find(|(k, _)| *k == key) {
+                    Some((_, path)) => path.clone(),
+                    None => {
+                        let path = Arc::new(region_path(region));
+                        regions.push((key, path.clone()));
+                        path
+                    }
+                })
+            })
+            .collect();
+
         let mut paths = Vec::new();
         let mut rippled = HashSet::new();
-        for fill in self.0.iter() {
+        for (i, fill) in self.0.iter().enumerate() {
             if rippled.insert(fill.layer) {
-                for sibling in self.0.iter().filter(|other| other.layer == fill.layer) {
-                    ripple_paths(sibling, &mut paths);
+                for (j, sibling) in self.0.iter().enumerate() {
+                    if sibling.layer == fill.layer {
+                        let start = paths.len();
+                        ripple_paths(sibling, &mut paths);
+                        for path in &mut paths[start..] {
+                            path.clip = clips[j].clone();
+                        }
+                    }
                 }
             }
+            let start = paths.len();
             paths.extend(fill.geometry.0.iter().map(|polygon| FillPath {
                 path: polygon_path(polygon),
                 color: fill.color,
                 stroke_width: None,
+                clip: None,
             }));
             shading_paths(fill, &mut paths);
             if fill.shore.outline.width > 0.0 {
@@ -87,10 +119,71 @@ impl Shapes {
                     path: region_path(&fill.geometry),
                     color: fill.shore.outline.color.into(),
                     stroke_width: Some(fill.shore.outline.width as f32),
+                    clip: None,
                 });
+            }
+            for path in &mut paths[start..] {
+                path.clip = clips[i].clone();
             }
         }
         paths
+    }
+}
+
+/// The clip regions of a Map's fills, worked out once each.
+#[derive(Default)]
+struct Clips(HashMap<Vec<Id>, Option<Arc<MultiPolygon>>>);
+
+impl Clips {
+    /// Where the Object `id` may show: the roughened outlines of the Landmasses its Layers are
+    /// clipped to, minus the Lakes drawn above them. `None` if no Layer around it is clipped.
+    fn of(
+        &mut self,
+        map: &Map,
+        roughness: &mut RoughnessCache,
+        order: &[Id],
+        id: Id,
+    ) -> Option<Arc<MultiPolygon>> {
+        let mut targets: Vec<Id> = std::iter::successors(map.parent(id), |&p| map.parent(p))
+            .filter_map(|layer| match map.node(layer) {
+                Some(Node::Layer(layer)) => layer.clip,
+                _ => None,
+            })
+            .filter(|&target| map.contains(target))
+            .collect();
+        targets.sort();
+        targets.dedup();
+        if targets.is_empty() {
+            return None;
+        }
+        self.0
+            .entry(targets.clone())
+            .or_insert_with(|| {
+                let mut region: Option<MultiPolygon> = None;
+                for &target in &targets {
+                    let mut shown = (*roughness.outline(map, target)?).clone();
+                    let rank = order.iter().position(|&o| o == target);
+                    for (lake_rank, &lake) in order.iter().enumerate() {
+                        let above = rank.is_none_or(|r| lake_rank > r);
+                        let is_lake = matches!(
+                            map.node(lake),
+                            Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Lake(_))
+                        );
+                        if above
+                            && is_lake
+                            && let Some(outline) = roughness.outline(map, lake)
+                        {
+                            shown = land::difference(&shown, &outline);
+                        }
+                    }
+                    region = Some(match region {
+                        Some(so_far) => land::intersection(&so_far, &shown),
+                        None => shown,
+                    });
+                }
+                region.map(Arc::new)
+            })
+            .clone()
     }
 }
 
@@ -118,6 +211,7 @@ fn ripple_paths(fill: &ShapeFill, paths: &mut Vec<FillPath>) {
             path: region_path(&ring),
             color: faded(ripples.color, 1.0 - ripples.fade * along),
             stroke_width: Some(ripples.width as f32),
+            clip: None,
         });
     }
 }
@@ -142,6 +236,7 @@ fn shading_paths(fill: &ShapeFill, paths: &mut Vec<FillPath>) {
             path: region_path(&ring),
             color: faded(shading.color, 1.0 - middle),
             stroke_width: Some(band as f32),
+            clip: None,
         });
     }
 }

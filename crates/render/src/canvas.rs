@@ -16,6 +16,10 @@ use crate::view::View;
 /// are already sRGB-encoded for PNG.
 pub const CANVAS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
+/// The stencil buffer behind Clip: content clipped to a Landmass draws only where its outline
+/// has stamped a 1.
+pub(crate) const STENCIL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24PlusStencil8;
+
 /// The ocean: a background fill plus a texture over it.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Backdrop {
@@ -88,6 +92,7 @@ struct Target {
     size: [u32; 2],
     /// Multisampled colour, absent when MSAA is unsupported.
     msaa: Option<wgpu::TextureView>,
+    stencil: wgpu::TextureView,
     resolved: wgpu::Texture,
     resolved_view: wgpu::TextureView,
 }
@@ -162,6 +167,14 @@ impl CanvasRenderer {
                     store: wgpu::StoreOp::Store,
                 },
             })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &target.stencil,
+                depth_ops: None,
+                stencil_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(0),
+                    store: wgpu::StoreOp::Discard,
+                }),
+            }),
             ..Default::default()
         });
         pass.set_bind_group(0, &self.view_bind_group, &[]);
@@ -185,6 +198,7 @@ impl CanvasRenderer {
                 path: builder.build(),
                 color: scene.backdrop.water,
                 stroke_width: None,
+                clip: None,
             }],
         );
         self.ocean.set(
@@ -222,6 +236,18 @@ impl CanvasRenderer {
                 })
                 .create_view(&Default::default())
         });
+        let stencil = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("canvas stencil"),
+                size: extent,
+                mip_level_count: 1,
+                sample_count: samples,
+                dimension: wgpu::TextureDimension::D2,
+                format: STENCIL_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            })
+            .create_view(&Default::default());
         let resolved = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("canvas"),
             size: extent,
@@ -239,6 +265,7 @@ impl CanvasRenderer {
         self.target = Some(Target {
             size,
             msaa,
+            stencil,
             resolved,
             resolved_view,
         });
@@ -261,6 +288,17 @@ pub(crate) fn uniform_layout(device: &wgpu::Device, label: &str) -> wgpu::BindGr
     })
 }
 
+/// How a pipeline uses the stencil buffer.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum StencilUse {
+    /// Ignores it: draws everywhere.
+    Ignore,
+    /// Draws only where the stencil equals the pass's stencil reference.
+    Test,
+    /// Writes the pass's stencil reference where it covers, and no colour.
+    Write,
+}
+
 /// A pipeline drawing premultiplied colour into the Canvas target.
 pub(crate) fn canvas_pipeline(
     device: &wgpu::Device,
@@ -270,6 +308,40 @@ pub(crate) fn canvas_pipeline(
     buffers: &[Option<wgpu::VertexBufferLayout<'_>>],
     samples: u32,
 ) -> wgpu::RenderPipeline {
+    canvas_pipeline_stencil(
+        device,
+        label,
+        layout,
+        shader,
+        buffers,
+        samples,
+        StencilUse::Ignore,
+    )
+}
+
+pub(crate) fn canvas_pipeline_stencil(
+    device: &wgpu::Device,
+    label: &str,
+    layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    buffers: &[Option<wgpu::VertexBufferLayout<'_>>],
+    samples: u32,
+    stencil_use: StencilUse,
+) -> wgpu::RenderPipeline {
+    let face = |compare, pass_op| wgpu::StencilFaceState {
+        compare,
+        fail_op: wgpu::StencilOperation::Keep,
+        depth_fail_op: wgpu::StencilOperation::Keep,
+        pass_op,
+    };
+    let stencil_face = match stencil_use {
+        StencilUse::Ignore => face(wgpu::CompareFunction::Always, wgpu::StencilOperation::Keep),
+        StencilUse::Test => face(wgpu::CompareFunction::Equal, wgpu::StencilOperation::Keep),
+        StencilUse::Write => face(
+            wgpu::CompareFunction::Always,
+            wgpu::StencilOperation::Replace,
+        ),
+    };
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(label),
         layout: Some(layout),
@@ -285,12 +357,27 @@ pub(crate) fn canvas_pipeline(
             targets: &[Some(wgpu::ColorTargetState {
                 format: CANVAS_FORMAT,
                 blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
+                write_mask: if stencil_use == StencilUse::Write {
+                    wgpu::ColorWrites::empty()
+                } else {
+                    wgpu::ColorWrites::ALL
+                },
             })],
             compilation_options: Default::default(),
         }),
         primitive: Default::default(),
-        depth_stencil: None,
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: STENCIL_FORMAT,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Always),
+            stencil: wgpu::StencilState {
+                front: stencil_face,
+                back: stencil_face,
+                read_mask: 0xff,
+                write_mask: 0xff,
+            },
+            bias: wgpu::DepthBiasState::default(),
+        }),
         multisample: wgpu::MultisampleState {
             count: samples,
             ..Default::default()

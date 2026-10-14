@@ -190,6 +190,11 @@ pub fn difference(outline: &MultiPolygon, region: &MultiPolygon) -> MultiPolygon
     normalised(to_geo(outline).difference(&to_geo(region)))
 }
 
+/// The part of `a` that is also in `b`.
+pub fn intersection(a: &MultiPolygon, b: &MultiPolygon) -> MultiPolygon {
+    normalised(to_geo(a).intersection(&to_geo(b)))
+}
+
 /// `outline` grown outward by `distance` Canvas units, or shrunk inward if `distance` is
 /// negative: the rings that ripples and shading follow. Parts that shrink to nothing vanish.
 pub fn offset(outline: &MultiPolygon, distance: f64) -> MultiPolygon {
