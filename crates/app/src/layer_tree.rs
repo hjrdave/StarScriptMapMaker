@@ -5,12 +5,15 @@
 use std::collections::HashSet;
 
 use eframe::egui;
-use ssmap_core::{Command, Id, Map, Node, ObjectKind};
+use ssmap_core::{Command, Id, Map, Node, Object, ObjectKind};
 
 use crate::editor::Editor;
 
 const ROW_HEIGHT: f32 = 22.0;
 const INDENT: f32 = 14.0;
+
+/// Why a Depth-sorted Layer's Stamps can't be reordered by hand.
+pub const DEPTH_SORT_HINT: &str = "Depth sort is on for this Layer: Stamps are listed in the order they draw, by Anchor height. Move a Stamp to re-sort it.";
 
 /// One visible row: a node and how deep it sits.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -38,7 +41,11 @@ pub fn rows(map: &Map, collapsed: &HashSet<Id>) -> Vec<Row> {
         collapsed: &HashSet<Id>,
         out: &mut Vec<Row>,
     ) {
-        for &id in map.children(parent).iter().rev() {
+        let children = match parent {
+            Some(layer) => map.ordered_children(layer),
+            None => map.children(None).to_vec(),
+        };
+        for &id in children.iter().rev() {
             out.push(Row { id, depth });
             if map.node(id).is_some_and(Node::is_layer) && !collapsed.contains(&id) {
                 walk(map, Some(id), depth + 1, collapsed, out);
@@ -71,6 +78,9 @@ pub fn move_command(map: &Map, dragged: Id, target: DropTarget) -> Option<Comman
     // Move counts the index after the dragged node leaves its old place.
     let old_parent = map.parent(dragged);
     let old_index = position(dragged)?;
+    if old_parent == parent && is_depth_sorted_stamp(map, dragged) {
+        return None;
+    }
     if old_parent == parent && old_index < index {
         index -= 1;
     }
@@ -82,6 +92,20 @@ pub fn move_command(map: &Map, dragged: Id, target: DropTarget) -> Option<Comman
         parent,
         index,
     })
+}
+
+/// A Stamp inside a Layer with Depth sort on, whose place among its siblings is not its to pick.
+pub fn is_depth_sorted_stamp(map: &Map, id: Id) -> bool {
+    matches!(
+        map.node(id),
+        Some(Node::Object(Object {
+            kind: ObjectKind::Stamp(_),
+            ..
+        }))
+    ) && matches!(
+        map.parent(id).and_then(|p| map.node(p)),
+        Some(Node::Layer(layer)) if layer.depth_sort
+    )
 }
 
 pub fn node_name(map: &Map, id: Id) -> String {
@@ -277,8 +301,12 @@ impl LayerTree {
         if response.double_clicked() && layer.is_some() {
             actions.push(Action::StartRename(row.id));
         }
+        // A Depth-sorted Layer orders its own Stamps; they can still be dragged to another Layer.
         if response.dragged() {
             response.dnd_set_drag_payload(row.id);
+        }
+        if is_depth_sorted_stamp(map, row.id) {
+            response.clone().on_hover_text(DEPTH_SORT_HINT);
         }
         if response.dnd_hover_payload::<Id>().is_some()
             && let Some(target) = drop_target(ui, rect, row.id, layer.is_some())
@@ -413,6 +441,46 @@ mod tests {
         assert_eq!(move_command(&map, b, DropTarget::Below(c)), None);
         assert_eq!(move_command(&map, b, DropTarget::Into(b)), None);
         assert_eq!(move_command(&map, b, DropTarget::Above(b1)), None);
+    }
+
+    #[test]
+    fn a_depth_sorted_layer_lists_its_stamps_in_draw_order_and_refuses_reordering() {
+        use ssmap_core::{Object, Stamp};
+        let (mut map, [a, ..]) = map();
+        let stamps = [Id::new(), Id::new()];
+        for (index, (id, y)) in stamps.into_iter().zip([30.0, 10.0]).enumerate() {
+            let stamp = Stamp::new("p/a".parse().unwrap(), [0.0, y]);
+            map.apply(Op::Insert {
+                parent: Some(a),
+                index,
+                subtree: Subtree {
+                    id,
+                    node: Node::Object(Object::new(ObjectKind::Stamp(stamp))),
+                    children: vec![],
+                },
+            })
+            .unwrap();
+        }
+        let listed = |map: &Map| -> Vec<Id> {
+            rows(map, &HashSet::new())
+                .into_iter()
+                .map(|r| r.id)
+                .filter(|id| stamps.contains(id))
+                .collect()
+        };
+        // Top of the list is the top of the draw order: the last tree child.
+        assert_eq!(listed(&map), vec![stamps[1], stamps[0]]);
+        map.execute(&Command::SetDepthSort {
+            id: a,
+            depth_sort: true,
+        })
+        .unwrap();
+        assert_eq!(listed(&map), vec![stamps[0], stamps[1]]);
+        assert!(is_depth_sorted_stamp(&map, stamps[0]));
+        assert_eq!(
+            move_command(&map, stamps[0], DropTarget::Above(stamps[1])),
+            None
+        );
     }
 
     #[test]

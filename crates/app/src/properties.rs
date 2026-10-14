@@ -321,6 +321,17 @@ impl PropertiesPanel {
             }
             ui.end_row();
 
+            ui.label("Depth sort");
+            let mut depth_sort = layer.depth_sort;
+            if ui
+                .checkbox(&mut depth_sort, "")
+                .on_hover_text(crate::layer_tree::DEPTH_SORT_HINT)
+                .changed()
+            {
+                editor.run(Command::SetDepthSort { id, depth_sort });
+            }
+            ui.end_row();
+
             if let Some(target) = layer.clip {
                 ui.label("Clipped to");
                 ui.label(node_name(&editor.map, target));

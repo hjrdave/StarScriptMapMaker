@@ -57,6 +57,12 @@ pub enum Command {
         id: Id,
         opacity: f32,
     },
+    /// Switches Depth sort on or off for a Layer: its direct Stamps then draw by Anchor
+    /// height (ADR 0003).
+    SetDepthSort {
+        id: Id,
+        depth_sort: bool,
+    },
     /// Deletes Layers and Objects with everything inside them, and clears Clips that pointed
     /// at anything deleted.
     Delete {
@@ -213,6 +219,8 @@ pub enum CommandError {
     InLockedLayer { target: Id, layer: Id },
     #[error("{target} contains locked {locked}")]
     ContainsLocked { target: Id, locked: Id },
+    #[error("{0} is in a Layer with Depth sort on, which orders its Stamps")]
+    DepthSorted(Id),
     #[error("opacity must be from 0 to 1, not {0}")]
     InvalidOpacity(f32),
     #[error("{0} is not a Landmass or Lake")]
@@ -257,6 +265,7 @@ impl Command {
             Command::SetVisible { .. } => "Change Visibility",
             Command::SetLocked { .. } => "Change Lock",
             Command::SetOpacity { .. } => "Change Opacity",
+            Command::SetDepthSort { .. } => "Change Depth Sort",
             Command::Delete { .. } => "Delete",
             Command::CreateLandmass { .. } => "Create Landmass",
             Command::CreateLake { .. } => "Create Lake",
@@ -315,6 +324,20 @@ impl Command {
             }
             Command::Move { id, parent, index } => {
                 unlocked_branch(map, *id)?;
+                // A Depth-sorted Layer orders its own Stamps, so they can't be reordered there.
+                if map.parent(*id) == *parent
+                    && let Some(layer) = *parent
+                    && matches!(map.node(layer), Some(Node::Layer(l)) if l.depth_sort)
+                    && matches!(
+                        map.node(*id),
+                        Some(Node::Object(Object {
+                            kind: ObjectKind::Stamp(_),
+                            ..
+                        }))
+                    )
+                {
+                    return Err(CommandError::DepthSorted(*id));
+                }
                 if let Some(parent) = *parent {
                     layer(map, parent)?;
                     unlocked(map, parent)?;
@@ -345,6 +368,11 @@ impl Command {
                     return Err(CommandError::InvalidOpacity(*opacity));
                 }
                 Ok(vec![set(*id, Property::Opacity(*opacity))])
+            }
+            Command::SetDepthSort { id, depth_sort } => {
+                layer(map, *id)?;
+                unlocked(map, *id)?;
+                Ok(vec![set(*id, Property::DepthSort(*depth_sort))])
             }
             Command::Delete { ids } => delete(map, ids),
             Command::CreateLandmass {

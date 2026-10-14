@@ -599,6 +599,14 @@ fn stamp(asset: &str, position: [f64; 2]) -> ssmap_core::Stamp {
 }
 
 fn render_stamps(headless: &Headless, stamps: Vec<ssmap_core::Stamp>) -> RgbaImage {
+    render_stamps_sorted(headless, stamps, false)
+}
+
+fn render_stamps_sorted(
+    headless: &Headless,
+    stamps: Vec<ssmap_core::Stamp>,
+    depth_sort: bool,
+) -> RgbaImage {
     let mut map = Map::new(Canvas::new(480, 320, Scale::new(1.0, DistanceUnit::Miles)));
     let layer = Id::new();
     map.execute(&Command::CreateLayer {
@@ -608,6 +616,13 @@ fn render_stamps(headless: &Headless, stamps: Vec<ssmap_core::Stamp>) -> RgbaIma
         name: "Assets".into(),
     })
     .unwrap();
+    if depth_sort {
+        map.execute(&Command::SetDepthSort {
+            id: layer,
+            depth_sort,
+        })
+        .unwrap();
+    }
     for stamp in stamps {
         map.execute(&Command::CreateStamp {
             id: Id::new(),
@@ -657,6 +672,42 @@ fn stamps() {
     let image = render_stamps(headless, stamps);
     if let Gpu::Software(_) = gpu {
         assert_matches_golden("stamps", &image);
+    }
+}
+
+/// A mountain range placed in random order draws back to front under Depth sort, exactly as
+/// the same range placed back to front draws without it.
+#[test]
+fn depth_sorted_mountain_range() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let range = |order: &[usize]| -> Vec<ssmap_core::Stamp> {
+        let places = [
+            [170.0, 110.0],
+            [192.0, 124.0],
+            [214.0, 138.0],
+            [236.0, 152.0],
+            [258.0, 166.0],
+            [280.0, 180.0],
+        ];
+        order
+            .iter()
+            .map(|&i| stamp("test-pack/mountain-1", places[i]))
+            .collect()
+    };
+    let shuffled = render_stamps_sorted(headless, range(&[3, 0, 5, 2, 4, 1]), true);
+    let in_order = render_stamps(headless, range(&[0, 1, 2, 3, 4, 5]));
+    let unsorted = render_stamps(headless, range(&[3, 0, 5, 2, 4, 1]));
+    assert!(
+        shuffled.pixels == in_order.pixels,
+        "sorted draws back to front"
+    );
+    assert!(
+        shuffled.pixels != unsorted.pixels,
+        "placement order matters without Depth sort"
+    );
+    if let Gpu::Software(_) = gpu {
+        assert_matches_golden("depth_sorted_mountain_range", &shuffled);
     }
 }
 
