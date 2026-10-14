@@ -1,0 +1,9 @@
+---
+source: crates/core/tests/packs.rs
+expression: "errors(\"[pack\\nid = 1\")"
+---
+bad/pack.toml: is not valid TOML: TOML parse error at line 1, column 6
+  |
+1 | [pack
+  |      ^
+unclosed table, expected `]`

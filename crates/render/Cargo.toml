@@ -9,14 +9,21 @@ publish.workspace = true
 
 [dependencies]
 bytemuck.workspace = true
+etagere.workspace = true
+image.workspace = true
 lyon.workspace = true
 pollster.workspace = true
+resvg.workspace = true
 ssmap-core.workspace = true
+thiserror.workspace = true
+# Only for the `silhouettes` tool, which edits pack manifests without losing comments.
+toml_edit.workspace = true
 wgpu.workspace = true
 
 [dev-dependencies]
 image.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

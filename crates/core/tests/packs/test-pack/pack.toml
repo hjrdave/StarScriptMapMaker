@@ -1,0 +1,61 @@
+# A small pack for tests: outline SVGs, one PNG, and a Variant group.
+[pack]
+id = "test-pack"
+name = "Test pack"
+licence = "CC0-1.0"
+credits = "Test art drawn for StarScript Map Maker's test suite."
+author = "StarScript Map Maker contributors"
+modified = "2026-10-13"
+
+[[asset]]
+id = "mountain-1"
+name = "Mountain"
+category = "mountains"
+tags = ["peak", "rocky"]
+file = "art/mountain-1.svg"
+anchor = [0.5, 0.92]
+width = 64.0
+variant_group = "mountains"
+silhouette = "silhouettes/mountain-1.png"
+
+[[asset]]
+id = "mountain-2"
+name = "Mountain"
+category = "mountains"
+tags = ["peak"]
+file = "art/mountain-2.svg"
+anchor = [0.5, 0.91]
+width = 56.0
+variant_group = "mountains"
+silhouette = "silhouettes/mountain-2.png"
+
+[[asset]]
+id = "tree"
+name = "Tree"
+category = "forests"
+file = "art/tree.svg"
+anchor = [0.5, 0.92]
+width = 24.0
+silhouette = "silhouettes/tree.png"
+
+[[asset]]
+id = "castle"
+name = "Castle"
+category = "settlements"
+tags = ["fort"]
+file = "art/castle.svg"
+anchor = [0.5, 0.96]
+width = 48.0
+source_url = "https://github.com/hjrdave/StarScriptMapMaker"
+silhouette = "silhouettes/castle.png"
+
+[[asset]]
+id = "well"
+name = "Well"
+category = "settlements"
+file = "art/well.png"
+anchor = [0.5, 0.5]
+width = 12.0
+licence = "CC0-1.0"
+modified = 2026-10-12
+silhouette = "silhouettes/well.png"

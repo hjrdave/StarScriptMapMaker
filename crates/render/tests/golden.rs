@@ -10,11 +10,15 @@
 
 use std::path::PathBuf;
 
+use ssmap_core::asset::{ArtFormat, PackSource, read_pack};
 use ssmap_core::{
     Canvas, Command, DistanceUnit, Lake, Landmass, Map, Roughness, RoughnessCache, Scale,
 };
+use ssmap_render::atlas::{Atlas, AtlasEntry, MIN_PAGE_SIZE};
+use ssmap_render::raster::{Art, Raster};
 use ssmap_render::{
-    CanvasRenderer, CanvasScene, GpuCapabilities, Headless, RgbaImage, View, render_to_image,
+    CanvasRenderer, CanvasScene, GpuCapabilities, Headless, RgbaImage, View, read_texture,
+    render_to_image,
 };
 
 /// Largest allowed difference in any channel before a pixel counts as differing.
@@ -256,5 +260,76 @@ fn rough_coastlines() {
     assert_ne!(image.pixels, smooth.pixels, "Roughness changes the coast");
     if let Gpu::Software(_) = gpu {
         assert_matches_golden("rough_coastlines", &image);
+    }
+}
+
+/// Fills a 2048 page with the test pack's art and Silhouettes at many sizes, until the atlas
+/// spills onto a second page, and compares the first page with its golden image. The page
+/// holds premultiplied pixels, so the golden PNG shows them as stored, not as drawn.
+#[test]
+fn atlas_page() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let pack_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../core/tests/packs/test-pack");
+    let pack = read_pack(&pack_dir, PackSource::BuiltIn).expect("the test pack loads");
+    let mut arts = Vec::new();
+    for asset in &pack.assets {
+        arts.push(Art::load(&pack.path(&asset.file)).unwrap());
+        arts.push(Art::load(&pack.path(asset.silhouette.as_ref().unwrap())).unwrap());
+    }
+
+    let mut atlas = Atlas::new(MIN_PAGE_SIZE);
+    let mut placed: Vec<(AtlasEntry, Raster)> = Vec::new();
+    // Rounds of large to small SVG art, until a round spills onto a second page. Small entries late
+    // in that round backfill the first page.
+    let widths = [384, 256, 192, 128, 96, 64, 48, 32, 24, 16];
+    for round in 0.. {
+        for width in widths {
+            for art in &arts {
+                // PNGs, such as the Silhouettes, have one native size: place each once.
+                if art.format() == ArtFormat::Png && (round > 0 || width != widths[0]) {
+                    continue;
+                }
+                // Vary sizes a little between rounds so shelves don't line up exactly.
+                let raster = art.rasterise_fit(width + round * 3);
+                let entry = atlas
+                    .insert(&headless.device, &headless.queue, &raster)
+                    .unwrap();
+                placed.push((entry, raster));
+            }
+        }
+        if atlas.page_count() > 1 {
+            break;
+        }
+    }
+    placed.retain(|(entry, _)| entry.page == 0);
+    assert!(atlas.page_count() >= 2);
+    eprintln!("{} pages", atlas.page_count());
+
+    let page = read_texture(&headless.device, &headless.queue, atlas.page_texture(0));
+    assert_eq!([page.width, page.height], [MIN_PAGE_SIZE, MIN_PAGE_SIZE]);
+    // Uploads are byte copies, so every entry reads back exactly, on any adapter.
+    let mut used = 0u64;
+    for (entry, raster) in &placed {
+        used += u64::from(entry.rect.width * entry.rect.height);
+        for y in 0..raster.height {
+            let start = (((entry.rect.y + y) * page.width + entry.rect.x) * 4) as usize;
+            let row = (y * raster.width * 4) as usize;
+            assert_eq!(
+                &page.pixels[start..start + (raster.width * 4) as usize],
+                &raster.pixels[row..row + (raster.width * 4) as usize],
+                "row {y} of {entry:?}"
+            );
+        }
+    }
+    let fill = used as f64 / f64::from(MIN_PAGE_SIZE * MIN_PAGE_SIZE);
+    eprintln!(
+        "{} entries fill {:.1}% of the page",
+        placed.len(),
+        fill * 100.0
+    );
+    assert!(fill > 0.7, "the page is only {:.1}% full", fill * 100.0);
+    if let Gpu::Software(_) = gpu {
+        assert_matches_golden("atlas_page", &page);
     }
 }

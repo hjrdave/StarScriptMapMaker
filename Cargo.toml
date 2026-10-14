@@ -17,11 +17,14 @@ bytemuck = { version = "1.25", features = ["derive"] }
 directories = "6.0"
 eframe = { version = "0.36", features = ["persistence"] }
 egui-file-dialog = "0.15"
+etagere = "0.3"
 image = { version = "0.25", default-features = false, features = ["png"] }
 insta = { version = "1.49", features = ["glob", "json"] }
 lyon = "1.0"
 pollster = "1.0"
 proptest = "1.12"
+# Without its default features: no system fonts, no embedded raster images in SVGs.
+resvg = { version = "0.48", default-features = false }
 rstar = "0.12"
 rusqlite = { version = "0.40", features = ["bundled"] }
 schemars = { version = "1.2", features = ["uuid1"] }
@@ -29,6 +32,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
 tempfile = "3.27"
 thiserror = "2.0"
+toml = "1.1"
+toml_edit = "0.25"
 uuid = { version = "1.28", features = ["v7", "serde"] }
 
 # Must match the wgpu version egui-wgpu uses, so `render` and `app` share one device.
