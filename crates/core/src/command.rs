@@ -203,6 +203,19 @@ pub enum Command {
         id: Id,
         stamp: Box<Stamp>,
     },
+    /// Places many Stamps inside Layer `parent` on top, in the order given, as one edit. A
+    /// brush resolves its randomness first, so this names every Stamp it creates.
+    PlaceStamps {
+        parent: Id,
+        stamps: Vec<PlacedStamp>,
+    },
+}
+
+/// One Stamp of a [`Command::PlaceStamps`], with the id it gets.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct PlacedStamp {
+    pub id: Id,
+    pub stamp: Stamp,
 }
 
 #[derive(Clone, PartialEq, Debug, Error)]
@@ -288,6 +301,7 @@ impl Command {
             Command::SetLabel { .. } => "Edit Label",
             Command::CreateStamp { .. } => "Add Stamp",
             Command::SetStamp { .. } => "Edit Stamp",
+            Command::PlaceStamps { .. } => "Place Stamps",
         }
     }
 
@@ -564,6 +578,31 @@ impl Command {
                 unlocked(map, *id)?;
                 check_stamp(stamp)?;
                 Ok(vec![set(*id, Property::Stamp(stamp.clone()))])
+            }
+            Command::PlaceStamps { parent, stamps } => {
+                layer(map, *parent)?;
+                unlocked(map, *parent)?;
+                let start = map.children(Some(*parent)).len();
+                let mut seen = HashSet::new();
+                let mut ops = Vec::with_capacity(stamps.len());
+                for (offset, placed) in stamps.iter().enumerate() {
+                    if map.contains(placed.id) || !seen.insert(placed.id) {
+                        return Err(CommandError::IdInUse(placed.id));
+                    }
+                    check_stamp(&placed.stamp)?;
+                    ops.push(Op::Insert {
+                        parent: Some(*parent),
+                        index: start + offset,
+                        subtree: Subtree {
+                            id: placed.id,
+                            node: Node::Object(Object::new(ObjectKind::Stamp(
+                                placed.stamp.clone(),
+                            ))),
+                            children: Vec::new(),
+                        },
+                    });
+                }
+                Ok(ops)
             }
         }
     }
