@@ -1,0 +1,128 @@
+name: Claude Address Review
+
+# When the reviewer App requests changes on a Claude PR, the implementer (default Claude
+# App identity) fixes them on the same branch. Capped at 3 rounds per PR, then needs-human.
+
+env:
+  IMPLEMENTER_LOGIN: "claude[bot]"
+  # Login of YOUR reviewer GitHub App: "<app-slug>[bot]". Edit to match.
+  REVIEWER_LOGIN: "starscript-reviewer[bot]"
+  MAX_ROUNDS: "3"
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions: {}
+
+jobs:
+  gate:
+    name: Is this a reviewer change request on a Claude PR?
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    outputs:
+      proceed: ${{ steps.check.outputs.proceed }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          REVIEW_STATE: ${{ github.event.review.state }}
+          REVIEW_USER: ${{ github.event.review.user.login }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_STATE: ${{ github.event.pull_request.state }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          set -euo pipefail
+          skip() { echo "proceed=false" >> "$GITHUB_OUTPUT"; echo "skip: $1"; exit 0; }
+
+          [ "$REVIEW_STATE" = "changes_requested" ] || skip "review state is $REVIEW_STATE"
+          [ "$REVIEW_USER" = "$REVIEWER_LOGIN" ]    || skip "review by $REVIEW_USER, not $REVIEWER_LOGIN"
+          [ "$PR_AUTHOR" = "$IMPLEMENTER_LOGIN" ]   || skip "PR author is $PR_AUTHOR"
+          [ "$PR_STATE" = "open" ]                  || skip "PR is $PR_STATE"
+          [ "$HEAD_REPO" = "$REPO" ]                || skip "fork PR"
+          jq -e 'index("needs-human") | not' <<<"$LABELS" >/dev/null || skip "already needs-human"
+
+          # Round = Nth change request from the reviewer (this one is already counted).
+          rounds=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" \
+            --jq ".[] | select(.user.login == \"$REVIEWER_LOGIN\" and .state == \"CHANGES_REQUESTED\") | .id" \
+            | wc -l)
+          echo "change-request rounds so far: $rounds (max $MAX_ROUNDS)"
+
+          if [ "$rounds" -gt "$MAX_ROUNDS" ]; then
+            gh api -X POST "repos/$REPO/issues/$PR/labels" -f 'labels[]=needs-human' >/dev/null
+            gh pr comment "$PR" --repo "$REPO" --body "Automated review loop stopped after $MAX_ROUNDS rounds of requested changes. Labelled \`needs-human\`; a maintainer needs to take over."
+            skip "round limit reached"
+          fi
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+
+  address:
+    name: Address review on PR #${{ github.event.pull_request.number }}
+    needs: gate
+    if: needs.gate.outputs.proceed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    concurrency:
+      group: claude-address-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write        # OIDC exchange for the Claude GitHub App token
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTFLAGS: -D warnings
+      PR: ${{ github.event.pull_request.number }}
+      BRANCH: ${{ github.event.pull_request.head.ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install software GPU (lavapipe) for render tests
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # No github_token: default Claude GitHub App identity (claude[bot]).
+          # The triggering actor is the reviewer bot, so it must be allow-listed.
+          allowed_bots: ${{ env.REVIEWER_LOGIN }}
+          prompt: |
+            The automated reviewer requested changes on pull request #${{ env.PR }} in
+            ${{ github.repository }} (branch `${{ env.BRANCH }}`, which is checked out).
+            Address the feedback autonomously. Nobody will answer questions during this run.
+
+            1. Read the feedback: `gh pr view ${{ env.PR }} --json reviews,comments,body`.
+               Use the most recent CHANGES_REQUESTED review. Also read the linked issue
+               (`gh issue view <n>`) so you keep to its scope.
+            2. Make the requested fixes, and nothing beyond them. Do not modify anything
+               under `.github/`.
+            3. Verify as the project's CI does: `cargo fmt --all --check`,
+               `cargo clippy --workspace --all-targets --locked -- -D warnings`,
+               `./scripts/check-core-deps.sh`, `cargo build --workspace --all-targets --locked`,
+               `cargo test --workspace --locked` (plus package.json lint/typecheck/build if present).
+            4. Commit and `git push origin HEAD:${{ env.BRANCH }}`. Never force push; never
+               push to another branch.
+            5. Add one short `gh pr comment ${{ env.PR }}` summarising what changed per item.
+
+            If you disagree with an item or cannot do it (conflicting requirements, needs a
+            product decision), do not guess: comment explaining why, run
+            `gh pr edit ${{ env.PR }} --add-label needs-human`, and stop without pushing.
+          claude_args: |
+            --max-turns 60
+            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git fetch:*),Bash(git add:*),Bash(git mv:*),Bash(git rm:*),Bash(git commit:*),Bash(git push:*),Bash(cargo:*),Bash(./scripts/check-core-deps.sh:*),Bash(npm:*),Bash(npx:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(gh pr edit:*),Bash(gh issue view:*),Bash(gh run view:*)"
+            --disallowedTools "Bash(git push --force:*),Bash(git push -f:*),Bash(git push --force-with-lease:*)"
