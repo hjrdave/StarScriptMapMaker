@@ -3,6 +3,8 @@ name: Claude Auth Test
 # One-off diagnostic. Manual only. Calls the Claude CLI directly with the
 # CLAUDE_CODE_OAUTH_TOKEN secret and prints what it says, so an auth problem is visible.
 # Prints only the CLI's reply or error (Actions masks the token). Safe to delete afterwards.
+# Also checks the reviewer GitHub App secrets (presence/shape only, never values) and tries
+# to mint a token with the same permissions claude-review.yml asks for.
 
 on:
   workflow_dispatch:
@@ -37,3 +39,39 @@ jobs:
           echo "--- stdout"; cat out.json; echo
           echo "--- stderr"; cat err.txt
           exit $code
+
+  reviewer-app-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Reviewer App secrets present? (shape only)
+        env:
+          APP_ID: ${{ secrets.REVIEWER_APP_ID }}
+          APP_KEY: ${{ secrets.REVIEWER_APP_KEY }}
+        run: |
+          if [ -z "$APP_ID" ]; then echo "::error::REVIEWER_APP_ID is empty or missing in this run"; else echo "REVIEWER_APP_ID: length ${#APP_ID}, digits only: $([[ "$APP_ID" =~ ^[0-9]+$ ]] && echo yes || echo NO)"; fi
+          if [ -z "$APP_KEY" ]; then echo "::error::REVIEWER_APP_KEY is empty or missing in this run"; else
+            echo "REVIEWER_APP_KEY: length ${#APP_KEY}, lines $(printf '%s\n' "$APP_KEY" | wc -l), first line: $(printf '%s\n' "$APP_KEY" | head -n1)"; fi
+
+      - name: Try to mint the reviewer token
+        id: mint
+        continue-on-error: true
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.REVIEWER_APP_ID }}
+          private-key: ${{ secrets.REVIEWER_APP_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+          permission-actions: read
+          permission-checks: read
+
+      - name: Result
+        env:
+          OUTCOME: ${{ steps.mint.outcome }}
+          GH_TOKEN: ${{ steps.mint.outputs.token }}
+        run: |
+          echo "mint outcome: $OUTCOME"
+          [ "$OUTCOME" = success ] || exit 1
+          echo "token works; repos it can see:"
+          gh api /installation/repositories --jq '.repositories[].full_name'
