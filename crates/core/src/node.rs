@@ -44,6 +44,9 @@ pub struct Layer {
     /// The Landmass this Layer is clipped to, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clip: Option<Id>,
+    /// Draws the Stamps directly inside by Anchor height, lower in front (ADR 0003).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub depth_sort: bool,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -56,6 +59,7 @@ impl Layer {
             locked: false,
             opacity: 1.0,
             clip: None,
+            depth_sort: false,
             extra: Extra::new(),
         }
     }

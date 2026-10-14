@@ -256,6 +256,35 @@ impl Map {
         false
     }
 
+    /// The children of `layer` in the order they draw, first lowest. Normally the tree order.
+    /// With Depth sort on, the Stamps take the places the Stamps held, ordered by Anchor
+    /// height with lower in front (ties keep tree order); Layers and other Objects stay put.
+    pub fn ordered_children(&self, layer: Id) -> Vec<Id> {
+        let mut children = self.children(Some(layer)).to_vec();
+        if !matches!(self.node(layer), Some(Node::Layer(l)) if l.depth_sort) {
+            return children;
+        }
+        let anchor_y = |id: Id| match self.node(id) {
+            Some(Node::Object(Object {
+                kind: ObjectKind::Stamp(stamp),
+                ..
+            })) => Some(stamp.position[1]),
+            _ => None,
+        };
+        let slots: Vec<usize> = (0..children.len())
+            .filter(|&i| anchor_y(children[i]).is_some())
+            .collect();
+        let mut stamps: Vec<Id> = slots.iter().map(|&i| children[i]).collect();
+        stamps.sort_by(|&a, &b| {
+            let (a, b) = (anchor_y(a).unwrap_or(0.0), anchor_y(b).unwrap_or(0.0));
+            a.total_cmp(&b)
+        });
+        for (slot, id) in slots.into_iter().zip(stamps) {
+            children[slot] = id;
+        }
+        children
+    }
+
     /// The Objects that draw, first lowest: the tree in Stacking order, skipping hidden
     /// Layers, except that a Layer's Lakes draw above all its other content, so water always
     /// lies over the land around it.
@@ -272,7 +301,7 @@ impl Map {
             return;
         }
         let mut lakes = Vec::new();
-        for &child in self.children(Some(layer)) {
+        for child in self.ordered_children(layer) {
             match self.node(child) {
                 Some(Node::Layer(_)) => self.collect_draw_order(child, out),
                 Some(Node::Object(object)) if matches!(object.kind, ObjectKind::Lake(_)) => {
