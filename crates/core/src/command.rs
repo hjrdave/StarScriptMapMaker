@@ -63,6 +63,11 @@ pub enum Command {
         id: Id,
         depth_sort: bool,
     },
+    /// Clips a Layer to the Landmass `target`, or clears its Clip with `None`.
+    SetClip {
+        id: Id,
+        target: Option<Id>,
+    },
     /// Deletes Layers and Objects with everything inside them, and clears Clips that pointed
     /// at anything deleted.
     Delete {
@@ -279,6 +284,10 @@ impl Command {
             Command::SetLocked { .. } => "Change Lock",
             Command::SetOpacity { .. } => "Change Opacity",
             Command::SetDepthSort { .. } => "Change Depth Sort",
+            Command::SetClip {
+                target: Some(_), ..
+            } => "Clip to Landmass",
+            Command::SetClip { target: None, .. } => "Clear Clip",
             Command::Delete { .. } => "Delete",
             Command::CreateLandmass { .. } => "Create Landmass",
             Command::CreateLake { .. } => "Create Lake",
@@ -387,6 +396,19 @@ impl Command {
                 layer(map, *id)?;
                 unlocked(map, *id)?;
                 Ok(vec![set(*id, Property::DepthSort(*depth_sort))])
+            }
+            Command::SetClip { id, target } => {
+                layer(map, *id)?;
+                unlocked(map, *id)?;
+                if let Some(target) = *target
+                    && !matches!(
+                        existing(map, target)?,
+                        Node::Object(o) if matches!(o.kind, ObjectKind::Landmass(_))
+                    )
+                {
+                    return Err(CommandError::NotALandmass(target));
+                }
+                Ok(vec![set(*id, Property::Clip(*target))])
             }
             Command::Delete { ids } => delete(map, ids),
             Command::CreateLandmass {

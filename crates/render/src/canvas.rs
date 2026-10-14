@@ -1,6 +1,7 @@
 //! The Canvas renderer: an offscreen, multisampled target holding the backdrop and the Map's
 //! Objects.
 
+use std::ops::Range;
 use std::sync::Arc;
 
 use lyon::math::Box2D;
@@ -46,6 +47,19 @@ impl Default for Backdrop {
 pub struct Content {
     groups: Arc<[VectorGroup]>,
     stamps: Arc<[PlacedStamp]>,
+    clips: Arc<[ClipScope]>,
+}
+
+/// A stretch of the content that shows only inside a shape, as a Layer clipped to a Landmass
+/// does. Scopes are disjoint and in draw order.
+#[derive(Clone, Debug, Default)]
+pub struct ClipScope {
+    /// The vector groups it clips. Stamps join it by their [`PlacedStamp::clip`].
+    pub groups: Range<usize>,
+    /// Fills of the Landmass the scope is clipped to.
+    pub land: Vec<VectorGroup>,
+    /// Fills of the Lakes over the Landmass, cut out of it.
+    pub holes: Vec<VectorGroup>,
 }
 
 impl Content {
@@ -56,12 +70,38 @@ impl Content {
     /// `stamps` must be in draw order: their `after` values never decrease, and none exceeds
     /// the number of groups.
     pub fn with_stamps(groups: Vec<VectorGroup>, stamps: Vec<PlacedStamp>) -> Self {
+        Self::with_clips(groups, stamps, Vec::new())
+    }
+
+    /// `clips` must be disjoint and in order, inside the groups, and each Stamp's `clip` must
+    /// index one.
+    pub fn with_clips(
+        groups: Vec<VectorGroup>,
+        stamps: Vec<PlacedStamp>,
+        clips: Vec<ClipScope>,
+    ) -> Self {
         debug_assert!(stamps.windows(2).all(|pair| pair[0].after <= pair[1].after));
         debug_assert!(stamps.iter().all(|stamp| stamp.after <= groups.len()));
+        debug_assert!(
+            stamps
+                .iter()
+                .all(|s| s.clip.is_none_or(|c| c < clips.len()))
+        );
+        debug_assert!(
+            clips
+                .windows(2)
+                .all(|pair| pair[0].groups.end <= pair[1].groups.start)
+        );
+        debug_assert!(clips.iter().all(|clip| clip.groups.end <= groups.len()));
         Self {
             groups: groups.into(),
             stamps: stamps.into(),
+            clips: clips.into(),
         }
+    }
+
+    pub fn clips(&self) -> &[ClipScope] {
+        &self.clips
     }
 
     pub fn groups(&self) -> &[VectorGroup] {
@@ -79,7 +119,9 @@ impl Content {
 
 impl PartialEq for Content {
     fn eq(&self, other: &Self) -> bool {
-        (Arc::ptr_eq(&self.groups, &other.groups) && Arc::ptr_eq(&self.stamps, &other.stamps))
+        (Arc::ptr_eq(&self.groups, &other.groups)
+            && Arc::ptr_eq(&self.stamps, &other.stamps)
+            && Arc::ptr_eq(&self.clips, &other.clips))
             || (self.is_empty() && other.is_empty())
     }
 }
@@ -129,6 +171,8 @@ pub struct CanvasRenderer {
     /// The Map's Objects, over the ocean.
     content: LyonRenderer,
     stamps: StampRenderer,
+    /// The shapes of the content's Clips: for each scope, its land then its Lakes.
+    masks: LyonRenderer,
     drawn_backdrop: Option<BackdropKey>,
     drawn_content: Option<Content>,
     /// Where the content's vector groups are split to draw Stamps between them.
@@ -167,6 +211,7 @@ impl CanvasRenderer {
             backdrop: LyonRenderer::new(device, &view_layout, samples),
             ocean: OceanPass::new(device, &view_layout, samples),
             content: LyonRenderer::new(device, &view_layout, samples),
+            masks: LyonRenderer::new(device, &view_layout, samples),
             stamps: StampRenderer::new(
                 device,
                 &view_layout,
@@ -213,12 +258,28 @@ impl CanvasRenderer {
         }
         if self.drawn_content.as_ref() != Some(&scene.content) {
             self.stamps.prepare(device, queue, scene.content.stamps());
+            let clips = scene.content.clips();
             let cuts: Vec<usize> = {
-                let mut cuts: Vec<usize> = self.stamps.cuts().collect();
+                let mut cuts: Vec<usize> = self
+                    .stamps
+                    .cuts()
+                    .chain(clips.iter().flat_map(|c| [c.groups.start, c.groups.end]))
+                    .collect();
+                cuts.sort_unstable();
                 cuts.dedup();
                 cuts
             };
             self.content.set_runs(device, scene.content.groups(), &cuts);
+            // Run 2n of the masks is scope n's land and run 2n + 1 its Lakes.
+            let mut mask_groups = Vec::new();
+            let mut mask_cuts = Vec::new();
+            for clip in clips {
+                mask_groups.extend_from_slice(&clip.land);
+                mask_cuts.push(mask_groups.len());
+                mask_groups.extend_from_slice(&clip.holes);
+                mask_cuts.push(mask_groups.len());
+            }
+            self.masks.set_runs(device, &mask_groups, &mask_cuts);
             self.content_cuts = cuts;
             self.drawn_content = Some(scene.content.clone());
         }
@@ -254,13 +315,46 @@ impl CanvasRenderer {
         pass.set_bind_group(0, &self.view_bind_group, &[]);
         self.backdrop.draw(&mut pass);
         self.ocean.draw(&mut pass);
-        for (run, &cut) in self.content_cuts.iter().enumerate() {
-            self.content.draw_run(&mut pass, run);
-            self.stamps.draw(&mut pass, cut);
+        let clips = scene.content.clips();
+        let mut active = None;
+        let mut start = 0;
+        for run in 0..=self.content_cuts.len() {
+            // A run lies inside one Clip scope or outside them all, as scope edges are cuts.
+            let scope = clips.iter().position(|clip| clip.groups.contains(&start));
+            self.enter(&mut pass, &mut active, scope);
+            self.content.draw_run(&mut pass, run, scope.is_some());
+            let Some(&cut) = self.content_cuts.get(run) else {
+                break;
+            };
+            for (clip, batches) in self.stamps.runs_after(cut) {
+                self.enter(&mut pass, &mut active, clip);
+                self.stamps.draw(&mut pass, batches, clip.is_some());
+            }
+            start = cut;
         }
-        self.content.draw_run(&mut pass, self.content_cuts.len());
         drop(pass);
         &target.resolved
+    }
+
+    /// Makes `scope` the active Clip: removes the previous one's shape from the stencil and
+    /// writes the new one's.
+    fn enter(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        active: &mut Option<usize>,
+        scope: Option<usize>,
+    ) {
+        if *active == scope {
+            return;
+        }
+        if let Some(old) = *active {
+            self.masks.draw_mask(pass, 2 * old, 0);
+        }
+        if let Some(new) = scope {
+            self.masks.draw_mask(pass, 2 * new, CLIP_INSIDE);
+            self.masks.draw_mask(pass, 2 * new + 1, 0);
+        }
+        *active = scope;
     }
 
     fn set_backdrop(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, scene: BackdropKey) {
@@ -366,15 +460,26 @@ pub(crate) fn uniform_layout(device: &wgpu::Device, label: &str) -> wgpu::BindGr
     })
 }
 
-/// How a Canvas pipeline uses the stencil, which starts each frame at 0.
+/// The stencil value of samples inside the active Clip. Paint-once marks count up from it.
+pub(crate) const CLIP_INSIDE: u32 = 0x80;
+
+/// How a Canvas pipeline uses the stencil, which starts each frame at 0. Samples inside the
+/// active Clip hold [`CLIP_INSIDE`] and the rest 0; draws that respect a Clip run with that
+/// value as their stencil reference, and with 0 when nothing is clipped.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum StencilUse {
     Ignore,
-    /// Draws only where the stencil is 0 and marks what it draws, so overlapping triangles
-    /// in one draw paint each sample once.
+    /// Draws only where the stencil equals the reference, which is the Clip's inside.
+    Clipped,
+    /// Draws only where the stencil equals the reference and marks what it draws, so
+    /// overlapping triangles in one draw paint each sample once.
     PaintOnce,
-    /// Draws no colour and clears marks, ready for the next `PaintOnce` draw.
+    /// Draws no colour and puts the reference back where `PaintOnce` marked, ready for the
+    /// next `PaintOnce` draw.
     Reset,
+    /// Draws no colour and sets the stencil to the reference everywhere it covers: the Clip's
+    /// inside with [`CLIP_INSIDE`], or its removal with 0.
+    Mask,
 }
 
 impl StencilUse {
@@ -387,6 +492,10 @@ impl StencilUse {
         };
         let (face, write_mask) = match self {
             StencilUse::Ignore => (wgpu::StencilFaceState::IGNORE, 0),
+            StencilUse::Clipped => (
+                face(wgpu::CompareFunction::Equal, wgpu::StencilOperation::Keep),
+                0,
+            ),
             StencilUse::PaintOnce => (
                 face(
                     wgpu::CompareFunction::Equal,
@@ -394,10 +503,15 @@ impl StencilUse {
                 ),
                 0xff,
             ),
+            // Passes where the stencil is above the reference, that is, marked.
             StencilUse::Reset => (
+                face(wgpu::CompareFunction::Less, wgpu::StencilOperation::Replace),
+                0xff,
+            ),
+            StencilUse::Mask => (
                 face(
-                    wgpu::CompareFunction::NotEqual,
-                    wgpu::StencilOperation::Zero,
+                    wgpu::CompareFunction::Always,
+                    wgpu::StencilOperation::Replace,
                 ),
                 0xff,
             ),
@@ -442,7 +556,7 @@ pub(crate) fn canvas_pipeline(
             targets: &[Some(wgpu::ColorTargetState {
                 format: CANVAS_FORMAT,
                 blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                write_mask: if stencil == StencilUse::Reset {
+                write_mask: if matches!(stencil, StencilUse::Reset | StencilUse::Mask) {
                     wgpu::ColorWrites::empty()
                 } else {
                     wgpu::ColorWrites::ALL

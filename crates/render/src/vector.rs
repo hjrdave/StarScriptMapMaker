@@ -11,7 +11,7 @@ use wgpu::util::DeviceExt;
 
 pub use lyon::tessellation::FillRule;
 
-use crate::canvas::StencilUse;
+use crate::canvas::{CLIP_INSIDE, StencilUse};
 use crate::color::{Color, ColorExt as _};
 
 /// How a path is painted.
@@ -83,10 +83,14 @@ struct Vertex {
 pub struct LyonRenderer {
     /// Draws without touching the stencil.
     plain: wgpu::RenderPipeline,
-    /// Draws only where the stencil is 0, and marks what it draws.
+    /// Draws only inside the active Clip.
+    clipped: wgpu::RenderPipeline,
+    /// Draws only where the stencil equals the reference, and marks what it draws.
     once: wgpu::RenderPipeline,
     /// Draws no colour, and clears the marks `once` left.
     reset: wgpu::RenderPipeline,
+    /// Draws no colour, and sets the stencil to the reference.
+    mask: wgpu::RenderPipeline,
     mesh: Option<Mesh>,
 }
 
@@ -146,8 +150,10 @@ impl LyonRenderer {
         };
         Self {
             plain: pipeline("fill", StencilUse::Ignore),
+            clipped: pipeline("fill clipped", StencilUse::Clipped),
             once: pipeline("fill once", StencilUse::PaintOnce),
             reset: pipeline("fill reset", StencilUse::Reset),
+            mask: pipeline("fill mask", StencilUse::Mask),
             mesh: None,
         }
     }
@@ -218,15 +224,17 @@ impl LyonRenderer {
         });
     }
 
-    /// Draws run `run` of the groups last given to [`LyonRenderer::set_runs`].
-    pub(crate) fn draw_run(&self, pass: &mut wgpu::RenderPass<'_>, run: usize) {
+    /// Draws run `run` of the groups last given to [`LyonRenderer::set_runs`], only inside the
+    /// active Clip if `clipped`.
+    pub(crate) fn draw_run(&self, pass: &mut wgpu::RenderPass<'_>, run: usize, clipped: bool) {
         let Some(mesh) = &self.mesh else { return };
         let Some(range) = mesh.runs.get(run) else {
             return;
         };
         pass.set_vertex_buffer(0, mesh.vertices.slice(..));
         pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
-        pass.set_stencil_reference(0);
+        pass.set_stencil_reference(if clipped { CLIP_INSIDE } else { 0 });
+        let plain = if clipped { &self.clipped } else { &self.plain };
         for draw in &mesh.draws[range.clone()] {
             if draw.once {
                 pass.set_pipeline(&self.once);
@@ -234,9 +242,25 @@ impl LyonRenderer {
                 pass.set_pipeline(&self.reset);
                 pass.draw_indexed(draw.indices.clone(), 0, 0..1);
             } else {
-                pass.set_pipeline(&self.plain);
+                pass.set_pipeline(plain);
                 pass.draw_indexed(draw.indices.clone(), 0, 0..1);
             }
+        }
+    }
+
+    /// Sets the stencil to `value` under run `run` of the groups last given to
+    /// [`LyonRenderer::set_runs`], without drawing colour.
+    pub(crate) fn draw_mask(&self, pass: &mut wgpu::RenderPass<'_>, run: usize, value: u32) {
+        let Some(mesh) = &self.mesh else { return };
+        let Some(range) = mesh.runs.get(run) else {
+            return;
+        };
+        pass.set_vertex_buffer(0, mesh.vertices.slice(..));
+        pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
+        pass.set_stencil_reference(value);
+        pass.set_pipeline(&self.mask);
+        for draw in &mesh.draws[range.clone()] {
+            pass.draw_indexed(draw.indices.clone(), 0, 0..1);
         }
     }
 }
@@ -247,7 +271,7 @@ impl VectorRenderer for LyonRenderer {
     }
 
     fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
-        self.draw_run(pass, 0);
+        self.draw_run(pass, 0, false);
     }
 }
 

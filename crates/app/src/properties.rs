@@ -8,7 +8,7 @@ use ssmap_core::{
 use ssmap_fonts::LABEL_FAMILIES;
 
 use crate::editor::Editor;
-use crate::layer_tree::node_name;
+use crate::layer_tree::{landmass_name, landmasses, node_name, selected_landmass};
 
 #[derive(Default)]
 pub struct PropertiesPanel {
@@ -332,11 +332,42 @@ impl PropertiesPanel {
             }
             ui.end_row();
 
-            if let Some(target) = layer.clip {
-                ui.label("Clipped to");
-                ui.label(node_name(&editor.map, target));
-                ui.end_row();
-            }
+            ui.label("Clip to");
+            ui.horizontal(|ui| {
+                let current = layer
+                    .clip
+                    .map_or("None".to_owned(), |t| landmass_name(&editor.map, t));
+                egui::ComboBox::from_id_salt("clip")
+                    .selected_text(current)
+                    .show_ui(ui, |ui| {
+                        if ui.selectable_label(layer.clip.is_none(), "None").clicked() {
+                            editor.run(Command::SetClip { id, target: None });
+                        }
+                        for target in landmasses(&editor.map) {
+                            let name = landmass_name(&editor.map, target);
+                            if ui
+                                .selectable_label(layer.clip == Some(target), name)
+                                .clicked()
+                            {
+                                editor.run(Command::SetClip {
+                                    id,
+                                    target: Some(target),
+                                });
+                            }
+                        }
+                    });
+                let selected = selected_landmass(&editor.map, editor.selection());
+                if ui
+                    .add_enabled(selected.is_some(), egui::Button::new("Use selection"))
+                    .clicked()
+                {
+                    editor.run(Command::SetClip {
+                        id,
+                        target: selected,
+                    });
+                }
+            });
+            ui.end_row();
         });
     }
 

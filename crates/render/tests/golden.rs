@@ -711,6 +711,137 @@ fn depth_sorted_mountain_range() {
     }
 }
 
+/// A square of land with a Lake in it, and a Layer of Stamps over both, optionally clipped to
+/// the land.
+fn render_clipped(headless: &Headless, clip: bool, stamps: &[ssmap_core::Stamp]) -> RgbaImage {
+    use ssmap_core::{MultiPolygon, Polygon};
+    let square = |min: [f64; 2], max: [f64; 2]| {
+        MultiPolygon(vec![Polygon {
+            exterior: vec![min, [max[0], min[1]], max, [min[0], max[1]]],
+            holes: vec![],
+        }])
+    };
+    let new_layer = |map: &mut Map, name: &str| {
+        let id = Id::new();
+        map.execute(&Command::CreateLayer {
+            id,
+            parent: None,
+            index: None,
+            name: name.into(),
+        })
+        .unwrap();
+        id
+    };
+    let mut map = Map::new(Canvas::new(480, 320, Scale::new(1.0, DistanceUnit::Miles)));
+    let land_layer = new_layer(&mut map, "Land");
+    let land = Id::new();
+    map.execute(&Command::CreateLandmass {
+        id: land,
+        parent: land_layer,
+        index: None,
+        geometry: square([120.0, 60.0], [360.0, 260.0]),
+        fill: None,
+    })
+    .unwrap();
+    map.execute(&Command::CreateLake {
+        id: Id::new(),
+        parent: land_layer,
+        index: None,
+        geometry: square([220.0, 110.0], [300.0, 200.0]),
+        fill: None,
+    })
+    .unwrap();
+    let art = new_layer(&mut map, "Art");
+    if clip {
+        map.execute(&Command::SetClip {
+            id: art,
+            target: Some(land),
+        })
+        .unwrap();
+    }
+    for stamp in stamps {
+        map.execute(&Command::CreateStamp {
+            id: Id::new(),
+            parent: art,
+            index: None,
+            stamp: Box::new(stamp.clone()),
+        })
+        .unwrap();
+    }
+    for kind in [ShoreKind::Landmass, ShoreKind::Lake] {
+        map.execute(&Command::SetDefaultShore {
+            kind,
+            shore: ShoreStyle::plain(),
+        })
+        .unwrap();
+    }
+    let canvas = scene_of(&map);
+    let view = View::whole_canvas(canvas.canvas_size, 960);
+    let mut renderer =
+        CanvasRenderer::new(&headless.device, GpuCapabilities::query(&headless.adapter));
+    renderer.set_sprites(test_sprites());
+    render_to_image(
+        &headless.device,
+        &headless.queue,
+        &mut renderer,
+        &canvas,
+        &view,
+    )
+}
+
+/// Stamps on a clipped Layer are cut at the coast and absent inside a Lake.
+#[test]
+fn clipped_stamps_stop_at_the_coast_and_the_lake() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let big = |asset: &str, at: [f64; 2]| {
+        let mut s = stamp(asset, at);
+        s.scale = 2.5;
+        s
+    };
+    let stamps = [
+        // On the west coast, half in the sea.
+        big("test-pack/mountain-1", [120.0, 160.0]),
+        // Wholly in the sea.
+        big("test-pack/castle", [50.0, 100.0]),
+        // On the Lake.
+        big("test-pack/mountain-2", [260.0, 150.0]),
+        // On land.
+        big("test-pack/tree", [180.0, 230.0]),
+    ];
+    let clipped = render_clipped(headless, true, &stamps);
+    let unclipped = render_clipped(headless, false, &stamps);
+    let bare = render_clipped(headless, true, &[]);
+    // The image is 2 px per unit.
+    let region_equal = |a: &RgbaImage, b: &RgbaImage, min: [u32; 2], max: [u32; 2]| {
+        (min[1] * 2..max[1] * 2)
+            .all(|y| (min[0] * 2..max[0] * 2).all(|x| pixel(a, x, y) == pixel(b, x, y)))
+    };
+    assert!(
+        !region_equal(&unclipped, &bare, [0, 0], [118, 320]),
+        "the Stamps do draw in the sea when not clipped"
+    );
+    assert!(
+        region_equal(&clipped, &bare, [0, 0], [118, 320]),
+        "clipped Stamps are absent from the sea"
+    );
+    assert!(
+        !region_equal(&unclipped, &bare, [222, 112], [298, 198]),
+        "the Stamp over the Lake draws when not clipped"
+    );
+    assert!(
+        region_equal(&clipped, &bare, [222, 112], [298, 198]),
+        "clipped Stamps are absent inside the Lake"
+    );
+    assert!(
+        !region_equal(&clipped, &bare, [125, 62], [215, 258]),
+        "clipped Stamps still draw on land"
+    );
+    if let Gpu::Software(_) = gpu {
+        assert_matches_golden("clipped_stamps", &clipped);
+    }
+}
+
 /// Stamps of an Asset no pack has draw nothing, and the rest of the Map still draws.
 #[test]
 fn missing_art_draws_nothing() {

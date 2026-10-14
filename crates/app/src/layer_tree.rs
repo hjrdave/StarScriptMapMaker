@@ -108,6 +108,40 @@ pub fn is_depth_sorted_stamp(map: &Map, id: Id) -> bool {
     )
 }
 
+/// Every Landmass, topmost first as the tree lists them.
+pub fn landmasses(map: &Map) -> Vec<Id> {
+    rows(map, &HashSet::new())
+        .into_iter()
+        .map(|row| row.id)
+        .filter(|&id| is_landmass(map, id))
+        .collect()
+}
+
+fn is_landmass(map: &Map, id: Id) -> bool {
+    matches!(
+        map.node(id),
+        Some(Node::Object(object)) if matches!(object.kind, ObjectKind::Landmass(_))
+    )
+}
+
+/// The Landmass a Layer should be clipped to: the one Object `selection` holds, if it is a
+/// Landmass.
+pub fn selected_landmass(map: &Map, selection: &[Id]) -> Option<Id> {
+    match selection {
+        &[id] if is_landmass(map, id) => Some(id),
+        _ => None,
+    }
+}
+
+/// A Landmass as a Clip target is named by its place in [`landmasses`], as Landmasses have no
+/// names of their own.
+pub fn landmass_name(map: &Map, id: Id) -> String {
+    match landmasses(map).iter().position(|&l| l == id) {
+        Some(index) => format!("Landmass {}", index + 1),
+        None => "Missing Landmass".to_owned(),
+    }
+}
+
 pub fn node_name(map: &Map, id: Id) -> String {
     match map.node(id) {
         Some(Node::Layer(layer)) => layer.name.clone(),
@@ -290,6 +324,9 @@ impl LayerTree {
                 if layer.is_some_and(|l| !l.visible) {
                     text = text.weak();
                 }
+                if layer.is_some_and(|l| l.clip.is_some()) {
+                    text = text.italics();
+                }
                 child.add(egui::Label::new(text).selectable(false).truncate());
             }
         }
@@ -307,6 +344,35 @@ impl LayerTree {
         }
         if is_depth_sorted_stamp(map, row.id) {
             response.clone().on_hover_text(DEPTH_SORT_HINT);
+        }
+        if let Some(layer) = layer {
+            response.context_menu(|ui| {
+                let selected = selected_landmass(map, editor.selection());
+                if ui
+                    .add_enabled(
+                        selected.is_some(),
+                        egui::Button::new("Clip to selected Landmass"),
+                    )
+                    .on_disabled_hover_text("Select one Landmass first")
+                    .clicked()
+                {
+                    actions.push(Action::Run(Command::SetClip {
+                        id: row.id,
+                        target: selected,
+                    }));
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(layer.clip.is_some(), egui::Button::new("Clear Clip"))
+                    .clicked()
+                {
+                    actions.push(Action::Run(Command::SetClip {
+                        id: row.id,
+                        target: None,
+                    }));
+                    ui.close();
+                }
+            });
         }
         if response.dnd_hover_payload::<Id>().is_some()
             && let Some(target) = drop_target(ui, rect, row.id, layer.is_some())
@@ -481,6 +547,57 @@ mod tests {
             move_command(&map, stamps[0], DropTarget::Above(stamps[1])),
             None
         );
+    }
+
+    #[test]
+    fn clips_are_set_and_cleared_from_the_selection_and_deleting_the_target_undoes() {
+        use crate::editor::Editor;
+        use ssmap_core::{MultiPolygon, Polygon};
+        let mut editor = Editor::new(Map::new(Canvas::new(
+            100,
+            100,
+            Scale::new(1.0, DistanceUnit::Miles),
+        )));
+        let layer = editor.new_layer().unwrap();
+        let land = Id::new();
+        assert!(editor.run(Command::CreateLandmass {
+            id: land,
+            parent: layer,
+            index: None,
+            geometry: MultiPolygon(vec![Polygon {
+                exterior: vec![[0.0, 0.0], [50.0, 0.0], [50.0, 50.0], [0.0, 50.0]],
+                holes: vec![],
+            }]),
+            fill: None,
+        }));
+        let art = editor.new_layer().unwrap();
+        assert_eq!(selected_landmass(&editor.map, &[layer]), None);
+        assert_eq!(selected_landmass(&editor.map, &[land, art]), None);
+        let target = selected_landmass(&editor.map, &[land]);
+        assert_eq!(target, Some(land));
+        assert_eq!(landmasses(&editor.map), vec![land]);
+        assert_eq!(landmass_name(&editor.map, land), "Landmass 1");
+
+        let clip = |editor: &Editor| match editor.map.node(art) {
+            Some(Node::Layer(layer)) => layer.clip,
+            _ => panic!("a Layer"),
+        };
+        assert!(editor.run(Command::SetClip { id: art, target }));
+        assert_eq!(clip(&editor), Some(land));
+        assert!(editor.run(Command::SetClip {
+            id: art,
+            target: None
+        }));
+        assert_eq!(clip(&editor), None);
+        editor.undo();
+        assert_eq!(clip(&editor), Some(land));
+
+        editor.select(vec![land]);
+        editor.delete_selection();
+        assert_eq!(clip(&editor), None, "deleting the target clears the Clip");
+        editor.undo();
+        assert_eq!(clip(&editor), Some(land), "undo restores both");
+        assert!(editor.map.node(land).is_some());
     }
 
     #[test]
