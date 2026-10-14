@@ -10,8 +10,12 @@ name: Claude Implement
 #
 # Triggers
 #   issues opened/reopened  one issue
-#   schedule (every 2h)     sweep of ISSUE_OWNER's open issues with no linked PR
+#   schedule (every 2h)     sweep of ISSUE_OWNER's open issues that carry the `claude`
+#                           label (opt-in) and have no linked PR
 #   workflow_dispatch       same sweep, on demand
+#
+# To have the sweep pick up an existing issue, add the `claude` label to it. New issues
+# you file are handled by the `issues` trigger and do not need the label.
 #
 # Every path goes through the `select` job, which re-reads the issue from the API
 # (never trusts the event payload) and applies the guards:
@@ -55,6 +59,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           MAX_PER_RUN: "3"
+          SWEEP_LABEL: claude   # sweeps (schedule/dispatch) only take issues with this label
         run: |
           set -euo pipefail
 
@@ -70,15 +75,19 @@ jobs:
             candidates=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" --json "$fields" | jq -c '[.]')
           else
             candidates=$(gh issue list --repo "$REPO" --author "$ISSUE_OWNER" --state open \
-              --limit 100 --json "$fields" | jq -c 'sort_by(.number)')
+              --label "$SWEEP_LABEL" --limit 100 --json "$fields" | jq -c 'sort_by(.number)')
           fi
 
-          # Open, authored by ISSUE_OWNER, without a blocking label. Anything else is
-          # dropped without a comment so nobody gets a signal.
-          eligible=$(jq -r --arg owner "$owner_lc" '
+          # Open, authored by ISSUE_OWNER, without a blocking label. Sweeps additionally
+          # require the opt-in label (re-checked here as well as in the query above).
+          # Anything else is dropped without a comment so nobody gets a signal.
+          need_label=""
+          [ "$EVENT_NAME" = "issues" ] || need_label="$SWEEP_LABEL"
+          eligible=$(jq -r --arg owner "$owner_lc" --arg need "$need_label" '
             .[]
             | select(.state == "OPEN")
             | select((.author.login | ascii_downcase) == $owner)
+            | select($need == "" or any(.labels[].name; . == $need))
             | select(any(.labels[].name; IN("claude-skip","needs-info","needs-human")) | not)
             | .number' <<<"$candidates")
 
