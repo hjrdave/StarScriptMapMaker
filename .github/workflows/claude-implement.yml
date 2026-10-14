@@ -46,20 +46,21 @@ jobs:
         run: |
           set -euo pipefail
 
+          # REST API, not `gh issue ... --json`: only REST exposes author_association.
           if [ "$EVENT_NAME" = "issues" ]; then
-            candidates=$(gh issue view "$ISSUE_NUMBER" --repo "$REPO" \
-              --json number,state,labels,authorAssociation | jq -c '[.]')
+            candidates=$(gh api "repos/$REPO/issues/$ISSUE_NUMBER" | jq -c '[.]')
           else
-            candidates=$(gh issue list --repo "$REPO" --state open --limit 100 \
-              --json number,state,labels,authorAssociation | jq -c 'sort_by(.number)')
+            candidates=$(gh api --paginate \
+              "repos/$REPO/issues?state=open&sort=created&direction=asc&per_page=100" | jq -cs 'add // []')
           fi
 
-          # Trusted author + open + none of the blocking labels. Anything else is
-          # dropped without a comment so outsiders get no signal.
+          # Real issues (not PRs) by a trusted author, open, without a blocking label.
+          # Anything else is dropped without a comment so outsiders get no signal.
           eligible=$(jq -r '
             .[]
-            | select(.state == "OPEN")
-            | select(.authorAssociation | IN("OWNER","MEMBER","COLLABORATOR"))
+            | select(.pull_request == null)
+            | select(.state == "open")
+            | select(.author_association | IN("OWNER","MEMBER","COLLABORATOR"))
             | select(any(.labels[].name; IN("claude-skip","needs-info","needs-human")) | not)
             | .number' <<<"$candidates")
 
