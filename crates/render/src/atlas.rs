@@ -144,11 +144,17 @@ impl Packer {
         }
         let side = self.page_size as i32;
         // Two columns of shelves pack mixed sizes far tighter than one (79% vs 56% in the
-        // golden test).
+        // golden test), but no column fits an entry wider than half the page, so a page
+        // opened for one gets a single column.
+        let num_columns = if padded_width * 2 > self.page_size {
+            1
+        } else {
+            2
+        };
         let mut allocator = etagere::AtlasAllocator::with_options(
             etagere::size2(side, side),
             &etagere::AllocatorOptions {
-                num_columns: 2,
+                num_columns,
                 ..Default::default()
             },
         );
@@ -326,6 +332,21 @@ mod tests {
         let (second, opened) = packer.allocate(62, 62).unwrap();
         assert!(!opened);
         assert_eq!(second.page, 0);
+    }
+
+    #[test]
+    fn entries_wider_than_half_a_page_fit() {
+        let mut packer = Packer::new(64);
+        let (small, _) = packer.allocate(10, 10).unwrap();
+        let (wide, opened) = packer.allocate(62, 20).unwrap();
+        assert!(opened, "the two-column page has no room for it");
+        assert_eq!((small.page, wide.page), (0, 1));
+        let (next, opened) = packer.allocate(40, 20).unwrap();
+        assert!(!opened);
+        assert_eq!(
+            next.page, 1,
+            "the single-column page still takes wide entries"
+        );
     }
 
     #[test]
