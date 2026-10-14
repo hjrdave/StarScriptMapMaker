@@ -202,7 +202,7 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         if: steps.gate.outputs.proceed == 'true'
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # No github_token: default Claude GitHub App identity (claude[bot]).
           prompt: |
             You are implementing GitHub issue #${{ matrix.issue }} in ${{ github.repository }}
