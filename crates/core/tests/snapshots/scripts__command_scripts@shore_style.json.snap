@@ -1,0 +1,667 @@
+---
+source: crates/core/tests/scripts.rs
+expression: run(script)
+input_file: crates/core/tests/scripts/shore_style.json
+---
+{
+  "log": [
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_shore",
+          "ids": [
+            "00000000-0000-7000-8000-000000000011",
+            "00000000-0000-7000-8000-000000000012"
+          ],
+          "shore": {
+            "outline": {
+              "color": "#112233",
+              "width": 3.0
+            },
+            "ripples": {
+              "color": "#ffffff80",
+              "count": 2,
+              "fade": 0.5,
+              "spacing": 10.0,
+              "width": 2.0
+            },
+            "shading": {
+              "color": "#00000040",
+              "width": 0.0
+            }
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "defaults": {
+            "lake_shore": {
+              "outline": {
+                "color": "#3a6a8a",
+                "width": 1.0
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 0,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#2a5a7a60",
+                "width": 8.0
+              }
+            },
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            },
+            "shore": {
+              "outline": {
+                "color": "#5a4628",
+                "width": 1.5
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 3,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#8a6a3870",
+                "width": 18.0
+              }
+            }
+          },
+          "layers": [
+            {
+              "children": [
+                {
+                  "id": "00000000-0000-7000-8000-000000000011",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            100.0,
+                            0.0
+                          ],
+                          [
+                            100.0,
+                            100.0
+                          ],
+                          [
+                            0.0,
+                            100.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass",
+                    "shore": {
+                      "outline": {
+                        "color": "#112233",
+                        "width": 3.0
+                      },
+                      "ripples": {
+                        "color": "#ffffff80",
+                        "count": 2,
+                        "fade": 0.5,
+                        "spacing": 10.0,
+                        "width": 2.0
+                      },
+                      "shading": {
+                        "color": "#00000040",
+                        "width": 0.0
+                      }
+                    }
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000012",
+                  "kind": {
+                    "fill": "#6fa8c8",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            20.0,
+                            20.0
+                          ],
+                          [
+                            40.0,
+                            20.0
+                          ],
+                          [
+                            40.0,
+                            40.0
+                          ],
+                          [
+                            20.0,
+                            40.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "lake",
+                    "shore": {
+                      "outline": {
+                        "color": "#112233",
+                        "width": 3.0
+                      },
+                      "ripples": {
+                        "color": "#ffffff80",
+                        "count": 2,
+                        "fade": 0.5,
+                        "spacing": 10.0,
+                        "width": 2.0
+                      },
+                      "shading": {
+                        "color": "#00000040",
+                        "width": 0.0
+                      }
+                    }
+                  },
+                  "locked": false,
+                  "type": "object"
+                }
+              ],
+              "id": "00000000-0000-7000-8000-000000000010",
+              "locked": false,
+              "name": "Land",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_shore",
+          "ids": [
+            "00000000-0000-7000-8000-000000000011"
+          ],
+          "shore": null
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_default_shore",
+          "kind": "lake",
+          "shore": {
+            "outline": {
+              "color": "#112233",
+              "width": 3.0
+            },
+            "ripples": {
+              "color": "#ffffff80",
+              "count": 2,
+              "fade": 0.5,
+              "spacing": 10.0,
+              "width": 2.0
+            },
+            "shading": {
+              "color": "#00000040",
+              "width": 0.0
+            }
+          }
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_default_shore",
+          "kind": "landmass",
+          "shore": {
+            "outline": {
+              "color": "#112233",
+              "width": 3.0
+            },
+            "ripples": {
+              "color": "#ffffff80",
+              "count": 2,
+              "fade": 0.5,
+              "spacing": 10.0,
+              "width": 2.0
+            },
+            "shading": {
+              "color": "#00000040",
+              "width": 0.0
+            }
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "defaults": {
+            "lake_shore": {
+              "outline": {
+                "color": "#112233",
+                "width": 3.0
+              },
+              "ripples": {
+                "color": "#ffffff80",
+                "count": 2,
+                "fade": 0.5,
+                "spacing": 10.0,
+                "width": 2.0
+              },
+              "shading": {
+                "color": "#00000040",
+                "width": 0.0
+              }
+            },
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            },
+            "shore": {
+              "outline": {
+                "color": "#112233",
+                "width": 3.0
+              },
+              "ripples": {
+                "color": "#ffffff80",
+                "count": 2,
+                "fade": 0.5,
+                "spacing": 10.0,
+                "width": 2.0
+              },
+              "shading": {
+                "color": "#00000040",
+                "width": 0.0
+              }
+            }
+          },
+          "layers": [
+            {
+              "children": [
+                {
+                  "id": "00000000-0000-7000-8000-000000000011",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            100.0,
+                            0.0
+                          ],
+                          [
+                            100.0,
+                            100.0
+                          ],
+                          [
+                            0.0,
+                            100.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000012",
+                  "kind": {
+                    "fill": "#6fa8c8",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            20.0,
+                            20.0
+                          ],
+                          [
+                            40.0,
+                            20.0
+                          ],
+                          [
+                            40.0,
+                            40.0
+                          ],
+                          [
+                            20.0,
+                            40.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "lake"
+                  },
+                  "locked": false,
+                  "type": "object"
+                }
+              ],
+              "id": "00000000-0000-7000-8000-000000000010",
+              "locked": false,
+              "name": "Land",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "redo"
+    },
+    {
+      "outcome": {
+        "error": "the Shore style is invalid: the outline width must be 0 or more, not -1"
+      },
+      "step": {
+        "step": {
+          "command": "set_shore",
+          "ids": [
+            "00000000-0000-7000-8000-000000000011"
+          ],
+          "shore": {
+            "outline": {
+              "color": "#000000",
+              "width": -1.0
+            },
+            "ripples": {
+              "color": "#ffffff",
+              "count": 0,
+              "fade": 0.0,
+              "spacing": 1.0,
+              "width": 1.0
+            },
+            "shading": {
+              "color": "#000000",
+              "width": 0.0
+            }
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "the Shore style is invalid: there can be at most 12 ripples"
+      },
+      "step": {
+        "step": {
+          "command": "set_shore",
+          "ids": [
+            "00000000-0000-7000-8000-000000000011"
+          ],
+          "shore": {
+            "outline": {
+              "color": "#000000",
+              "width": 1.0
+            },
+            "ripples": {
+              "color": "#ffffff",
+              "count": 99,
+              "fade": 0.0,
+              "spacing": 1.0,
+              "width": 1.0
+            },
+            "shading": {
+              "color": "#000000",
+              "width": 0.0
+            }
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "the Shore style is invalid: the ripple spacing must be above 0, not 0"
+      },
+      "step": {
+        "step": {
+          "command": "set_default_shore",
+          "kind": "lake",
+          "shore": {
+            "outline": {
+              "color": "#000000",
+              "width": 1.0
+            },
+            "ripples": {
+              "color": "#ffffff",
+              "count": 2,
+              "fade": 0.0,
+              "spacing": 0.0,
+              "width": 1.0
+            },
+            "shading": {
+              "color": "#000000",
+              "width": 0.0
+            }
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000010 is not a Landmass or Lake"
+      },
+      "step": {
+        "step": {
+          "command": "set_shore",
+          "ids": [
+            "00000000-0000-7000-8000-000000000010"
+          ],
+          "shore": null
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_locked",
+          "id": "00000000-0000-7000-8000-000000000011",
+          "locked": true
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000011 is locked"
+      },
+      "step": {
+        "step": {
+          "command": "set_shore",
+          "ids": [
+            "00000000-0000-7000-8000-000000000011"
+          ],
+          "shore": null
+        }
+      }
+    }
+  ],
+  "redo_steps": 0,
+  "undo_steps": 4,
+  "view": {
+    "canvas": {
+      "height": 1000,
+      "scale": {
+        "distance_per_unit": 1.0,
+        "unit": "miles"
+      },
+      "width": 1000
+    },
+    "defaults": {
+      "lake_shore": {
+        "outline": {
+          "color": "#112233",
+          "width": 3.0
+        },
+        "ripples": {
+          "color": "#ffffff80",
+          "count": 2,
+          "fade": 0.5,
+          "spacing": 10.0,
+          "width": 2.0
+        },
+        "shading": {
+          "color": "#00000040",
+          "width": 0.0
+        }
+      },
+      "roughness": {
+        "amount": 0.0,
+        "scale": 32.0,
+        "seed": 0
+      },
+      "shore": {
+        "outline": {
+          "color": "#112233",
+          "width": 3.0
+        },
+        "ripples": {
+          "color": "#ffffff80",
+          "count": 2,
+          "fade": 0.5,
+          "spacing": 10.0,
+          "width": 2.0
+        },
+        "shading": {
+          "color": "#00000040",
+          "width": 0.0
+        }
+      }
+    },
+    "layers": [
+      {
+        "children": [
+          {
+            "id": "00000000-0000-7000-8000-000000000011",
+            "kind": {
+              "fill": "#d8c49a",
+              "geometry": [
+                {
+                  "exterior": [
+                    [
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      100.0,
+                      0.0
+                    ],
+                    [
+                      100.0,
+                      100.0
+                    ],
+                    [
+                      0.0,
+                      100.0
+                    ]
+                  ]
+                }
+              ],
+              "kind": "landmass"
+            },
+            "locked": true,
+            "type": "object"
+          },
+          {
+            "id": "00000000-0000-7000-8000-000000000012",
+            "kind": {
+              "fill": "#6fa8c8",
+              "geometry": [
+                {
+                  "exterior": [
+                    [
+                      20.0,
+                      20.0
+                    ],
+                    [
+                      40.0,
+                      20.0
+                    ],
+                    [
+                      40.0,
+                      40.0
+                    ],
+                    [
+                      20.0,
+                      40.0
+                    ]
+                  ]
+                }
+              ],
+              "kind": "lake"
+            },
+            "locked": false,
+            "type": "object"
+          }
+        ],
+        "id": "00000000-0000-7000-8000-000000000010",
+        "locked": false,
+        "name": "Land",
+        "opacity": 1.0,
+        "type": "layer",
+        "visible": true
+      }
+    ]
+  }
+}

@@ -16,6 +16,7 @@ mod node;
 mod op;
 mod pick;
 mod roughness;
+mod shore;
 
 pub use asset::AssetRef;
 pub use color::{Color, ParseColorError};
@@ -29,3 +30,4 @@ pub use node::{Label, Lake, Landmass, Layer, Node, Object, ObjectKind, Stamp};
 pub use op::{Op, OpError, Property};
 pub use pick::PickIndex;
 pub use roughness::{Roughness, RoughnessCache, roughen};
+pub use shore::{MAX_RIPPLES, ShoreKind, ShoreOutline, ShoreRipples, ShoreShading, ShoreStyle};

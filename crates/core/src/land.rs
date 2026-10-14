@@ -190,6 +190,15 @@ pub fn difference(outline: &MultiPolygon, region: &MultiPolygon) -> MultiPolygon
     normalised(to_geo(outline).difference(&to_geo(region)))
 }
 
+/// `outline` grown outward by `distance` Canvas units, or shrunk inward if `distance` is
+/// negative: the rings that ripples and shading follow. Parts that shrink to nothing vanish.
+pub fn offset(outline: &MultiPolygon, distance: f64) -> MultiPolygon {
+    if !distance.is_finite() || distance == 0.0 {
+        return outline.clone();
+    }
+    normalised(to_geo(outline).buffer_with_style(BufferStyle::new(distance)))
+}
+
 /// Whether the two regions share any point.
 pub fn intersects(a: &MultiPolygon, b: &MultiPolygon) -> bool {
     match (a.bounds(), b.bounds()) {
@@ -649,6 +658,19 @@ mod tests {
         let elapsed = started.elapsed();
         // Generous for debug builds; a drag runs this every frame.
         assert!(elapsed.as_millis() < 1500, "took {elapsed:?}");
+    }
+
+    #[test]
+    fn offset_grows_and_shrinks_outlines() {
+        let grown = offset(&square(0.0, 10.0), 2.0);
+        assert!(grown.contains([-1.0, 5.0]) && !grown.contains([-3.0, 5.0]));
+        let shrunk = offset(&square(0.0, 10.0), -2.0);
+        assert!(shrunk.contains([5.0, 5.0]) && !shrunk.contains([1.0, 5.0]));
+        assert!(offset(&square(0.0, 10.0), -6.0).is_empty());
+        // A hole grows when the land around it shrinks.
+        let ring = difference(&square(0.0, 30.0), &square(10.0, 20.0));
+        let inset = offset(&ring, -2.0);
+        assert!(!inset.contains([8.5, 15.0]) && inset.contains([7.0, 15.0]));
     }
 
     #[test]

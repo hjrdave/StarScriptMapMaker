@@ -12,7 +12,8 @@ use std::path::PathBuf;
 
 use ssmap_core::asset::{ArtFormat, PackSource, read_pack};
 use ssmap_core::{
-    Canvas, Command, DistanceUnit, Lake, Landmass, Map, Roughness, RoughnessCache, Scale,
+    Canvas, Command, DistanceUnit, Id, Lake, Landmass, Map, Roughness, RoughnessCache, Scale,
+    ShoreKind, ShoreRipples, ShoreStyle,
 };
 use ssmap_render::atlas::{Atlas, AtlasEntry, MIN_PAGE_SIZE};
 use ssmap_render::raster::{Art, Raster};
@@ -202,6 +203,14 @@ fn land_and_water() -> Map {
             serde_json::from_value(step["step"].clone()).expect("every step is a Command");
         map.execute(&command).expect("the script's Commands apply");
     }
+    // These scenes predate Shore style: draw them as bare fills.
+    for kind in [ShoreKind::Landmass, ShoreKind::Lake] {
+        map.execute(&Command::SetDefaultShore {
+            kind,
+            shore: ShoreStyle::plain(),
+        })
+        .expect("a valid Shore style");
+    }
     map
 }
 
@@ -261,6 +270,98 @@ fn rough_coastlines() {
     if let Gpu::Software(_) = gpu {
         assert_matches_golden("rough_coastlines", &image);
     }
+}
+
+/// Two islands a few ripple-widths apart, in one Layer, with ripples but no outline or shading.
+/// Ripples draw beneath every fill of the Layer, so neither island's ripples may cover the
+/// other island: every pixel inside either island is the land colour.
+#[test]
+fn ripples_of_nearby_islands_never_cover_land() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let mut map = Map::new(Canvas::new(400, 200, Scale::new(1.0, DistanceUnit::Miles)));
+    let layer = Id::new();
+    map.execute(&Command::CreateLayer {
+        id: layer,
+        parent: None,
+        index: None,
+        name: "Land".into(),
+    })
+    .expect("a Layer");
+    let square = |min: [f64; 2], max: [f64; 2]| {
+        ssmap_core::MultiPolygon(vec![ssmap_core::Polygon {
+            exterior: vec![min, [max[0], min[1]], max, [min[0], max[1]]],
+            holes: Vec::new(),
+        }])
+    };
+    for geometry in [
+        square([40.0, 50.0], [160.0, 150.0]),
+        square([180.0, 50.0], [300.0, 150.0]),
+    ] {
+        map.execute(&Command::CreateLandmass {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            geometry,
+            fill: None,
+        })
+        .expect("a Landmass");
+    }
+    let ripples = ShoreRipples {
+        count: 4,
+        spacing: 10.0,
+        width: 3.0,
+        color: ssmap_core::Color::rgb(255, 255, 255),
+        fade: 0.0,
+    };
+    map.execute(&Command::SetDefaultShore {
+        kind: ShoreKind::Landmass,
+        shore: ShoreStyle {
+            ripples,
+            ..ShoreStyle::plain()
+        },
+    })
+    .expect("a valid Shore style");
+
+    let scene = CanvasScene::from_map(&map, &mut RoughnessCache::new());
+    let view = View {
+        origin: [0.0, 0.0],
+        zoom: 2.0,
+        size: [800, 400],
+    };
+    let image = render(headless, &scene, &view);
+    let land = Landmass::DEFAULT_FILL;
+    let mut ripple_pixels = 0;
+    for y in (60..140).step_by(3) {
+        for x in (50..290).step_by(3) {
+            let inside = (40..=160).contains(&x) || (180..=300).contains(&x);
+            let px = pixel(&image, x * 2, y * 2);
+            if inside && !(150..=190).contains(&x) {
+                assert!(
+                    px[0].abs_diff(land.r) <= 2 && px[1].abs_diff(land.g) <= 2,
+                    "land at ({x}, {y}) is {px:?}"
+                );
+            } else if !inside && px[0] > 200 && px[1] > 200 && px[2] > 200 {
+                ripple_pixels += 1;
+            }
+        }
+    }
+    // The gap is 20 units wide: ripples from both islands show in it.
+    assert!(ripple_pixels > 0, "ripples are drawn over the water");
+    let plain = {
+        let mut map = map.clone();
+        map.execute(&Command::SetDefaultShore {
+            kind: ShoreKind::Landmass,
+            shore: ShoreStyle::plain(),
+        })
+        .expect("valid");
+        render(
+            headless,
+            &CanvasScene::from_map(&map, &mut RoughnessCache::new()),
+            &view,
+        )
+    };
+    assert_ne!(image.pixels, plain.pixels, "ripples change the picture");
 }
 
 /// Fills a 2048 page with the test pack's art and Silhouettes at many sizes, until the atlas

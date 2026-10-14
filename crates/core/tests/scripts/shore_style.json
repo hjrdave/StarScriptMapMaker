@@ -1,0 +1,24 @@
+{
+  "setup": [
+    {"op": "insert", "parent": null, "index": 0, "subtree": {"id": "00000000-0000-7000-8000-000000000010", "type": "layer", "name": "Land", "visible": true, "locked": false, "opacity": 1.0}},
+    {"op": "insert", "parent": "00000000-0000-7000-8000-000000000010", "index": 0, "subtree": {"id": "00000000-0000-7000-8000-000000000011", "type": "object", "locked": false, "kind": {"kind": "landmass", "geometry": [{"exterior": [[0, 0], [100, 0], [100, 100], [0, 100]]}]}}},
+    {"op": "insert", "parent": "00000000-0000-7000-8000-000000000010", "index": 1, "subtree": {"id": "00000000-0000-7000-8000-000000000012", "type": "object", "locked": false, "kind": {"kind": "lake", "geometry": [{"exterior": [[20, 20], [40, 20], [40, 40], [20, 40]]}]}}}
+  ],
+  "steps": [
+    {"step": {"command": "set_shore", "ids": ["00000000-0000-7000-8000-000000000011", "00000000-0000-7000-8000-000000000012"], "shore": {"outline": {"width": 3.0, "color": "#112233"}, "ripples": {"count": 2, "spacing": 10.0, "width": 2.0, "color": "#ffffff80", "fade": 0.5}, "shading": {"width": 0.0, "color": "#00000040"}}}},
+    "snapshot",
+    "undo",
+    {"step": {"command": "set_shore", "ids": ["00000000-0000-7000-8000-000000000011"], "shore": null}},
+    {"step": {"command": "set_default_shore", "kind": "lake", "shore": {"outline": {"width": 3.0, "color": "#112233"}, "ripples": {"count": 2, "spacing": 10.0, "width": 2.0, "color": "#ffffff80", "fade": 0.5}, "shading": {"width": 0.0, "color": "#00000040"}}}},
+    {"step": {"command": "set_default_shore", "kind": "landmass", "shore": {"outline": {"width": 3.0, "color": "#112233"}, "ripples": {"count": 2, "spacing": 10.0, "width": 2.0, "color": "#ffffff80", "fade": 0.5}, "shading": {"width": 0.0, "color": "#00000040"}}}},
+    "snapshot",
+    "undo",
+    "redo",
+    {"step": {"command": "set_shore", "ids": ["00000000-0000-7000-8000-000000000011"], "shore": {"outline": {"width": -1.0, "color": "#000000"}, "ripples": {"count": 0, "spacing": 1.0, "width": 1.0, "color": "#ffffff", "fade": 0.0}, "shading": {"width": 0.0, "color": "#000000"}}}},
+    {"step": {"command": "set_shore", "ids": ["00000000-0000-7000-8000-000000000011"], "shore": {"outline": {"width": 1.0, "color": "#000000"}, "ripples": {"count": 99, "spacing": 1.0, "width": 1.0, "color": "#ffffff", "fade": 0.0}, "shading": {"width": 0.0, "color": "#000000"}}}},
+    {"step": {"command": "set_default_shore", "kind": "lake", "shore": {"outline": {"width": 1.0, "color": "#000000"}, "ripples": {"count": 2, "spacing": 0.0, "width": 1.0, "color": "#ffffff", "fade": 0.0}, "shading": {"width": 0.0, "color": "#000000"}}}},
+    {"step": {"command": "set_shore", "ids": ["00000000-0000-7000-8000-000000000010"], "shore": null}},
+    {"step": {"command": "set_locked", "id": "00000000-0000-7000-8000-000000000011", "locked": true}},
+    {"step": {"command": "set_shore", "ids": ["00000000-0000-7000-8000-000000000011"], "shore": null}}
+  ]
+}

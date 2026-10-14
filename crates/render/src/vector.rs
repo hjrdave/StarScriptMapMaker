@@ -2,17 +2,20 @@
 
 use lyon::path::Path;
 use lyon::tessellation::{
-    BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, VertexBuffers,
+    BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, LineJoin, StrokeOptions,
+    StrokeTessellator, StrokeVertex, VertexBuffers,
 };
 use wgpu::util::DeviceExt;
 
 use crate::color::Color;
 
-/// One filled path in Canvas units, filled even-odd: a subpath inside another is a hole.
+/// One path in Canvas units: filled even-odd (a subpath inside another is a hole), or with
+/// `stroke_width` set, stroked along its subpaths at that width.
 #[derive(Clone, Debug)]
 pub struct FillPath {
     pub path: Path,
     pub color: Color,
+    pub stroke_width: Option<f32>,
 }
 
 /// Draws vector fills into a Canvas render pass whose group 0 is the view uniform.
@@ -89,9 +92,24 @@ impl VectorRenderer for LyonRenderer {
     fn set_fills(&mut self, device: &wgpu::Device, fills: &[FillPath]) {
         let mut geometry: VertexBuffers<Vertex, u32> = VertexBuffers::new();
         let mut tessellator = FillTessellator::new();
+        let mut stroker = StrokeTessellator::new();
         let options = FillOptions::tolerance(TOLERANCE).with_fill_rule(FillRule::EvenOdd);
         for fill in fills {
             let color = fill.color.to_linear_premultiplied();
+            if let Some(width) = fill.stroke_width {
+                let options = StrokeOptions::tolerance(TOLERANCE)
+                    .with_line_width(width)
+                    .with_line_join(LineJoin::Round);
+                let _ = stroker.tessellate_path(
+                    &fill.path,
+                    &options,
+                    &mut BuffersBuilder::new(&mut geometry, |vertex: StrokeVertex| Vertex {
+                        position: vertex.position().to_array(),
+                        color,
+                    }),
+                );
+                continue;
+            }
             // A path lyon cannot fill draws nothing rather than failing the frame.
             let _ = tessellator.tessellate_path(
                 &fill.path,

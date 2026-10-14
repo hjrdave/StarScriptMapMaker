@@ -292,7 +292,7 @@ impl MapMakerApp {
         let JournalBase::Unsaved { map: view } = found.recovered.base.clone() else {
             return;
         };
-        let mut map = match Map::from_view(view) {
+        let mut map = match Map::from_view(*view) {
             Ok(map) => map,
             Err(err) => {
                 self.editor

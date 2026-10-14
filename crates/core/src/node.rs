@@ -9,6 +9,7 @@ use crate::extra::Extra;
 use crate::geometry::MultiPolygon;
 use crate::id::Id;
 use crate::roughness::Roughness;
+use crate::shore::{ShoreKind, ShoreStyle};
 
 /// A Layer or an Object.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
@@ -141,18 +142,46 @@ impl ObjectKind {
     }
 
     /// A copy with an empty outline, for storing the outline separately.
+    /// The Shore style override of kinds that have an outline, if set.
+    pub fn shore(&self) -> Option<&ShoreStyle> {
+        match self {
+            ObjectKind::Landmass(landmass) => landmass.shore.as_ref(),
+            ObjectKind::Lake(lake) => lake.shore.as_ref(),
+            ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
+        }
+    }
+
+    /// Which Map-wide Shore style default this kind uses, for kinds that have an outline.
+    pub fn shore_kind(&self) -> Option<ShoreKind> {
+        match self {
+            ObjectKind::Landmass(_) => Some(ShoreKind::Landmass),
+            ObjectKind::Lake(_) => Some(ShoreKind::Lake),
+            ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
+        }
+    }
+
+    pub(crate) fn shore_mut(&mut self) -> Option<&mut Option<ShoreStyle>> {
+        match self {
+            ObjectKind::Landmass(landmass) => Some(&mut landmass.shore),
+            ObjectKind::Lake(lake) => Some(&mut lake.shore),
+            ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
+        }
+    }
+
     pub(crate) fn without_geometry(&self) -> ObjectKind {
         match self {
             ObjectKind::Landmass(landmass) => ObjectKind::Landmass(Landmass {
                 geometry: MultiPolygon::default(),
                 fill: landmass.fill,
                 roughness: landmass.roughness.clone(),
+                shore: landmass.shore.clone(),
                 extra: landmass.extra.clone(),
             }),
             ObjectKind::Lake(lake) => ObjectKind::Lake(Lake {
                 geometry: MultiPolygon::default(),
                 fill: lake.fill,
                 roughness: lake.roughness.clone(),
+                shore: lake.shore.clone(),
                 extra: lake.extra.clone(),
             }),
             ObjectKind::Stamp(_) | ObjectKind::Label(_) => self.clone(),
@@ -182,6 +211,9 @@ pub struct Landmass {
     /// Overrides the Map-wide default Roughness.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub roughness: Option<Roughness>,
+    /// Overrides the Map-wide default Shore style.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shore: Option<ShoreStyle>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -194,6 +226,7 @@ impl Landmass {
             geometry,
             fill: Self::DEFAULT_FILL,
             roughness: None,
+            shore: None,
             extra: Extra::new(),
         }
     }
@@ -221,6 +254,9 @@ pub struct Lake {
     /// Overrides the Map-wide default Roughness.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub roughness: Option<Roughness>,
+    /// Overrides the Map-wide default Shore style.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shore: Option<ShoreStyle>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -233,6 +269,7 @@ impl Lake {
             geometry,
             fill: Self::DEFAULT_FILL,
             roughness: None,
+            shore: None,
             extra: Extra::new(),
         }
     }
