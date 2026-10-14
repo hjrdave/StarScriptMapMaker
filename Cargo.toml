@@ -41,6 +41,8 @@ toml_edit = "0.25"
 # Must match cosmic-text's, whose font fallback hook names its Script type.
 unicode-script = "0.5"
 uuid = { version = "1.28", features = ["v7", "serde"] }
+# App-only HTTP client for the update check; `core` must not depend on it.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 # Must match the wgpu version egui-wgpu uses, so `render` and `app` share one device.
 wgpu = "30.0"

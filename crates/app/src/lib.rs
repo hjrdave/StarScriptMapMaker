@@ -12,6 +12,7 @@ mod properties;
 mod recent;
 pub mod recovery;
 pub mod tools;
+pub mod updates;
 
 use eframe::{egui, egui_wgpu};
 use egui_file_dialog::{DialogState, FileDialog, Filter};
@@ -34,6 +35,7 @@ use crate::properties::PropertiesPanel;
 use crate::recent::RecentFiles;
 use crate::recovery::{Found, Recovery};
 use crate::tools::ToolId;
+use crate::updates::UpdateCheck;
 
 /// How much `[` and `]` shrink or grow the land brush.
 const BRUSH_SIZE_STEP: f64 = 1.25;
@@ -63,6 +65,7 @@ pub struct MapMakerApp {
     canvas_view: CanvasView,
     credits: Credits,
     recent: RecentFiles,
+    updates: UpdateCheck,
     open_dialog: FileDialog,
     save_dialog: FileDialog,
     /// What to do once the user decides what to do with unsaved changes.
@@ -147,6 +150,7 @@ impl MapMakerApp {
             canvas_view: CanvasView::new(gpu),
             credits,
             recent: RecentFiles::load(cc.storage),
+            updates: UpdateCheck::load(cc.storage),
             open_dialog: map_files().title("Open Map"),
             save_dialog: map_files().title("Save Map As"),
             pending: None,
@@ -494,6 +498,18 @@ impl MapMakerApp {
         ui.menu_button("Help", |ui| {
             if ui.button("Credits…").clicked() {
                 self.credits.open = true;
+                ui.close();
+            }
+            ui.separator();
+            let mut enabled = self.updates.enabled();
+            if ui
+                .checkbox(&mut enabled, "Check for updates automatically")
+                .changed()
+            {
+                self.updates.set_enabled(enabled);
+            }
+            if ui.button("Check for Updates Now").clicked() {
+                self.updates.check_now();
                 ui.close();
             }
         });
@@ -859,6 +875,7 @@ enum UnsavedChoice {
 impl eframe::App for MapMakerApp {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         self.recent.store(storage);
+        self.updates.store(storage);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -875,6 +892,7 @@ impl eframe::App for MapMakerApp {
         self.dialogs(&ctx);
         self.update_title(&ctx);
         self.credits.show(&ctx);
+        self.updates.show(&ctx);
         egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));
         egui::Panel::bottom("assets")
