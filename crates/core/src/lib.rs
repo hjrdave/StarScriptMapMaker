@@ -17,6 +17,7 @@ mod op;
 mod pick;
 mod roughness;
 mod shore;
+mod stamp_pick;
 
 pub use asset::AssetRef;
 pub use color::{Color, ParseColorError};
@@ -33,3 +34,4 @@ pub use op::{Op, OpError, Property};
 pub use pick::PickIndex;
 pub use roughness::{Roughness, RoughnessCache, roughen};
 pub use shore::{MAX_RIPPLES, ShoreKind, ShoreOutline, ShoreRipples, ShoreShading, ShoreStyle};
+pub use stamp_pick::{SpriteShape, StampIndex};
