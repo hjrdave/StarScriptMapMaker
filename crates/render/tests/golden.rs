@@ -364,6 +364,105 @@ fn ripples_of_nearby_islands_never_cover_land() {
     assert_ne!(image.pixels, plain.pixels, "ripples change the picture");
 }
 
+/// A Layer clipped to an island shows only on the island's outline, and not inside a Lake over
+/// it: red content that spills past the coast is cut there, and the Lake shows through.
+#[test]
+fn clipped_content_is_cut_at_the_coast_and_absent_inside_a_lake() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let mut map = Map::new(Canvas::new(400, 200, Scale::new(1.0, DistanceUnit::Miles)));
+    let rect = |min: [f64; 2], max: [f64; 2]| {
+        ssmap_core::MultiPolygon(vec![ssmap_core::Polygon {
+            exterior: vec![min, [max[0], min[1]], max, [min[0], max[1]]],
+            holes: Vec::new(),
+        }])
+    };
+    let (land, forest, island, lake, spill) =
+        (Id::new(), Id::new(), Id::new(), Id::new(), Id::new());
+    for (id, name) in [(land, "Land"), (forest, "Forest")] {
+        map.execute(&Command::CreateLayer {
+            id,
+            parent: None,
+            index: None,
+            name: name.into(),
+        })
+        .expect("a Layer");
+    }
+    let red = ssmap_core::Color::rgb(200, 30, 30);
+    for command in [
+        Command::CreateLandmass {
+            id: island,
+            parent: land,
+            index: None,
+            geometry: rect([100.0, 50.0], [300.0, 150.0]),
+            fill: None,
+        },
+        Command::CreateLake {
+            id: lake,
+            parent: land,
+            index: None,
+            geometry: rect([180.0, 80.0], [220.0, 120.0]),
+            fill: None,
+        },
+        Command::CreateLandmass {
+            id: spill,
+            parent: forest,
+            index: None,
+            geometry: rect([50.0, 20.0], [350.0, 180.0]),
+            fill: Some(red),
+        },
+        Command::SetClip {
+            id: forest,
+            target: Some(island),
+        },
+    ] {
+        map.execute(&command).expect("a valid Command");
+    }
+    for kind in [ShoreKind::Landmass, ShoreKind::Lake] {
+        map.execute(&Command::SetDefaultShore {
+            kind,
+            shore: ShoreStyle::plain(),
+        })
+        .expect("a valid Shore style");
+    }
+    let view = View {
+        origin: [0.0, 0.0],
+        zoom: 2.0,
+        size: [800, 400],
+    };
+    let render_map = |map: &Map| {
+        render(
+            headless,
+            &CanvasScene::from_map(map, &mut RoughnessCache::new()),
+            &view,
+        )
+    };
+    let image = render_map(&map);
+    let at = |x: f64, y: f64| pixel(&image, (x * 2.0) as u32, (y * 2.0) as u32);
+    let is = |px: [u8; 4], c: ssmap_core::Color| {
+        px[0].abs_diff(c.r) <= 2 && px[1].abs_diff(c.g) <= 2 && px[2].abs_diff(c.b) <= 2
+    };
+    assert!(is(at(130.0, 100.0), red), "red on the island");
+    assert!(is(at(270.0, 70.0), red), "red on the island");
+    assert!(!is(at(70.0, 100.0), red), "cut at the west coast");
+    assert!(!is(at(330.0, 100.0), red), "cut at the east coast");
+    assert!(!is(at(200.0, 30.0), red), "cut above the island");
+    assert!(
+        is(at(200.0, 100.0), Lake::DEFAULT_FILL),
+        "the Lake shows through"
+    );
+
+    // Without the Clip the red covers the Lake and spills over the water.
+    map.execute(&Command::SetClip {
+        id: forest,
+        target: None,
+    })
+    .expect("clears");
+    let image = render_map(&map);
+    let at = |x: f64, y: f64| pixel(&image, (x * 2.0) as u32, (y * 2.0) as u32);
+    assert!(is(at(70.0, 100.0), red) && is(at(200.0, 100.0), red));
+}
+
 /// Fills a 2048 page with the test pack's art and Silhouettes at many sizes, until the atlas
 /// spills onto a second page, and compares the first page with its golden image. The page
 /// holds premultiplied pixels, so the golden PNG shows them as stored, not as drawn.

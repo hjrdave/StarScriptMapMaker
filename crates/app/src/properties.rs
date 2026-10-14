@@ -303,11 +303,32 @@ impl PropertiesPanel {
             }
             ui.end_row();
 
-            if let Some(target) = layer.clip {
-                ui.label("Clipped to");
-                ui.label(node_name(&editor.map, target));
-                ui.end_row();
-            }
+            ui.label("Clipped to");
+            let selected = layer
+                .clip
+                .map_or_else(|| "Nothing".to_owned(), |t| node_name(&editor.map, t));
+            egui::ComboBox::from_id_salt("clip")
+                .selected_text(selected)
+                .show_ui(ui, |ui| {
+                    if ui
+                        .selectable_label(layer.clip.is_none(), "Nothing")
+                        .clicked()
+                    {
+                        editor.run(Command::SetClip { id, target: None });
+                    }
+                    for (target, name) in editor.landmass_choices() {
+                        if ui
+                            .selectable_label(layer.clip == Some(target), name)
+                            .clicked()
+                        {
+                            editor.run(Command::SetClip {
+                                id,
+                                target: Some(target),
+                            });
+                        }
+                    }
+                });
+            ui.end_row();
         });
     }
 }
