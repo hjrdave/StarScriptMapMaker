@@ -704,7 +704,7 @@ impl MapMakerApp {
                     editor.active_tool = tool;
                 }
             }
-            if editor.active_tool == ToolId::LandBrush {
+            if tools::uses_brush_size(editor.active_tool) {
                 let step = if input.consume_key(Modifiers::NONE, Key::OpenBracket) {
                     1.0 / BRUSH_SIZE_STEP
                 } else if input.consume_key(Modifiers::NONE, Key::CloseBracket) {
@@ -733,7 +733,7 @@ impl MapMakerApp {
                     editor.active_tool = tool;
                 }
             }
-            if editor.active_tool == ToolId::LandBrush {
+            if tools::uses_brush_size(editor.active_tool) {
                 ui.add(
                     egui::Slider::new(&mut editor.brush_size, tools::BRUSH_SIZES)
                         .logarithmic(true)
@@ -744,6 +744,17 @@ impl MapMakerApp {
                     "Brush diameter in Canvas units ([ and ]). Hold {} to erase.",
                     tools::ERASE_MODIFIER
                 ));
+            }
+            if editor.active_tool == ToolId::Scatter {
+                scatter_settings(ui, &mut editor.scatter);
+            }
+            if editor.can_shuffle()
+                && ui
+                    .button("Shuffle Variant")
+                    .on_hover_text("Re-roll each selected Stamp within its Variant group")
+                    .clicked()
+            {
+                editor.shuffle_variants();
             }
             ui.separator();
             let undo_hint = editor.undo_label().map(|l| format!("Undo {l}"));
@@ -883,6 +894,26 @@ impl eframe::App for MapMakerApp {
             .show(ui, |ui| self.canvas_view.show(ui, &mut self.editor));
         self.journal(&ctx);
     }
+}
+
+/// The scatter brush's settings, in a menu beside the toolbar.
+fn scatter_settings(ui: &mut egui::Ui, brush: &mut ssmap_core::scatter::ScatterBrush) {
+    use ssmap_core::scatter::Placement;
+    ui.menu_button("Scatter settings", |ui| {
+        ui.add(egui::Slider::new(&mut brush.density, 0.5..=100.0).text("Density"))
+            .on_hover_text("Stamps per 100 by 100 Canvas units");
+        ui.add(egui::Slider::new(&mut brush.spacing, 0.0..=200.0).text("Spacing"))
+            .on_hover_text("The least distance between two Stamps in a stroke");
+        ui.add(egui::Slider::new(&mut brush.size_jitter, 0.0..=0.9).text("Size jitter"));
+        ui.add(egui::Slider::new(&mut brush.rotation_jitter, 0.0..=180.0).text("Rotation jitter"))
+            .on_hover_text("Degrees either way");
+        ui.checkbox(&mut brush.random_flip, "Random flip");
+        ui.checkbox(&mut brush.random_variant, "Random variant");
+        ui.separator();
+        ui.radio_value(&mut brush.placement, Placement::Land, "Land only");
+        ui.radio_value(&mut brush.placement, Placement::Water, "Water only");
+        ui.radio_value(&mut brush.placement, Placement::Anywhere, "Anywhere");
+    });
 }
 
 #[cfg(test)]

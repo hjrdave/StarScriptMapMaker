@@ -23,16 +23,20 @@ pub enum ToolId {
     Lasso,
     Label,
     Stamp,
+    Scatter,
+    StampEraser,
 }
 
 impl ToolId {
-    pub const ALL: [ToolId; 6] = [
+    pub const ALL: [ToolId; 8] = [
         ToolId::Select,
         ToolId::Pan,
         ToolId::LandBrush,
         ToolId::Lasso,
         ToolId::Label,
         ToolId::Stamp,
+        ToolId::Scatter,
+        ToolId::StampEraser,
     ];
 
     pub fn label(self) -> &'static str {
@@ -43,6 +47,8 @@ impl ToolId {
             ToolId::Lasso => "Lasso",
             ToolId::Label => "Label",
             ToolId::Stamp => "Stamp",
+            ToolId::Scatter => "Scatter",
+            ToolId::StampEraser => "Stamp Eraser",
         }
     }
 
@@ -54,6 +60,8 @@ impl ToolId {
             ToolId::Lasso => egui::Key::L,
             ToolId::Label => egui::Key::T,
             ToolId::Stamp => egui::Key::S,
+            ToolId::Scatter => egui::Key::C,
+            ToolId::StampEraser => egui::Key::E,
         }
     }
 }
@@ -67,6 +75,14 @@ pub const ERASE_MODIFIER: &str = if cfg!(target_os = "macos") {
 
 /// The land brush size range, as a diameter in Canvas units.
 pub const BRUSH_SIZES: std::ops::RangeInclusive<f64> = 2.0..=2000.0;
+
+/// Whether the tool paints with the shared brush size.
+pub fn uses_brush_size(tool: ToolId) -> bool {
+    matches!(
+        tool,
+        ToolId::LandBrush | ToolId::Scatter | ToolId::StampEraser
+    )
+}
 
 /// What a tool sees of one frame of Canvas input.
 pub struct CanvasInput<'a> {
@@ -279,6 +295,8 @@ pub fn canvas_input(
                 }
             }
         }
+        ToolId::Scatter => scatter_tool(editor, view, state, input, false),
+        ToolId::StampEraser => scatter_tool(editor, view, state, input, true),
         ToolId::Label => {
             if response.clicked()
                 && let Some(pos) = response.interact_pointer_pos()
@@ -297,7 +315,11 @@ pub fn canvas_input(
     if editor.active_tool != ToolId::Lasso {
         state.lasso = None;
     }
-    editor.tool_busy = state.lasso.is_some();
+    let scattering = matches!(editor.active_tool, ToolId::Scatter | ToolId::StampEraser);
+    if !scattering && editor.active_tool != ToolId::LandBrush {
+        state.stroke = None;
+    }
+    editor.tool_busy = state.lasso.is_some() || (scattering && state.stroke.is_some());
 }
 
 /// Paint land by dragging, or erase with the erase modifier held. Each stroke is one Undo
@@ -352,6 +374,58 @@ fn land_brush(editor: &mut Editor, view: &View, state: &mut ToolState, input: &C
             start: stroke.points[0],
             erase: stroke.erase,
         });
+    }
+}
+
+/// The scatter brush and the Stamp eraser: drag a stroke, and on release one Command places or
+/// removes Stamps ([`Editor::scatter_stamps`], [`Editor::erase_stamps`]). Nothing changes in
+/// the Map while dragging; Escape drops the stroke.
+fn scatter_tool(
+    editor: &mut Editor,
+    view: &View,
+    state: &mut ToolState,
+    input: &CanvasInput<'_>,
+    erase: bool,
+) {
+    let response = input.response;
+    if response.hovered() {
+        response.ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+    }
+    if std::mem::take(&mut editor.cancel_tool) {
+        state.stroke = None;
+        return;
+    }
+    let pressed = response.drag_started_by(egui::PointerButton::Primary)
+        || response.clicked_by(egui::PointerButton::Primary);
+    if pressed && state.stroke.is_none() {
+        let origin = response.ctx.input(|i| i.pointer.press_origin());
+        if let Some(origin) = origin.or(response.interact_pointer_pos()) {
+            state.stroke = Some(Stroke {
+                points: vec![input.canvas_point(view, origin)],
+                erase,
+                preview: None,
+            });
+        }
+    }
+    let Some(stroke) = &mut state.stroke else {
+        return;
+    };
+    if let Some(pos) = response.interact_pointer_pos() {
+        let point = input.canvas_point(view, pos);
+        let spacing = (editor.brush_size * 0.05).max(1.0 / view.zoom);
+        let last = *stroke.points.last().expect("a stroke starts with a point");
+        if (point[0] - last[0]).hypot(point[1] - last[1]) >= spacing {
+            stroke.points.push(point);
+        }
+    }
+    if (response.drag_stopped() || response.clicked())
+        && let Some(stroke) = state.stroke.take()
+    {
+        if erase {
+            editor.erase_stamps(&stroke.points);
+        } else {
+            editor.scatter_stamps(&stroke.points);
+        }
     }
 }
 
@@ -806,6 +880,10 @@ pub fn paint_overlay(
     if editor.active_tool == ToolId::Lasso {
         paint_lasso(painter, view, state, origin, hover, ppp);
     }
+    if matches!(editor.active_tool, ToolId::Scatter | ToolId::StampEraser) {
+        paint_scatter_cursor(painter, editor, view, state, origin, hover, ppp);
+        return;
+    }
     if editor.active_tool != ToolId::LandBrush {
         return;
     }
@@ -843,6 +921,44 @@ pub fn paint_overlay(
     }
     if let Some(pos) = hover {
         let screen_radius = (radius * view.zoom / ppp) as f32;
+        painter.circle_stroke(
+            pos,
+            screen_radius,
+            egui::Stroke::new(1.5, egui::Color32::WHITE),
+        );
+        painter.circle_stroke(pos, screen_radius, egui::Stroke::new(0.75, line));
+    }
+}
+
+/// The scatter brush's and Stamp eraser's cursor: the brush circle, and the path of a stroke
+/// in progress.
+fn paint_scatter_cursor(
+    painter: &egui::Painter,
+    editor: &Editor,
+    view: &View,
+    state: &ToolState,
+    origin: egui::Pos2,
+    hover: Option<egui::Pos2>,
+    ppp: f64,
+) {
+    let line = if editor.active_tool == ToolId::StampEraser {
+        egui::Color32::from_rgb(200, 60, 50)
+    } else {
+        egui::Color32::from_rgb(60, 110, 70)
+    };
+    let screen_radius = (editor.brush_size / 2.0 * view.zoom / ppp) as f32;
+    if let Some(stroke) = &state.stroke {
+        let points: Vec<egui::Pos2> = stroke
+            .points
+            .iter()
+            .map(|&p| crate::handles::to_screen(view, origin, ppp, p))
+            .collect();
+        painter.add(egui::Shape::line(
+            points,
+            egui::Stroke::new(2.0, line.gamma_multiply(0.5)),
+        ));
+    }
+    if let Some(pos) = hover {
         painter.circle_stroke(
             pos,
             screen_radius,

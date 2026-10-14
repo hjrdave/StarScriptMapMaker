@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use ssmap_core::asset::AssetRef;
 use ssmap_core::land::{self, BrushStroke};
+use ssmap_core::scatter::{self, ScatterBrush, ScatterStroke, Terrain};
 use ssmap_core::{
     Command, CommandError, ExecuteError, History, Id, Label, Map, MultiPolygon, Node, NodeRef,
     ObjectKind, Op, PickIndex, Point, Rect, RoughnessCache, Selection, Stamp, StampIndex,
@@ -52,6 +53,8 @@ pub struct Editor {
     stamp_index: Option<StampIndex>,
     /// The Asset the Stamp tool places, chosen in the Asset browser.
     pub selected_asset: Option<AssetRef>,
+    /// The scatter brush's settings. Its radius is half the shared `brush_size`.
+    pub scatter: ScatterBrush,
 }
 
 /// A pseudo-random number below `n` (which must be above 0), unseeded: Stamp variants are
@@ -62,6 +65,28 @@ fn random_below(n: usize) -> usize {
         .build_hasher()
         .finish() as usize)
         % n
+}
+
+/// A pseudo-random seed for a scatter stroke. The Command it produces names every Stamp, so
+/// the seed itself never needs to be stored.
+fn random_seed() -> u64 {
+    use std::hash::{BuildHasher as _, Hasher as _};
+    std::collections::hash_map::RandomState::new()
+        .build_hasher()
+        .finish()
+}
+
+/// The Assets in the Variant group `asset` belongs to; empty when it has none.
+fn group_of(library: &ssmap_core::asset::PackLibrary, asset: &AssetRef) -> Vec<AssetRef> {
+    let Some((pack, found)) = library.asset(asset) else {
+        return Vec::new();
+    };
+    let Some(group) = &found.variant_group else {
+        return Vec::new();
+    };
+    pack.variant_group(group)
+        .filter_map(|member| AssetRef::new(pack.id.clone(), member.id.clone()).ok())
+        .collect()
 }
 
 /// Node-edit mode: one Landmass or Lake whose stored vertices show as nodes, and the nodes
@@ -90,6 +115,7 @@ impl Editor {
             selection: Vec::new(),
             active_layer: None,
             active_tool: ToolId::Select,
+            scatter: ScatterBrush::default(),
             brush_size: DEFAULT_BRUSH_SIZE,
             node_edit: None,
             tool_busy: false,
@@ -708,6 +734,105 @@ impl Editor {
         Some(id)
     }
 
+    /// Finishes a scatter brush stroke: scatters Stamps of the selected Asset along `points` in
+    /// the active Layer as one Undo step ([`scatter::scatter_command`]). Does nothing, with a
+    /// message, when no Asset is chosen, and leaves no Undo step when nothing could be placed.
+    pub fn scatter_stamps(&mut self, points: &[Point]) -> bool {
+        let Some(selected) = self.selected_asset.clone() else {
+            self.error("Choose an Asset in the Asset browser first");
+            return false;
+        };
+        let variants = if self.scatter.random_variant {
+            self.variant_group(&selected)
+        } else {
+            Vec::new()
+        };
+        let terrain = Terrain::of(&self.map, &mut self.roughness);
+        self.end_gesture();
+        self.begin_gesture("Scatter Stamps");
+        let Some(parent) = self.placement_layer() else {
+            self.cancel_gesture();
+            return false;
+        };
+        let base = Stamp::new(selected, [0.0, 0.0]);
+        let command = scatter::scatter_command(
+            &self.scatter,
+            ScatterStroke {
+                points,
+                radius: self.brush_size / 2.0,
+                parent,
+                base: &base,
+                variants: &variants,
+            },
+            &terrain,
+            random_seed(),
+            Id::new,
+        );
+        if let Some(command) = command
+            && self.gesture(command)
+        {
+            self.end_gesture();
+            true
+        } else {
+            self.cancel_gesture();
+            false
+        }
+    }
+
+    /// Finishes a Stamp eraser stroke: removes the Stamps in the active Layer whose Anchor is
+    /// inside the brush, as one Undo step. Other Layers are never touched.
+    pub fn erase_stamps(&mut self, points: &[Point]) -> bool {
+        let Some(layer) = self.active_layer.filter(|&id| self.map.contains(id)) else {
+            self.info("Select a Layer to erase Stamps from");
+            return false;
+        };
+        match scatter::erase_command(&self.map, layer, points, self.brush_size / 2.0) {
+            Some(command) => self.run(command),
+            None => false,
+        }
+    }
+
+    /// Whether the Selection holds a Stamp, so Shuffle variant has something to work on.
+    pub fn can_shuffle(&self) -> bool {
+        self.selection.iter().any(|&id| self.stamp(id).is_some())
+    }
+
+    /// Shuffle variant: each selected Stamp takes a random Asset from its own Variant group,
+    /// all as one Undo step.
+    pub fn shuffle_variants(&mut self) -> bool {
+        let Some(library) = self.sprites.as_ref().map(SpriteStore::library) else {
+            return false;
+        };
+        let commands = scatter::shuffle_commands(
+            &self.map,
+            &self.selection,
+            |asset| group_of(library, asset),
+            random_seed(),
+        );
+        if commands.is_empty() {
+            self.info("No selected Stamp has another variant to take");
+            return false;
+        }
+        self.end_gesture();
+        self.begin_gesture("Shuffle Variant");
+        for command in commands {
+            if !self.gesture(command) {
+                self.cancel_gesture();
+                return false;
+            }
+        }
+        self.end_gesture();
+        true
+    }
+
+    /// The Assets in the Variant group `asset` belongs to; empty when it has none.
+    fn variant_group(&self, asset: &AssetRef) -> Vec<AssetRef> {
+        self.sprites
+            .as_ref()
+            .map(|sprites| group_of(sprites.library(), asset))
+            .unwrap_or_default()
+    }
+
     /// The concrete Asset the next Stamp gets: the selected one, or a random sibling from its
     /// Variant group.
     fn placement_asset(&self) -> Option<AssetRef> {
@@ -1095,5 +1220,131 @@ mod tests {
             locked: true,
         });
         assert_eq!(editor.pick([205.0, 190.0]), Some(below));
+    }
+
+    fn square(min: f64, max: f64) -> MultiPolygon {
+        MultiPolygon(vec![ssmap_core::Polygon {
+            exterior: vec![[min, min], [max, min], [max, max], [min, max]],
+            holes: Vec::new(),
+        }])
+    }
+
+    /// An Editor with a Landmass over (0,0)-(200,200) holding a Lake over (80,80)-(120,120).
+    fn editor_with_island() -> (Editor, Id) {
+        let mut editor = editor_with_assets();
+        let layer = editor.new_layer().unwrap();
+        editor.run(Command::CreateLandmass {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            geometry: square(0.0, 200.0),
+            fill: None,
+        });
+        editor.run(Command::CreateLake {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            geometry: square(80.0, 120.0),
+            fill: None,
+        });
+        editor.selected_asset = Some(asset("test-pack/mountain-1"));
+        editor.brush_size = 400.0;
+        editor.scatter.density = 40.0;
+        editor.scatter.spacing = 0.0;
+        (editor, layer)
+    }
+
+    fn stamps_in(editor: &Editor, layer: Id) -> Vec<Stamp> {
+        editor
+            .map
+            .children(Some(layer))
+            .iter()
+            .filter_map(|&id| editor.stamp(id).cloned())
+            .collect()
+    }
+
+    #[test]
+    fn a_scatter_stroke_is_one_undo_step_and_land_only_keeps_off_water_and_lakes() {
+        let (mut editor, layer) = editor_with_island();
+        let before = editor.map.children(Some(layer)).len();
+        assert!(editor.scatter_stamps(&[[20.0, 100.0], [180.0, 100.0]]));
+        assert_eq!(editor.undo_label(), Some("Scatter Stamps"));
+        let placed = stamps_in(&editor, layer);
+        assert!(placed.len() > 10, "{}", placed.len());
+        let lake = square(80.0, 120.0);
+        for stamp in &placed {
+            let [x, y] = stamp.position;
+            assert!((0.0..=200.0).contains(&x) && (0.0..=200.0).contains(&y));
+            assert!(!lake.contains(stamp.position), "{:?}", stamp.position);
+        }
+        editor.undo();
+        assert_eq!(editor.map.children(Some(layer)).len(), before);
+    }
+
+    #[test]
+    fn water_only_scatters_off_the_land() {
+        let (mut editor, layer) = editor_with_island();
+        editor.scatter.placement = ssmap_core::scatter::Placement::Water;
+        assert!(editor.scatter_stamps(&[[100.0, 100.0], [300.0, 300.0]]));
+        let land = square(0.0, 200.0);
+        let lake = square(80.0, 120.0);
+        for stamp in stamps_in(&editor, layer) {
+            assert!(!land.contains(stamp.position) || lake.contains(stamp.position));
+        }
+    }
+
+    #[test]
+    fn the_stamp_eraser_only_touches_the_active_layer() {
+        let (mut editor, layer) = editor_with_island();
+        editor.scatter.placement = ssmap_core::scatter::Placement::Anywhere;
+        assert!(editor.scatter_stamps(&[[100.0, 100.0]]));
+        let other = editor.new_layer().unwrap();
+        assert!(editor.scatter_stamps(&[[100.0, 100.0]]));
+        assert_eq!(editor.active_layer(), Some(other));
+        let (here, there) = (
+            stamps_in(&editor, other).len(),
+            stamps_in(&editor, layer).len(),
+        );
+        assert!(here > 0 && there > 0);
+
+        assert!(editor.erase_stamps(&[[100.0, 100.0]]));
+        assert_eq!(editor.undo_label(), Some("Delete"));
+        assert_eq!(stamps_in(&editor, other).len(), 0);
+        assert_eq!(
+            stamps_in(&editor, layer).len(),
+            there,
+            "the other Layer is intact"
+        );
+        editor.undo();
+        assert_eq!(stamps_in(&editor, other).len(), here);
+    }
+
+    #[test]
+    fn shuffle_variant_is_one_undo_step() {
+        let mut editor = editor_with_assets();
+        editor.selected_asset = Some(asset("test-pack/mountain-1"));
+        let ids: Vec<Id> = (0..20)
+            .map(|i| editor.place_stamp([f64::from(i), 0.0]).unwrap())
+            .collect();
+        editor.select(ids.clone());
+        let before: Vec<AssetRef> = ids
+            .iter()
+            .map(|&id| editor.stamp(id).unwrap().asset.clone())
+            .collect();
+        assert!(editor.can_shuffle());
+        assert!(editor.shuffle_variants());
+        assert_eq!(editor.undo_label(), Some("Shuffle Variant"));
+        let after: Vec<AssetRef> = ids
+            .iter()
+            .map(|&id| editor.stamp(id).unwrap().asset.clone())
+            .collect();
+        assert_ne!(before, after);
+        editor.undo();
+        let restored: Vec<AssetRef> = ids
+            .iter()
+            .map(|&id| editor.stamp(id).unwrap().asset.clone())
+            .collect();
+        assert_eq!(before, restored);
+        assert_ne!(editor.undo_label(), Some("Shuffle Variant"));
     }
 }
