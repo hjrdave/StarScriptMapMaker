@@ -40,6 +40,7 @@ input_file: crates/core/tests/scripts/references.json
                 {
                   "id": "00000000-0000-7000-8000-000000000012",
                   "kind": {
+                    "fill": "#d8c49a",
                     "geometry": [
                       {
                         "exterior": [
@@ -229,6 +230,7 @@ input_file: crates/core/tests/scripts/references.json
           {
             "id": "00000000-0000-7000-8000-000000000011",
             "kind": {
+              "fill": "#d8c49a",
               "geometry": [
                 {
                   "exterior": [

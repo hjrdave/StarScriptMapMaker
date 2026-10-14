@@ -142,6 +142,11 @@ impl MapMakerApp {
         self.recovery.has_pending()
     }
 
+    /// The screen position of a Canvas point in the Canvas panel, once it has been drawn.
+    pub fn canvas_to_screen(&self, point: [f64; 2]) -> Option<egui::Pos2> {
+        self.canvas_view.to_screen(point)
+    }
+
     /// The window title, as last sent to the window.
     pub fn title(&self) -> &str {
         &self.title

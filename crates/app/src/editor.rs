@@ -3,7 +3,9 @@
 
 use std::time::{Duration, Instant};
 
-use ssmap_core::{Command, CommandError, ExecuteError, History, Id, Map, Node, Op, Selection};
+use ssmap_core::{
+    Command, CommandError, ExecuteError, History, Id, Map, Node, Op, PickIndex, Point, Selection,
+};
 
 use crate::layer_tree::node_name;
 use crate::tools::ToolId;
@@ -21,6 +23,8 @@ pub struct Editor {
     notice: Option<Notice>,
     /// Set while a gesture's transaction is open.
     gesture_open: bool,
+    /// Rebuilt lazily once the Map has changed.
+    pick_index: Option<PickIndex>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -42,6 +46,7 @@ impl Editor {
             active_tool: ToolId::Select,
             notice: None,
             gesture_open: false,
+            pick_index: None,
         }
     }
 
@@ -63,6 +68,27 @@ impl Editor {
                 _ => self.map.parent(last),
             };
         }
+    }
+
+    /// The topmost unlocked Landmass or Lake drawn at `point`, in Canvas units.
+    pub fn pick(&mut self, point: Point) -> Option<Id> {
+        let map = &self.map;
+        let index = match &mut self.pick_index {
+            Some(index) if index.is_current(map) => index,
+            slot => slot.insert(PickIndex::build(map)),
+        };
+        index.pick(map, point)
+    }
+
+    /// The selected Landmasses and Lakes, which move and resize with the handles.
+    pub fn selected_outlines(&self) -> Vec<Id> {
+        self.selection
+            .iter()
+            .copied()
+            .filter(|&id| {
+                matches!(self.map.node(id), Some(Node::Object(o)) if o.kind.geometry().is_some())
+            })
+            .collect()
     }
 
     pub fn is_selected(&self, id: Id) -> bool {
@@ -138,6 +164,19 @@ impl Editor {
                 .rollback(&mut self.map)
                 .expect("the gesture's transaction is open");
         }
+    }
+
+    /// Replaces everything the open gesture has done so far with `command`. Drags use it to
+    /// re-issue their whole effect each frame, so the Undo step holds one Command and nothing
+    /// drifts. Without an open gesture it runs `command` as its own step.
+    pub fn gesture_replace(&mut self, command: Command) -> bool {
+        if !self.gesture_open {
+            return self.run(command);
+        }
+        self.history
+            .rewind(&mut self.map)
+            .expect("the gesture's transaction is open");
+        self.gesture(command)
     }
 
     pub fn gesture_open(&self) -> bool {

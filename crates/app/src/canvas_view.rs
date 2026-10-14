@@ -5,12 +5,13 @@ use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use ssmap_core::Map;
 use ssmap_render::{
-    CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, RgbaImage, View, render_to_image,
+    CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, RgbaImage, Shapes, View,
+    render_to_image,
 };
 
 use crate::editor::Editor;
 use crate::handles::{self, Bounds};
-use crate::tools::{self, CanvasInput};
+use crate::tools::{self, CanvasInput, ToolState};
 
 /// Space left around the Canvas when it is first fitted, in points.
 const FIT_MARGIN: f64 = 32.0;
@@ -50,7 +51,7 @@ pub fn render_whole_canvas(
     let resources = egui_renderer
         .callback_resources
         .get_mut::<CanvasResources>()?;
-    let scene = CanvasScene::new(&map.canvas);
+    let scene = CanvasScene::from_map(map);
     let view = View::whole_canvas(scene.canvas_size, longest_side);
     Some(render_to_image(
         &render_state.device,
@@ -66,16 +67,53 @@ pub struct CanvasView {
     view: Option<View>,
     /// False without a wgpu device (as in UI tests); the Canvas is then a flat placeholder.
     gpu: bool,
+    tools: ToolState,
+    /// Where the panel was last drawn, in points, and the pixels per point then.
+    panel: Option<(egui::Rect, f64)>,
+    /// The fills last built, and the Map revision they show.
+    shapes: Option<(u64, Shapes)>,
 }
 
 impl CanvasView {
     pub fn new(gpu: bool) -> Self {
-        Self { view: None, gpu }
+        Self {
+            view: None,
+            gpu,
+            tools: ToolState::default(),
+            panel: None,
+            shapes: None,
+        }
     }
 
-    /// Fits the Canvas to the panel again on the next frame, as after opening a Map.
+    /// The screen position of a Canvas point, as last drawn.
+    pub fn to_screen(&self, point: [f64; 2]) -> Option<egui::Pos2> {
+        let (rect, ppp) = self.panel?;
+        Some(handles::to_screen(
+            self.view.as_ref()?,
+            rect.min,
+            ppp,
+            point,
+        ))
+    }
+
+    /// Starts afresh for another Map: fits it to the panel on the next frame and forgets
+    /// what was drawn and dragged.
     pub fn refit(&mut self) {
         self.view = None;
+        self.tools = ToolState::default();
+        self.shapes = None;
+    }
+
+    /// The Map's fills, built again only when the Map has changed.
+    fn shapes(&mut self, map: &Map) -> Shapes {
+        match &self.shapes {
+            Some((revision, shapes)) if *revision == map.revision() => shapes.clone(),
+            _ => {
+                let shapes = Shapes::from_map(map);
+                self.shapes = Some((map.revision(), shapes.clone()));
+                shapes
+            }
+        }
     }
 
     /// Zoom as a share of 1:1, in points rather than physical pixels.
@@ -91,7 +129,7 @@ impl CanvasView {
             (f64::from(rect.width()) * ppp).round().max(1.0) as u32,
             (f64::from(rect.height()) * ppp).round().max(1.0) as u32,
         ];
-        let scene = CanvasScene::new(&editor.map.canvas);
+        let mut scene = CanvasScene::new(&editor.map.canvas);
         let view = self
             .view
             .get_or_insert_with(|| View::fit(scene.canvas_size, size, FIT_MARGIN * ppp));
@@ -100,6 +138,7 @@ impl CanvasView {
         tools::canvas_input(
             editor,
             view,
+            &mut self.tools,
             &CanvasInput {
                 response: &response,
                 pixels_per_point: ppp,
@@ -115,17 +154,21 @@ impl CanvasView {
             }
         }
 
+        let view = *view;
+        self.panel = Some((rect, ppp));
+        // After the tools, so a drag shows on the frame it happens.
+        scene.shapes = self.shapes(&editor.map);
         let painter = ui.painter_at(rect);
         if self.gpu {
             painter.add(egui_wgpu::Callback::new_paint_callback(
                 rect,
-                CanvasCallback { scene, view: *view },
+                CanvasCallback { scene, view },
             ));
         } else {
-            paint_placeholder(&painter, rect, &scene, view, ppp);
+            paint_placeholder(&painter, rect, &scene, &view, ppp);
         }
         if let Some(bounds) = Bounds::of_selection(&editor.map, editor.selection()) {
-            handles::paint(&painter, &bounds, view, rect.min, ppp);
+            handles::paint(&painter, &bounds, &view, rect.min, ppp);
         }
     }
 }

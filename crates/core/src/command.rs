@@ -9,9 +9,11 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::color::Color;
+use crate::geometry::{Affine, MultiPolygon};
 use crate::id::Id;
 use crate::map::{Map, MapDefaults, Subtree};
-use crate::node::{Layer, Node};
+use crate::node::{Lake, Landmass, Layer, Node, Object, ObjectKind};
 use crate::op::{Op, OpError, Property};
 use crate::roughness::Roughness;
 
@@ -68,6 +70,44 @@ pub enum Command {
     SetDefaultRoughness {
         roughness: Roughness,
     },
+    /// Creates a Landmass with the given id and outline inside Layer `parent`. `index` counts
+    /// from the bottom of the Stacking order; omitted, the Landmass goes on top. Without a
+    /// `fill`, it takes the default land colour.
+    CreateLandmass {
+        id: Id,
+        parent: Id,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<usize>,
+        geometry: MultiPolygon,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fill: Option<Color>,
+    },
+    /// Creates a Lake, as `create_landmass` does a Landmass.
+    CreateLake {
+        id: Id,
+        parent: Id,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<usize>,
+        geometry: MultiPolygon,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        fill: Option<Color>,
+    },
+    /// Moves the outlines of Landmasses and Lakes by `offset` Canvas units.
+    Translate {
+        ids: Vec<Id>,
+        offset: [f64; 2],
+    },
+    /// Applies an affine transform to the outlines of Landmasses and Lakes, as dragging a
+    /// resize handle does. It must not collapse them to a line or a point.
+    Transform {
+        ids: Vec<Id>,
+        transform: Affine,
+    },
+    /// Sets the fill colour of Landmasses and Lakes.
+    SetFill {
+        ids: Vec<Id>,
+        fill: Color,
+    },
 }
 
 #[derive(Clone, PartialEq, Debug, Error)]
@@ -90,6 +130,10 @@ pub enum CommandError {
     NoOutline(Id),
     #[error("Roughness needs an amount of 0 or more and a scale above 0, not {amount} and {scale}")]
     InvalidRoughness { amount: f64, scale: f64 },
+    #[error("the outline of {id} is invalid: {problem}")]
+    InvalidGeometry { id: Id, problem: String },
+    #[error("the transform {0:?} is not finite or collapses shapes")]
+    InvalidTransform([f64; 6]),
     #[error(transparent)]
     Op(#[from] OpError),
 }
@@ -107,6 +151,11 @@ impl Command {
             Command::Delete { .. } => "Delete",
             Command::SetRoughness { .. } => "Change Roughness",
             Command::SetDefaultRoughness { .. } => "Change Default Roughness",
+            Command::CreateLandmass { .. } => "Create Landmass",
+            Command::CreateLake { .. } => "Create Lake",
+            Command::Translate { .. } => "Move",
+            Command::Transform { .. } => "Transform",
+            Command::SetFill { .. } => "Change Fill",
         }
     }
 
@@ -199,6 +248,41 @@ impl Command {
                     },
                 }])
             }
+            Command::CreateLandmass {
+                id,
+                parent,
+                index,
+                geometry,
+                fill,
+            } => {
+                let landmass = Landmass {
+                    fill: fill.unwrap_or(Landmass::DEFAULT_FILL),
+                    ..Landmass::new(geometry.clone())
+                };
+                create_object(map, *id, *parent, *index, ObjectKind::Landmass(landmass))
+            }
+            Command::CreateLake {
+                id,
+                parent,
+                index,
+                geometry,
+                fill,
+            } => {
+                let lake = Lake {
+                    fill: fill.unwrap_or(Lake::DEFAULT_FILL),
+                    ..Lake::new(geometry.clone())
+                };
+                create_object(map, *id, *parent, *index, ObjectKind::Lake(lake))
+            }
+            Command::Translate { ids, offset } => transform(map, ids, &Affine::translate(*offset)),
+            Command::Transform { ids, transform: t } => transform(map, ids, t),
+            Command::SetFill { ids, fill } => {
+                let ids = outlined(map, ids)?;
+                Ok(ids
+                    .into_iter()
+                    .map(|id| set(id, Property::Fill(*fill)))
+                    .collect())
+            }
         }
     }
 }
@@ -290,6 +374,75 @@ fn valid_roughness(roughness: &Roughness) -> Result<(), CommandError> {
         Ok(())
     } else {
         Err(CommandError::InvalidRoughness { amount, scale })
+    }
+}
+
+fn create_object(
+    map: &Map,
+    id: Id,
+    parent: Id,
+    index: Option<usize>,
+    kind: ObjectKind,
+) -> Result<Vec<Op>, CommandError> {
+    if map.contains(id) {
+        return Err(CommandError::IdInUse(id));
+    }
+    layer(map, parent)?;
+    unlocked(map, parent)?;
+    let geometry = kind.geometry().expect("Landmasses and Lakes have outlines");
+    if let Some(problem) = geometry.problem() {
+        return Err(CommandError::InvalidGeometry { id, problem });
+    }
+    Ok(vec![Op::Insert {
+        parent: Some(parent),
+        index: index.unwrap_or(map.children(Some(parent)).len()),
+        subtree: Subtree {
+            id,
+            node: Node::Object(Object::new(kind)),
+            children: Vec::new(),
+        },
+    }])
+}
+
+fn transform(map: &Map, ids: &[Id], transform: &Affine) -> Result<Vec<Op>, CommandError> {
+    if !transform.is_invertible() {
+        return Err(CommandError::InvalidTransform(transform.0));
+    }
+    let ids = outlined(map, ids)?;
+    let mut ops = Vec::with_capacity(ids.len());
+    for id in ids {
+        let geometry = outline(map, id).transformed(transform);
+        // Huge factors can overflow to infinity even when the transform itself is finite.
+        if let Some(problem) = geometry.problem() {
+            return Err(CommandError::InvalidGeometry { id, problem });
+        }
+        ops.push(Op::ReplaceGeometry { id, geometry });
+    }
+    Ok(ops)
+}
+
+/// Checks that every id is an unlocked Landmass or Lake, and drops repeats.
+fn outlined(map: &Map, ids: &[Id]) -> Result<Vec<Id>, CommandError> {
+    let mut seen = HashSet::new();
+    let mut unique = Vec::with_capacity(ids.len());
+    for &id in ids {
+        match existing(map, id)? {
+            Node::Object(object) if object.kind.geometry().is_some() => {}
+            _ => return Err(CommandError::NoOutline(id)),
+        }
+        unlocked(map, id)?;
+        if seen.insert(id) {
+            unique.push(id);
+        }
+    }
+    Ok(unique)
+}
+
+/// The outline of an id `outlined` accepted.
+fn outline(map: &Map, id: Id) -> &MultiPolygon {
+    match map.node(id) {
+        Some(Node::Object(object)) => object.kind.geometry().expect("checked"),
+        _ => unreachable!("checked"),
     }
 }
 
