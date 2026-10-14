@@ -414,7 +414,9 @@ impl PropertiesPanel {
             *text = label.text.clone();
         }
 
-        let mut next = label.clone();
+        // Edits are made on the resolved settings; only what changed becomes an override.
+        let styles = editor.map.label_styles().clone();
+        let mut next = label.resolve(&styles);
         // What changed this frame: a drag (one gesture), a click (one step) or a colour.
         let mut dragged: Option<egui::Response> = None;
         let mut clicked = false;
@@ -536,28 +538,30 @@ impl PropertiesPanel {
             ui.end_row();
         });
 
+        let edited = label.with_resolved(&styles, &next);
+        let changed = edited != *label;
         let set = Command::SetLabel {
             id,
-            label: Box::new(next.clone()),
+            label: Box::new(edited),
         };
         if let Some(response) = dragged {
             // Dragging a value is one gesture: live updates, one Undo step.
             if response.drag_started() {
                 editor.begin_gesture("Edit Label");
             }
-            if next != *label {
+            if changed {
                 editor.gesture(set);
             }
             if response.drag_stopped() {
                 editor.end_gesture();
             }
-        } else if coloured && next != *label {
+        } else if coloured && changed {
             if !self.colour_gesture {
                 editor.begin_gesture("Change Colour");
                 self.colour_gesture = true;
             }
             editor.gesture(set);
-        } else if clicked && next != *label {
+        } else if clicked && changed {
             editor.run(set);
         }
     }

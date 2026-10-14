@@ -1,0 +1,22 @@
+{
+  "steps": [
+    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000001", "parent": null, "name": "Labels"}},
+    {"step": {"command": "create_label_style", "style": {"id": "00000000-0000-7000-8000-0000000000a1", "name": "Realm", "size": 96, "all_caps": true}}},
+    {"step": {"command": "create_label_style", "style": {"id": "00000000-0000-7000-8000-0000000000a2", "name": "Realm", "size": 20}}},
+    {"step": {"command": "create_label_style", "style": {"id": "00000000-0000-7000-8000-0000000000a3", "name": "  ", "size": 20}}},
+    {"step": {"command": "create_label_style", "style": {"id": "00000000-0000-7000-8000-0000000000a2", "name": "City", "size": 0}}},
+    {"step": {"command": "create_label", "id": "00000000-0000-7000-8000-000000000002", "parent": "00000000-0000-7000-8000-000000000001", "label": {"text": "Ærendál", "style": "00000000-0000-7000-8000-0000000000a1", "position": [400, 300]}}},
+    {"step": {"command": "create_label", "id": "00000000-0000-7000-8000-000000000003", "parent": "00000000-0000-7000-8000-000000000001", "label": {"text": "Harrow", "style": "00000000-0000-7000-8000-0000000000a1", "position": [400, 500], "size": 30, "fill": "#aa0000"}}},
+    {"step": {"command": "create_label", "id": "00000000-0000-7000-8000-000000000004", "parent": "00000000-0000-7000-8000-000000000001", "label": {"text": "Lost", "style": "00000000-0000-7000-8000-0000000000ff"}}},
+    {"step": {"command": "rename_label_style", "id": "00000000-0000-7000-8000-0000000000a1", "name": "Default"}},
+    {"step": {"command": "rename_label_style", "id": "00000000-0000-7000-8000-0000000000a1", "name": "Kingdom"}},
+    {"step": {"command": "set_label_style", "style": {"id": "00000000-0000-7000-8000-0000000000a1", "name": "ignored", "size": 120, "fill": "#112233"}}},
+    "snapshot",
+    {"step": {"command": "delete_label_style", "id": "00000000-0000-7000-8000-000000000001"}},
+    {"step": {"command": "delete_label_style", "id": "00000000-0000-0000-0000-000000000001"}},
+    {"step": {"command": "delete_label_style", "id": "00000000-0000-7000-8000-0000000000a1"}},
+    "undo",
+    "undo",
+    "redo"
+  ]
+}

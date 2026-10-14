@@ -47,6 +47,27 @@ input_file: crates/core/tests/scripts/roughness.json
             "width": 1000
           },
           "defaults": {
+            "label_styles": [
+              {
+                "all_caps": false,
+                "fill": "#2b2118",
+                "font": {
+                  "family": "Cinzel",
+                  "italic": false,
+                  "weight": 400
+                },
+                "halo": {
+                  "color": "#f4ecd8",
+                  "width": 0.0
+                },
+                "id": "00000000-0000-0000-0000-000000000001",
+                "letter_spacing": 0.0,
+                "line_height": 1.2,
+                "name": "Default",
+                "opacity": 1.0,
+                "size": 48.0
+              }
+            ],
             "lake_shore": {
               "outline": {
                 "color": "#3a6a8a",
@@ -321,6 +342,27 @@ input_file: crates/core/tests/scripts/roughness.json
             "width": 1000
           },
           "defaults": {
+            "label_styles": [
+              {
+                "all_caps": false,
+                "fill": "#2b2118",
+                "font": {
+                  "family": "Cinzel",
+                  "italic": false,
+                  "weight": 400
+                },
+                "halo": {
+                  "color": "#f4ecd8",
+                  "width": 0.0
+                },
+                "id": "00000000-0000-0000-0000-000000000001",
+                "letter_spacing": 0.0,
+                "line_height": 1.2,
+                "name": "Default",
+                "opacity": 1.0,
+                "size": 48.0
+              }
+            ],
             "lake_shore": {
               "outline": {
                 "color": "#3a6a8a",
@@ -513,6 +555,27 @@ input_file: crates/core/tests/scripts/roughness.json
       "width": 1000
     },
     "defaults": {
+      "label_styles": [
+        {
+          "all_caps": false,
+          "fill": "#2b2118",
+          "font": {
+            "family": "Cinzel",
+            "italic": false,
+            "weight": 400
+          },
+          "halo": {
+            "color": "#f4ecd8",
+            "width": 0.0
+          },
+          "id": "00000000-0000-0000-0000-000000000001",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "name": "Default",
+          "opacity": 1.0,
+          "size": 48.0
+        }
+      ],
       "lake_shore": {
         "outline": {
           "color": "#3a6a8a",

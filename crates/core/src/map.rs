@@ -8,6 +8,7 @@ use thiserror::Error;
 
 use crate::extra::Extra;
 use crate::id::Id;
+use crate::label::{LabelStyles, ResolvedLabel};
 use crate::node::{Node, Object, ObjectKind};
 use crate::roughness::Roughness;
 use crate::shore::{ShoreKind, ShoreStyle};
@@ -73,6 +74,9 @@ pub struct MapDefaults {
     /// The Shore style of every Lake without its own.
     #[serde(default = "ShoreStyle::lake_default")]
     pub lake_shore: ShoreStyle,
+    /// The Label styles Labels refer to. Files saved before they existed get the default one.
+    #[serde(default)]
+    pub label_styles: LabelStyles,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -83,6 +87,7 @@ impl Default for MapDefaults {
             roughness: Roughness::default(),
             shore: ShoreStyle::landmass_default(),
             lake_shore: ShoreStyle::lake_default(),
+            label_styles: LabelStyles::default(),
             extra: Extra::new(),
         }
     }
@@ -196,6 +201,36 @@ impl Map {
         };
         let default = self.defaults.shore_for(kind.shore_kind()?);
         Some(kind.shore().unwrap_or(default))
+    }
+
+    /// The Label styles of the Map.
+    pub fn label_styles(&self) -> &LabelStyles {
+        &self.defaults.label_styles
+    }
+
+    /// A Label with its style applied. `None` for anything that is not a Label.
+    pub fn resolved_label(&self, id: Id) -> Option<ResolvedLabel> {
+        match self.node(id)? {
+            Node::Object(Object {
+                kind: ObjectKind::Label(label),
+                ..
+            }) => Some(label.resolve(&self.defaults.label_styles)),
+            _ => None,
+        }
+    }
+
+    /// The Labels that follow the style `style`, in no particular order.
+    pub fn labels_using(&self, style: Id) -> Vec<Id> {
+        self.entries
+            .iter()
+            .filter(|(_, entry)| {
+                matches!(
+                    &entry.node,
+                    Node::Object(Object { kind: ObjectKind::Label(label), .. }) if label.style == style
+                )
+            })
+            .map(|(&id, _)| id)
+            .collect()
     }
 
     pub fn contains(&self, id: Id) -> bool {

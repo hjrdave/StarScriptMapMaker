@@ -1,0 +1,527 @@
+---
+source: crates/core/tests/scripts.rs
+expression: run(script)
+input_file: crates/core/tests/scripts/label_styles.json
+---
+{
+  "log": [
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_layer",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "name": "Labels",
+          "parent": null
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_label_style",
+          "style": {
+            "all_caps": true,
+            "id": "00000000-0000-7000-8000-0000000000a1",
+            "name": "Realm",
+            "size": 96
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "a Label style named \"Realm\" already exists"
+      },
+      "step": {
+        "step": {
+          "command": "create_label_style",
+          "style": {
+            "id": "00000000-0000-7000-8000-0000000000a2",
+            "name": "Realm",
+            "size": 20
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "invalid Label style: the name is empty"
+      },
+      "step": {
+        "step": {
+          "command": "create_label_style",
+          "style": {
+            "id": "00000000-0000-7000-8000-0000000000a3",
+            "name": "  ",
+            "size": 20
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "invalid Label style: the size must be greater than 0"
+      },
+      "step": {
+        "step": {
+          "command": "create_label_style",
+          "style": {
+            "id": "00000000-0000-7000-8000-0000000000a2",
+            "name": "City",
+            "size": 0
+          }
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_label",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "label": {
+            "position": [
+              400,
+              300
+            ],
+            "style": "00000000-0000-7000-8000-0000000000a1",
+            "text": "Ærendál"
+          },
+          "parent": "00000000-0000-7000-8000-000000000001"
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_label",
+          "id": "00000000-0000-7000-8000-000000000003",
+          "label": {
+            "fill": "#aa0000",
+            "position": [
+              400,
+              500
+            ],
+            "size": 30,
+            "style": "00000000-0000-7000-8000-0000000000a1",
+            "text": "Harrow"
+          },
+          "parent": "00000000-0000-7000-8000-000000000001"
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "no Label style has id 00000000-0000-7000-8000-0000000000ff"
+      },
+      "step": {
+        "step": {
+          "command": "create_label",
+          "id": "00000000-0000-7000-8000-000000000004",
+          "label": {
+            "style": "00000000-0000-7000-8000-0000000000ff",
+            "text": "Lost"
+          },
+          "parent": "00000000-0000-7000-8000-000000000001"
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "a Label style named \"Default\" already exists"
+      },
+      "step": {
+        "step": {
+          "command": "rename_label_style",
+          "id": "00000000-0000-7000-8000-0000000000a1",
+          "name": "Default"
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "rename_label_style",
+          "id": "00000000-0000-7000-8000-0000000000a1",
+          "name": "Kingdom"
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_label_style",
+          "style": {
+            "fill": "#112233",
+            "id": "00000000-0000-7000-8000-0000000000a1",
+            "name": "ignored",
+            "size": 120
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "defaults": {
+            "label_styles": [
+              {
+                "all_caps": false,
+                "fill": "#2b2118",
+                "font": {
+                  "family": "Cinzel",
+                  "italic": false,
+                  "weight": 400
+                },
+                "halo": {
+                  "color": "#f4ecd8",
+                  "width": 0.0
+                },
+                "id": "00000000-0000-0000-0000-000000000001",
+                "letter_spacing": 0.0,
+                "line_height": 1.2,
+                "name": "Default",
+                "opacity": 1.0,
+                "size": 48.0
+              },
+              {
+                "all_caps": false,
+                "fill": "#112233",
+                "font": {
+                  "family": "Cinzel",
+                  "italic": false,
+                  "weight": 400
+                },
+                "halo": {
+                  "color": "#f4ecd8",
+                  "width": 0.0
+                },
+                "id": "00000000-0000-7000-8000-0000000000a1",
+                "letter_spacing": 0.0,
+                "line_height": 1.2,
+                "name": "Kingdom",
+                "opacity": 1.0,
+                "size": 120.0
+              }
+            ],
+            "lake_shore": {
+              "outline": {
+                "color": "#3a6a8a",
+                "width": 1.0
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 0,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#2a5a7a60",
+                "width": 8.0
+              }
+            },
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            },
+            "shore": {
+              "outline": {
+                "color": "#5a4628",
+                "width": 1.5
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 3,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#8a6a3870",
+                "width": 18.0
+              }
+            }
+          },
+          "layers": [
+            {
+              "children": [
+                {
+                  "id": "00000000-0000-7000-8000-000000000002",
+                  "kind": {
+                    "align": "centre",
+                    "all_caps": null,
+                    "fill": null,
+                    "font": null,
+                    "halo": null,
+                    "kind": "label",
+                    "letter_spacing": null,
+                    "line_height": null,
+                    "opacity": null,
+                    "position": [
+                      400.0,
+                      300.0
+                    ],
+                    "rotation": 0.0,
+                    "size": null,
+                    "style": "00000000-0000-7000-8000-0000000000a1",
+                    "text": "Ærendál"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000003",
+                  "kind": {
+                    "align": "centre",
+                    "all_caps": null,
+                    "fill": "#aa0000",
+                    "font": null,
+                    "halo": null,
+                    "kind": "label",
+                    "letter_spacing": null,
+                    "line_height": null,
+                    "opacity": null,
+                    "position": [
+                      400.0,
+                      500.0
+                    ],
+                    "rotation": 0.0,
+                    "size": 30.0,
+                    "style": "00000000-0000-7000-8000-0000000000a1",
+                    "text": "Harrow"
+                  },
+                  "locked": false,
+                  "type": "object"
+                }
+              ],
+              "id": "00000000-0000-7000-8000-000000000001",
+              "locked": false,
+              "name": "Labels",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": {
+        "error": "no Label style has id 00000000-0000-7000-8000-000000000001"
+      },
+      "step": {
+        "step": {
+          "command": "delete_label_style",
+          "id": "00000000-0000-7000-8000-000000000001"
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "the default Label style cannot be deleted"
+      },
+      "step": {
+        "step": {
+          "command": "delete_label_style",
+          "id": "00000000-0000-0000-0000-000000000001"
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "delete_label_style",
+          "id": "00000000-0000-7000-8000-0000000000a1"
+        }
+      }
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "redo"
+    }
+  ],
+  "redo_steps": 1,
+  "undo_steps": 6,
+  "view": {
+    "canvas": {
+      "height": 1000,
+      "scale": {
+        "distance_per_unit": 1.0,
+        "unit": "miles"
+      },
+      "width": 1000
+    },
+    "defaults": {
+      "label_styles": [
+        {
+          "all_caps": false,
+          "fill": "#2b2118",
+          "font": {
+            "family": "Cinzel",
+            "italic": false,
+            "weight": 400
+          },
+          "halo": {
+            "color": "#f4ecd8",
+            "width": 0.0
+          },
+          "id": "00000000-0000-0000-0000-000000000001",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "name": "Default",
+          "opacity": 1.0,
+          "size": 48.0
+        },
+        {
+          "all_caps": false,
+          "fill": "#112233",
+          "font": {
+            "family": "Cinzel",
+            "italic": false,
+            "weight": 400
+          },
+          "halo": {
+            "color": "#f4ecd8",
+            "width": 0.0
+          },
+          "id": "00000000-0000-7000-8000-0000000000a1",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "name": "Kingdom",
+          "opacity": 1.0,
+          "size": 120.0
+        }
+      ],
+      "lake_shore": {
+        "outline": {
+          "color": "#3a6a8a",
+          "width": 1.0
+        },
+        "ripples": {
+          "color": "#ffffff90",
+          "count": 0,
+          "fade": 0.6,
+          "spacing": 12.0,
+          "width": 1.5
+        },
+        "shading": {
+          "color": "#2a5a7a60",
+          "width": 8.0
+        }
+      },
+      "roughness": {
+        "amount": 0.0,
+        "scale": 32.0,
+        "seed": 0
+      },
+      "shore": {
+        "outline": {
+          "color": "#5a4628",
+          "width": 1.5
+        },
+        "ripples": {
+          "color": "#ffffff90",
+          "count": 3,
+          "fade": 0.6,
+          "spacing": 12.0,
+          "width": 1.5
+        },
+        "shading": {
+          "color": "#8a6a3870",
+          "width": 18.0
+        }
+      }
+    },
+    "layers": [
+      {
+        "children": [
+          {
+            "id": "00000000-0000-7000-8000-000000000002",
+            "kind": {
+              "align": "centre",
+              "all_caps": null,
+              "fill": null,
+              "font": null,
+              "halo": null,
+              "kind": "label",
+              "letter_spacing": null,
+              "line_height": null,
+              "opacity": null,
+              "position": [
+                400.0,
+                300.0
+              ],
+              "rotation": 0.0,
+              "size": null,
+              "style": "00000000-0000-7000-8000-0000000000a1",
+              "text": "Ærendál"
+            },
+            "locked": false,
+            "type": "object"
+          },
+          {
+            "id": "00000000-0000-7000-8000-000000000003",
+            "kind": {
+              "align": "centre",
+              "all_caps": null,
+              "fill": "#aa0000",
+              "font": null,
+              "halo": null,
+              "kind": "label",
+              "letter_spacing": null,
+              "line_height": null,
+              "opacity": null,
+              "position": [
+                400.0,
+                500.0
+              ],
+              "rotation": 0.0,
+              "size": 30.0,
+              "style": "00000000-0000-7000-8000-0000000000a1",
+              "text": "Harrow"
+            },
+            "locked": false,
+            "type": "object"
+          }
+        ],
+        "id": "00000000-0000-7000-8000-000000000001",
+        "locked": false,
+        "name": "Labels",
+        "opacity": 1.0,
+        "type": "layer",
+        "visible": true
+      }
+    ]
+  }
+}

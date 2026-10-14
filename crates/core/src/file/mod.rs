@@ -44,7 +44,7 @@ use crate::node::{Node, Object};
 
 /// The format this version writes. A minor bump only adds optional fields; a major bump is
 /// anything else, and needs a migration.
-pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 0 };
+pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 1 };
 
 /// The longer side of the preview image stored in every save, in pixels.
 pub const PREVIEW_SIZE: u32 = 512;

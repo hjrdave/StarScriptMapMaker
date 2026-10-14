@@ -191,13 +191,15 @@ impl CanvasView {
             return;
         };
         let id = editing.id;
-        let Some((label, layout)) = editor.label_layout(id) else {
+        let (Some((shown, layout)), Some(label)) =
+            (editor.label_layout(id), editor.label(id).cloned())
+        else {
             // Undone or deleted meanwhile.
             self.tools.editing = None;
             editor.end_gesture();
             return;
         };
-        let bounds = Bounds::around(&layout.corners(&label)).expect("four corners");
+        let bounds = Bounds::around(&layout.corners(&shown)).expect("four corners");
         let at = handles::to_screen(view, origin, ppp, [bounds.min[0], bounds.max[1]]);
         let text_id = egui::Id::new("label_text").with(id);
         let mut output = None;

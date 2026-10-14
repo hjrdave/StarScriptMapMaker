@@ -10,6 +10,7 @@ pub mod file;
 mod geometry;
 mod history;
 mod id;
+mod label;
 pub mod land;
 mod map;
 mod node;
@@ -27,10 +28,9 @@ pub use extra::Extra;
 pub use geometry::{Affine, MultiPolygon, NodeRef, Point, Polygon, Rect};
 pub use history::{DEFAULT_BUDGET_BYTES, ExecuteError, History, HistoryError, Selection, UndoStep};
 pub use id::Id;
+pub use label::{Label, LabelStyle, LabelStyles, ResolvedLabel};
 pub use map::{Canvas, DistanceUnit, InvariantError, Map, MapDefaults, MapView, Scale, Subtree};
-pub use node::{
-    Align, FontFace, Halo, Label, Lake, Landmass, Layer, Node, Object, ObjectKind, Stamp,
-};
+pub use node::{Align, FontFace, Halo, Lake, Landmass, Layer, Node, Object, ObjectKind, Stamp};
 pub use op::{Op, OpError, Property};
 pub use pick::PickIndex;
 pub use roughness::{Roughness, RoughnessCache, roughen};

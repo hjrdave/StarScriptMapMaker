@@ -11,8 +11,9 @@ use thiserror::Error;
 use crate::command::{Command, CommandError};
 use crate::geometry::MultiPolygon;
 use crate::id::Id;
+use crate::label::Label;
 use crate::map::{Map, Subtree};
-use crate::node::{Label, Node, ObjectKind};
+use crate::node::{Node, ObjectKind};
 use crate::op::{Op, Property};
 
 /// The Objects and Layers picked in the editor. It is editor state, not part of the Map, but

@@ -3,7 +3,7 @@
 //! the handles, and scales Labels.
 
 use eframe::egui;
-use ssmap_core::{Label, Node, Rect, Stamp};
+use ssmap_core::{Halo, Label, LabelStyles, Node, Rect, Stamp};
 use ssmap_render::View;
 
 use crate::editor::Editor;
@@ -209,14 +209,18 @@ pub fn moved(label: &Label, delta: [f64; 2]) -> Label {
 
 /// `label` scaled by `scale` about the Canvas point `fixed`. Its size and halo scale with it;
 /// spacing and line height are relative to the size already.
-pub fn scaled(label: &Label, scale: f64, fixed: [f64; 2]) -> Label {
+pub fn scaled(label: &Label, styles: &LabelStyles, scale: f64, fixed: [f64; 2]) -> Label {
+    let resolved = label.resolve(styles);
     let mut out = label.clone();
     out.position = [
         fixed[0] + (label.position[0] - fixed[0]) * scale,
         fixed[1] + (label.position[1] - fixed[1]) * scale,
     ];
-    out.size = label.size * scale;
-    out.halo.width = label.halo.width * scale;
+    out.size = Some(resolved.size * scale);
+    out.halo = Some(Halo {
+        width: resolved.halo.width * scale,
+        ..resolved.halo
+    });
     out
 }
 
@@ -431,13 +435,16 @@ mod tests {
     fn label_transforms_move_scale_and_rotate() {
         let label = Label {
             position: [10.0, 0.0],
-            size: 20.0,
+            size: Some(20.0),
             rotation: 350.0,
             ..Label::default()
         };
         assert_eq!(moved(&label, [1.0, 2.0]).position, [11.0, 2.0]);
-        let big = scaled(&label, 2.0, [0.0, 0.0]);
-        assert_eq!((big.position, big.size), ([20.0, 0.0], 40.0));
+        let big = scaled(&label, &LabelStyles::default(), 2.0, [0.0, 0.0]);
+        assert_eq!((big.position, big.size), ([20.0, 0.0], Some(40.0)));
+        // A Label that follows its style gets an override of the scaled size.
+        let styled = scaled(&Label::default(), &LabelStyles::default(), 0.5, [0.0, 0.0]);
+        assert_eq!(styled.size, Some(24.0));
         let turned = rotated(&label, 90.0, [0.0, 0.0]);
         assert!((turned.position[0]).abs() < 1e-9 && (turned.position[1] - 10.0).abs() < 1e-9);
         assert!((turned.rotation - 80.0).abs() < 1e-9);

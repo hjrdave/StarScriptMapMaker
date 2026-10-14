@@ -11,8 +11,9 @@ use thiserror::Error;
 use crate::color::Color;
 use crate::geometry::MultiPolygon;
 use crate::id::Id;
+use crate::label::Label;
 use crate::map::{InvariantError, Map, MapDefaults, Subtree};
-use crate::node::{Label, Node, ObjectKind, Stamp};
+use crate::node::{Node, ObjectKind, Stamp};
 use crate::roughness::Roughness;
 use crate::shore::ShoreStyle;
 

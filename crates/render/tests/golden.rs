@@ -472,11 +472,11 @@ fn label(text: &str, family: &str, position: [f64; 2]) -> Label {
     Label {
         text: text.into(),
         position,
-        font: FontFace {
+        font: Some(FontFace {
             family: family.into(),
             ..FontFace::default()
-        },
-        size: 64.0,
+        }),
+        size: Some(64.0),
         ..Label::default()
     }
 }
@@ -488,7 +488,7 @@ fn labels() {
     let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
     let multi_line = Label {
         align: Align::Left,
-        line_height: 1.1,
+        line_height: Some(1.1),
         ..label(
             "The Sundered\nIsles of\nWestmarch",
             "IM Fell Double Pica",
@@ -496,27 +496,27 @@ fn labels() {
         )
     };
     let spaced = Label {
-        letter_spacing: 0.35,
+        letter_spacing: Some(0.35),
         rotation: -12.0,
         ..label("Spaced Out", "Almendra", [900.0, 200.0])
     };
     let all_caps = Label {
-        all_caps: true,
-        letter_spacing: 0.1,
-        font: FontFace {
+        all_caps: Some(true),
+        letter_spacing: Some(0.1),
+        font: Some(FontFace {
             family: "Cinzel".into(),
             weight: 700,
             ..FontFace::default()
-        },
+        }),
         ..label("Kingdom of Thule", "Cinzel", [520.0, 640.0])
     };
     let haloed = Label {
-        fill: Color::rgb(0x6b, 0x16, 0x10),
-        halo: ssmap_core::Halo {
+        fill: Some(Color::rgb(0x6b, 0x16, 0x10)),
+        halo: Some(ssmap_core::Halo {
             width: 5.0,
             color: Color::rgb(0xf4, 0xec, 0xd8),
             ..Default::default()
-        },
+        }),
         align: Align::Right,
         ..label("Haloed\nRight", "Uncial Antiqua", [1160.0, 560.0])
     };
@@ -542,7 +542,7 @@ fn label_fallback() {
         .map(|(i, family)| label("Ærendál", family, [300.0, 70.0 + 110.0 * i as f64]))
         .collect();
     labels.push(Label {
-        size: 56.0,
+        size: Some(56.0),
         ..label("Ærendál\nΩμέγα", "Uncial Antiqua", [880.0, 300.0])
     });
     let image = render_labels(headless, [1200, 600], labels);
@@ -558,16 +558,16 @@ fn halos_never_show_through_translucent_fill() {
     let Some(gpu) = gpu() else { return };
     let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
     let stem = Label {
-        opacity: 0.5,
-        size: 400.0,
+        opacity: Some(0.5),
+        size: Some(400.0),
         ..label("I", "Noto Serif", [200.0, 200.0])
     };
     let haloed = Label {
-        halo: ssmap_core::Halo {
+        halo: Some(ssmap_core::Halo {
             width: 12.0,
             color: Color::rgba(0xff, 0xff, 0xff, 0x80),
             ..Default::default()
-        },
+        }),
         ..stem.clone()
     };
     let plain = render_labels(headless, [400, 400], vec![stem]);

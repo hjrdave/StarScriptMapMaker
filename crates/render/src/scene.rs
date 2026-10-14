@@ -9,7 +9,8 @@ use lyon::math::point;
 use lyon::path::Path;
 use ssmap_core::land;
 use ssmap_core::{
-    Id, Label, Landmass, Map, MultiPolygon, Node, ObjectKind, Polygon, RoughnessCache, ShoreStyle,
+    Id, Landmass, Map, MultiPolygon, Node, ObjectKind, Polygon, ResolvedLabel, RoughnessCache,
+    ShoreStyle,
 };
 
 use crate::canvas::{ClipScope, Content};
@@ -102,7 +103,7 @@ impl MapScene {
     }
 
     /// The shaped text of a Label, shaping it only if its text or typography changed.
-    pub fn label_layout(&mut self, id: Id, label: &Label) -> Arc<LabelLayout> {
+    pub fn label_layout(&mut self, id: Id, label: &ResolvedLabel) -> Arc<LabelLayout> {
         let key = LayoutKey::of(label);
         if let Some((cached, layout)) = self.layouts.get(&id)
             && *cached == key
@@ -131,8 +132,9 @@ impl MapScene {
         match &object.kind {
             ObjectKind::Label(label) => {
                 seen.push(id);
-                let layout = self.label_layout(id, label);
-                groups.push(layout.group(label, opacity));
+                let label = label.resolve(map.label_styles());
+                let layout = self.label_layout(id, &label);
+                groups.push(layout.group(&label, opacity));
             }
             ObjectKind::Stamp(stamp) => stamps.push(PlacedStamp {
                 after: groups.len(),
@@ -351,7 +353,7 @@ fn polygon_path(polygon: &Polygon) -> Path {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ssmap_core::{Canvas, Command, DistanceUnit, Scale};
+    use ssmap_core::{Canvas, Command, DistanceUnit, Label, Scale};
 
     fn map_with_label() -> (Map, Id, Id) {
         let mut map = Map::new(Canvas::new(800, 600, Scale::new(1.0, DistanceUnit::Miles)));
@@ -409,7 +411,7 @@ mod tests {
             panic!()
         };
         let mut label = (**label).clone();
-        let before = scene.label_layout(id, &label);
+        let before = scene.label_layout(id, &label.resolve(map.label_styles()));
         label.position = [400.0, 300.0];
         label.rotation = 30.0;
         map.execute(&Command::SetLabel {
@@ -417,9 +419,11 @@ mod tests {
             label: Box::new(label.clone()),
         })
         .unwrap();
-        assert!(Arc::ptr_eq(&before, &scene.label_layout(id, &label)));
-        label.size *= 2.0;
-        assert!(!Arc::ptr_eq(&before, &scene.label_layout(id, &label)));
+        let moved = label.resolve(map.label_styles());
+        assert!(Arc::ptr_eq(&before, &scene.label_layout(id, &moved)));
+        label.size = Some(96.0);
+        let bigger = label.resolve(map.label_styles());
+        assert!(!Arc::ptr_eq(&before, &scene.label_layout(id, &bigger)));
     }
 
     #[test]
