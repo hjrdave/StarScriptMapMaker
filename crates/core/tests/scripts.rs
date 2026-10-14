@@ -3,7 +3,8 @@
 //! Each `tests/scripts/*.json` file has optional `setup` Ops, applied directly, and `steps`:
 //!
 //! - `{"begin": {"label": "...", "selection": [ids]}}`, `{"commit": {"selection": [ids]}}`,
-//!   `"rollback"`: transactions.
+//!   `"rollback"`: transactions. `"rewind"` undoes the open transaction's Commands but keeps
+//!   it open, as a drag does each frame.
 //! - `{"execute": <Command>}`: run a Command inside the open transaction.
 //! - `{"step": <Command>}`: run a Command as its own Undo step.
 //! - `"undo"`, `"redo"`.
@@ -38,6 +39,7 @@ enum Action {
         selection: Selection,
     },
     Rollback,
+    Rewind,
     Execute(Command),
     Step(Command),
     Undo,
@@ -63,6 +65,7 @@ fn run(script: Script) -> Value {
             Action::Begin { label, selection } => result(history.begin(label, selection)),
             Action::Commit { selection } => result(history.commit(selection)),
             Action::Rollback => result(history.rollback(&mut map)),
+            Action::Rewind => result(history.rewind(&mut map)),
             Action::Execute(command) => result(history.execute(&mut map, &command)),
             Action::Step(command) => result(history.execute_step(&mut map, &command, Vec::new())),
             Action::Undo => restored(history.undo(&mut map)),

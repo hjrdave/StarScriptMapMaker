@@ -42,3 +42,10 @@ fn srgb_to_linear(channel: u8) -> f32 {
         ((c + 0.055) / 1.055).powf(2.4)
     }
 }
+
+impl From<ssmap_core::Color> for Color {
+    fn from(color: ssmap_core::Color) -> Self {
+        let ssmap_core::Color { r, g, b, a } = color;
+        Self { r, g, b, a }
+    }
+}

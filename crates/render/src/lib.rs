@@ -10,6 +10,7 @@ mod gpu;
 mod ocean;
 mod offscreen;
 mod present;
+mod shapes;
 mod vector;
 mod view;
 
@@ -18,6 +19,7 @@ pub use color::Color;
 pub use gpu::{GpuCapabilities, Headless, HeadlessError};
 pub use offscreen::{RgbaImage, render_to_image};
 pub use present::Presenter;
+pub use shapes::{ShapeFill, Shapes};
 pub use vector::{FillPath, LyonRenderer, VectorRenderer};
 pub use view::View;
 

@@ -4,6 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::color::Color;
 use crate::extra::Extra;
 use crate::geometry::MultiPolygon;
 use crate::id::Id;
@@ -96,6 +97,23 @@ impl ObjectKind {
         }
     }
 
+    /// The fill colour of kinds that have an outline.
+    pub fn fill(&self) -> Option<Color> {
+        match self {
+            ObjectKind::Landmass(landmass) => Some(landmass.fill),
+            ObjectKind::Lake(lake) => Some(lake.fill),
+            ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
+        }
+    }
+
+    pub(crate) fn fill_mut(&mut self) -> Option<&mut Color> {
+        match self {
+            ObjectKind::Landmass(landmass) => Some(&mut landmass.fill),
+            ObjectKind::Lake(lake) => Some(&mut lake.fill),
+            ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
+        }
+    }
+
     pub(crate) fn geometry_mut(&mut self) -> Option<&mut MultiPolygon> {
         match self {
             ObjectKind::Landmass(landmass) => Some(&mut landmass.geometry),
@@ -109,10 +127,12 @@ impl ObjectKind {
         match self {
             ObjectKind::Landmass(landmass) => ObjectKind::Landmass(Landmass {
                 geometry: MultiPolygon::default(),
+                fill: landmass.fill,
                 extra: landmass.extra.clone(),
             }),
             ObjectKind::Lake(lake) => ObjectKind::Lake(Lake {
                 geometry: MultiPolygon::default(),
+                fill: lake.fill,
                 extra: lake.extra.clone(),
             }),
             ObjectKind::Stamp(_) | ObjectKind::Label(_) => self.clone(),
@@ -131,23 +151,73 @@ impl ObjectKind {
 }
 
 /// A filled region of land.
-#[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Landmass {
     /// Stored apart from the other fields in the Map file, hence the default.
     #[serde(default)]
     pub geometry: MultiPolygon,
+    /// Files saved before fills existed get the default.
+    #[serde(default = "default_landmass_fill")]
+    pub fill: Color,
     #[serde(flatten)]
     pub extra: Extra,
 }
 
+impl Landmass {
+    pub const DEFAULT_FILL: Color = Color::rgb(0xd8, 0xc4, 0x9a);
+
+    pub fn new(geometry: MultiPolygon) -> Self {
+        Self {
+            geometry,
+            fill: Self::DEFAULT_FILL,
+            extra: Extra::new(),
+        }
+    }
+}
+
+impl Default for Landmass {
+    fn default() -> Self {
+        Self::new(MultiPolygon::default())
+    }
+}
+
+fn default_landmass_fill() -> Color {
+    Landmass::DEFAULT_FILL
+}
+
 /// A closed region of fresh water drawn above land.
-#[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Lake {
     /// Stored apart from the other fields in the Map file, hence the default.
     #[serde(default)]
     pub geometry: MultiPolygon,
+    /// Files saved before fills existed get the default.
+    #[serde(default = "default_lake_fill")]
+    pub fill: Color,
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+impl Lake {
+    pub const DEFAULT_FILL: Color = Color::rgb(0x6f, 0xa8, 0xc8);
+
+    pub fn new(geometry: MultiPolygon) -> Self {
+        Self {
+            geometry,
+            fill: Self::DEFAULT_FILL,
+            extra: Extra::new(),
+        }
+    }
+}
+
+impl Default for Lake {
+    fn default() -> Self {
+        Self::new(MultiPolygon::default())
+    }
+}
+
+fn default_lake_fill() -> Color {
+    Lake::DEFAULT_FILL
 }
 
 /// One placed Asset. Fields arrive with the Stamps ticket.

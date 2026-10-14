@@ -21,6 +21,7 @@ insta = { version = "1.49", features = ["glob", "json"] }
 lyon = "1.0"
 pollster = "1.0"
 proptest = "1.12"
+rstar = "0.12"
 rusqlite = { version = "0.40", features = ["bundled"] }
 schemars = { version = "1.2", features = ["uuid1"] }
 serde = { version = "1.0", features = ["derive"] }

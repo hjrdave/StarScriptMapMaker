@@ -1,8 +1,8 @@
-//! Figma-style selection bounds and transform handles. Object tickets hook their transforms
-//! onto these; for now the Selection's outline bounds are drawn with handles.
+//! Figma-style selection bounds and transform handles. The Select tool drags them to resize
+//! the selected Landmasses and Lakes.
 
 use eframe::egui;
-use ssmap_core::{Id, Map, Node};
+use ssmap_core::{Id, Map, Node, Rect};
 use ssmap_render::View;
 
 /// An axis-aligned box in Canvas units.
@@ -37,6 +37,16 @@ impl Handle {
         Handle::Left,
     ];
 
+    /// The pointer shown over the handle.
+    pub fn cursor(self) -> egui::CursorIcon {
+        match self {
+            Handle::TopLeft | Handle::BottomRight => egui::CursorIcon::ResizeNwSe,
+            Handle::TopRight | Handle::BottomLeft => egui::CursorIcon::ResizeNeSw,
+            Handle::Top | Handle::Bottom => egui::CursorIcon::ResizeVertical,
+            Handle::Left | Handle::Right => egui::CursorIcon::ResizeHorizontal,
+        }
+    }
+
     /// Where on the box the handle sits, from (0, 0) top-left to (1, 1) bottom-right.
     fn anchor(self) -> [f64; 2] {
         match self {
@@ -58,30 +68,24 @@ const HANDLE_RADIUS: f32 = 4.0;
 impl Bounds {
     /// Combines the outlines of every selected Object that has one.
     pub fn of_selection(map: &Map, selection: &[Id]) -> Option<Self> {
-        let mut bounds: Option<Bounds> = None;
-        for &id in selection {
-            let Some(Node::Object(object)) = map.node(id) else {
-                continue;
-            };
-            let Some(geometry) = object.kind.geometry() else {
-                continue;
-            };
-            for polygon in &geometry.0 {
-                for &[x, y] in &polygon.exterior {
-                    bounds = Some(match bounds {
-                        None => Bounds {
-                            min: [x, y],
-                            max: [x, y],
-                        },
-                        Some(b) => Bounds {
-                            min: [b.min[0].min(x), b.min[1].min(y)],
-                            max: [b.max[0].max(x), b.max[1].max(y)],
-                        },
-                    });
-                }
-            }
+        selection
+            .iter()
+            .filter_map(|&id| match map.node(id) {
+                Some(Node::Object(object)) => object.kind.geometry()?.bounds(),
+                _ => None,
+            })
+            .reduce(|a, b| a.union(&b))
+            .map(|rect| Bounds {
+                min: rect.min,
+                max: rect.max,
+            })
+    }
+
+    pub fn rect(&self) -> Rect {
+        Rect {
+            min: self.min,
+            max: self.max,
         }
-        bounds
     }
 
     fn point(&self, anchor: [f64; 2]) -> [f64; 2] {
@@ -115,7 +119,7 @@ impl Bounds {
 }
 
 /// Converts a Canvas point to a screen position inside the Canvas panel at `origin`.
-fn to_screen(view: &View, origin: egui::Pos2, ppp: f64, point: [f64; 2]) -> egui::Pos2 {
+pub fn to_screen(view: &View, origin: egui::Pos2, ppp: f64, point: [f64; 2]) -> egui::Pos2 {
     let x = (point[0] - view.origin[0]) * view.zoom / ppp;
     let y = (point[1] - view.origin[1]) * view.zoom / ppp;
     origin + egui::vec2(x as f32, y as f32)

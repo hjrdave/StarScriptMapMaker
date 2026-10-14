@@ -1,7 +1,7 @@
 //! The properties panel: shows and edits what is selected, through Commands.
 
 use eframe::egui;
-use ssmap_core::{Command, DistanceUnit, Id, Node};
+use ssmap_core::{Color, Command, DistanceUnit, Id, Node};
 
 use crate::editor::Editor;
 use crate::layer_tree::node_name;
@@ -10,10 +10,17 @@ use crate::layer_tree::node_name;
 pub struct PropertiesPanel {
     /// The name being typed for a Layer, committed when the field loses focus.
     name_edit: Option<(Id, String)>,
+    /// Set while the fill picker is being changed, which makes one Undo step.
+    fill_gesture: bool,
 }
 
 impl PropertiesPanel {
     pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+        // A fill change ends when the pointer is released, or when Escape cancelled it.
+        if self.fill_gesture && (!editor.gesture_open() || !ui.input(|i| i.pointer.any_down())) {
+            self.fill_gesture = false;
+            editor.end_gesture();
+        }
         ui.heading("Properties");
         ui.separator();
         match editor.selection() {
@@ -33,6 +40,11 @@ impl PropertiesPanel {
                                 editor.run(Command::SetLocked { id, locked });
                             }
                             ui.end_row();
+                            if let Some(fill) = object.kind.fill() {
+                                ui.label("Fill");
+                                self.fill(ui, editor, id, fill);
+                                ui.end_row();
+                            }
                         });
                     }
                     None => {}
@@ -41,6 +53,36 @@ impl PropertiesPanel {
             many => {
                 ui.label(format!("{} items selected", many.len()));
             }
+        }
+    }
+
+    /// A colour button whose picker changes the fill live. Everything picked until the
+    /// pointer is released is one Undo step.
+    fn fill(&mut self, ui: &mut egui::Ui, editor: &mut Editor, id: Id, fill: Color) {
+        let mut rgba = egui::Color32::from_rgba_unmultiplied(fill.r, fill.g, fill.b, fill.a);
+        let changed = egui::color_picker::color_edit_button_srgba(
+            ui,
+            &mut rgba,
+            egui::color_picker::Alpha::OnlyBlend,
+        )
+        .changed();
+        if !changed {
+            return;
+        }
+        let [r, g, b, a] = rgba.to_srgba_unmultiplied();
+        let command = Command::SetFill {
+            ids: vec![id],
+            fill: Color::rgba(r, g, b, a),
+        };
+        if !self.fill_gesture && !editor.gesture_open() {
+            editor.begin_gesture("Change Fill");
+            self.fill_gesture = true;
+        }
+        if self.fill_gesture {
+            editor.gesture_replace(command);
+        } else {
+            // Another gesture is open; join it rather than rewinding its work.
+            editor.gesture(command);
         }
     }
 

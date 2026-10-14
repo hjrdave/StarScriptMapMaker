@@ -128,6 +128,15 @@ impl History {
         Ok(())
     }
 
+    /// Undoes everything the open transaction applied but keeps it open. A gesture that
+    /// re-issues its whole effect each frame, such as a drag, rewinds first, so the Undo step
+    /// holds one Command's worth of inverses and nothing drifts from repeated small edits.
+    pub fn rewind(&mut self, map: &mut Map) -> Result<(), HistoryError> {
+        let transaction = self.open.as_mut().ok_or(HistoryError::NoTransaction)?;
+        map.revert(std::mem::take(&mut transaction.inverses));
+        Ok(())
+    }
+
     /// Executes one Command as its own Undo step. The Selection is unchanged by it.
     pub fn execute_step(
         &mut self,
