@@ -4,6 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::asset::AssetRef;
 use crate::color::Color;
 use crate::extra::Extra;
 use crate::geometry::{MultiPolygon, Point};
@@ -286,11 +287,59 @@ fn default_lake_fill() -> Color {
     Lake::DEFAULT_FILL
 }
 
-/// One placed Asset. Fields arrive with the Stamps ticket.
-#[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize, JsonSchema)]
+/// One placed Asset (ADR 0003). It stores the concrete Asset it got, never a Variant group,
+/// so editing a pack never reshuffles an existing Map. Scale, rotation and flip all pivot on
+/// the Asset's Anchor.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
 pub struct Stamp {
+    pub asset: AssetRef,
+    /// Where the Anchor sits, in Canvas units.
+    pub position: Point,
+    /// A uniform multiple of the Asset's default size.
+    pub scale: f64,
+    /// Degrees clockwise about the Anchor.
+    pub rotation: f64,
+    /// Mirrors the art left to right about the Anchor, before rotating.
+    pub flip: bool,
+    /// Multiplies the line art's colour. `None` leaves the art as drawn.
+    pub tint: Option<Color>,
+    /// The Silhouette's fill, drawn under the line art. `None` uses the land colour.
+    pub fill: Option<Color>,
+    /// From 0 (transparent) to 1 (opaque).
+    pub opacity: f32,
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+impl Stamp {
+    pub fn new(asset: AssetRef, position: Point) -> Self {
+        Self {
+            asset,
+            position,
+            ..Self::default()
+        }
+    }
+}
+
+impl Default for Stamp {
+    /// A Stamp of the placeholder Asset `unset/unset`, which no pack provides.
+    fn default() -> Self {
+        Self {
+            asset: AssetRef {
+                pack: "unset".into(),
+                asset: "unset".into(),
+            },
+            position: [0.0, 0.0],
+            scale: 1.0,
+            rotation: 0.0,
+            flip: false,
+            tint: None,
+            fill: None,
+            opacity: 1.0,
+            extra: Extra::new(),
+        }
+    }
 }
 
 /// Text placed on the Map, sized in Canvas units so it is part of the picture (ADR 0006).

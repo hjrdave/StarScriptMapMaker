@@ -14,7 +14,7 @@ use crate::geometry::{Affine, MultiPolygon, NodeRef, Point};
 use crate::id::Id;
 use crate::land;
 use crate::map::{Map, MapDefaults, Subtree};
-use crate::node::{Label, Lake, Landmass, Layer, Node, Object, ObjectKind};
+use crate::node::{Label, Lake, Landmass, Layer, Node, Object, ObjectKind, Stamp};
 use crate::op::{Op, OpError, Property};
 use crate::roughness::Roughness;
 use crate::shore::{ShoreKind, ShoreStyle};
@@ -183,6 +183,20 @@ pub enum Command {
         id: Id,
         label: Box<Label>,
     },
+    /// Places a Stamp with the given id inside Layer `parent`. `index` counts from the bottom
+    /// of the Stacking order; omitted, the Stamp goes on top.
+    CreateStamp {
+        id: Id,
+        parent: Id,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<usize>,
+        stamp: Box<Stamp>,
+    },
+    /// Replaces every field of a Stamp, as one edit: its Asset, placement, colours or opacity.
+    SetStamp {
+        id: Id,
+        stamp: Box<Stamp>,
+    },
 }
 
 #[derive(Clone, PartialEq, Debug, Error)]
@@ -225,6 +239,10 @@ pub enum CommandError {
     NotALabel(Id),
     #[error("invalid Label: {0}")]
     InvalidLabel(&'static str),
+    #[error("{0} is not a Stamp")]
+    NotAStamp(Id),
+    #[error("invalid Stamp: {0}")]
+    InvalidStamp(&'static str),
     #[error(transparent)]
     Op(#[from] OpError),
 }
@@ -259,6 +277,8 @@ impl Command {
             Command::SetDefaultShore { .. } => "Change Default Shore Style",
             Command::CreateLabel { .. } => "Add Label",
             Command::SetLabel { .. } => "Edit Label",
+            Command::CreateStamp { .. } => "Add Stamp",
+            Command::SetStamp { .. } => "Edit Stamp",
         }
     }
 
@@ -482,6 +502,40 @@ impl Command {
                 unlocked(map, *id)?;
                 check_label(label)?;
                 Ok(vec![set(*id, Property::Label(label.clone()))])
+            }
+            Command::CreateStamp {
+                id,
+                parent,
+                index,
+                stamp,
+            } => {
+                if map.contains(*id) {
+                    return Err(CommandError::IdInUse(*id));
+                }
+                layer(map, *parent)?;
+                unlocked(map, *parent)?;
+                check_stamp(stamp)?;
+                Ok(vec![Op::Insert {
+                    parent: Some(*parent),
+                    index: index.unwrap_or(map.children(Some(*parent)).len()),
+                    subtree: Subtree {
+                        id: *id,
+                        node: Node::Object(Object::new(ObjectKind::Stamp((**stamp).clone()))),
+                        children: Vec::new(),
+                    },
+                }])
+            }
+            Command::SetStamp { id, stamp } => {
+                match existing(map, *id)? {
+                    Node::Object(Object {
+                        kind: ObjectKind::Stamp(_),
+                        ..
+                    }) => {}
+                    _ => return Err(CommandError::NotAStamp(*id)),
+                }
+                unlocked(map, *id)?;
+                check_stamp(stamp)?;
+                Ok(vec![set(*id, Property::Stamp(stamp.clone()))])
             }
         }
     }
@@ -832,6 +886,21 @@ fn check_label(label: &Label) -> Result<(), CommandError> {
     }
     if !(0.0..=1.0).contains(&label.opacity) {
         return Err(CommandError::InvalidOpacity(label.opacity));
+    }
+    Ok(())
+}
+
+/// Checks a Stamp's values are drawable.
+fn check_stamp(stamp: &Stamp) -> Result<(), CommandError> {
+    let invalid = |reason| Err(CommandError::InvalidStamp(reason));
+    if !stamp.position.iter().all(|v| v.is_finite()) || !stamp.rotation.is_finite() {
+        return invalid("the position and rotation must be finite");
+    }
+    if !(stamp.scale.is_finite() && stamp.scale > 0.0) {
+        return invalid("the scale must be greater than 0");
+    }
+    if !(0.0..=1.0).contains(&stamp.opacity) {
+        return Err(CommandError::InvalidOpacity(stamp.opacity));
     }
     Ok(())
 }
