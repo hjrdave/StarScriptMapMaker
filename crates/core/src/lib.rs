@@ -2,6 +2,7 @@
 //!
 //! This crate must never depend on egui or wgpu (ADR 0001); CI enforces it.
 
+pub mod asset;
 mod color;
 mod command;
 mod extra;
@@ -15,6 +16,7 @@ mod op;
 mod pick;
 mod roughness;
 
+pub use asset::AssetRef;
 pub use color::{Color, ParseColorError};
 pub use command::{Command, CommandError};
 pub use extra::Extra;

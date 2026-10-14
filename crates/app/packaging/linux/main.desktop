@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name={{name}}
+Comment={{comment}}
+Exec={{exec}} {{exec_arg}}
+Icon={{icon}}
+Terminal=false
+Categories={{categories}}
+MimeType={{mime_type}};
