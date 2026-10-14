@@ -150,6 +150,11 @@ impl MapMakerApp {
         self.recent.paths()
     }
 
+    /// Whether a Label's text box is open on the Canvas.
+    pub fn editing_label_text(&self) -> bool {
+        self.canvas_view.editing_text()
+    }
+
     /// The screen position of a Canvas point in the Canvas panel, once it has been drawn.
     pub fn canvas_to_screen(&self, point: [f64; 2]) -> Option<egui::Pos2> {
         self.canvas_view.to_screen(point)
@@ -608,8 +613,9 @@ impl MapMakerApp {
     }
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
-        // Text fields keep their own undo and keys.
-        if ctx.egui_wants_keyboard_input() {
+        // Text fields keep their own undo and keys. The Label text box keeps Escape too,
+        // which egui takes its focus away for before this runs.
+        if ctx.egui_wants_keyboard_input() || self.canvas_view.editing_text() {
             return;
         }
         use egui::{Key, KeyboardShortcut, Modifiers};

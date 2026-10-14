@@ -87,13 +87,13 @@ pub fn move_command(map: &Map, dragged: Id, target: DropTarget) -> Option<Comman
 pub fn node_name(map: &Map, id: Id) -> String {
     match map.node(id) {
         Some(Node::Layer(layer)) => layer.name.clone(),
-        Some(Node::Object(object)) => match object.kind {
-            ObjectKind::Landmass(_) => "Landmass",
-            ObjectKind::Lake(_) => "Lake",
-            ObjectKind::Stamp(_) => "Stamp",
-            ObjectKind::Label(_) => "Label",
-        }
-        .to_owned(),
+        Some(Node::Object(object)) => match &object.kind {
+            ObjectKind::Landmass(_) => "Landmass".to_owned(),
+            ObjectKind::Lake(_) => "Lake".to_owned(),
+            ObjectKind::Stamp(_) => "Stamp".to_owned(),
+            // A Label goes by its first line.
+            ObjectKind::Label(label) => label.text.lines().next().unwrap_or("Label").to_owned(),
+        },
         None => String::new(),
     }
 }
