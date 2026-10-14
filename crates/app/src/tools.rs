@@ -20,16 +20,23 @@ pub enum ToolId {
     Select,
     Pan,
     LandBrush,
+    Lasso,
 }
 
 impl ToolId {
-    pub const ALL: [ToolId; 3] = [ToolId::Select, ToolId::Pan, ToolId::LandBrush];
+    pub const ALL: [ToolId; 4] = [
+        ToolId::Select,
+        ToolId::Pan,
+        ToolId::LandBrush,
+        ToolId::Lasso,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
             ToolId::Select => "Select",
             ToolId::Pan => "Pan",
             ToolId::LandBrush => "Land Brush",
+            ToolId::Lasso => "Lasso",
         }
     }
 
@@ -38,6 +45,7 @@ impl ToolId {
             ToolId::Select => egui::Key::V,
             ToolId::Pan => egui::Key::H,
             ToolId::LandBrush => egui::Key::B,
+            ToolId::Lasso => egui::Key::L,
         }
     }
 }
@@ -76,8 +84,16 @@ pub struct ToolState {
     drag: Option<Drag>,
     stroke: Option<Stroke>,
     node_drag: Option<NodeDrag>,
+    lasso: Option<Lasso>,
     /// A box-select in node-edit mode: where it began and where the pointer is, in Canvas units.
     marquee: Option<(Point, Point)>,
+}
+
+/// A lasso loop being drawn: freehand while the button is held, or corner by corner.
+struct Lasso {
+    points: Vec<Point>,
+    freehand: bool,
+    erase: bool,
 }
 
 /// A node drag in progress: where it began, and the outline's shape then.
@@ -145,7 +161,12 @@ pub fn canvas_input(
         ToolId::Select => select_tool(editor, view, state, input),
         ToolId::Pan => {}
         ToolId::LandBrush => land_brush(editor, view, state, input),
+        ToolId::Lasso => lasso_tool(editor, view, state, input),
     }
+    if editor.active_tool != ToolId::Lasso {
+        state.lasso = None;
+    }
+    editor.tool_busy = state.lasso.is_some();
 }
 
 /// Paint land by dragging, or erase with the erase modifier held. Each stroke is one Undo
@@ -200,6 +221,135 @@ fn land_brush(editor: &mut Editor, view: &View, state: &mut ToolState, input: &C
             start: stroke.points[0],
             erase: stroke.erase,
         });
+    }
+}
+
+/// Draw a region to add to land, or with the erase modifier to cut out: drag a freehand loop, or
+/// click corners and close the loop by clicking the first one, double-clicking or pressing
+/// Enter. Escape drops a loop in progress. The region follows the land brush's merge rules.
+fn lasso_tool(editor: &mut Editor, view: &View, state: &mut ToolState, input: &CanvasInput<'_>) {
+    let response = input.response;
+    let (alt, enter) = response
+        .ctx
+        .input(|i| (i.modifiers.alt, i.key_pressed(egui::Key::Enter)));
+    if response.hovered() {
+        response.ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+    }
+    if std::mem::take(&mut editor.cancel_tool) {
+        state.lasso = None;
+        return;
+    }
+    let pointer = response
+        .interact_pointer_pos()
+        .map(|pos| input.canvas_point(view, pos));
+    let near_first = |lasso: &Lasso, point: Point| {
+        let first = lasso.points[0];
+        let reach = NODE_GRAB * input.pixels_per_point / view.zoom;
+        lasso.points.len() >= 3 && (point[0] - first[0]).hypot(point[1] - first[1]) <= reach
+    };
+
+    if response.drag_started_by(egui::PointerButton::Primary)
+        && state.lasso.is_none()
+        && let Some(origin) = response.ctx.input(|i| i.pointer.press_origin())
+    {
+        state.lasso = Some(Lasso {
+            points: vec![input.canvas_point(view, origin)],
+            freehand: true,
+            erase: alt,
+        });
+    }
+    if response.dragged_by(egui::PointerButton::Primary)
+        && let Some(lasso) = &mut state.lasso
+        && lasso.freehand
+        && let Some(point) = pointer
+    {
+        let spacing = 2.0 * input.pixels_per_point / view.zoom;
+        let last = *lasso.points.last().expect("a loop starts with a point");
+        if (point[0] - last[0]).hypot(point[1] - last[1]) >= spacing {
+            lasso.points.push(point);
+        }
+    }
+
+    let mut close = false;
+    if response.drag_stopped() && state.lasso.as_ref().is_some_and(|l| l.freehand) {
+        close = true;
+    } else if response.clicked_by(egui::PointerButton::Primary)
+        && let Some(point) = pointer
+    {
+        match &mut state.lasso {
+            None => {
+                state.lasso = Some(Lasso {
+                    points: vec![point],
+                    freehand: false,
+                    erase: alt,
+                });
+            }
+            Some(lasso) if near_first(lasso, point) => close = true,
+            Some(lasso) => lasso.points.push(point),
+        }
+    }
+    if enter || (response.double_clicked_by(egui::PointerButton::Primary) && state.lasso.is_some())
+    {
+        close = true;
+    }
+
+    if close && let Some(lasso) = state.lasso.take() {
+        let tolerance = if lasso.freehand {
+            land::simplify_tolerance(4.0 / view.zoom, 1.0 / view.zoom)
+        } else {
+            0.0
+        };
+        let region = land::lasso_region(&lasso.points, tolerance);
+        if region.is_empty() {
+            editor.info("The loop doesn't enclose any area");
+            return;
+        }
+        editor.begin_gesture(editor.brush_label(lasso.erase));
+        editor.finish_brush_stroke(BrushStroke {
+            region,
+            start: lasso.points[0],
+            erase: lasso.erase,
+        });
+    }
+}
+
+/// Draws a lasso loop in progress: the corners so far, and a line to the pointer.
+fn paint_lasso(
+    painter: &egui::Painter,
+    view: &View,
+    state: &ToolState,
+    origin: egui::Pos2,
+    hover: Option<egui::Pos2>,
+    ppp: f64,
+) {
+    let Some(lasso) = &state.lasso else {
+        return;
+    };
+    let color = if lasso.erase {
+        egui::Color32::from_rgb(200, 60, 50)
+    } else {
+        egui::Color32::from_rgb(90, 70, 40)
+    };
+    let mut points: Vec<egui::Pos2> = lasso
+        .points
+        .iter()
+        .map(|&p| crate::handles::to_screen(view, origin, ppp, p))
+        .collect();
+    if !lasso.freehand
+        && let Some(hover) = hover
+    {
+        points.push(hover);
+    }
+    painter.add(egui::Shape::line(
+        points.clone(),
+        egui::Stroke::new(3.0, egui::Color32::WHITE),
+    ));
+    painter.add(egui::Shape::line(points, egui::Stroke::new(1.5, color)));
+    if !lasso.freehand {
+        for &p in &lasso.points {
+            let pos = crate::handles::to_screen(view, origin, ppp, p);
+            painter.circle_filled(pos, 3.5, color);
+        }
     }
 }
 
@@ -521,6 +671,9 @@ pub fn paint_overlay(
 ) {
     if editor.active_tool == ToolId::Select {
         paint_nodes(painter, editor, view, state, origin, hover, ppp);
+    }
+    if editor.active_tool == ToolId::Lasso {
+        paint_lasso(painter, view, state, origin, hover, ppp);
     }
     if editor.active_tool != ToolId::LandBrush {
         return;

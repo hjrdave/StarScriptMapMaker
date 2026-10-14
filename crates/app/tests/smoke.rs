@@ -445,7 +445,7 @@ fn the_land_brush_paints_merges_and_erases_one_undo_step_per_stroke() {
     // island leaves one Landmass in two parts.
     let before_erase = outline(&harness, island).0.len();
     harness.event(egui::Event::ModifiersChanged(egui::Modifiers::ALT));
-    stroke(&mut harness, [180.0, -50.0], [180.0, 650.0]);
+    stroke(&mut harness, [180.0, 0.0], [180.0, 650.0]);
     harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
     harness.run();
     assert_eq!(harness.state().editor().undo_label(), Some("Erase Land"));

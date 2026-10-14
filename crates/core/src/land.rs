@@ -64,6 +64,28 @@ pub fn brush_region(points: &[Point], radius: f64, tolerance: f64) -> MultiPolyg
     normalised(simplified.union(&geo::MultiPolygon::<f64>::new(Vec::new())))
 }
 
+/// The region a lasso loop encloses: a freehand path simplified to within `tolerance`, or the
+/// clicked corners as they are, with any self-crossing untangled (even-odd, so a figure eight
+/// is two loops). Empty when the loop encloses no area.
+pub fn lasso_region(points: &[Point], tolerance: f64) -> MultiPolygon {
+    if points.len() < 3 {
+        return MultiPolygon::default();
+    }
+    let ring = LineString::from(points.to_vec());
+    let ring = if tolerance > 0.0 {
+        ring.simplify(tolerance)
+    } else {
+        ring
+    };
+    if ring.0.len() < 3 {
+        return MultiPolygon::default();
+    }
+    let polygon = geo::Polygon::new(ring, Vec::new());
+    normalised(
+        geo::MultiPolygon::new(vec![polygon]).union(&geo::MultiPolygon::<f64>::new(Vec::new())),
+    )
+}
+
 /// One finished land brush stroke, ready to become a Command.
 #[derive(Clone, PartialEq, Debug)]
 pub struct BrushStroke {
@@ -627,5 +649,19 @@ mod tests {
         let elapsed = started.elapsed();
         // Generous for debug builds; a drag runs this every frame.
         assert!(elapsed.as_millis() < 1500, "took {elapsed:?}");
+    }
+
+    #[test]
+    fn a_lasso_loop_becomes_a_valid_region_even_when_it_crosses_itself() {
+        let square = lasso_region(&[[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]], 0.0);
+        assert_eq!(square.0.len(), 1);
+        assert_oriented(&square);
+        assert!((area(&square) - 100.0).abs() < 1e-9);
+        // A bow-tie is two triangles.
+        let bowtie = lasso_region(&[[0.0, 0.0], [10.0, 10.0], [10.0, 0.0], [0.0, 10.0]], 0.0);
+        assert_eq!(bowtie.0.len(), 2);
+        assert_oriented(&bowtie);
+        assert!(lasso_region(&[[0.0, 0.0], [5.0, 5.0]], 0.0).is_empty());
+        assert!(lasso_region(&[[0.0, 0.0], [5.0, 5.0], [10.0, 10.0]], 0.0).is_empty());
     }
 }

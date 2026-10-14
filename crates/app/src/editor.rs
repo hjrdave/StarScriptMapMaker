@@ -28,6 +28,10 @@ pub struct Editor {
     /// The land brush's diameter, in Canvas units.
     pub brush_size: f64,
     node_edit: Option<NodeEdit>,
+    /// Set by a tool while it holds something Escape should drop (a lasso half drawn).
+    pub tool_busy: bool,
+    /// Set by Escape for the busy tool to act on.
+    pub cancel_tool: bool,
     notice: Option<Notice>,
     /// Set while a gesture's transaction is open.
     gesture_open: bool,
@@ -64,6 +68,8 @@ impl Editor {
             active_tool: ToolId::Select,
             brush_size: DEFAULT_BRUSH_SIZE,
             node_edit: None,
+            tool_busy: false,
+            cancel_tool: false,
             notice: None,
             gesture_open: false,
             pick_index: None,
@@ -327,6 +333,82 @@ impl Editor {
                 self.error(first.unwrap_or_default() + chars.as_str());
             }
         }
+    }
+
+    /// The selected Landmasses, topmost first.
+    fn selected_landmasses(&self) -> Vec<Id> {
+        let order = self.map.draw_order();
+        let mut ids: Vec<Id> = self
+            .selection
+            .iter()
+            .copied()
+            .filter(|&id| {
+                matches!(self.map.node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Landmass(_)))
+            })
+            .collect();
+        ids.sort_by_key(|&id| std::cmp::Reverse(order.iter().position(|&o| o == id)));
+        ids
+    }
+
+    /// Whether Union and Subtract have enough to work on: two or more selected Landmasses.
+    pub fn can_combine(&self) -> bool {
+        self.selected_landmasses().len() >= 2
+    }
+
+    /// Whether a selected Landmass has more than one part.
+    pub fn can_split(&self) -> bool {
+        self.selected_landmasses()
+            .iter()
+            .any(|&id| self.part_count(id) > 1)
+    }
+
+    fn part_count(&self, id: Id) -> usize {
+        match self.map.node(id) {
+            Some(Node::Object(o)) => o.kind.geometry().map_or(0, |g| g.0.len()),
+            _ => 0,
+        }
+    }
+
+    /// Merges the selected Landmasses into the topmost one, which stays selected.
+    pub fn union_selection(&mut self) {
+        let ids = self.selected_landmasses();
+        if let Some(&keeper) = ids.first() {
+            self.run_selecting(Command::Union { ids }, vec![keeper]);
+        }
+    }
+
+    /// Cuts the topmost selected Landmass out of the others.
+    pub fn subtract_selection(&mut self) {
+        let ids = self.selected_landmasses();
+        let rest: Vec<Id> = ids.iter().skip(1).copied().collect();
+        if !ids.is_empty() {
+            self.run_selecting(Command::Subtract { ids }, rest);
+        }
+    }
+
+    /// Makes each part of every selected Landmass a Landmass of its own, as one Undo step.
+    pub fn split_selection(&mut self) {
+        let targets: Vec<Id> = self
+            .selected_landmasses()
+            .into_iter()
+            .filter(|&id| self.part_count(id) > 1)
+            .collect();
+        if targets.is_empty() {
+            return;
+        }
+        let mut selection = Vec::new();
+        self.begin_gesture("Split Apart");
+        for id in targets {
+            let new_ids: Vec<Id> = (1..self.part_count(id)).map(|_| Id::new()).collect();
+            selection.push(id);
+            selection.extend(&new_ids);
+            if !self.gesture(Command::SplitApart { id, new_ids }) {
+                self.cancel_gesture();
+                return;
+            }
+        }
+        self.select(selection);
+        self.end_gesture();
     }
 
     /// Escape: undoes everything the open gesture did.
@@ -640,5 +722,47 @@ mod tests {
         editor.delete_selected_nodes();
         assert_eq!(editor.edited_shape(), vec![4]);
         assert!(editor.notice().is_some_and(|notice| notice.is_error));
+    }
+
+    #[test]
+    fn union_and_split_apart_work_on_the_selection_in_one_undo_step() {
+        let (mut editor, a) = editor_with_square();
+        let layer = editor.map.parent(a).unwrap();
+        let b = Id::new();
+        editor.run(Command::CreateLandmass {
+            id: b,
+            parent: layer,
+            index: None,
+            geometry: MultiPolygon(vec![ssmap_core::Polygon {
+                exterior: vec![[5.0, 5.0], [20.0, 5.0], [20.0, 20.0], [5.0, 20.0]],
+                holes: Vec::new(),
+            }]),
+            fill: None,
+        });
+        editor.select(vec![a, b]);
+        assert!(editor.can_combine() && !editor.can_split());
+        editor.union_selection();
+        assert_eq!(editor.selection(), &[b]);
+        assert!(!editor.map.contains(a));
+
+        editor.undo();
+        assert!(editor.map.contains(a) && editor.map.contains(b));
+
+        // Two islands split into two Landmasses with one Undo step.
+        editor.select(vec![a]);
+        editor.run(Command::AddRegion {
+            id: a,
+            region: MultiPolygon(vec![ssmap_core::Polygon {
+                exterior: vec![[50.0, 50.0], [60.0, 50.0], [60.0, 60.0], [50.0, 60.0]],
+                holes: Vec::new(),
+            }]),
+        });
+        assert!(editor.can_split());
+        let before = editor.map.children(Some(layer)).len();
+        editor.split_selection();
+        assert_eq!(editor.map.children(Some(layer)).len(), before + 1);
+        assert_eq!(editor.selection().len(), 2);
+        editor.undo();
+        assert_eq!(editor.map.children(Some(layer)).len(), before);
     }
 }
