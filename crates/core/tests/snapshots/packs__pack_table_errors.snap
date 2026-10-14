@@ -1,0 +1,12 @@
+---
+source: crates/core/tests/packs.rs
+expression: "errors(r#\"\ntitle = \"stray\"\n\n[pack]\nid = \"My Pack\"\nname = \"\"\ncredits = 3\nattribution_required = \"yes\"\nlicnece = \"CC0-1.0\"\nsource_url = \"kenney.nl\"\n\"#)"
+---
+bad/pack.toml: field `title`: unknown field; expected `[pack]` and `[[asset]]`
+bad/pack.toml: field `pack.licnece`: unknown field; known fields are `id`, `name`, `licence`, `credits`, `attribution_required`, `author`, `source_url`, `modified`
+bad/pack.toml: field `pack.id`: must start with a lowercase letter or digit, then use only lowercase letters, digits, `-` and `_`
+bad/pack.toml: field `pack.name`: must not be empty
+bad/pack.toml: field `pack.licence`: is missing
+bad/pack.toml: field `pack.credits`: must be a string, not integer
+bad/pack.toml: field `pack.attribution_required`: must be `true` or `false`, not string
+bad/pack.toml: field `pack.source_url`: `kenney.nl` must start with `https://` or `http://`
