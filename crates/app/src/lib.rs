@@ -1,6 +1,7 @@
 //! StarScript Map Maker's editor. The binary in `main.rs` only opens a window around
 //! [`MapMakerApp`], so UI tests can drive the same app headlessly.
 
+mod asset_browser;
 mod canvas_view;
 pub mod document;
 pub mod editor;
@@ -13,12 +14,15 @@ pub mod tools;
 
 use eframe::{egui, egui_wgpu};
 use egui_file_dialog::{DialogState, FileDialog, Filter};
+use ssmap_core::asset::{PackLibrary, PackRoots};
 use ssmap_core::file::{JournalBase, MapFile, PREVIEW_SIZE, remove_journal};
 use ssmap_core::{Canvas, DistanceUnit, Map, Scale};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::asset_browser::AssetBrowser;
 use crate::canvas_view::CanvasView;
 use crate::document::Document;
 use crate::editor::Editor;
@@ -44,6 +48,9 @@ pub fn launch_file(args: impl IntoIterator<Item = OsString>) -> Option<PathBuf> 
 
 pub struct MapMakerApp {
     editor: Editor,
+    /// Every loaded Asset pack, shared with each open Map's editor.
+    library: Arc<PackLibrary>,
+    asset_browser: AssetBrowser,
     document: Document,
     layer_tree: LayerTree,
     properties: PropertiesPanel,
@@ -92,13 +99,14 @@ impl MapMakerApp {
         map: Map,
         recovery_dir: Option<PathBuf>,
     ) -> Self {
-        let gpu = match cc.wgpu_render_state.as_ref() {
-            Some(render_state) => {
-                canvas_view::install(render_state);
-                true
-            }
-            None => false,
-        };
+        if let Some(render_state) = cc.wgpu_render_state.as_ref() {
+            canvas_view::install(render_state);
+        }
+        let (library, problems) = PackLibrary::load(&PackRoots::installed());
+        for problem in &problems {
+            eprintln!("asset pack: {problem}");
+        }
+        let library = Arc::new(library);
         let map_files = || -> FileDialog {
             FileDialog::new()
                 .add_file_filter(
@@ -116,11 +124,13 @@ impl MapMakerApp {
         let mut unsaved_found = recovery.find_unsaved();
         unsaved_found.reverse();
         Self {
-            editor: Editor::new(map),
+            editor: Editor::with_library(map, library.clone()),
+            library,
             document: Document::default(),
             layer_tree: LayerTree::default(),
             properties: PropertiesPanel::default(),
-            canvas_view: CanvasView::new(gpu),
+            asset_browser: AssetBrowser::default(),
+            canvas_view: CanvasView::new(cc.wgpu_render_state.clone()),
             recent: RecentFiles::load(cc.storage),
             open_dialog: map_files().title("Open Map"),
             save_dialog: map_files().title("Save Map As"),
@@ -195,7 +205,7 @@ impl MapMakerApp {
 
     fn replace(&mut self, document: Document, map: Map) {
         self.document = document;
-        self.editor = Editor::new(map);
+        self.editor = Editor::with_library(map, self.library.clone());
         self.layer_tree = LayerTree::default();
         self.properties = PropertiesPanel::default();
         self.canvas_view.refit();
@@ -782,6 +792,10 @@ impl eframe::App for MapMakerApp {
             .resizable(true)
             .default_size(240.0)
             .show(ui, |ui| self.layer_tree.show(ui, &mut self.editor));
+        egui::Panel::left("assets")
+            .resizable(true)
+            .default_size(220.0)
+            .show(ui, |ui| self.asset_browser.show(ui, &mut self.editor));
         egui::Panel::right("properties")
             .resizable(true)
             .default_size(260.0)

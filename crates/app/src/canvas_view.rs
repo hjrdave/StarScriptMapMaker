@@ -50,7 +50,12 @@ pub fn render_whole_canvas(
     let resources = egui_renderer
         .callback_resources
         .get_mut::<CanvasResources>()?;
-    let scene = CanvasScene::new(&editor.map.canvas).with_content(editor.scene_content());
+    let content = editor.scene_content(Some((
+        resources.renderer.stamp_atlas(),
+        &render_state.device,
+        &render_state.queue,
+    )));
+    let scene = CanvasScene::new(&editor.map.canvas).with_content(content);
     let view = View::whole_canvas(scene.canvas_size, longest_side);
     Some(render_to_image(
         &render_state.device,
@@ -64,18 +69,18 @@ pub fn render_whole_canvas(
 pub struct CanvasView {
     /// `None` until the first frame, which fits the Canvas to the panel.
     view: Option<View>,
-    /// False without a wgpu device (as in UI tests); the Canvas is then a flat placeholder.
-    gpu: bool,
+    /// `None` without a wgpu device (as in UI tests); the Canvas is then a flat placeholder.
+    render_state: Option<egui_wgpu::RenderState>,
     tools: ToolState,
     /// Where the panel was last drawn, in points, and the pixels per point then.
     panel: Option<(egui::Rect, f64)>,
 }
 
 impl CanvasView {
-    pub fn new(gpu: bool) -> Self {
+    pub fn new(render_state: Option<egui_wgpu::RenderState>) -> Self {
         Self {
             view: None,
-            gpu,
+            render_state,
             tools: ToolState::default(),
             panel: None,
         }
@@ -146,9 +151,24 @@ impl CanvasView {
         let view = *view;
         self.panel = Some((rect, ppp));
         // After input, so this frame shows this frame's edits.
-        let scene = CanvasScene::new(&editor.map.canvas).with_content(editor.scene_content());
+        let content = match &self.render_state {
+            Some(render_state) => {
+                let mut egui_renderer = render_state.renderer.write();
+                let resources = egui_renderer
+                    .callback_resources
+                    .get_mut::<CanvasResources>()
+                    .expect("installed at startup");
+                editor.scene_content(Some((
+                    resources.renderer.stamp_atlas(),
+                    &render_state.device,
+                    &render_state.queue,
+                )))
+            }
+            None => editor.scene_content(None),
+        };
+        let scene = CanvasScene::new(&editor.map.canvas).with_content(content);
         let painter = ui.painter_at(rect);
-        if self.gpu {
+        if self.render_state.is_some() {
             painter.add(egui_wgpu::Callback::new_paint_callback(
                 rect,
                 CanvasCallback { scene, view },
@@ -157,7 +177,7 @@ impl CanvasView {
             paint_placeholder(&painter, rect, &scene, &view, ppp);
         }
         if let Some(bounds) = Bounds::of_selection(editor) {
-            let rotatable = tools::selection_has_label(editor);
+            let rotatable = tools::selection_rotates(editor);
             handles::paint(&painter, &bounds, &view, rect.min, ppp, rotatable);
         }
         self.text_box(ui, editor, &view, rect.min, ppp);

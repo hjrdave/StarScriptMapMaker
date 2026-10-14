@@ -624,3 +624,78 @@ fn overlapping_stamps_occlude_each_other() {
         assert_matches_golden("stamps_occlusion", &image);
     }
 }
+
+/// Not a golden: times building and drawing 10,000 Stamps while panning, for the numbers in
+/// the Stamps ticket. Run with `cargo test -p ssmap-render --test golden --release -- --ignored
+/// --nocapture ten_thousand_stamps`. On a software adapter the draw times are an upper bound.
+#[test]
+#[ignore = "a measurement, not a check"]
+fn ten_thousand_stamps() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let roots = PackRoots {
+        built_in: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../core/tests/packs"),
+        user: None,
+    };
+    let (library, _) = PackLibrary::load(&roots);
+    let mut map = Map::new(Canvas::new(
+        8000,
+        6000,
+        Scale::new(1.0, DistanceUnit::Miles),
+    ));
+    let layer = Id::new();
+    map.execute(&Command::CreateLayer {
+        id: layer,
+        parent: None,
+        index: None,
+        name: "Terrain".into(),
+    })
+    .unwrap();
+    let assets = ["mountain-1", "mountain-2", "tree", "castle", "well"];
+    for i in 0..10_000u32 {
+        let (x, y) = (
+            f64::from(i % 100) * 80.0 + 40.0,
+            f64::from(i / 100) * 60.0 + 40.0,
+        );
+        map.execute(&Command::CreateStamp {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            stamp: Stamp {
+                scale: 1.0 + f64::from(i % 3),
+                ..stamp(assets[(i % 5) as usize], [x, y])
+            },
+        })
+        .unwrap();
+    }
+    let mut renderer =
+        CanvasRenderer::new(&headless.device, GpuCapabilities::query(&headless.adapter));
+    let started = std::time::Instant::now();
+    let content = MapScene::new(Fonts::bundled()).content(
+        &map,
+        &mut RoughnessCache::new(),
+        Some(&mut StampSource {
+            library: &library,
+            atlas: renderer.stamp_atlas(),
+            device: &headless.device,
+            queue: &headless.queue,
+        }),
+    );
+    eprintln!("build content: {:?}", started.elapsed());
+    let scene = CanvasScene::new(&map.canvas).with_content(content);
+    let mut view = View::fit(scene.canvas_size, [1600, 1000], 0.0);
+    // The first frame uploads the instances; later frames only redraw.
+    for frame in 0..6 {
+        let started = std::time::Instant::now();
+        render_to_image(
+            &headless.device,
+            &headless.queue,
+            &mut renderer,
+            &scene,
+            &view,
+        );
+        eprintln!("frame {frame}: {:?}", started.elapsed());
+        view.pan([40.0, 25.0]);
+        view.zoom_at([800.0, 500.0], 1.1);
+    }
+}

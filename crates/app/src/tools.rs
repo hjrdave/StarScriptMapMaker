@@ -3,7 +3,7 @@
 //! register here.
 
 use eframe::egui;
-use ssmap_core::{Affine, Command, Id, Label};
+use ssmap_core::{Affine, Command, Id, Label, Stamp};
 use ssmap_render::View;
 
 use crate::editor::Editor;
@@ -14,16 +14,18 @@ pub enum ToolId {
     Select,
     Pan,
     Label,
+    Stamp,
 }
 
 impl ToolId {
-    pub const ALL: [ToolId; 3] = [ToolId::Select, ToolId::Pan, ToolId::Label];
+    pub const ALL: [ToolId; 4] = [ToolId::Select, ToolId::Pan, ToolId::Label, ToolId::Stamp];
 
     pub fn label(self) -> &'static str {
         match self {
             ToolId::Select => "Select",
             ToolId::Pan => "Pan",
             ToolId::Label => "Label",
+            ToolId::Stamp => "Stamp",
         }
     }
 
@@ -32,6 +34,7 @@ impl ToolId {
             ToolId::Select => egui::Key::V,
             ToolId::Pan => egui::Key::H,
             ToolId::Label => egui::Key::T,
+            ToolId::Stamp => egui::Key::S,
         }
     }
 }
@@ -73,6 +76,8 @@ struct Drag {
     /// The selected Labels as they were, so every frame transforms from the start and
     /// rounding never builds up.
     labels: Vec<(Id, Label)>,
+    /// The selected Stamps as they were.
+    stamps: Vec<(Id, Stamp)>,
 }
 
 impl ToolState {
@@ -122,7 +127,7 @@ pub fn canvas_input(
     match editor.active_tool {
         ToolId::Select => {
             let bounds = Bounds::of_selection(editor);
-            let rotatable = selection_has_label(editor);
+            let rotatable = selection_rotates(editor);
             let grip_at = |pos: egui::Pos2| {
                 let bounds = bounds?;
                 handles::hit(&bounds, view, response.rect.min, ppp, pos, rotatable)
@@ -175,6 +180,17 @@ pub fn canvas_input(
             }
         }
         ToolId::Pan => {}
+        ToolId::Stamp => {
+            if response.clicked()
+                && let Some(pos) = response.interact_pointer_pos()
+            {
+                if editor.next_stamp_asset().is_some() {
+                    editor.place_stamp(to_canvas(pos));
+                } else {
+                    editor.error("Choose an Asset in the Asset browser first".to_owned());
+                }
+            }
+        }
         ToolId::Label => {
             if response.clicked()
                 && let Some(pos) = response.interact_pointer_pos()
@@ -212,12 +228,12 @@ fn click_select(editor: &mut Editor, hit: Option<Id>, shift: bool) {
     }
 }
 
-/// Whether the selection holds a Label, the only selected things that rotate.
-pub(crate) fn selection_has_label(editor: &Editor) -> bool {
+/// Whether the selection holds a Label or a Stamp, the only selected things that rotate.
+pub(crate) fn selection_rotates(editor: &Editor) -> bool {
     editor
         .selection()
         .iter()
-        .any(|&id| editor.label(id).is_some())
+        .any(|&id| editor.label(id).is_some() || editor.stamp(id).is_some())
 }
 
 /// Starts moving, scaling or rotating the selection from the Canvas point `point`, picking
@@ -244,7 +260,14 @@ fn start_drag(
         .iter()
         .filter_map(|&id| editor.label(id).map(|label| (id, label.clone())))
         .collect();
-    let Some(bounds) = bounds.filter(|_| !(outlines.is_empty() && labels.is_empty())) else {
+    let stamps: Vec<(Id, Stamp)> = editor
+        .selection()
+        .iter()
+        .filter_map(|&id| editor.stamp(id).map(|stamp| (id, stamp.clone())))
+        .collect();
+    let Some(bounds) =
+        bounds.filter(|_| !(outlines.is_empty() && labels.is_empty() && stamps.is_empty()))
+    else {
         return;
     };
     editor.begin_gesture(match grip {
@@ -258,11 +281,14 @@ fn start_drag(
         bounds,
         outlines,
         labels,
+        stamps,
     });
 }
 
 /// What a drag does to each Label, from how it was when the drag began.
 type LabelTransform = Box<dyn Fn(&Label) -> Label>;
+/// What a drag does to each Stamp.
+type StampTransform = Box<dyn Fn(&Stamp) -> Stamp>;
 
 /// The Commands that put the dragged selection where the pointer at `point` says: one for
 /// the Landmasses and Lakes, then one per Label. `None` keeps the last frame's, as when a
@@ -270,42 +296,50 @@ type LabelTransform = Box<dyn Fn(&Label) -> Label>;
 fn drag_commands(drag: &Drag, point: [f64; 2], snap: bool) -> Option<Vec<Command>> {
     let delta = [point[0] - drag.start[0], point[1] - drag.start[1]];
     let ids = drag.outlines.clone();
-    let (outlines, transform): (Option<Command>, LabelTransform) = match drag.grip {
-        None => (
-            Some(Command::Translate { ids, offset: delta }),
-            Box::new(move |label| handles::moved(label, delta)),
-        ),
-        Some(Grip::Resize(handle)) => {
-            let resized = drag.bounds.resized(handle, delta);
-            let transform = Affine::rect_to_rect(&drag.bounds.rect(), &resized.rect());
-            if !transform.is_invertible() {
-                return None;
+    let (outlines, transform, stamp_transform): (Option<Command>, LabelTransform, StampTransform) =
+        match drag.grip {
+            None => (
+                Some(Command::Translate { ids, offset: delta }),
+                Box::new(move |label| handles::moved(label, delta)),
+                Box::new(move |stamp| handles::stamp_moved(stamp, delta)),
+            ),
+            Some(Grip::Resize(handle)) => {
+                let resized = drag.bounds.resized(handle, delta);
+                let transform = Affine::rect_to_rect(&drag.bounds.rect(), &resized.rect());
+                if !transform.is_invertible() {
+                    return None;
+                }
+                let (scale, fixed) = drag.bounds.scaling(handle, delta);
+                (
+                    Some(Command::Transform { ids, transform }),
+                    Box::new(move |label| handles::scaled(label, scale, fixed)),
+                    Box::new(move |stamp| handles::stamp_scaled(stamp, scale, fixed)),
+                )
             }
-            let (scale, fixed) = drag.bounds.scaling(handle, delta);
-            (
-                Some(Command::Transform { ids, transform }),
-                Box::new(move |label| handles::scaled(label, scale, fixed)),
-            )
-        }
-        Some(Grip::Rotate) => {
-            let centre = drag.bounds.centre();
-            let angle = |p: [f64; 2]| (p[1] - centre[1]).atan2(p[0] - centre[0]).to_degrees();
-            let mut degrees = angle(point) - angle(drag.start);
-            if snap {
-                degrees = (degrees / 15.0).round() * 15.0;
+            Some(Grip::Rotate) => {
+                let centre = drag.bounds.centre();
+                let angle = |p: [f64; 2]| (p[1] - centre[1]).atan2(p[0] - centre[0]).to_degrees();
+                let mut degrees = angle(point) - angle(drag.start);
+                if snap {
+                    degrees = (degrees / 15.0).round() * 15.0;
+                }
+                (
+                    None,
+                    Box::new(move |label| handles::rotated(label, degrees, centre)),
+                    Box::new(move |stamp| handles::stamp_rotated(stamp, degrees, centre)),
+                )
             }
-            (
-                None,
-                Box::new(move |label| handles::rotated(label, degrees, centre)),
-            )
-        }
-    };
+        };
     let outlines = outlines.filter(|_| !drag.outlines.is_empty());
     let labels = drag.labels.iter().map(|(id, label)| Command::SetLabel {
         id: *id,
         label: Box::new(transform(label)),
     });
-    Some(outlines.into_iter().chain(labels).collect())
+    let stamps = drag.stamps.iter().map(|(id, stamp)| Command::SetStamp {
+        id: *id,
+        stamp: stamp_transform(stamp),
+    });
+    Some(outlines.into_iter().chain(labels).chain(stamps).collect())
 }
 
 #[cfg(test)]
@@ -322,6 +356,7 @@ mod tests {
                 max: [100.0, 50.0],
             },
             outlines: Vec::new(),
+            stamps: Vec::new(),
             labels: vec![(
                 Id::new(),
                 Label {
@@ -355,6 +390,38 @@ mod tests {
         assert!((rotated.rotation - 90.0).abs() < 1e-9);
         let snapped = dragged(&drag(Some(Grip::Rotate)), [100.0, 20.0], true);
         assert!((snapped.rotation - 15.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn stamps_move_scale_and_rotate_with_the_drag() {
+        let stamp = Stamp {
+            position: [10.0, 0.0],
+            ..Stamp::new("test/box".parse().unwrap())
+        };
+        let id = Id::new();
+        let with_stamp = |grip| Drag {
+            labels: Vec::new(),
+            stamps: vec![(id, stamp.clone())],
+            ..drag(grip)
+        };
+        let only = |commands: Option<Vec<Command>>| match commands.unwrap().remove(0) {
+            Command::SetStamp { stamp, .. } => stamp,
+            other => panic!("{other:?}"),
+        };
+        let moved = only(drag_commands(&with_stamp(None), [130.0, 20.0], false));
+        assert_eq!(moved.position, [40.0, 20.0]);
+        let scaled = only(drag_commands(
+            &with_stamp(Some(Grip::Resize(Handle::Right))),
+            [300.0, 0.0],
+            false,
+        ));
+        assert_eq!(scaled.scale, 2.0);
+        let rotated = only(drag_commands(
+            &with_stamp(Some(Grip::Rotate)),
+            [0.0, 100.0],
+            false,
+        ));
+        assert!((rotated.rotation - 90.0).abs() < 1e-9);
     }
 
     #[test]

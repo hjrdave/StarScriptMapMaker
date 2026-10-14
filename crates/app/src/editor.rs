@@ -1,14 +1,19 @@
 //! Editor state around one Map: history, Selection, the active Layer and tool, and the
 //! message bar. Every change to the Map goes through a Command here.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use ssmap_core::asset::PackLibrary;
 use ssmap_core::{
-    Command, CommandError, ExecuteError, History, Id, Label, Map, Node, ObjectKind, Op, PickIndex,
-    RoughnessCache, Selection,
+    AssetRef, Command, CommandError, ExecuteError, History, Id, Label, Map, Node, ObjectKind, Op,
+    PickIndex, RoughnessCache, Selection, Stamp,
 };
-use ssmap_render::{Content, Fonts, LabelLayout, MapScene};
+use ssmap_render::wgpu;
+use ssmap_render::{
+    Content, Fonts, LabelLayout, MapScene, StampAtlas, StampIndex, StampShape, StampSource,
+};
 
 use crate::layer_tree::node_name;
 use crate::tools::ToolId;
@@ -35,6 +40,16 @@ pub struct Editor {
     pick_index: Option<PickIndex>,
     /// Roughened outlines, shared by the screen and picking so they agree.
     roughness: RoughnessCache,
+    /// Every loaded Asset pack.
+    pub library: Arc<PackLibrary>,
+    /// The Asset the Stamp tool places, chosen in the Asset browser.
+    pub selected_asset: Option<AssetRef>,
+    /// The shapes of the Assets drawn so far, for picking and selection bounds.
+    stamp_shapes: HashMap<AssetRef, StampShape>,
+    /// The Map revision `stamp_shapes` was last gathered for.
+    shapes_revision: Option<u64>,
+    /// Rebuilt lazily once the Map has changed.
+    stamp_index: Option<StampIndex>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -60,6 +75,23 @@ impl Editor {
             gesture_selection: Vec::new(),
             pick_index: None,
             roughness: RoughnessCache::new(),
+            library: Arc::default(),
+            selected_asset: None,
+            stamp_shapes: HashMap::new(),
+            shapes_revision: None,
+            stamp_index: None,
+        }
+    }
+
+    pub fn with_library(map: Map, library: Arc<PackLibrary>) -> Self {
+        let selected_asset = library.packs().iter().find_map(|pack| {
+            let asset = pack.assets.first()?;
+            AssetRef::new(&pack.id, &asset.id).ok()
+        });
+        Self {
+            library,
+            selected_asset,
+            ..Self::new(map)
         }
     }
 
@@ -95,9 +127,65 @@ impl Editor {
 
     /// What the Canvas draws for the Map, rebuilt only once it has changed. Drops roughened
     /// outlines of Objects that are gone.
-    pub fn scene_content(&mut self) -> Content {
+    ///
+    /// `gpu` is the Stamp atlas and device it lives on; without one (UI tests) Stamps draw
+    /// nothing. Building the content also loads every Asset the Stamps use, so afterwards
+    /// picking and selection bounds know their shapes.
+    pub fn scene_content(
+        &mut self,
+        gpu: Option<(&mut StampAtlas, &wgpu::Device, &wgpu::Queue)>,
+    ) -> Content {
         self.roughness.retain(&self.map);
-        self.scene.content(&self.map, &mut self.roughness)
+        let mut source = gpu.map(|(atlas, device, queue)| StampSource {
+            library: &self.library,
+            atlas,
+            device,
+            queue,
+        });
+        let content = self
+            .scene
+            .content(&self.map, &mut self.roughness, source.as_mut());
+        if self.shapes_revision != Some(self.map.revision())
+            && let Some(source) = &source
+        {
+            self.shapes_revision = Some(self.map.revision());
+            for id in self.map.draw_order() {
+                if let Some(stamp) = self.stamp(id)
+                    && let Some(sprite) = source.atlas.loaded(&stamp.asset)
+                {
+                    self.stamp_shapes
+                        .insert(stamp.asset.clone(), sprite.shape.clone());
+                }
+            }
+        }
+        content
+    }
+
+    /// The Stamp with id `id`, if it is one.
+    pub fn stamp(&self, id: Id) -> Option<&Stamp> {
+        match self.map.node(id) {
+            Some(Node::Object(object)) => match &object.kind {
+                ObjectKind::Stamp(stamp) => Some(stamp),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// What a Stamp's Asset looks like, once it has been drawn.
+    pub fn stamp_shape(&self, asset: &AssetRef) -> Option<&StampShape> {
+        self.stamp_shapes.get(asset)
+    }
+
+    /// The topmost unlocked Stamp whose Silhouette is under `point`.
+    fn pick_stamp(&mut self, point: [f64; 2]) -> Option<Id> {
+        let map = &self.map;
+        let shapes = &self.stamp_shapes;
+        let index = match &mut self.stamp_index {
+            Some(index) if index.is_current(map) => index,
+            slot => slot.insert(StampIndex::build(map, |asset| shapes.get(asset))),
+        };
+        index.pick(point).map(|(id, _)| id)
     }
 
     /// The selected Landmasses and Lakes, which move and resize with the handles.
@@ -339,9 +427,10 @@ impl Editor {
         // point; Labels are weighed against it in draw order, so what shows on top is
         // what's picked.
         let outline = self.pick_outline(point);
+        let stamp = self.pick_stamp(point);
         for id in self.map.draw_order().into_iter().rev() {
-            if Some(id) == outline {
-                return outline;
+            if Some(id) == outline || Some(id) == stamp {
+                return Some(id);
             }
             if !self.map.is_locked(id)
                 && let Some((label, layout)) = self.label_layout(id)
@@ -358,26 +447,9 @@ impl Editor {
     pub fn place_label(&mut self, position: [f64; 2]) -> Option<Id> {
         self.end_gesture();
         self.begin_gesture("Add Label");
-        let parent = match self.active_layer.filter(|&id| self.map.contains(id)) {
-            Some(layer) => layer,
-            None => match self.map.children(None).last() {
-                Some(&top) => top,
-                None => {
-                    let id = Id::new();
-                    let name = format!("Layer {}", self.layer_count() + 1);
-                    let command = Command::CreateLayer {
-                        id,
-                        parent: None,
-                        index: None,
-                        name,
-                    };
-                    if !self.gesture(command) {
-                        self.cancel_gesture();
-                        return None;
-                    }
-                    id
-                }
-            },
+        let Some(parent) = self.target_layer() else {
+            self.cancel_gesture();
+            return None;
         };
         let id = Id::new();
         let label = Label {
@@ -398,6 +470,69 @@ impl Editor {
         Some(id)
     }
 
+    /// The Layer new Objects go into: the active Layer, else the topmost, creating one if the
+    /// Map has none. Runs inside an open gesture.
+    fn target_layer(&mut self) -> Option<Id> {
+        if let Some(layer) = self.active_layer.filter(|&id| self.map.contains(id)) {
+            return Some(layer);
+        }
+        if let Some(&top) = self.map.children(None).last() {
+            return Some(top);
+        }
+        let id = Id::new();
+        let name = format!("Layer {}", self.layer_count() + 1);
+        self.gesture(Command::CreateLayer {
+            id,
+            parent: None,
+            index: None,
+            name,
+        })
+        .then_some(id)
+    }
+
+    /// The Asset the Stamp tool places next: the selected one, or a random member of its
+    /// Variant group. The Stamp records the concrete Asset, so the Map never depends on the
+    /// pack's grouping afterwards.
+    pub fn next_stamp_asset(&self) -> Option<AssetRef> {
+        let selected = self.selected_asset.clone()?;
+        let (pack, asset) = self.library.asset(&selected)?;
+        let Some(group) = &asset.variant_group else {
+            return Some(selected);
+        };
+        let members: Vec<&ssmap_core::asset::Asset> = pack.variant_group(group).collect();
+        let pick = members[random_below(members.len())];
+        AssetRef::new(&pack.id, &pick.id).ok()
+    }
+
+    /// Places the selected Asset as a Stamp at `position` in the active Layer, creating a
+    /// Layer if the Map has none, as one Undo step.
+    pub fn place_stamp(&mut self, position: [f64; 2]) -> Option<Id> {
+        let asset = self.next_stamp_asset()?;
+        self.end_gesture();
+        self.begin_gesture("Add Stamp");
+        let Some(parent) = self.target_layer() else {
+            self.cancel_gesture();
+            return None;
+        };
+        let id = Id::new();
+        let stamp = Stamp {
+            position,
+            ..Stamp::new(asset)
+        };
+        if !self.gesture(Command::CreateStamp {
+            id,
+            parent,
+            index: None,
+            stamp,
+        }) {
+            self.cancel_gesture();
+            return None;
+        }
+        self.select(vec![id]);
+        self.end_gesture();
+        Some(id)
+    }
+
     fn layer_count(&self) -> usize {
         self.map
             .ids()
@@ -413,6 +548,19 @@ impl Editor {
             self.active_layer = None;
         }
     }
+}
+
+/// A pseudo-random number below `bound` (at least 1), seeded from the clock. Used only to
+/// choose among variants; the choice is recorded in the Command, so replay is exact.
+fn random_below(bound: usize) -> usize {
+    use std::hash::{BuildHasher, Hasher};
+    let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+    hasher.write_u128(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos()),
+    );
+    (hasher.finish() % bound as u64) as usize
 }
 
 #[cfg(test)]
@@ -543,6 +691,87 @@ mod tests {
             visible: false,
         });
         assert_eq!(editor.pick([50.0, 50.0]), None);
+    }
+
+    /// An editor holding the core test pack, with its first Asset selected.
+    fn stamping_editor() -> Editor {
+        let roots = ssmap_core::asset::PackRoots {
+            built_in: std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../core/tests/packs"),
+            user: None,
+        };
+        let (library, problems) = PackLibrary::load(&roots);
+        assert!(problems.is_empty(), "{problems:?}");
+        Editor::with_library(
+            Map::new(Canvas::new(500, 500, Scale::new(1.0, DistanceUnit::Miles))),
+            Arc::new(library),
+        )
+    }
+
+    #[test]
+    fn placing_a_stamp_creates_a_layer_and_is_one_undo_step() {
+        let mut editor = stamping_editor();
+        assert_eq!(
+            editor.selected_asset,
+            Some("test-pack/mountain-1".parse().unwrap())
+        );
+        let id = editor.place_stamp([200.0, 150.0]).unwrap();
+        assert_eq!(editor.stamp(id).unwrap().position, [200.0, 150.0]);
+        assert_eq!(editor.selection(), &[id]);
+        assert_eq!(editor.undo_label(), Some("Add Stamp"));
+        editor.undo();
+        assert!(
+            editor.map.children(None).is_empty(),
+            "the Layer is undone too"
+        );
+    }
+
+    #[test]
+    fn placing_picks_a_variant_but_records_a_concrete_asset() {
+        let mut editor = stamping_editor();
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..64 {
+            let asset = editor.next_stamp_asset().unwrap();
+            assert_eq!(asset.pack, "test-pack");
+            seen.insert(asset.asset);
+        }
+        let expected: std::collections::HashSet<String> =
+            ["mountain-1".to_owned(), "mountain-2".to_owned()].into();
+        assert_eq!(seen, expected, "only the Variant group, and both of them");
+        // A lone Asset is always itself.
+        editor.selected_asset = Some("test-pack/castle".parse().unwrap());
+        assert_eq!(
+            editor.next_stamp_asset(),
+            Some("test-pack/castle".parse().unwrap())
+        );
+        editor.selected_asset = Some("test-pack/ghost".parse().unwrap());
+        assert_eq!(editor.next_stamp_asset(), None, "not in any pack");
+    }
+
+    #[test]
+    fn picking_finds_the_stamp_under_its_silhouette() {
+        let mut editor = stamping_editor();
+        editor.selected_asset = Some("test-pack/castle".parse().unwrap());
+        let id = editor.place_stamp([200.0, 200.0]).unwrap();
+        let mut mask = ssmap_render::raster::Raster::new(2, 2);
+        mask.pixels = vec![255; 16];
+        // A 100x100 box with its Anchor at the bottom centre: x 150..250, y 100..200.
+        editor.stamp_shapes.insert(
+            "test-pack/castle".parse().unwrap(),
+            StampShape {
+                size: [100.0, 100.0],
+                anchor: [0.5, 1.0],
+                mask: Arc::new(mask),
+            },
+        );
+        assert_eq!(editor.pick([200.0, 150.0]), Some(id));
+        assert_eq!(editor.pick([200.0, 250.0]), None, "below the Anchor");
+        editor.run(Command::SetLocked { id, locked: true });
+        assert_eq!(
+            editor.pick([200.0, 150.0]),
+            None,
+            "locked Stamps aren't picked"
+        );
     }
 
     fn opacity(editor: &Editor, id: Id) -> f32 {

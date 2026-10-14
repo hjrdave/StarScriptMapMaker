@@ -226,7 +226,7 @@ fn the_label_tool_places_a_label_and_types_its_text_in_one_undo_step() {
     harness.get_by_label("Ærendál");
 
     // Clicking empty Canvas deselects it, and clicking it picks it again.
-    click_at(&mut harness, egui::pos2(300.0, 120.0));
+    click_at(&mut harness, egui::pos2(800.0, 120.0));
     assert!(harness.state().editor().selection().is_empty());
     click_at(&mut harness, canvas);
     assert_eq!(harness.state().editor().selection(), &[id]);
