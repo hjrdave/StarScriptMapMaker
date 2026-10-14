@@ -1,0 +1,123 @@
+name: Nightly
+
+# Full release builds of every package (ADR 0008), kept out of PR CI so it stays fast.
+# Each job installs what it built and opens a Map file with it.
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_PACKAGER_VERSION: 0.11.8
+
+jobs:
+  packages:
+    name: packages (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The oldest supported runner, so the .deb and AppImage need only glibc 2.35.
+          - name: Linux x86_64
+            os: ubuntu-22.04
+            formats: deb,appimage
+          - name: Windows x86_64
+            os: windows-2025
+            formats: nsis
+          - name: macOS arm64
+            os: macos-15
+            formats: dmg
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-packager
+        run: cargo install cargo-packager --version "$CARGO_PACKAGER_VERSION" --locked
+      - name: Build packages
+        working-directory: crates/app
+        run: cargo packager --release --formats ${{ matrix.formats }}
+      - name: Write a Map file to open
+        run: cargo run --release --locked -p ssmap-core --example new_map -- target/Smoke.ssmap
+
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xdotool xdg-utils libfile-mimeinfo-perl desktop-file-utils mesa-vulkan-drivers
+          sudo apt-get install -y ./target/packages/*.deb
+          desktop-file-validate /usr/share/applications/starscript-map-maker.desktop
+          xvfb-run -a scripts/smoke-linux-package.sh target/Smoke.ssmap deb
+          xvfb-run -a scripts/smoke-linux-package.sh target/Smoke.ssmap appimage target/packages/*.AppImage
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem target/packages/*-setup.exe
+          Start-Process $installer.FullName -ArgumentList '/S' -Wait
+          # Per-user install: %LOCALAPPDATA%, with the association under HKCU.
+          $dir = Join-Path $env:LOCALAPPDATA 'StarScript Map Maker'
+          if (-not (Test-Path "$dir/starscript-map-maker.exe")) { throw "no exe in $dir" }
+          if (-not (Test-Path "$dir/assets/README.md")) { throw "no assets in $dir" }
+          $progId = (Get-ItemProperty 'HKCU:\Software\Classes\.ssmap').'(default)'
+          if ($progId -ne 'StarScriptMapMaker.Map') { throw ".ssmap is $progId" }
+          # Open the file the way Explorer does on a double-click: through its association.
+          $map = Resolve-Path target/Smoke.ssmap
+          Start-Process $map
+          foreach ($i in 1..60) {
+            $app = Get-Process starscript-map-maker -ErrorAction SilentlyContinue |
+              Where-Object { $_.MainWindowTitle -like '*Smoke.ssmap*' }
+            if ($app) { Write-Host "opened: $($app.MainWindowTitle)"; $app | Stop-Process; exit 0 }
+            Start-Sleep 1
+          }
+          throw 'no window titled Smoke.ssmap'
+
+      - name: Smoke test (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          mount=$(mktemp -d)
+          hdiutil attach -nobrowse -mountpoint "$mount" target/packages/*.dmg
+          app="$mount/StarScript Map Maker.app"
+          test -f "$app/Contents/Resources/assets/README.md"
+          plutil -extract CFBundleDocumentTypes.0.LSItemContentTypes.0 raw "$app/Contents/Info.plist"
+          # Unsigned per ADR 0008, apart from the linker's ad-hoc signature arm64 needs to run.
+          codesign -dv "$app/Contents/MacOS/starscript-map-maker" 2>&1 | grep 'Signature=adhoc'
+          # Opening from Finder needs an open-documents handler (docs/packaging.md), so this
+          # only checks the app launches with a Map file argument and keeps running.
+          "$app/Contents/MacOS/starscript-map-maker" "$PWD/target/Smoke.ssmap" &
+          pid=$!
+          sleep 15
+          kill -0 $pid
+          kill $pid
+          hdiutil detach "$mount"
+
+      - name: Checksums
+        working-directory: target/packages
+        run: |
+          shopt -s nullglob
+          files=(*.deb *.AppImage *-setup.exe *.dmg)
+          if command -v sha256sum >/dev/null; then sha256sum "${files[@]}"; else shasum -a 256 "${files[@]}"; fi > SHA256SUMS-${{ runner.os }}.txt
+          cat SHA256SUMS-${{ runner.os }}.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ runner.os }}
+          path: |
+            target/packages/*.deb
+            target/packages/*.AppImage
+            target/packages/*-setup.exe
+            target/packages/*.dmg
+            target/packages/SHA256SUMS-*.txt
+          if-no-files-found: error
+          retention-days: 14

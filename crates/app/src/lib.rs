@@ -5,6 +5,7 @@ mod canvas_view;
 pub mod document;
 pub mod editor;
 pub mod handles;
+pub mod install;
 mod layer_tree;
 mod properties;
 mod recent;
@@ -15,6 +16,7 @@ use eframe::{egui, egui_wgpu};
 use egui_file_dialog::{DialogState, FileDialog, Filter};
 use ssmap_core::file::{JournalBase, MapFile, PREVIEW_SIZE, remove_journal};
 use ssmap_core::{Canvas, DistanceUnit, Map, Scale};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -26,6 +28,20 @@ use crate::properties::PropertiesPanel;
 use crate::recent::RecentFiles;
 use crate::recovery::{Found, Recovery};
 use crate::tools::ToolId;
+
+/// The Map file to open at launch, from the command-line arguments after the program name.
+///
+/// Windows (the installer's file association) and Linux (the `.desktop` file's `%F`) pass a
+/// double-clicked file this way. Flags are skipped, including the `-psn_…` process serial
+/// number older macOS versions add.
+pub fn launch_file(args: impl IntoIterator<Item = OsString>) -> Option<PathBuf> {
+    let path = PathBuf::from(
+        args.into_iter()
+            .find(|arg| !arg.to_string_lossy().starts_with('-'))?,
+    );
+    // Absolute, so Recent Files still finds it from another working directory.
+    Some(std::path::absolute(&path).unwrap_or(path))
+}
 
 pub struct MapMakerApp {
     editor: Editor,
@@ -764,5 +780,24 @@ impl eframe::App for MapMakerApp {
             .frame(egui::Frame::NONE)
             .show(ui, |ui| self.canvas_view.show(ui, &mut self.editor));
         self.journal(&ctx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(args: &[&str]) -> Vec<OsString> {
+        args.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn launch_file_is_the_first_non_flag_argument() {
+        assert_eq!(launch_file(args(&[])), None);
+        assert_eq!(launch_file(args(&["-psn_0_12345"])), None);
+        let file = launch_file(args(&["-psn_0_12345", "maps/Isle.ssmap", "other.ssmap"]));
+        let file = file.unwrap();
+        assert!(file.is_absolute());
+        assert!(file.ends_with("maps/Isle.ssmap"));
     }
 }
