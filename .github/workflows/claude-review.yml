@@ -154,21 +154,48 @@ jobs:
             HARD RULES
             - Never approve if any changed file is under `.github/` (this is also pre-checked).
             - Never approve unless the CI result is `success`.
-            - Never merge unless you approved in this run.
+            - Never merge. Merging is done by the workflow after your approval; do not run
+              `gh pr merge`.
 
             Outcome (do exactly one):
             A. Everything is good:
                  `gh pr review ${{ env.PR }} --approve --body "<brief reason>"`
-               then
-                 `gh pr merge ${{ env.PR }} --auto --squash --delete-branch --match-head-commit ${{ env.SHA }}`
-               If gh says the PR is already in a clean/mergeable state and refuses `--auto`, run
-                 `gh pr merge ${{ env.PR }} --squash --delete-branch --match-head-commit ${{ env.SHA }}`
+               and stop. The workflow merges the PR after a valid approval.
             B. Problems found (or CI failed):
                  `gh pr review ${{ env.PR }} --request-changes --body "<numbered, specific fixes>"`
                Put ALL feedback in the review body, with file paths and what to change. The
-               implementer reads only that body. Do not merge.
+               implementer reads only that body.
             C. CI result is `missing` or `timeout`: post one `gh pr comment ${{ env.PR }}`
-               saying so. Do not approve, request changes, or merge.
+               saying so. Do not approve or request changes.
           claude_args: |
             --max-turns 25
-            --allowedTools "Read,Glob,Grep,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh issue view:*),Bash(gh run view:*),Bash(gh pr review:*),Bash(gh pr merge:*),Bash(gh pr comment:*)"
+            --allowedTools "Read,Glob,Grep,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr checks:*),Bash(gh issue view:*),Bash(gh run view:*),Bash(gh pr review:*),Bash(gh pr comment:*)"
+
+      # Merging is deterministic and does not depend on the model. Runs only if the reviewer
+      # App's latest review on THIS exact commit is APPROVED. Squash-merges when the PR is
+      # already mergeable; if the ruleset still waits on checks, enables auto-merge instead.
+      - name: Merge if approved
+        if: steps.protected.outputs.blocked == 'false'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          set -uo pipefail
+          state=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" | jq -rs \
+            --arg who "${APP_SLUG}[bot]" --arg sha "$SHA" '
+              [ .[][] | select(.user.login == $who and .commit_id == $sha
+                  and (.state | IN("APPROVED","CHANGES_REQUESTED","DISMISSED"))) ]
+              | last | .state // "NONE"')
+          echo "reviewer state on $SHA: $state"
+          [ "$state" = APPROVED ] || { echo "not approved; nothing to merge"; exit 0; }
+
+          info=$(gh pr view "$PR" --repo "$REPO" --json state,headRefOid,autoMergeRequest)
+          [ "$(jq -r .state <<<"$info")" = OPEN ] || { echo "PR is not open; nothing to do"; exit 0; }
+          [ "$(jq -r .headRefOid <<<"$info")" = "$SHA" ] || { echo "head moved since review; skipping"; exit 0; }
+          [ "$(jq -r '.autoMergeRequest != null' <<<"$info")" = false ] || { echo "auto-merge already enabled"; exit 0; }
+
+          if gh pr merge "$PR" --repo "$REPO" --squash --delete-branch --match-head-commit "$SHA"; then
+            echo "merged"; exit 0
+          fi
+          echo "direct merge refused (likely waiting on checks); enabling auto-merge"
+          gh pr merge "$PR" --repo "$REPO" --auto --squash --delete-branch --match-head-commit "$SHA"
