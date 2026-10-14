@@ -2,7 +2,7 @@
 
 use ssmap_core::{
     Affine, Canvas, Color, Command, DistanceUnit, History, Id, Map, MultiPolygon, Node, PickIndex,
-    Point, Polygon, Rect, Scale,
+    Point, Polygon, Rect, Roughness, RoughnessCache, Scale,
 };
 
 fn square(min: [f64; 2], size: f64) -> Vec<Point> {
@@ -109,13 +109,13 @@ fn lakes_draw_above_the_land_in_their_layer() {
 #[test]
 fn picking_finds_the_topmost_fill_and_sees_through_holes() {
     let (map, island, water, cover) = world();
-    let index = PickIndex::build(&map);
+    let index = PickIndex::build(&map, &mut RoughnessCache::new());
     assert!(index.is_current(&map));
-    assert_eq!(index.pick(&map, [20.0, 15.0]), Some(water));
-    assert_eq!(index.pick(&map, [5.0, 50.0]), Some(island));
-    assert_eq!(index.pick(&map, [50.0, 50.0]), None, "the hole shows ocean");
-    assert_eq!(index.pick(&map, [90.0, 90.0]), Some(cover));
-    assert_eq!(index.pick(&map, [200.0, 200.0]), None);
+    assert_eq!(index.pick([20.0, 15.0]), Some(water));
+    assert_eq!(index.pick([5.0, 50.0]), Some(island));
+    assert_eq!(index.pick([50.0, 50.0]), None, "the hole shows ocean");
+    assert_eq!(index.pick([90.0, 90.0]), Some(cover));
+    assert_eq!(index.pick([200.0, 200.0]), None);
     let rect = Rect {
         min: [0.0, 0.0],
         max: [35.0, 35.0],
@@ -133,8 +133,8 @@ fn locked_objects_are_not_picked() {
             locked: true,
         },
     );
-    let index = PickIndex::build(&map);
-    assert_eq!(index.pick(&map, [20.0, 15.0]), Some(island));
+    let index = PickIndex::build(&map, &mut RoughnessCache::new());
+    assert_eq!(index.pick([20.0, 15.0]), Some(island));
     let land = map.parent(island).unwrap();
     run(
         &mut map,
@@ -144,8 +144,8 @@ fn locked_objects_are_not_picked() {
         },
     );
     assert!(!index.is_current(&map));
-    let index = PickIndex::build(&map);
-    assert_eq!(index.pick(&map, [20.0, 15.0]), None);
+    let index = PickIndex::build(&map, &mut RoughnessCache::new());
+    assert_eq!(index.pick([20.0, 15.0]), None);
 }
 
 #[test]
@@ -187,4 +187,28 @@ fn transform_refusals_change_nothing() {
     };
     assert!(map.execute(&huge).is_err());
     assert_eq!(map.view(), before);
+}
+
+#[test]
+fn picking_uses_the_roughened_coastline() {
+    let (mut map, island, _, _) = world();
+    let mut roughness = RoughnessCache::new();
+    let index = PickIndex::build(&map, &mut roughness);
+    run(
+        &mut map,
+        Command::SetRoughness {
+            ids: vec![island],
+            roughness: Some(Roughness::new(8.0, 25.0, 7)),
+        },
+    );
+    let rough = PickIndex::build(&map, &mut roughness);
+    let outline = roughness.outline(&map, island).unwrap();
+    // A point beside the smooth left coast (x = 0) that the rough coast puts on the other side.
+    let point = (1..100)
+        .flat_map(|y| [-3.0, -1.0, 1.0, 3.0].map(|x| [x, f64::from(y)]))
+        .find(|&p| outline.contains(p) != (p[0] > 0.0))
+        .expect("Roughness moves the coast");
+    let expected = outline.contains(point).then_some(island);
+    assert_eq!(rough.pick(point), expected, "at {point:?}");
+    assert_ne!(index.pick(point), expected, "the smooth index disagrees");
 }

@@ -4,7 +4,8 @@
 use std::time::{Duration, Instant};
 
 use ssmap_core::{
-    Command, CommandError, ExecuteError, History, Id, Map, Node, PickIndex, Point, Selection,
+    Command, CommandError, ExecuteError, History, Id, Map, Node, Op, PickIndex, Point,
+    RoughnessCache, Selection,
 };
 
 use crate::layer_tree::node_name;
@@ -25,6 +26,8 @@ pub struct Editor {
     gesture_open: bool,
     /// Rebuilt lazily once the Map has changed.
     pick_index: Option<PickIndex>,
+    /// Roughened outlines, shared by the screen and picking so they agree.
+    roughness: RoughnessCache,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -36,15 +39,18 @@ pub struct Notice {
 
 impl Editor {
     pub fn new(map: Map) -> Self {
+        let mut history = History::default();
+        history.set_recording(true);
         Self {
             map,
-            history: History::default(),
+            history,
             selection: Vec::new(),
             active_layer: None,
             active_tool: ToolId::Select,
             notice: None,
             gesture_open: false,
             pick_index: None,
+            roughness: RoughnessCache::new(),
         }
     }
 
@@ -73,9 +79,16 @@ impl Editor {
         let map = &self.map;
         let index = match &mut self.pick_index {
             Some(index) if index.is_current(map) => index,
-            slot => slot.insert(PickIndex::build(map)),
+            slot => slot.insert(PickIndex::build(map, &mut self.roughness)),
         };
-        index.pick(map, point)
+        index.pick(point)
+    }
+
+    /// The Map with the cache of its roughened outlines, for drawing it. Drops outlines of
+    /// Objects that are gone.
+    pub fn map_and_roughness(&mut self) -> (&Map, &mut RoughnessCache) {
+        self.roughness.retain(&self.map);
+        (&self.map, &mut self.roughness)
     }
 
     /// The selected Landmasses and Lakes, which move and resize with the handles.
@@ -209,6 +222,12 @@ impl Editor {
         if let Ok(Some(selection)) = self.history.redo(&mut self.map) {
             self.restore(selection);
         }
+    }
+
+    /// Takes the Ops that committed steps, undo and redo applied since the last call, for the
+    /// Recovery journal.
+    pub fn take_applied(&mut self) -> Vec<Op> {
+        self.history.take_applied()
     }
 
     /// Creates a Layer above the active one (or on top), selects it and returns its id.

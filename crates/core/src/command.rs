@@ -12,9 +12,10 @@ use thiserror::Error;
 use crate::color::Color;
 use crate::geometry::{Affine, MultiPolygon};
 use crate::id::Id;
-use crate::map::{Map, Subtree};
+use crate::map::{Map, MapDefaults, Subtree};
 use crate::node::{Lake, Landmass, Layer, Node, Object, ObjectKind};
 use crate::op::{Op, OpError, Property};
+use crate::roughness::Roughness;
 
 /// One edit to a Map. Commands name every id they touch or create, so replaying one gives
 /// the same Map every time.
@@ -97,6 +98,16 @@ pub enum Command {
         ids: Vec<Id>,
         fill: Color,
     },
+    /// Sets the Roughness of Landmasses and Lakes, or with `None` returns them to the Map-wide
+    /// default.
+    SetRoughness {
+        ids: Vec<Id>,
+        roughness: Option<Roughness>,
+    },
+    /// Sets the Roughness of every Landmass and Lake without its own.
+    SetDefaultRoughness {
+        roughness: Roughness,
+    },
 }
 
 #[derive(Clone, PartialEq, Debug, Error)]
@@ -121,6 +132,8 @@ pub enum CommandError {
     InvalidGeometry { id: Id, problem: String },
     #[error("the transform {0:?} is not finite or collapses shapes")]
     InvalidTransform([f64; 6]),
+    #[error("Roughness needs an amount of 0 or more and a scale above 0, not {amount} and {scale}")]
+    InvalidRoughness { amount: f64, scale: f64 },
     #[error(transparent)]
     Op(#[from] OpError),
 }
@@ -141,6 +154,8 @@ impl Command {
             Command::Translate { .. } => "Move",
             Command::Transform { .. } => "Transform",
             Command::SetFill { .. } => "Change Fill",
+            Command::SetRoughness { .. } => "Change Roughness",
+            Command::SetDefaultRoughness { .. } => "Change Default Roughness",
         }
     }
 
@@ -244,6 +259,25 @@ impl Command {
                     .map(|id| set(id, Property::Fill(*fill)))
                     .collect())
             }
+            Command::SetRoughness { ids, roughness } => {
+                if let Some(roughness) = roughness {
+                    valid_roughness(roughness)?;
+                }
+                let ids = outlined(map, ids)?;
+                Ok(ids
+                    .into_iter()
+                    .map(|id| set(id, Property::Roughness(roughness.clone())))
+                    .collect())
+            }
+            Command::SetDefaultRoughness { roughness } => {
+                valid_roughness(roughness)?;
+                Ok(vec![Op::SetDefaults {
+                    defaults: MapDefaults {
+                        roughness: roughness.clone(),
+                        ..map.defaults().clone()
+                    },
+                }])
+            }
         }
     }
 }
@@ -252,13 +286,30 @@ impl Map {
     /// Applies a Command all or nothing and returns the inverses of its Ops, in the order they
     /// were applied.
     pub fn execute(&mut self, command: &Command) -> Result<Vec<Op>, CommandError> {
+        self.execute_recording(command, None)
+    }
+
+    /// Like `execute`, and also appends the Ops it applied to `applied`. A failed Command
+    /// leaves `applied` as it was.
+    pub(crate) fn execute_recording(
+        &mut self,
+        command: &Command,
+        mut applied: Option<&mut Vec<Op>>,
+    ) -> Result<Vec<Op>, CommandError> {
         let ops = command.compile(self)?;
+        let recorded = applied.as_ref().map_or(0, |applied| applied.len());
         let mut inverses = Vec::with_capacity(ops.len());
         for op in ops {
+            if let Some(applied) = applied.as_deref_mut() {
+                applied.push(op.clone());
+            }
             match self.apply(op) {
                 Ok(inverse) => inverses.push(inverse),
                 Err(err) => {
                     self.revert(inverses);
+                    if let Some(applied) = applied {
+                        applied.truncate(recorded);
+                    }
                     return Err(err.into());
                 }
             }
@@ -378,6 +429,15 @@ fn outline(map: &Map, id: Id) -> &MultiPolygon {
     match map.node(id) {
         Some(Node::Object(object)) => object.kind.geometry().expect("checked"),
         _ => unreachable!("checked"),
+    }
+}
+
+fn valid_roughness(roughness: &Roughness) -> Result<(), CommandError> {
+    let Roughness { amount, scale, .. } = *roughness;
+    if amount.is_finite() && amount >= 0.0 && scale.is_finite() && scale > 0.0 {
+        Ok(())
+    } else {
+        Err(CommandError::InvalidRoughness { amount, scale })
     }
 }
 

@@ -8,7 +8,8 @@ use thiserror::Error;
 
 use crate::extra::Extra;
 use crate::id::Id;
-use crate::node::{Node, ObjectKind};
+use crate::node::{Node, Object, ObjectKind};
+use crate::roughness::Roughness;
 
 /// The bounded drawing area of a Map.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
@@ -59,6 +60,16 @@ pub enum DistanceUnit {
     Kilometres,
 }
 
+/// Map-wide defaults for Objects that don't override them.
+#[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize, JsonSchema)]
+pub struct MapDefaults {
+    /// The Roughness of every Landmass and Lake without its own.
+    #[serde(default)]
+    pub roughness: Roughness,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
 /// A node and all its descendants, in Stacking order (first child draws lowest).
 ///
 /// This is both the shape of the read view and the payload Ops use to insert and restore
@@ -76,6 +87,8 @@ pub struct Subtree {
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct MapView {
     pub canvas: Canvas,
+    #[serde(default)]
+    pub defaults: MapDefaults,
     /// The top-level Layers, first drawn lowest.
     pub layers: Vec<Subtree>,
 }
@@ -92,6 +105,8 @@ pub(crate) struct Entry {
 #[derive(Clone, Debug)]
 pub struct Map {
     pub canvas: Canvas,
+    /// Changed only by [`Op::SetDefaults`](crate::Op::SetDefaults).
+    pub(crate) defaults: MapDefaults,
     pub(crate) root: Vec<Id>,
     pub(crate) entries: HashMap<Id, Entry>,
     /// Increases with every applied Op; touched nodes take its new value as their version.
@@ -102,6 +117,7 @@ impl Map {
     pub fn new(canvas: Canvas) -> Self {
         Self {
             canvas,
+            defaults: MapDefaults::default(),
             root: Vec::new(),
             entries: HashMap::new(),
             revision: 0,
@@ -111,6 +127,7 @@ impl Map {
     /// Builds a Map from a read view, as when loading.
     pub fn from_view(view: MapView) -> Result<Self, InvariantError> {
         let mut map = Self::new(view.canvas);
+        map.defaults = view.defaults;
         for subtree in view.layers {
             if !subtree.node.is_layer() {
                 return Err(InvariantError::ObjectAtRoot(subtree.id));
@@ -124,8 +141,23 @@ impl Map {
     pub fn view(&self) -> MapView {
         MapView {
             canvas: self.canvas.clone(),
+            defaults: self.defaults.clone(),
             layers: self.root.iter().map(|&id| self.subtree(id)).collect(),
         }
+    }
+
+    pub fn defaults(&self) -> &MapDefaults {
+        &self.defaults
+    }
+
+    /// The Roughness a Landmass or Lake is drawn with: its own, or the Map-wide default.
+    /// `None` for anything without an outline.
+    pub fn roughness(&self, id: Id) -> Option<&Roughness> {
+        let Node::Object(Object { kind, .. }) = self.node(id)? else {
+            return None;
+        };
+        kind.geometry()?;
+        Some(kind.roughness().unwrap_or(&self.defaults.roughness))
     }
 
     pub fn contains(&self, id: Id) -> bool {

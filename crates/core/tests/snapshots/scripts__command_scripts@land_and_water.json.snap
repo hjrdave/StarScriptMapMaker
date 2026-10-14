@@ -197,6 +197,13 @@ input_file: crates/core/tests/scripts/land_and_water.json
       },
       "width": 1000
     },
+    "defaults": {
+      "roughness": {
+        "amount": 0.0,
+        "scale": 32.0,
+        "seed": 0
+      }
+    },
     "layers": [
       {
         "children": [

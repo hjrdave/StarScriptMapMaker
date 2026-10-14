@@ -11,8 +11,9 @@ use thiserror::Error;
 use crate::color::Color;
 use crate::geometry::MultiPolygon;
 use crate::id::Id;
-use crate::map::{InvariantError, Map, Subtree};
+use crate::map::{InvariantError, Map, MapDefaults, Subtree};
 use crate::node::Node;
+use crate::roughness::Roughness;
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -36,6 +37,8 @@ pub enum Op {
         parent: Option<Id>,
         index: usize,
     },
+    /// Replaces the Map-wide defaults.
+    SetDefaults { defaults: MapDefaults },
 }
 
 /// A settable property and its new value.
@@ -55,6 +58,8 @@ pub enum Property {
     Clip(Option<Id>),
     /// Landmasses and Lakes only.
     Fill(Color),
+    /// Landmasses and Lakes only. `None` uses the Map-wide default.
+    Roughness(Option<Roughness>),
 }
 
 #[derive(Clone, PartialEq, Debug, Error)]
@@ -141,6 +146,9 @@ impl Map {
                     index: old_index,
                 }
             }
+            Op::SetDefaults { defaults } => Op::SetDefaults {
+                defaults: std::mem::replace(&mut self.defaults, defaults),
+            },
         })
     }
 
@@ -181,6 +189,7 @@ impl Map {
                 }
                 check_index(*index, len)?;
             }
+            Op::SetDefaults { .. } => {}
         }
         Ok(())
     }
@@ -217,7 +226,13 @@ fn check_index(index: usize, len: usize) -> Result<(), OpError> {
 fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> {
     match (node, property) {
         (Node::Layer(_), Property::Fill(_)) => Err("fill"),
-        (Node::Layer(_), _) | (Node::Object(_), Property::Locked(_)) => Ok(()),
+        (Node::Layer(_), Property::Roughness(_)) => Err("roughness"),
+        (Node::Object(object), Property::Roughness(_)) if object.kind.geometry().is_none() => {
+            Err("roughness")
+        }
+        (Node::Layer(_), _) | (Node::Object(_), Property::Locked(_) | Property::Roughness(_)) => {
+            Ok(())
+        }
         (Node::Object(_), Property::Name(_)) => Err("name"),
         (Node::Object(_), Property::Visible(_)) => Err("visible"),
         (Node::Object(_), Property::Opacity(_)) => Err("opacity"),
@@ -250,6 +265,10 @@ fn set_property(node: &mut Node, property: Property) -> Property {
         (Node::Object(object), Property::Fill(fill)) => {
             let slot = object.kind.fill_mut().expect("checked");
             Property::Fill(std::mem::replace(slot, fill))
+        }
+        (Node::Object(object), Property::Roughness(roughness)) => {
+            let slot = object.kind.roughness_mut().expect("checked");
+            Property::Roughness(std::mem::replace(slot, roughness))
         }
         (_, _) => unreachable!("rejected by check_property"),
     }

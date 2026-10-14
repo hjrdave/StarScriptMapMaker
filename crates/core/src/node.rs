@@ -8,6 +8,7 @@ use crate::color::Color;
 use crate::extra::Extra;
 use crate::geometry::MultiPolygon;
 use crate::id::Id;
+use crate::roughness::Roughness;
 
 /// A Layer or an Object.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
@@ -122,17 +123,36 @@ impl ObjectKind {
         }
     }
 
+    /// The Roughness override of kinds that have an outline, if set.
+    pub fn roughness(&self) -> Option<&Roughness> {
+        match self {
+            ObjectKind::Landmass(landmass) => landmass.roughness.as_ref(),
+            ObjectKind::Lake(lake) => lake.roughness.as_ref(),
+            ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
+        }
+    }
+
+    pub(crate) fn roughness_mut(&mut self) -> Option<&mut Option<Roughness>> {
+        match self {
+            ObjectKind::Landmass(landmass) => Some(&mut landmass.roughness),
+            ObjectKind::Lake(lake) => Some(&mut lake.roughness),
+            ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
+        }
+    }
+
     /// A copy with an empty outline, for storing the outline separately.
     pub(crate) fn without_geometry(&self) -> ObjectKind {
         match self {
             ObjectKind::Landmass(landmass) => ObjectKind::Landmass(Landmass {
                 geometry: MultiPolygon::default(),
                 fill: landmass.fill,
+                roughness: landmass.roughness.clone(),
                 extra: landmass.extra.clone(),
             }),
             ObjectKind::Lake(lake) => ObjectKind::Lake(Lake {
                 geometry: MultiPolygon::default(),
                 fill: lake.fill,
+                roughness: lake.roughness.clone(),
                 extra: lake.extra.clone(),
             }),
             ObjectKind::Stamp(_) | ObjectKind::Label(_) => self.clone(),
@@ -159,6 +179,9 @@ pub struct Landmass {
     /// Files saved before fills existed get the default.
     #[serde(default = "default_landmass_fill")]
     pub fill: Color,
+    /// Overrides the Map-wide default Roughness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roughness: Option<Roughness>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -170,6 +193,7 @@ impl Landmass {
         Self {
             geometry,
             fill: Self::DEFAULT_FILL,
+            roughness: None,
             extra: Extra::new(),
         }
     }
@@ -194,6 +218,9 @@ pub struct Lake {
     /// Files saved before fills existed get the default.
     #[serde(default = "default_lake_fill")]
     pub fill: Color,
+    /// Overrides the Map-wide default Roughness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roughness: Option<Roughness>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -205,6 +232,7 @@ impl Lake {
         Self {
             geometry,
             fill: Self::DEFAULT_FILL,
+            roughness: None,
             extra: Extra::new(),
         }
     }

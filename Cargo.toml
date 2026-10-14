@@ -14,6 +14,7 @@ publish = false
 ssmap-core = { path = "crates/core" }
 ssmap-render = { path = "crates/render" }
 bytemuck = { version = "1.25", features = ["derive"] }
+directories = "6.0"
 eframe = { version = "0.36", features = ["persistence"] }
 egui-file-dialog = "0.15"
 image = { version = "0.25", default-features = false, features = ["png"] }

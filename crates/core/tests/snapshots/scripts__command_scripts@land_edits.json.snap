@@ -200,6 +200,13 @@ input_file: crates/core/tests/scripts/land_edits.json
             },
             "width": 1000
           },
+          "defaults": {
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            }
+          },
           "layers": [
             {
               "children": [
@@ -331,6 +338,13 @@ input_file: crates/core/tests/scripts/land_edits.json
               "unit": "miles"
             },
             "width": 1000
+          },
+          "defaults": {
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            }
           },
           "layers": [
             {
@@ -510,6 +524,13 @@ input_file: crates/core/tests/scripts/land_edits.json
               "unit": "miles"
             },
             "width": 1000
+          },
+          "defaults": {
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            }
           },
           "layers": [
             {
@@ -708,6 +729,13 @@ input_file: crates/core/tests/scripts/land_edits.json
             },
             "width": 1000
           },
+          "defaults": {
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            }
+          },
           "layers": [
             {
               "children": [
@@ -881,6 +909,13 @@ input_file: crates/core/tests/scripts/land_edits.json
             },
             "width": 1000
           },
+          "defaults": {
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            }
+          },
           "layers": [
             {
               "children": [
@@ -949,6 +984,13 @@ input_file: crates/core/tests/scripts/land_edits.json
         "unit": "miles"
       },
       "width": 1000
+    },
+    "defaults": {
+      "roughness": {
+        "amount": 0.0,
+        "scale": 32.0,
+        "seed": 0
+      }
     },
     "layers": [
       {

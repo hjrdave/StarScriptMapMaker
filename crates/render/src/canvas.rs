@@ -56,10 +56,11 @@ impl CanvasScene {
         }
     }
 
-    /// The whole Map: its Canvas and everything drawn on it.
-    pub fn from_map(map: &ssmap_core::Map) -> Self {
+    /// The whole Map: its Canvas and everything drawn on it, with roughened outlines from
+    /// `roughness`.
+    pub fn from_map(map: &ssmap_core::Map, roughness: &mut ssmap_core::RoughnessCache) -> Self {
         Self {
-            shapes: Shapes::from_map(map),
+            shapes: Shapes::from_map(map, roughness),
             ..Self::new(&map.canvas)
         }
     }

@@ -3,7 +3,6 @@
 
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
-use ssmap_core::Map;
 use ssmap_render::{
     CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, RgbaImage, Shapes, View,
     render_to_image,
@@ -44,14 +43,15 @@ pub fn install(render_state: &egui_wgpu::RenderState) {
 /// stored in a Map file. Uses the same renderer as the screen.
 pub fn render_whole_canvas(
     render_state: &egui_wgpu::RenderState,
-    map: &Map,
+    editor: &mut Editor,
     longest_side: u32,
 ) -> Option<RgbaImage> {
     let mut egui_renderer = render_state.renderer.write();
     let resources = egui_renderer
         .callback_resources
         .get_mut::<CanvasResources>()?;
-    let scene = CanvasScene::from_map(map);
+    let (map, roughness) = editor.map_and_roughness();
+    let scene = CanvasScene::from_map(map, roughness);
     let view = View::whole_canvas(scene.canvas_size, longest_side);
     Some(render_to_image(
         &render_state.device,
@@ -105,11 +105,12 @@ impl CanvasView {
     }
 
     /// The Map's fills, built again only when the Map has changed.
-    fn shapes(&mut self, map: &Map) -> Shapes {
+    fn shapes(&mut self, editor: &mut Editor) -> Shapes {
         match &self.shapes {
-            Some((revision, shapes)) if *revision == map.revision() => shapes.clone(),
+            Some((revision, shapes)) if *revision == editor.map.revision() => shapes.clone(),
             _ => {
-                let shapes = Shapes::from_map(map);
+                let (map, roughness) = editor.map_and_roughness();
+                let shapes = Shapes::from_map(map, roughness);
                 self.shapes = Some((map.revision(), shapes.clone()));
                 shapes
             }
@@ -157,7 +158,7 @@ impl CanvasView {
         let view = *view;
         self.panel = Some((rect, ppp));
         // After the tools, so a drag shows on the frame it happens.
-        scene.shapes = self.shapes(&editor.map);
+        scene.shapes = self.shapes(editor);
         let painter = ui.painter_at(rect);
         if self.gpu {
             painter.add(egui_wgpu::Callback::new_paint_callback(

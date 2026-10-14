@@ -8,13 +8,15 @@ pub mod handles;
 mod layer_tree;
 mod properties;
 mod recent;
+pub mod recovery;
 pub mod tools;
 
 use eframe::{egui, egui_wgpu};
 use egui_file_dialog::{DialogState, FileDialog, Filter};
-use ssmap_core::file::PREVIEW_SIZE;
+use ssmap_core::file::{JournalBase, MapFile, PREVIEW_SIZE, remove_journal};
 use ssmap_core::{Canvas, DistanceUnit, Map, Scale};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use crate::canvas_view::CanvasView;
 use crate::document::Document;
@@ -22,6 +24,7 @@ use crate::editor::Editor;
 use crate::layer_tree::LayerTree;
 use crate::properties::PropertiesPanel;
 use crate::recent::RecentFiles;
+use crate::recovery::{Found, Recovery};
 use crate::tools::ToolId;
 
 pub struct MapMakerApp {
@@ -33,8 +36,16 @@ pub struct MapMakerApp {
     recent: RecentFiles,
     open_dialog: FileDialog,
     save_dialog: FileDialog,
-    /// A file to open once the user decides what to do with unsaved changes.
-    pending_open: Option<PathBuf>,
+    /// What to do once the user decides what to do with unsaved changes.
+    pending: Option<Pending>,
+    recovery: Recovery,
+    /// A Recovery journal left by a crash, awaiting the user's decision.
+    recovery_prompt: Option<RecoveryPrompt>,
+    /// Journals of Maps never saved left by a crash, oldest first, offered one at a time
+    /// while the open Map has no unsaved changes.
+    unsaved_found: Vec<Found>,
+    /// Set once the user has chosen to close despite unsaved changes.
+    close_allowed: bool,
     /// `None` without a GPU, as in UI tests; saves then store no preview.
     render_state: Option<egui_wgpu::RenderState>,
     /// The window title last sent, so it is only sent when it changes.
@@ -43,16 +54,29 @@ pub struct MapMakerApp {
 
 impl MapMakerApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        Self::with_recovery_dir(cc, Recovery::default_unsaved_dir())
+    }
+
+    /// Starts with a blank Map, keeping journals of Maps never saved in `recovery_dir`
+    /// (`None` turns them off) and offering any a crash left there.
+    pub fn with_recovery_dir(
+        cc: &eframe::CreationContext<'_>,
+        recovery_dir: Option<PathBuf>,
+    ) -> Self {
         // Until the New Map dialog exists, every session starts with a blank 4096x3072 Map.
         let map = Map::new(Canvas::new(
             4096,
             3072,
             Scale::new(0.25, DistanceUnit::Miles),
         ));
-        Self::with_map(cc, map)
+        Self::with_map(cc, map, recovery_dir)
     }
 
-    pub fn with_map(cc: &eframe::CreationContext<'_>, map: Map) -> Self {
+    pub fn with_map(
+        cc: &eframe::CreationContext<'_>,
+        map: Map,
+        recovery_dir: Option<PathBuf>,
+    ) -> Self {
         let gpu = match cc.wgpu_render_state.as_ref() {
             Some(render_state) => {
                 canvas_view::install(render_state);
@@ -73,6 +97,9 @@ impl MapMakerApp {
                 .add_save_extension("Map file", document::EXTENSION)
                 .default_save_extension("Map file")
         };
+        let recovery = Recovery::new(recovery_dir);
+        let mut unsaved_found = recovery.find_unsaved();
+        unsaved_found.reverse();
         Self {
             editor: Editor::new(map),
             document: Document::default(),
@@ -82,7 +109,11 @@ impl MapMakerApp {
             recent: RecentFiles::load(cc.storage),
             open_dialog: map_files().title("Open Map"),
             save_dialog: map_files().title("Save Map As"),
-            pending_open: None,
+            pending: None,
+            recovery,
+            recovery_prompt: None,
+            unsaved_found,
+            close_allowed: false,
             render_state: cc.wgpu_render_state.clone(),
             title: String::new(),
         }
@@ -106,6 +137,16 @@ impl MapMakerApp {
         self.canvas_view.to_screen(point)
     }
 
+    /// The Recovery journal being written for the open Map, once there is one.
+    pub fn recovery_journal(&self) -> Option<&Path> {
+        self.recovery.journal_path()
+    }
+
+    /// Whether edits are waiting to be written to the Recovery journal.
+    pub fn has_unjournaled_changes(&self) -> bool {
+        self.recovery.has_pending()
+    }
+
     /// The window title, as last sent to the window.
     pub fn title(&self) -> &str {
         &self.title
@@ -115,14 +156,13 @@ impl MapMakerApp {
     pub fn open_path(&mut self, path: &Path) -> bool {
         match Document::open(path) {
             Ok((document, map)) => {
-                self.document = document;
-                self.editor = Editor::new(map);
-                self.layer_tree = LayerTree::default();
-                self.properties = PropertiesPanel::default();
-                self.canvas_view.refit();
+                self.recovery.reset();
+                self.recovery_prompt = None;
+                self.replace(document, map);
                 self.recent.add(path);
                 self.editor
                     .info(format!("Opened “{}”", self.document.name()));
+                self.find_recovery(path);
                 true
             }
             Err(err) => {
@@ -133,17 +173,177 @@ impl MapMakerApp {
         }
     }
 
+    fn replace(&mut self, document: Document, map: Map) {
+        self.document = document;
+        self.editor = Editor::new(map);
+        self.layer_tree = LayerTree::default();
+        self.properties = PropertiesPanel::default();
+        self.canvas_view.refit();
+    }
+
     /// Opens a Map file, first asking whether to discard unsaved changes.
     fn request_open(&mut self, path: PathBuf) {
         if self.document.has_unsaved_changes(&self.editor.map) {
-            self.pending_open = Some(path);
+            self.pending = Some(Pending::Open(path));
         } else {
             self.open_path(&path);
         }
     }
 
+    /// Offers the Recovery journal a crash left beside the Map file just opened: to replay
+    /// if it was written against this save, or else only as a separate copy.
+    fn find_recovery(&mut self, path: &Path) {
+        match Recovery::find_beside(path) {
+            Ok(Some(found)) => {
+                let generation = self.document.save_generation().unwrap_or_default();
+                self.recovery_prompt = Some(if found.recovered.matches(generation) {
+                    RecoveryPrompt::Replay(found)
+                } else {
+                    RecoveryPrompt::Copy {
+                        found,
+                        reason: CHANGED_SINCE.into(),
+                    }
+                });
+            }
+            Ok(None) => {}
+            Err(err) => self.editor.error(format!(
+                "Couldn’t read the unsaved changes to “{}”: {err}",
+                self.document.name()
+            )),
+        }
+    }
+
+    /// Applies a journal's changes to the Map file it was written against.
+    fn replay_recovery(&mut self, found: Found) {
+        let ops = found.recovered.ops.clone();
+        match found.recovered.clone().replay(&mut self.editor.map) {
+            Ok(()) => {
+                if let Err(err) =
+                    self.recovery
+                        .resume(&self.document, &self.editor.map, &found.path, &ops)
+                {
+                    self.editor
+                        .error(format!("Couldn’t write the Recovery journal: {err}"));
+                    return;
+                }
+                self.editor.info(format!(
+                    "Recovered the unsaved changes to “{}”",
+                    self.document.name()
+                ));
+            }
+            Err(err) => {
+                self.recovery_prompt = Some(RecoveryPrompt::Copy {
+                    found,
+                    reason: format!("The unsaved changes no longer apply to it ({err})."),
+                });
+            }
+        }
+    }
+
+    /// Saves a journal's changes, applied as far as they go, as a copy beside the open Map
+    /// file, which is left as it is.
+    fn save_recovered_copy(&mut self, found: Found) {
+        let Some(path) = self.document.path().map(Path::to_path_buf) else {
+            return;
+        };
+        let mut copy = self.editor.map.clone();
+        let skipped = found.recovered.replay_lenient(&mut copy);
+        let copy_path = recovery::recovered_copy_path(&path);
+        let copy_name = copy_path.file_name().unwrap_or_default().to_string_lossy();
+        match MapFile::create(&copy_path, &copy, None) {
+            Ok(_) => {
+                let _ = remove_journal(&found.path);
+                self.recent.add(&copy_path);
+                let skipped = match skipped {
+                    0 => String::new(),
+                    1 => " (1 change no longer applied)".into(),
+                    n => format!(" ({n} changes no longer applied)"),
+                };
+                self.editor.info(format!(
+                    "Saved the recovered changes as “{copy_name}”{skipped}"
+                ));
+            }
+            Err(err) => self
+                .editor
+                .error(format!("Couldn’t save “{copy_name}”: {err}")),
+        }
+    }
+
+    /// Opens a Map never saved from the journal a crash left.
+    fn recover_unsaved(&mut self, found: Found) {
+        let JournalBase::Unsaved { map: view } = found.recovered.base.clone() else {
+            return;
+        };
+        let mut map = match Map::from_view(view) {
+            Ok(map) => map,
+            Err(err) => {
+                self.editor
+                    .error(format!("Couldn’t recover the unsaved Map: {err}"));
+                return;
+            }
+        };
+        found.recovered.replay_lenient(&mut map);
+        self.replace(Document::recovered(), map);
+        if let Err(err) = self
+            .recovery
+            .resume(&self.document, &self.editor.map, &found.path, &[])
+        {
+            self.editor
+                .error(format!("Couldn’t write the Recovery journal: {err}"));
+            return;
+        }
+        self.editor.info("Recovered an unsaved Map");
+    }
+
+    /// Writes the Ops applied this frame to the Recovery journal once they are due, and
+    /// wakes up in time for that.
+    fn journal(&mut self, ctx: &egui::Context) {
+        let now = Instant::now();
+        self.recovery.record(self.editor.take_applied(), now);
+        // What falls due within a frame is written now: egui repaints at once for so short a
+        // wait anyway.
+        let frame = Duration::from_secs_f32(ctx.input(|input| input.predicted_dt));
+        if let Err(err) = self
+            .recovery
+            .flush_if_due(now + frame, &self.document, &self.editor.map)
+        {
+            self.editor
+                .error(format!("Couldn’t write the Recovery journal: {err}"));
+        }
+        if let Some(wait) = self.recovery.due_in(now) {
+            ctx.request_repaint_after(wait);
+        }
+    }
+
+    /// A close with unsaved changes asks first; a clean close deletes the Recovery journal.
+    fn handle_close(&mut self, ctx: &egui::Context) {
+        if !ctx.input(|input| input.viewport().close_requested()) || self.close_allowed {
+            return;
+        }
+        if self.document.has_unsaved_changes(&self.editor.map) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.pending = Some(Pending::Close);
+        } else {
+            self.recovery.reset();
+        }
+    }
+
+    /// Closes the window, discarding unsaved changes and their Recovery journal.
+    fn close(&mut self, ctx: &egui::Context) {
+        self.close_allowed = true;
+        self.recovery.reset();
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+
+    /// Whether the user chose to close the window.
+    pub fn is_closing(&self) -> bool {
+        self.close_allowed
+    }
+
     /// Saves to the open file, or asks where to save a Map that has never been saved.
     pub fn save(&mut self) -> bool {
+        // A gesture still open would otherwise reach the journal after the save holding it.
+        self.editor.end_gesture();
         let preview = self.preview_png();
         match self.document.save(&self.editor.map, preview.as_deref()) {
             Some(result) => self.saved(result),
@@ -156,6 +356,7 @@ impl MapMakerApp {
 
     /// Saves a copy at `path` that becomes the open file.
     pub fn save_as_path(&mut self, path: &Path) -> bool {
+        self.editor.end_gesture();
         let preview = self.preview_png();
         let path = document::with_extension(path.to_path_buf());
         let result = self
@@ -167,6 +368,9 @@ impl MapMakerApp {
     fn saved(&mut self, result: Result<(), ssmap_core::file::FileError>) -> bool {
         match result {
             Ok(()) => {
+                // The save holds every change so far; the journal starts over.
+                self.editor.take_applied();
+                self.recovery.reset();
                 if let Some(path) = self.document.path().map(Path::to_path_buf) {
                     self.recent.add(&path);
                 }
@@ -199,9 +403,9 @@ impl MapMakerApp {
     }
 
     /// The preview PNG stored with each save, rendered like the screen.
-    fn preview_png(&self) -> Option<Vec<u8>> {
+    fn preview_png(&mut self) -> Option<Vec<u8>> {
         let render_state = self.render_state.as_ref()?;
-        let image = canvas_view::render_whole_canvas(render_state, &self.editor.map, PREVIEW_SIZE)?;
+        let image = canvas_view::render_whole_canvas(render_state, &mut self.editor, PREVIEW_SIZE)?;
         let mut png = Vec::new();
         image::ImageEncoder::write_image(
             image::codecs::png::PngEncoder::new(&mut png),
@@ -252,15 +456,25 @@ impl MapMakerApp {
             self.save_as_path(&path);
         }
 
-        let Some(path) = self.pending_open.clone() else {
+        self.recovery_dialog(ctx);
+        self.unsaved_dialog(ctx);
+    }
+
+    /// Asks what to do with unsaved changes before opening another Map or closing.
+    fn unsaved_dialog(&mut self, ctx: &egui::Context) {
+        let Some(pending) = self.pending.clone() else {
             return;
         };
         let has_file = self.document.path().is_some();
         let name = self.document.name();
+        let question = match pending {
+            Pending::Open(_) => format!("Discard the unsaved changes to “{name}”?"),
+            Pending::Close => format!("Save the changes to “{name}” before closing?"),
+        };
         let mut choice = None;
         egui::Modal::new(egui::Id::new("unsaved_changes")).show(ctx, |ui| {
             ui.heading("Unsaved changes");
-            ui.label(format!("Discard the unsaved changes to “{name}”?"));
+            ui.label(question);
             ui.horizontal(|ui| {
                 if has_file && ui.button("Save").clicked() {
                     choice = Some(UnsavedChoice::Save);
@@ -273,19 +487,91 @@ impl MapMakerApp {
                 }
             });
         });
-        match choice {
-            Some(UnsavedChoice::Save) => {
-                self.pending_open = None;
-                if self.save() {
+        let Some(choice) = choice else {
+            return;
+        };
+        self.pending = None;
+        let proceed = match choice {
+            UnsavedChoice::Save => self.save(),
+            UnsavedChoice::Discard => true,
+            UnsavedChoice::Cancel => false,
+        };
+        if proceed {
+            match pending {
+                Pending::Open(path) => {
                     self.open_path(&path);
                 }
+                Pending::Close => self.close(ctx),
             }
-            Some(UnsavedChoice::Discard) => {
-                self.pending_open = None;
-                self.open_path(&path);
+        }
+    }
+
+    /// Offers a Recovery journal left by a crash: the open Map file's, or else one of a Map
+    /// never saved while the open Map has no unsaved changes.
+    fn recovery_dialog(&mut self, ctx: &egui::Context) {
+        if self.recovery_prompt.is_none()
+            && self.pending.is_none()
+            && !self.document.has_unsaved_changes(&self.editor.map)
+        {
+            self.recovery_prompt = self.unsaved_found.pop().map(RecoveryPrompt::Unsaved);
+        }
+        let Some(prompt) = &self.recovery_prompt else {
+            return;
+        };
+        let name = self.document.name();
+        let (text, recover) = match prompt {
+            RecoveryPrompt::Replay(_) => (
+                format!(
+                    "“{name}” wasn’t closed properly. Recover the changes made since it was \
+                     last saved?"
+                ),
+                "Recover Changes",
+            ),
+            RecoveryPrompt::Copy { reason, .. } => (
+                format!(
+                    "“{name}” wasn’t closed properly, but its unsaved changes can’t be \
+                     recovered into it. {reason} Save them as a separate copy? “{name}” is \
+                     left as it is."
+                ),
+                "Save Recovered Copy",
+            ),
+            RecoveryPrompt::Unsaved(_) => (
+                "A Map that was never saved wasn’t closed properly. Recover it?".into(),
+                "Recover",
+            ),
+        };
+        let mut recovered = None;
+        egui::Modal::new(egui::Id::new("recovery")).show(ctx, |ui| {
+            ui.heading("Recover unsaved changes");
+            ui.label(text);
+            ui.horizontal(|ui| {
+                if ui.button(recover).clicked() {
+                    recovered = Some(true);
+                }
+                if ui.button("Discard Changes").clicked() {
+                    recovered = Some(false);
+                }
+            });
+        });
+        let Some(recovered) = recovered else {
+            return;
+        };
+        let prompt = self.recovery_prompt.take().expect("shown above");
+        match (prompt, recovered) {
+            (RecoveryPrompt::Replay(found), true) => self.replay_recovery(found),
+            (RecoveryPrompt::Copy { found, .. }, true) => self.save_recovered_copy(found),
+            (RecoveryPrompt::Unsaved(found), true) => self.recover_unsaved(found),
+            (
+                RecoveryPrompt::Replay(found)
+                | RecoveryPrompt::Copy { found, .. }
+                | RecoveryPrompt::Unsaved(found),
+                false,
+            ) => {
+                if let Err(err) = remove_journal(&found.path) {
+                    self.editor
+                        .error(format!("Couldn’t delete the unsaved changes: {err}"));
+                }
             }
-            Some(UnsavedChoice::Cancel) => self.pending_open = None,
-            None => {}
         }
     }
 
@@ -427,6 +713,24 @@ impl MapMakerApp {
     }
 }
 
+/// Why a Map file's journal is offered only as a copy, when its save generation differs.
+const CHANGED_SINCE: &str = "The file was replaced or saved elsewhere since they were made.";
+
+#[derive(Clone)]
+enum Pending {
+    Open(PathBuf),
+    Close,
+}
+
+enum RecoveryPrompt {
+    /// The open Map file's journal, written against its current save.
+    Replay(Found),
+    /// The open Map file's journal, written against another save of it.
+    Copy { found: Found, reason: String },
+    /// The journal of a Map never saved.
+    Unsaved(Found),
+}
+
 enum UnsavedChoice {
     Save,
     Discard,
@@ -441,7 +745,9 @@ impl eframe::App for MapMakerApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         // Dialogs take the keyboard while they are open.
-        let dialog_open = self.pending_open.is_some()
+        self.handle_close(&ctx);
+        let dialog_open = self.pending.is_some()
+            || self.recovery_prompt.is_some()
             || *self.open_dialog.state() == DialogState::Open
             || *self.save_dialog.state() == DialogState::Open;
         if !dialog_open {
@@ -462,5 +768,6 @@ impl eframe::App for MapMakerApp {
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ui, |ui| self.canvas_view.show(ui, &mut self.editor));
+        self.journal(&ctx);
     }
 }

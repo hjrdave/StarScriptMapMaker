@@ -9,7 +9,7 @@ use ssmap_app::MapMakerApp;
 fn app() -> Harness<'static, MapMakerApp> {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1280.0, 800.0))
-        .build_eframe(|cc| MapMakerApp::new(cc));
+        .build_eframe(|cc| MapMakerApp::with_recovery_dir(cc, None));
     harness.run();
     harness
 }
@@ -94,7 +94,7 @@ fn a_layer_with_100k_objects_lays_out_only_visible_rows() {
 
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1280.0, 800.0))
-        .build_eframe(|cc| MapMakerApp::with_map(cc, map));
+        .build_eframe(|cc| MapMakerApp::with_map(cc, map, None));
     let started = std::time::Instant::now();
     harness.run();
     eprintln!("first frames with 100k rows: {:?}", started.elapsed());
@@ -260,7 +260,7 @@ fn select_move_and_resize_landmasses_and_lakes() {
     let (map, island, lake) = island_map();
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1280.0, 800.0))
-        .build_eframe(|cc| MapMakerApp::with_map(cc, map));
+        .build_eframe(|cc| MapMakerApp::with_map(cc, map, None));
     harness.run();
     let screen = |harness: &Harness<'_, MapMakerApp>, point| {
         harness.state().canvas_to_screen(point).unwrap()
