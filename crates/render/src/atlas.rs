@@ -144,11 +144,16 @@ impl Packer {
         }
         let side = self.page_size as i32;
         // Two columns of shelves pack mixed sizes far tighter than one (79% vs 56% in the
-        // golden test).
+        // golden test), but an entry wider than a column needs a page with just one.
+        let num_columns = if padded_width * 2 <= self.page_size {
+            2
+        } else {
+            1
+        };
         let mut allocator = etagere::AtlasAllocator::with_options(
             etagere::size2(side, side),
             &etagere::AllocatorOptions {
-                num_columns: 2,
+                num_columns,
                 ..Default::default()
             },
         );

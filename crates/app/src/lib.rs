@@ -5,7 +5,6 @@ mod canvas_view;
 pub mod document;
 pub mod editor;
 pub mod handles;
-pub mod install;
 mod layer_tree;
 mod properties;
 mod recent;
