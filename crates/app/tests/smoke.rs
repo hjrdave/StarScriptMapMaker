@@ -77,9 +77,7 @@ fn a_layer_with_100k_objects_lays_out_only_visible_rows() {
     let stamps = (0..100_000)
         .map(|_| Subtree {
             id: Id::new(),
-            node: Node::Object(Object::new(ObjectKind::Stamp(Stamp::new(
-                "test/stamp".parse().unwrap(),
-            )))),
+            node: Node::Object(Object::new(ObjectKind::Stamp(Stamp::default()))),
             children: Vec::new(),
         })
         .collect();
@@ -226,7 +224,7 @@ fn the_label_tool_places_a_label_and_types_its_text_in_one_undo_step() {
     harness.get_by_label("Ærendál");
 
     // Clicking empty Canvas deselects it, and clicking it picks it again.
-    click_at(&mut harness, egui::pos2(800.0, 120.0));
+    click_at(&mut harness, egui::pos2(300.0, 120.0));
     assert!(harness.state().editor().selection().is_empty());
     click_at(&mut harness, canvas);
     assert_eq!(harness.state().editor().selection(), &[id]);
@@ -466,4 +464,137 @@ fn a_landmass_gets_its_own_roughness_in_one_undo_step() {
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
     harness.run();
     assert_eq!(roughness(&harness), None);
+}
+
+#[test]
+fn the_land_brush_paints_merges_and_erases_one_undo_step_per_stroke() {
+    use ssmap_core::{Node, ObjectKind};
+    let (map, island, _) = island_map();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1280.0, 800.0))
+        .build_eframe(|cc| MapMakerApp::with_map(cc, map, None));
+    harness.run();
+    let screen = |harness: &Harness<'_, MapMakerApp>, point| {
+        harness.state().canvas_to_screen(point).unwrap()
+    };
+    let landmasses = |harness: &Harness<'_, MapMakerApp>| {
+        let map = &harness.state().editor().map;
+        map.draw_order()
+            .into_iter()
+            .filter(|&id| {
+                matches!(map.node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Landmass(_)))
+            })
+            .collect::<Vec<_>>()
+    };
+    let outline =
+        |harness: &Harness<'_, MapMakerApp>, id| match harness.state().editor().map.node(id) {
+            Some(Node::Object(o)) => o.kind.geometry().unwrap().clone(),
+            _ => panic!("an Object"),
+        };
+    let stroke = |harness: &mut Harness<'_, MapMakerApp>, from: [f64; 2], to: [f64; 2]| {
+        let (from, to) = (screen(harness, from), screen(harness, to));
+        drag(harness, from, to, true);
+    };
+
+    // Clicking the island with Select makes its Layer the active one; then deselect.
+    let at = screen(&harness, [50.0, 300.0]);
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.drop_at(at);
+    harness.run();
+    harness.key_press(egui::Key::Escape);
+    harness.key_press(egui::Key::B);
+    harness.run();
+    assert_eq!(
+        harness.state().editor().active_tool,
+        ssmap_app::tools::ToolId::LandBrush
+    );
+
+    // A stroke on water creates a Landmass, selected so the next stroke merges into it.
+    stroke(&mut harness, [600.0, 100.0], [800.0, 100.0]);
+    let created = *landmasses(&harness)
+        .iter()
+        .find(|&&id| id != island)
+        .expect("a new Landmass");
+    assert_eq!(harness.state().editor().undo_label(), Some("Paint Land"));
+    assert_eq!(harness.state().editor().selection(), [created]);
+    let painted = outline(&harness, created);
+    assert!(painted.contains([700.0, 100.0]) && !painted.contains([700.0, 200.0]));
+
+    // With nothing selected, a stroke starting on the island merges into it.
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    stroke(&mut harness, [50.0, 300.0], [50.0, 600.0]);
+    assert_eq!(landmasses(&harness).len(), 2);
+    assert!(outline(&harness, island).contains([50.0, 560.0]));
+
+    // Option/Alt erases from the Landmasses it touches in the active Layer: a cut across the
+    // island leaves one Landmass in two parts.
+    let before_erase = outline(&harness, island).0.len();
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::ALT));
+    stroke(&mut harness, [180.0, 0.0], [180.0, 650.0]);
+    harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    harness.run();
+    assert_eq!(harness.state().editor().undo_label(), Some("Erase Land"));
+    let cut = outline(&harness, island);
+    assert!(!cut.contains([180.0, 50.0]));
+    assert!(cut.0.len() > before_erase, "{} parts", cut.0.len());
+
+    // Each stroke is one Undo step.
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    harness.run();
+    assert!(outline(&harness, island).contains([180.0, 50.0]));
+
+    // Escape drops a stroke in progress and records nothing.
+    let before = harness.state().editor().map.view();
+    let (from, to) = (
+        screen(&harness, [700.0, 700.0]),
+        screen(&harness, [900.0, 900.0]),
+    );
+    drag(&mut harness, from, to, false);
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    harness.drop_at(to);
+    harness.run();
+    assert_eq!(harness.state().editor().map.view(), before);
+    assert_eq!(harness.state().editor().undo_label(), Some("Paint Land"));
+}
+
+#[test]
+fn a_landmass_gets_its_own_shore_style_in_one_undo_step() {
+    let (map, island, _) = island_map();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1280.0, 800.0))
+        .build_eframe(|cc| MapMakerApp::with_map(cc, map, None));
+    harness.run();
+    let shore = |harness: &Harness<'_, MapMakerApp>| match harness.state().editor().map.node(island)
+    {
+        Some(ssmap_core::Node::Object(object)) => object.kind.shore().cloned(),
+        _ => panic!("an Object"),
+    };
+
+    let at = harness.state().canvas_to_screen([50.0, 300.0]).unwrap();
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.drop_at(at);
+    harness.run();
+    assert_eq!(harness.state().editor().selection(), [island]);
+    assert_eq!(shore(&harness), None);
+
+    harness.get_by_label("Use the Map style").click();
+    harness.run();
+    assert_eq!(
+        shore(&harness).as_ref(),
+        Some(&harness.state().editor().map.defaults().shore)
+    );
+    assert_eq!(
+        harness.state().editor().undo_label(),
+        Some("Change Shore Style")
+    );
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    harness.run();
+    assert_eq!(shore(&harness), None);
 }

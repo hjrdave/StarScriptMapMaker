@@ -88,7 +88,7 @@ fn sample_map() -> (Map, Id, Id) {
         insert(
             &mut map,
             Some(group),
-            object(ObjectKind::Stamp(Stamp::new("test/stamp".parse().unwrap()))),
+            object(ObjectKind::Stamp(Stamp::default())),
         );
     }
     let mut label = Object::new(ObjectKind::Label(Box::new(Label {

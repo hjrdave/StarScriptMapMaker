@@ -10,6 +10,7 @@ use crate::extra::Extra;
 use crate::geometry::{MultiPolygon, Point};
 use crate::id::Id;
 use crate::roughness::Roughness;
+use crate::shore::{ShoreKind, ShoreStyle};
 
 /// A Layer or an Object.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
@@ -143,18 +144,46 @@ impl ObjectKind {
     }
 
     /// A copy with an empty outline, for storing the outline separately.
+    /// The Shore style override of kinds that have an outline, if set.
+    pub fn shore(&self) -> Option<&ShoreStyle> {
+        match self {
+            ObjectKind::Landmass(landmass) => landmass.shore.as_ref(),
+            ObjectKind::Lake(lake) => lake.shore.as_ref(),
+            ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
+        }
+    }
+
+    /// Which Map-wide Shore style default this kind uses, for kinds that have an outline.
+    pub fn shore_kind(&self) -> Option<ShoreKind> {
+        match self {
+            ObjectKind::Landmass(_) => Some(ShoreKind::Landmass),
+            ObjectKind::Lake(_) => Some(ShoreKind::Lake),
+            ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
+        }
+    }
+
+    pub(crate) fn shore_mut(&mut self) -> Option<&mut Option<ShoreStyle>> {
+        match self {
+            ObjectKind::Landmass(landmass) => Some(&mut landmass.shore),
+            ObjectKind::Lake(lake) => Some(&mut lake.shore),
+            ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
+        }
+    }
+
     pub(crate) fn without_geometry(&self) -> ObjectKind {
         match self {
             ObjectKind::Landmass(landmass) => ObjectKind::Landmass(Landmass {
                 geometry: MultiPolygon::default(),
                 fill: landmass.fill,
                 roughness: landmass.roughness.clone(),
+                shore: landmass.shore.clone(),
                 extra: landmass.extra.clone(),
             }),
             ObjectKind::Lake(lake) => ObjectKind::Lake(Lake {
                 geometry: MultiPolygon::default(),
                 fill: lake.fill,
                 roughness: lake.roughness.clone(),
+                shore: lake.shore.clone(),
                 extra: lake.extra.clone(),
             }),
             ObjectKind::Stamp(_) | ObjectKind::Label(_) => self.clone(),
@@ -184,6 +213,9 @@ pub struct Landmass {
     /// Overrides the Map-wide default Roughness.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub roughness: Option<Roughness>,
+    /// Overrides the Map-wide default Shore style.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shore: Option<ShoreStyle>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -196,6 +228,7 @@ impl Landmass {
             geometry,
             fill: Self::DEFAULT_FILL,
             roughness: None,
+            shore: None,
             extra: Extra::new(),
         }
     }
@@ -223,6 +256,9 @@ pub struct Lake {
     /// Overrides the Map-wide default Roughness.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub roughness: Option<Roughness>,
+    /// Overrides the Map-wide default Shore style.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shore: Option<ShoreStyle>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -235,6 +271,7 @@ impl Lake {
             geometry,
             fill: Self::DEFAULT_FILL,
             roughness: None,
+            shore: None,
             extra: Extra::new(),
         }
     }
@@ -250,67 +287,59 @@ fn default_lake_fill() -> Color {
     Lake::DEFAULT_FILL
 }
 
-/// One placed Asset (ADR 0003). Position, scale and rotation all pivot on the Asset's Anchor.
+/// One placed Asset (ADR 0003). It stores the concrete Asset it got, never a Variant group,
+/// so editing a pack never reshuffles an existing Map. Scale, rotation and flip all pivot on
+/// the Asset's Anchor.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
 pub struct Stamp {
-    /// The concrete Asset, never a Variant group, so editing a pack never reshuffles a Map.
     pub asset: AssetRef,
-    /// Where the Anchor lands, in Canvas units.
-    #[serde(default)]
+    /// Where the Anchor sits, in Canvas units.
     pub position: Point,
-    /// A multiple of the Asset's default size.
-    #[serde(default = "one")]
+    /// A uniform multiple of the Asset's default size.
     pub scale: f64,
     /// Degrees clockwise about the Anchor.
-    #[serde(default)]
     pub rotation: f64,
     /// Mirrors the art left to right about the Anchor, before rotating.
-    #[serde(default)]
     pub flip: bool,
-    /// Multiplies the art's colours. White leaves them as drawn.
-    #[serde(default = "white")]
-    pub tint: Color,
-    /// The colour under the line art, inside the Silhouette. Without one, the Map's land colour.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Multiplies the line art's colour. `None` leaves the art as drawn.
+    pub tint: Option<Color>,
+    /// The Silhouette's fill, drawn under the line art. `None` uses the land colour.
     pub fill: Option<Color>,
     /// From 0 (transparent) to 1 (opaque).
-    #[serde(default = "one_f32")]
     pub opacity: f32,
     #[serde(flatten)]
     pub extra: Extra,
 }
 
 impl Stamp {
-    pub fn new(asset: AssetRef) -> Self {
+    pub fn new(asset: AssetRef, position: Point) -> Self {
         Self {
             asset,
+            position,
+            ..Self::default()
+        }
+    }
+}
+
+impl Default for Stamp {
+    /// A Stamp of the placeholder Asset `unset/unset`, which no pack provides.
+    fn default() -> Self {
+        Self {
+            asset: AssetRef {
+                pack: "unset".into(),
+                asset: "unset".into(),
+            },
             position: [0.0, 0.0],
             scale: 1.0,
             rotation: 0.0,
             flip: false,
-            tint: Color::WHITE,
+            tint: None,
             fill: None,
             opacity: 1.0,
             extra: Extra::new(),
         }
     }
-
-    /// The fill under the art: this Stamp's own, or the Map's land colour.
-    pub fn fill_or_land(&self) -> Color {
-        self.fill.unwrap_or(Landmass::DEFAULT_FILL)
-    }
-}
-
-fn one() -> f64 {
-    1.0
-}
-
-fn one_f32() -> f32 {
-    1.0
-}
-
-fn white() -> Color {
-    Color::WHITE
 }
 
 /// Text placed on the Map, sized in Canvas units so it is part of the picture (ADR 0006).

@@ -47,10 +47,44 @@ input_file: crates/core/tests/scripts/roughness.json
             "width": 1000
           },
           "defaults": {
+            "lake_shore": {
+              "outline": {
+                "color": "#3a6a8a",
+                "width": 1.0
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 0,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#2a5a7a60",
+                "width": 8.0
+              }
+            },
             "roughness": {
               "amount": 4.0,
               "scale": 40.0,
               "seed": 7
+            },
+            "shore": {
+              "outline": {
+                "color": "#5a4628",
+                "width": 1.5
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 3,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#8a6a3870",
+                "width": 18.0
+              }
             }
           },
           "layers": [
@@ -150,7 +184,8 @@ input_file: crates/core/tests/scripts/roughness.json
                 {
                   "id": "00000000-0000-7000-8000-000000000005",
                   "kind": {
-                    "asset": "test/stamp",
+                    "asset": "unset/unset",
+                    "fill": null,
                     "flip": false,
                     "kind": "stamp",
                     "opacity": 1.0,
@@ -160,7 +195,7 @@ input_file: crates/core/tests/scripts/roughness.json
                     ],
                     "rotation": 0.0,
                     "scale": 1.0,
-                    "tint": "#ffffff"
+                    "tint": null
                   },
                   "locked": false,
                   "type": "object"
@@ -286,10 +321,44 @@ input_file: crates/core/tests/scripts/roughness.json
             "width": 1000
           },
           "defaults": {
+            "lake_shore": {
+              "outline": {
+                "color": "#3a6a8a",
+                "width": 1.0
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 0,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#2a5a7a60",
+                "width": 8.0
+              }
+            },
             "roughness": {
               "amount": 4.0,
               "scale": 40.0,
               "seed": 7
+            },
+            "shore": {
+              "outline": {
+                "color": "#5a4628",
+                "width": 1.5
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 3,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#8a6a3870",
+                "width": 18.0
+              }
             }
           },
           "layers": [
@@ -384,7 +453,8 @@ input_file: crates/core/tests/scripts/roughness.json
                 {
                   "id": "00000000-0000-7000-8000-000000000005",
                   "kind": {
-                    "asset": "test/stamp",
+                    "asset": "unset/unset",
+                    "fill": null,
                     "flip": false,
                     "kind": "stamp",
                     "opacity": 1.0,
@@ -394,7 +464,7 @@ input_file: crates/core/tests/scripts/roughness.json
                     ],
                     "rotation": 0.0,
                     "scale": 1.0,
-                    "tint": "#ffffff"
+                    "tint": null
                   },
                   "locked": false,
                   "type": "object"
@@ -443,10 +513,44 @@ input_file: crates/core/tests/scripts/roughness.json
       "width": 1000
     },
     "defaults": {
+      "lake_shore": {
+        "outline": {
+          "color": "#3a6a8a",
+          "width": 1.0
+        },
+        "ripples": {
+          "color": "#ffffff90",
+          "count": 0,
+          "fade": 0.6,
+          "spacing": 12.0,
+          "width": 1.5
+        },
+        "shading": {
+          "color": "#2a5a7a60",
+          "width": 8.0
+        }
+      },
       "roughness": {
         "amount": 0.0,
         "scale": 32.0,
         "seed": 0
+      },
+      "shore": {
+        "outline": {
+          "color": "#5a4628",
+          "width": 1.5
+        },
+        "ripples": {
+          "color": "#ffffff90",
+          "count": 3,
+          "fade": 0.6,
+          "spacing": 12.0,
+          "width": 1.5
+        },
+        "shading": {
+          "color": "#8a6a3870",
+          "width": 18.0
+        }
       }
     },
     "layers": [
@@ -536,7 +640,8 @@ input_file: crates/core/tests/scripts/roughness.json
           {
             "id": "00000000-0000-7000-8000-000000000005",
             "kind": {
-              "asset": "test/stamp",
+              "asset": "unset/unset",
+              "fill": null,
               "flip": false,
               "kind": "stamp",
               "opacity": 1.0,
@@ -546,7 +651,7 @@ input_file: crates/core/tests/scripts/roughness.json
               ],
               "rotation": 0.0,
               "scale": 1.0,
-              "tint": "#ffffff"
+              "tint": null
             },
             "locked": false,
             "type": "object"

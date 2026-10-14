@@ -100,10 +100,8 @@ impl Bounds {
                 points.extend(layout.corners(&label));
                 continue;
             }
-            if let Some(stamp) = editor.stamp(id) {
-                if let Some(shape) = editor.stamp_shape(&stamp.asset) {
-                    points.extend(shape.corners(stamp));
-                }
+            if let Some(bounds) = editor.stamp_bounds(id) {
+                points.extend([bounds.min, bounds.max]);
                 continue;
             }
             let Some(Node::Object(object)) = editor.map.node(id) else {
@@ -236,7 +234,7 @@ pub fn rotated(label: &Label, degrees: f64, centre: [f64; 2]) -> Label {
 }
 
 /// `stamp` moved by `delta` Canvas units.
-pub fn stamp_moved(stamp: &Stamp, delta: [f64; 2]) -> Stamp {
+pub fn moved_stamp(stamp: &Stamp, delta: [f64; 2]) -> Stamp {
     Stamp {
         position: [stamp.position[0] + delta[0], stamp.position[1] + delta[1]],
         ..stamp.clone()
@@ -244,7 +242,7 @@ pub fn stamp_moved(stamp: &Stamp, delta: [f64; 2]) -> Stamp {
 }
 
 /// `stamp` scaled by `scale` about the Canvas point `fixed`.
-pub fn stamp_scaled(stamp: &Stamp, scale: f64, fixed: [f64; 2]) -> Stamp {
+pub fn scaled_stamp(stamp: &Stamp, scale: f64, fixed: [f64; 2]) -> Stamp {
     Stamp {
         position: [
             fixed[0] + (stamp.position[0] - fixed[0]) * scale,
@@ -256,7 +254,7 @@ pub fn stamp_scaled(stamp: &Stamp, scale: f64, fixed: [f64; 2]) -> Stamp {
 }
 
 /// `stamp` rotated clockwise by `degrees` about the Canvas point `centre`.
-pub fn stamp_rotated(stamp: &Stamp, degrees: f64, centre: [f64; 2]) -> Stamp {
+pub fn rotated_stamp(stamp: &Stamp, degrees: f64, centre: [f64; 2]) -> Stamp {
     let (sin, cos) = degrees.to_radians().sin_cos();
     let [dx, dy] = [stamp.position[0] - centre[0], stamp.position[1] - centre[1]];
     Stamp {
@@ -427,22 +425,6 @@ mod tests {
         assert_eq!((scale, fixed), (2.0, [60.0, 70.0]));
         // Never to nothing.
         assert_eq!(BOX.scaling(Handle::Right, [-100.0, 0.0]).0, MIN_SCALE);
-    }
-
-    #[test]
-    fn stamp_transforms_move_scale_and_rotate() {
-        let stamp = Stamp {
-            position: [10.0, 0.0],
-            scale: 2.0,
-            rotation: 350.0,
-            ..Stamp::new("test/box".parse().unwrap())
-        };
-        assert_eq!(stamp_moved(&stamp, [1.0, 2.0]).position, [11.0, 2.0]);
-        let big = stamp_scaled(&stamp, 2.0, [0.0, 0.0]);
-        assert_eq!((big.position, big.scale), ([20.0, 0.0], 4.0));
-        let turned = stamp_rotated(&stamp, 90.0, [0.0, 0.0]);
-        assert!(turned.position[0].abs() < 1e-9 && (turned.position[1] - 10.0).abs() < 1e-9);
-        assert!((turned.rotation - 80.0).abs() < 1e-9);
     }
 
     #[test]

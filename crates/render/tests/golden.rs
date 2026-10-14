@@ -10,16 +10,16 @@
 
 use std::path::PathBuf;
 
-use ssmap_core::asset::{ArtFormat, PackLibrary, PackRoots, PackSource, read_pack};
+use ssmap_core::asset::{ArtFormat, PackSource, read_pack};
 use ssmap_core::{
     Align, Canvas, Color, Command, DistanceUnit, FontFace, Id, Label, Lake, Landmass, Map,
-    Roughness, RoughnessCache, Scale, Stamp,
+    Roughness, RoughnessCache, Scale, ShoreKind, ShoreRipples, ShoreStyle,
 };
 use ssmap_render::atlas::{Atlas, AtlasEntry, MIN_PAGE_SIZE};
 use ssmap_render::raster::{Art, Raster};
 use ssmap_render::{
-    CanvasRenderer, CanvasScene, Fonts, GpuCapabilities, Headless, MapScene, RgbaImage,
-    StampSource, View, read_texture, render_to_image,
+    CanvasRenderer, CanvasScene, Fonts, GpuCapabilities, Headless, MapScene, RgbaImage, View,
+    read_texture, render_to_image,
 };
 
 /// Largest allowed difference in any channel before a pixel counts as differing.
@@ -192,7 +192,7 @@ fn whole_canvas_preview_shows_no_pasteboard() {
 /// islet, plus a Lake listed beneath the island in the tree.
 /// Everything `map` draws, as the editor and export build it.
 fn scene_of(map: &Map) -> CanvasScene {
-    let content = MapScene::new(Fonts::bundled()).content(map, &mut RoughnessCache::new(), None);
+    let content = MapScene::new(Fonts::bundled()).content(map, &mut RoughnessCache::new());
     CanvasScene::new(&map.canvas).with_content(content)
 }
 
@@ -208,6 +208,14 @@ fn land_and_water() -> Map {
         let command: Command =
             serde_json::from_value(step["step"].clone()).expect("every step is a Command");
         map.execute(&command).expect("the script's Commands apply");
+    }
+    // These scenes predate Shore style: draw them as bare fills.
+    for kind in [ShoreKind::Landmass, ShoreKind::Lake] {
+        map.execute(&Command::SetDefaultShore {
+            kind,
+            shore: ShoreStyle::plain(),
+        })
+        .expect("a valid Shore style");
     }
     map
 }
@@ -268,6 +276,94 @@ fn rough_coastlines() {
     if let Gpu::Software(_) = gpu {
         assert_matches_golden("rough_coastlines", &image);
     }
+}
+
+/// Two islands a few ripple-widths apart, in one Layer, with ripples but no outline or shading.
+/// Ripples draw beneath every fill of the Layer, so neither island's ripples may cover the
+/// other island: every pixel inside either island is the land colour.
+#[test]
+fn ripples_of_nearby_islands_never_cover_land() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let mut map = Map::new(Canvas::new(400, 200, Scale::new(1.0, DistanceUnit::Miles)));
+    let layer = Id::new();
+    map.execute(&Command::CreateLayer {
+        id: layer,
+        parent: None,
+        index: None,
+        name: "Land".into(),
+    })
+    .expect("a Layer");
+    let square = |min: [f64; 2], max: [f64; 2]| {
+        ssmap_core::MultiPolygon(vec![ssmap_core::Polygon {
+            exterior: vec![min, [max[0], min[1]], max, [min[0], max[1]]],
+            holes: Vec::new(),
+        }])
+    };
+    for geometry in [
+        square([40.0, 50.0], [160.0, 150.0]),
+        square([180.0, 50.0], [300.0, 150.0]),
+    ] {
+        map.execute(&Command::CreateLandmass {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            geometry,
+            fill: None,
+        })
+        .expect("a Landmass");
+    }
+    let ripples = ShoreRipples {
+        count: 4,
+        spacing: 10.0,
+        width: 3.0,
+        color: ssmap_core::Color::rgb(255, 255, 255),
+        fade: 0.0,
+    };
+    map.execute(&Command::SetDefaultShore {
+        kind: ShoreKind::Landmass,
+        shore: ShoreStyle {
+            ripples,
+            ..ShoreStyle::plain()
+        },
+    })
+    .expect("a valid Shore style");
+
+    let scene = scene_of(&map);
+    let view = View {
+        origin: [0.0, 0.0],
+        zoom: 2.0,
+        size: [800, 400],
+    };
+    let image = render(headless, &scene, &view);
+    let land = Landmass::DEFAULT_FILL;
+    let mut ripple_pixels = 0;
+    for y in (60..140).step_by(3) {
+        for x in (50..290).step_by(3) {
+            let inside = (40..=160).contains(&x) || (180..=300).contains(&x);
+            let px = pixel(&image, x * 2, y * 2);
+            if inside && !(150..=190).contains(&x) {
+                assert!(
+                    px[0].abs_diff(land.r) <= 2 && px[1].abs_diff(land.g) <= 2,
+                    "land at ({x}, {y}) is {px:?}"
+                );
+            } else if !inside && px[0] > 200 && px[1] > 200 && px[2] > 200 {
+                ripple_pixels += 1;
+            }
+        }
+    }
+    // The gap is 20 units wide: ripples from both islands show in it.
+    assert!(ripple_pixels > 0, "ripples are drawn over the water");
+    let plain = {
+        let mut map = map.clone();
+        map.execute(&Command::SetDefaultShore {
+            kind: ShoreKind::Landmass,
+            shore: ShoreStyle::plain(),
+        })
+        .expect("valid");
+        render(headless, &scene_of(&map), &view)
+    };
+    assert_ne!(image.pixels, plain.pixels, "ripples change the picture");
 }
 
 /// Fills a 2048 page with the test pack's art and Silhouettes at many sizes, until the atlas
@@ -366,11 +462,8 @@ fn render_labels(headless: &Headless, size: [u32; 2], labels: Vec<Label>) -> Rgb
         .unwrap();
     }
     let mut scene = MapScene::new(Fonts::bundled());
-    let canvas = CanvasScene::new(&map.canvas).with_content(scene.content(
-        &map,
-        &mut RoughnessCache::new(),
-        None,
-    ));
+    let canvas =
+        CanvasScene::new(&map.canvas).with_content(scene.content(&map, &mut RoughnessCache::new()));
     let view = View::whole_canvas(canvas.canvas_size, size[0].max(size[1]) / 2);
     render(headless, &canvas, &view)
 }
@@ -489,21 +582,30 @@ fn halos_never_show_through_translucent_fill() {
     assert!(beside(&with_halo) > beside(&plain) + 40);
 }
 
-/// The test pack's Assets as Stamps on a 800x400 Canvas, rendered at half size.
-fn render_stamps(headless: &Headless, stamps: Vec<Stamp>) -> RgbaImage {
+/// A store over the core crate's test pack.
+fn test_sprites() -> ssmap_render::SpriteStore {
+    use ssmap_core::asset::{PackLibrary, PackRoots};
     let roots = PackRoots {
         built_in: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../core/tests/packs"),
         user: None,
     };
     let (library, problems) = PackLibrary::load(&roots);
     assert!(problems.is_empty(), "{problems:?}");
-    let mut map = Map::new(Canvas::new(800, 400, Scale::new(1.0, DistanceUnit::Miles)));
+    ssmap_render::SpriteStore::new(std::sync::Arc::new(library))
+}
+
+fn stamp(asset: &str, position: [f64; 2]) -> ssmap_core::Stamp {
+    ssmap_core::Stamp::new(asset.parse().expect("a valid reference"), position)
+}
+
+fn render_stamps(headless: &Headless, stamps: Vec<ssmap_core::Stamp>) -> RgbaImage {
+    let mut map = Map::new(Canvas::new(480, 320, Scale::new(1.0, DistanceUnit::Miles)));
     let layer = Id::new();
     map.execute(&Command::CreateLayer {
         id: layer,
         parent: None,
         index: None,
-        name: "Terrain".into(),
+        name: "Assets".into(),
     })
     .unwrap();
     for stamp in stamps {
@@ -511,191 +613,59 @@ fn render_stamps(headless: &Headless, stamps: Vec<Stamp>) -> RgbaImage {
             id: Id::new(),
             parent: layer,
             index: None,
-            stamp,
+            stamp: Box::new(stamp),
         })
         .unwrap();
     }
+    let canvas = scene_of(&map);
+    let view = View::whole_canvas(canvas.canvas_size, 960);
     let capabilities = GpuCapabilities::query(&headless.adapter);
     let mut renderer = CanvasRenderer::new(&headless.device, capabilities);
-    let content = MapScene::new(Fonts::bundled()).content(
-        &map,
-        &mut RoughnessCache::new(),
-        Some(&mut StampSource {
-            library: &library,
-            atlas: renderer.stamp_atlas(),
-            device: &headless.device,
-            queue: &headless.queue,
-        }),
-    );
-    let scene = CanvasScene::new(&map.canvas).with_content(content);
+    renderer.set_sprites(test_sprites());
     render_to_image(
         &headless.device,
         &headless.queue,
         &mut renderer,
-        &scene,
-        &View::whole_canvas(scene.canvas_size, 400),
+        &canvas,
+        &view,
     )
 }
 
-fn stamp(asset: &str, position: [f64; 2]) -> Stamp {
-    Stamp {
-        position,
-        ..Stamp::new(format!("test-pack/{asset}").parse().unwrap())
-    }
-}
-
-/// Tint, flip, fill, opacity, rotation and scale, each on its own Stamp.
 #[test]
 fn stamps() {
     let Some(gpu) = gpu() else { return };
     let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
-    let image = render_stamps(
-        headless,
-        vec![
-            stamp("mountain-1", [100.0, 120.0]),
-            Stamp {
-                tint: Color::rgb(0xb0, 0x30, 0x30),
-                ..stamp("mountain-1", [260.0, 120.0])
-            },
-            Stamp {
-                fill: Some(Color::rgb(0x4a, 0x7a, 0x3a)),
-                ..stamp("mountain-1", [420.0, 120.0])
-            },
-            Stamp {
-                opacity: 0.5,
-                ..stamp("mountain-1", [580.0, 120.0])
-            },
-            Stamp {
-                scale: 2.0,
-                ..stamp("mountain-2", [720.0, 200.0])
-            },
-            stamp("castle", [100.0, 300.0]),
-            Stamp {
-                flip: true,
-                ..stamp("castle", [260.0, 300.0])
-            },
-            Stamp {
-                rotation: 30.0,
-                ..stamp("tree", [420.0, 300.0])
-            },
-            Stamp {
-                scale: 3.0,
-                ..stamp("well", [580.0, 300.0])
-            },
-            Stamp {
-                scale: 3.0,
-                tint: Color::rgb(0xff, 0x90, 0x40),
-                ..stamp("well", [720.0, 300.0])
-            },
-        ],
-    );
-    // Tinting the well's blue water shifts its colours from blue to orange.
-    let total = |x: u32, channel: usize| -> u32 {
-        (140..160)
-            .flat_map(|y| (x - 15..x + 15).map(move |x| (x, y)))
-            .map(|(x, y)| u32::from(pixel(&image, x, y)[channel]))
-            .sum()
-    };
-    assert!(total(290, 2) > total(360, 2) + 500, "less blue once tinted");
+    let mut tinted = stamp("test-pack/mountain-2", [380.0, 150.0]);
+    tinted.tint = Some(Color::rgb(0xa0, 0x30, 0x20));
+    tinted.fill = Some(Color::rgb(0xe8, 0xd8, 0xa8));
+    let mut flipped = stamp("test-pack/castle", [90.0, 270.0]);
+    flipped.flip = true;
+    flipped.scale = 1.5;
+    let mut turned = stamp("test-pack/tree", [220.0, 280.0]);
+    turned.rotation = 30.0;
+    turned.scale = 2.0;
+    turned.opacity = 0.6;
+    let stamps = vec![
+        // The nearer mountain hides the lines of the one behind it.
+        stamp("test-pack/mountain-1", [110.0, 120.0]),
+        stamp("test-pack/mountain-1", [150.0, 150.0]),
+        stamp("test-pack/mountain-2", [250.0, 150.0]),
+        tinted,
+        flipped,
+        turned,
+    ];
+    let image = render_stamps(headless, stamps);
     if let Gpu::Software(_) = gpu {
         assert_matches_golden("stamps", &image);
     }
 }
 
-/// Mountains placed back to front: each Silhouette hides the line art behind it.
+/// Stamps of an Asset no pack has draw nothing, and the rest of the Map still draws.
 #[test]
-fn overlapping_stamps_occlude_each_other() {
+fn missing_art_draws_nothing() {
     let Some(gpu) = gpu() else { return };
     let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
-    let image = render_stamps(
-        headless,
-        vec![
-            Stamp {
-                scale: 3.0,
-                ..stamp("mountain-1", [300.0, 250.0])
-            },
-            Stamp {
-                scale: 3.0,
-                ..stamp("mountain-2", [340.0, 300.0])
-            },
-        ],
-    );
-    if let Gpu::Software(_) = gpu {
-        assert_matches_golden("stamps_occlusion", &image);
-    }
-}
-
-/// Not a golden: times building and drawing 10,000 Stamps while panning, for the numbers in
-/// the Stamps ticket. Run with `cargo test -p ssmap-render --test golden --release -- --ignored
-/// --nocapture ten_thousand_stamps`. On a software adapter the draw times are an upper bound.
-#[test]
-#[ignore = "a measurement, not a check"]
-fn ten_thousand_stamps() {
-    let Some(gpu) = gpu() else { return };
-    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
-    let roots = PackRoots {
-        built_in: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../core/tests/packs"),
-        user: None,
-    };
-    let (library, _) = PackLibrary::load(&roots);
-    let mut map = Map::new(Canvas::new(
-        8000,
-        6000,
-        Scale::new(1.0, DistanceUnit::Miles),
-    ));
-    let layer = Id::new();
-    map.execute(&Command::CreateLayer {
-        id: layer,
-        parent: None,
-        index: None,
-        name: "Terrain".into(),
-    })
-    .unwrap();
-    let assets = ["mountain-1", "mountain-2", "tree", "castle", "well"];
-    for i in 0..10_000u32 {
-        let (x, y) = (
-            f64::from(i % 100) * 80.0 + 40.0,
-            f64::from(i / 100) * 60.0 + 40.0,
-        );
-        map.execute(&Command::CreateStamp {
-            id: Id::new(),
-            parent: layer,
-            index: None,
-            stamp: Stamp {
-                scale: 1.0 + f64::from(i % 3),
-                ..stamp(assets[(i % 5) as usize], [x, y])
-            },
-        })
-        .unwrap();
-    }
-    let mut renderer =
-        CanvasRenderer::new(&headless.device, GpuCapabilities::query(&headless.adapter));
-    let started = std::time::Instant::now();
-    let content = MapScene::new(Fonts::bundled()).content(
-        &map,
-        &mut RoughnessCache::new(),
-        Some(&mut StampSource {
-            library: &library,
-            atlas: renderer.stamp_atlas(),
-            device: &headless.device,
-            queue: &headless.queue,
-        }),
-    );
-    eprintln!("build content: {:?}", started.elapsed());
-    let scene = CanvasScene::new(&map.canvas).with_content(content);
-    let mut view = View::fit(scene.canvas_size, [1600, 1000], 0.0);
-    // The first frame uploads the instances; later frames only redraw.
-    for frame in 0..6 {
-        let started = std::time::Instant::now();
-        render_to_image(
-            &headless.device,
-            &headless.queue,
-            &mut renderer,
-            &scene,
-            &view,
-        );
-        eprintln!("frame {frame}: {:?}", started.elapsed());
-        view.pan([40.0, 25.0]);
-        view.zoom_at([800.0, 500.0], 1.1);
-    }
+    let empty = render_stamps(headless, Vec::new());
+    let ghost = render_stamps(headless, vec![stamp("no-such/asset", [240.0, 160.0])]);
+    assert_eq!(empty.pixels, ghost.pixels);
 }

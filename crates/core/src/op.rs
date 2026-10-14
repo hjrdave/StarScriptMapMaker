@@ -14,6 +14,7 @@ use crate::id::Id;
 use crate::map::{InvariantError, Map, MapDefaults, Subtree};
 use crate::node::{Label, Node, ObjectKind, Stamp};
 use crate::roughness::Roughness;
+use crate::shore::ShoreStyle;
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -60,6 +61,8 @@ pub enum Property {
     Fill(Color),
     /// Landmasses and Lakes only. `None` uses the Map-wide default.
     Roughness(Option<Roughness>),
+    /// Landmasses and Lakes only.
+    Shore(Option<ShoreStyle>),
     /// Label Objects only: every field of the Label at once.
     Label(Box<Label>),
     /// Stamp Objects only: every field of the Stamp at once.
@@ -232,11 +235,11 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
         (Node::Layer(_), Property::Fill(_)) => Err("fill"),
         (Node::Layer(_), Property::Label(_)) => Err("label"),
         (Node::Layer(_), Property::Stamp(_)) => Err("stamp"),
-        (Node::Object(object), Property::Stamp(_)) => match object.kind {
-            ObjectKind::Stamp(_) => Ok(()),
-            _ => Err("stamp"),
-        },
         (Node::Layer(_), Property::Roughness(_)) => Err("roughness"),
+        (Node::Layer(_), Property::Shore(_)) => Err("shore"),
+        (Node::Object(object), Property::Shore(_)) if object.kind.geometry().is_none() => {
+            Err("shore")
+        }
         (Node::Object(object), Property::Roughness(_)) if object.kind.geometry().is_none() => {
             Err("roughness")
         }
@@ -244,7 +247,12 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
             ObjectKind::Label(_) => Ok(()),
             _ => Err("label"),
         },
-        (Node::Layer(_), _) | (Node::Object(_), Property::Locked(_) | Property::Roughness(_)) => {
+        (Node::Object(object), Property::Stamp(_)) => match object.kind {
+            ObjectKind::Stamp(_) => Ok(()),
+            _ => Err("stamp"),
+        },
+        (Node::Layer(_), _)
+        | (Node::Object(_), Property::Locked(_) | Property::Roughness(_) | Property::Shore(_)) => {
             Ok(())
         }
         (Node::Object(_), Property::Name(_)) => Err("name"),
@@ -283,6 +291,10 @@ fn set_property(node: &mut Node, property: Property) -> Property {
         (Node::Object(object), Property::Roughness(roughness)) => {
             let slot = object.kind.roughness_mut().expect("checked");
             Property::Roughness(std::mem::replace(slot, roughness))
+        }
+        (Node::Object(object), Property::Shore(shore)) => {
+            let slot = object.kind.shore_mut().expect("checked");
+            Property::Shore(std::mem::replace(slot, shore))
         }
         (Node::Object(object), Property::Label(label)) => match &mut object.kind {
             ObjectKind::Label(old) => Property::Label(std::mem::replace(old, label)),

@@ -5,7 +5,8 @@ use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use ssmap_core::Command;
 use ssmap_render::{
-    CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, RgbaImage, View, render_to_image,
+    CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, RgbaImage, SpriteStore, View,
+    render_to_image,
 };
 
 use crate::editor::Editor;
@@ -23,10 +24,12 @@ struct CanvasResources {
     presenter: Presenter,
 }
 
-/// Creates the Canvas renderer on egui's device and hands it to egui's callback resources.
-pub fn install(render_state: &egui_wgpu::RenderState) {
+/// Creates the Canvas renderer on egui's device, drawing Stamps from `sprites`, and hands it to
+/// egui's callback resources.
+pub fn install(render_state: &egui_wgpu::RenderState, sprites: SpriteStore) {
     let capabilities = GpuCapabilities::query(&render_state.adapter);
-    let renderer = CanvasRenderer::new(&render_state.device, capabilities);
+    let mut renderer = CanvasRenderer::new(&render_state.device, capabilities);
+    renderer.set_sprites(sprites);
     // eframe draws egui without MSAA; the Canvas does its own multisampling offscreen.
     let presenter = Presenter::new(&render_state.device, render_state.target_format, 1);
     render_state
@@ -50,12 +53,7 @@ pub fn render_whole_canvas(
     let resources = egui_renderer
         .callback_resources
         .get_mut::<CanvasResources>()?;
-    let content = editor.scene_content(Some((
-        resources.renderer.stamp_atlas(),
-        &render_state.device,
-        &render_state.queue,
-    )));
-    let scene = CanvasScene::new(&editor.map.canvas).with_content(content);
+    let scene = CanvasScene::new(&editor.map.canvas).with_content(editor.scene_content());
     let view = View::whole_canvas(scene.canvas_size, longest_side);
     Some(render_to_image(
         &render_state.device,
@@ -69,18 +67,18 @@ pub fn render_whole_canvas(
 pub struct CanvasView {
     /// `None` until the first frame, which fits the Canvas to the panel.
     view: Option<View>,
-    /// `None` without a wgpu device (as in UI tests); the Canvas is then a flat placeholder.
-    render_state: Option<egui_wgpu::RenderState>,
+    /// False without a wgpu device (as in UI tests); the Canvas is then a flat placeholder.
+    gpu: bool,
     tools: ToolState,
     /// Where the panel was last drawn, in points, and the pixels per point then.
     panel: Option<(egui::Rect, f64)>,
 }
 
 impl CanvasView {
-    pub fn new(render_state: Option<egui_wgpu::RenderState>) -> Self {
+    pub fn new(gpu: bool) -> Self {
         Self {
             view: None,
-            render_state,
+            gpu,
             tools: ToolState::default(),
             panel: None,
         }
@@ -151,24 +149,9 @@ impl CanvasView {
         let view = *view;
         self.panel = Some((rect, ppp));
         // After input, so this frame shows this frame's edits.
-        let content = match &self.render_state {
-            Some(render_state) => {
-                let mut egui_renderer = render_state.renderer.write();
-                let resources = egui_renderer
-                    .callback_resources
-                    .get_mut::<CanvasResources>()
-                    .expect("installed at startup");
-                editor.scene_content(Some((
-                    resources.renderer.stamp_atlas(),
-                    &render_state.device,
-                    &render_state.queue,
-                )))
-            }
-            None => editor.scene_content(None),
-        };
-        let scene = CanvasScene::new(&editor.map.canvas).with_content(content);
+        let scene = CanvasScene::new(&editor.map.canvas).with_content(editor.scene_content());
         let painter = ui.painter_at(rect);
-        if self.render_state.is_some() {
+        if self.gpu {
             painter.add(egui_wgpu::Callback::new_paint_callback(
                 rect,
                 CanvasCallback { scene, view },
@@ -176,10 +159,21 @@ impl CanvasView {
         } else {
             paint_placeholder(&painter, rect, &scene, &view, ppp);
         }
-        if let Some(bounds) = Bounds::of_selection(editor) {
-            let rotatable = tools::selection_rotates(editor);
+        if editor.node_edit().is_none()
+            && let Some(bounds) = Bounds::of_selection(editor)
+        {
+            let rotatable = tools::selection_has_label(editor);
             handles::paint(&painter, &bounds, &view, rect.min, ppp, rotatable);
         }
+        tools::paint_overlay(
+            &painter,
+            editor,
+            &view,
+            &mut self.tools,
+            rect.min,
+            response.hover_pos(),
+            ppp,
+        );
         self.text_box(ui, editor, &view, rect.min, ppp);
     }
 

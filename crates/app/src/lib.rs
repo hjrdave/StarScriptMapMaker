@@ -17,6 +17,7 @@ use egui_file_dialog::{DialogState, FileDialog, Filter};
 use ssmap_core::asset::{PackLibrary, PackRoots};
 use ssmap_core::file::{JournalBase, MapFile, PREVIEW_SIZE, remove_journal};
 use ssmap_core::{Canvas, DistanceUnit, Map, Scale};
+use ssmap_render::SpriteStore;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -31,6 +32,9 @@ use crate::properties::PropertiesPanel;
 use crate::recent::RecentFiles;
 use crate::recovery::{Found, Recovery};
 use crate::tools::ToolId;
+
+/// How much `[` and `]` shrink or grow the land brush.
+const BRUSH_SIZE_STEP: f64 = 1.25;
 
 /// The Map file to open at launch, from the command-line arguments after the program name.
 ///
@@ -48,12 +52,12 @@ pub fn launch_file(args: impl IntoIterator<Item = OsString>) -> Option<PathBuf> 
 
 pub struct MapMakerApp {
     editor: Editor,
-    /// Every loaded Asset pack, shared with each open Map's editor.
-    library: Arc<PackLibrary>,
-    asset_browser: AssetBrowser,
     document: Document,
     layer_tree: LayerTree,
     properties: PropertiesPanel,
+    asset_browser: AssetBrowser,
+    /// The installed Asset packs' art, shared with the Canvas renderer and picking.
+    sprites: SpriteStore,
     canvas_view: CanvasView,
     recent: RecentFiles,
     open_dialog: FileDialog,
@@ -99,14 +103,18 @@ impl MapMakerApp {
         map: Map,
         recovery_dir: Option<PathBuf>,
     ) -> Self {
-        if let Some(render_state) = cc.wgpu_render_state.as_ref() {
-            canvas_view::install(render_state);
-        }
         let (library, problems) = PackLibrary::load(&PackRoots::installed());
         for problem in &problems {
-            eprintln!("asset pack: {problem}");
+            eprintln!("Asset pack problem: {problem}");
         }
-        let library = Arc::new(library);
+        let sprites = SpriteStore::new(Arc::new(library));
+        let gpu = match cc.wgpu_render_state.as_ref() {
+            Some(render_state) => {
+                canvas_view::install(render_state, sprites.clone());
+                true
+            }
+            None => false,
+        };
         let map_files = || -> FileDialog {
             FileDialog::new()
                 .add_file_filter(
@@ -123,14 +131,16 @@ impl MapMakerApp {
         let recovery = Recovery::new(recovery_dir);
         let mut unsaved_found = recovery.find_unsaved();
         unsaved_found.reverse();
+        let mut editor = Editor::new(map);
+        editor.set_sprites(sprites.clone());
         Self {
-            editor: Editor::with_library(map, library.clone()),
-            library,
+            editor,
             document: Document::default(),
             layer_tree: LayerTree::default(),
             properties: PropertiesPanel::default(),
             asset_browser: AssetBrowser::default(),
-            canvas_view: CanvasView::new(cc.wgpu_render_state.clone()),
+            sprites,
+            canvas_view: CanvasView::new(gpu),
             recent: RecentFiles::load(cc.storage),
             open_dialog: map_files().title("Open Map"),
             save_dialog: map_files().title("Save Map As"),
@@ -205,7 +215,10 @@ impl MapMakerApp {
 
     fn replace(&mut self, document: Document, map: Map) {
         self.document = document;
-        self.editor = Editor::with_library(map, self.library.clone());
+        let selected_asset = self.editor.selected_asset.take();
+        self.editor = Editor::new(map);
+        self.editor.set_sprites(self.sprites.clone());
+        self.editor.selected_asset = selected_asset;
         self.layer_tree = LayerTree::default();
         self.properties = PropertiesPanel::default();
         self.canvas_view.refit();
@@ -304,7 +317,7 @@ impl MapMakerApp {
         let JournalBase::Unsaved { map: view } = found.recovered.base.clone() else {
             return;
         };
-        let mut map = match Map::from_view(view) {
+        let mut map = match Map::from_view(*view) {
             Ok(map) => map,
             Err(err) => {
                 self.editor
@@ -658,11 +671,19 @@ impl MapMakerApp {
             if input.consume_key(Modifiers::NONE, Key::Delete)
                 || input.consume_key(Modifiers::NONE, Key::Backspace)
             {
-                editor.delete_selection();
+                if editor.node_edit().is_some() {
+                    editor.delete_selected_nodes();
+                } else {
+                    editor.delete_selection();
+                }
             }
             if input.consume_key(Modifiers::NONE, Key::Escape) {
                 if editor.gesture_open() {
                     editor.cancel_gesture();
+                } else if editor.node_edit().is_some() {
+                    editor.leave_node_edit();
+                } else if editor.tool_busy {
+                    editor.cancel_tool = true;
                 } else {
                     editor.select(Vec::new());
                 }
@@ -671,6 +692,17 @@ impl MapMakerApp {
                 if input.consume_key(Modifiers::NONE, tool.shortcut()) {
                     editor.active_tool = tool;
                 }
+            }
+            if editor.active_tool == ToolId::LandBrush {
+                let step = if input.consume_key(Modifiers::NONE, Key::OpenBracket) {
+                    1.0 / BRUSH_SIZE_STEP
+                } else if input.consume_key(Modifiers::NONE, Key::CloseBracket) {
+                    BRUSH_SIZE_STEP
+                } else {
+                    1.0
+                };
+                editor.brush_size = (editor.brush_size * step)
+                    .clamp(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end());
             }
         });
     }
@@ -689,6 +721,18 @@ impl MapMakerApp {
                 {
                     editor.active_tool = tool;
                 }
+            }
+            if editor.active_tool == ToolId::LandBrush {
+                ui.add(
+                    egui::Slider::new(&mut editor.brush_size, tools::BRUSH_SIZES)
+                        .logarithmic(true)
+                        .max_decimals(0)
+                        .text("Size"),
+                )
+                .on_hover_text(format!(
+                    "Brush diameter in Canvas units ([ and ]). Hold {} to erase.",
+                    tools::ERASE_MODIFIER
+                ));
             }
             ui.separator();
             let undo_hint = editor.undo_label().map(|l| format!("Undo {l}"));
@@ -711,6 +755,28 @@ impl MapMakerApp {
                 .clicked()
             {
                 editor.delete_selection();
+            }
+            ui.separator();
+            if ui
+                .add_enabled(editor.can_combine(), egui::Button::new("Union"))
+                .on_hover_text("Merge the selected Landmasses into the topmost one")
+                .clicked()
+            {
+                editor.union_selection();
+            }
+            if ui
+                .add_enabled(editor.can_combine(), egui::Button::new("Subtract"))
+                .on_hover_text("Cut the topmost selected Landmass out of the others")
+                .clicked()
+            {
+                editor.subtract_selection();
+            }
+            if ui
+                .add_enabled(editor.can_split(), egui::Button::new("Split Apart"))
+                .on_hover_text("Make each part of the selected Landmasses a Landmass of its own")
+                .clicked()
+            {
+                editor.split_selection();
             }
         });
     }
@@ -788,14 +854,14 @@ impl eframe::App for MapMakerApp {
         self.update_title(&ctx);
         egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));
+        egui::Panel::bottom("assets")
+            .resizable(true)
+            .default_size(150.0)
+            .show(ui, |ui| self.asset_browser.show(ui, &mut self.editor));
         egui::Panel::left("layers")
             .resizable(true)
             .default_size(240.0)
             .show(ui, |ui| self.layer_tree.show(ui, &mut self.editor));
-        egui::Panel::left("assets")
-            .resizable(true)
-            .default_size(220.0)
-            .show(ui, |ui| self.asset_browser.show(ui, &mut self.editor));
         egui::Panel::right("properties")
             .resizable(true)
             .default_size(260.0)

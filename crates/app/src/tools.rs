@@ -1,9 +1,15 @@
 //! The tool framework. The active tool is editor state; each tool turns Canvas input into
-//! view changes or Commands. Object tools (land brush, stamps) arrive with their tickets and
-//! register here.
+//! view changes or Commands. Object tools (stamps) arrive with their tickets and register
+//! here.
 
 use eframe::egui;
-use ssmap_core::{Affine, Command, Id, Label, Stamp};
+use lyon::math::point;
+use lyon::path::Path;
+use lyon::tessellation::{
+    BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, VertexBuffers,
+};
+use ssmap_core::land::{self, BrushStroke};
+use ssmap_core::{Affine, Command, Id, Label, MultiPolygon, NodeRef, Point, Stamp};
 use ssmap_render::View;
 
 use crate::editor::Editor;
@@ -13,17 +19,28 @@ use crate::handles::{self, Bounds, Grip};
 pub enum ToolId {
     Select,
     Pan,
+    LandBrush,
+    Lasso,
     Label,
     Stamp,
 }
 
 impl ToolId {
-    pub const ALL: [ToolId; 4] = [ToolId::Select, ToolId::Pan, ToolId::Label, ToolId::Stamp];
+    pub const ALL: [ToolId; 6] = [
+        ToolId::Select,
+        ToolId::Pan,
+        ToolId::LandBrush,
+        ToolId::Lasso,
+        ToolId::Label,
+        ToolId::Stamp,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
             ToolId::Select => "Select",
             ToolId::Pan => "Pan",
+            ToolId::LandBrush => "Land Brush",
+            ToolId::Lasso => "Lasso",
             ToolId::Label => "Label",
             ToolId::Stamp => "Stamp",
         }
@@ -33,11 +50,23 @@ impl ToolId {
         match self {
             ToolId::Select => egui::Key::V,
             ToolId::Pan => egui::Key::H,
+            ToolId::LandBrush => egui::Key::B,
+            ToolId::Lasso => egui::Key::L,
             ToolId::Label => egui::Key::T,
             ToolId::Stamp => egui::Key::S,
         }
     }
 }
+
+/// The modifier that turns the land brush into an eraser (Option on macOS).
+pub const ERASE_MODIFIER: &str = if cfg!(target_os = "macos") {
+    "Option"
+} else {
+    "Alt"
+};
+
+/// The land brush size range, as a diameter in Canvas units.
+pub const BRUSH_SIZES: std::ops::RangeInclusive<f64> = 2.0..=2000.0;
 
 /// What a tool sees of one frame of Canvas input.
 pub struct CanvasInput<'a> {
@@ -46,12 +75,58 @@ pub struct CanvasInput<'a> {
     pub pixels_per_point: f64,
 }
 
+impl CanvasInput<'_> {
+    /// The Canvas point under a screen position.
+    fn canvas_point(&self, view: &View, pos: egui::Pos2) -> [f64; 2] {
+        let local = pos - self.response.rect.min;
+        view.to_canvas([
+            f64::from(local.x) * self.pixels_per_point,
+            f64::from(local.y) * self.pixels_per_point,
+        ])
+    }
+}
+
 /// Tool state that lasts across frames.
 #[derive(Default)]
 pub struct ToolState {
     drag: Option<Drag>,
+    stroke: Option<Stroke>,
+    node_drag: Option<NodeDrag>,
+    lasso: Option<Lasso>,
+    /// A box-select in node-edit mode: where it began and where the pointer is, in Canvas units.
+    marquee: Option<(Point, Point)>,
     /// The Label whose text is being typed in the overlay box.
     pub editing: Option<TextEditing>,
+}
+
+/// A lasso loop being drawn: freehand while the button is held, or corner by corner.
+struct Lasso {
+    points: Vec<Point>,
+    freehand: bool,
+    erase: bool,
+}
+
+/// A node drag in progress: where it began, and the outline's shape then.
+struct NodeDrag {
+    start: Point,
+    shape: Vec<usize>,
+}
+
+/// How close, in egui points, the pointer must be to grab a node or an edge.
+const NODE_GRAB: f64 = 8.0;
+const EDGE_GRAB: f64 = 6.0;
+/// Past this many nodes in view, unselected ones are thinned out so the Canvas stays legible
+/// and responsive.
+const MAX_DRAWN_NODES: usize = 3000;
+
+/// A land brush stroke in progress. Nothing changes in the Map until it is released; until
+/// then an overlay shows the area it covers.
+struct Stroke {
+    /// The pointer's path in Canvas units, from where the button went down.
+    points: Vec<Point>,
+    erase: bool,
+    /// The overlay as last computed, and how many points it covers.
+    preview: Option<(usize, MultiPolygon)>,
 }
 
 /// Typing a Label's text in a box overlaid at the Label, inside an open gesture so the
@@ -76,7 +151,7 @@ struct Drag {
     /// The selected Labels as they were, so every frame transforms from the start and
     /// rounding never builds up.
     labels: Vec<(Id, Label)>,
-    /// The selected Stamps as they were.
+    /// The selected Stamps as they were, for the same reason.
     stamps: Vec<(Id, Stamp)>,
 }
 
@@ -111,6 +186,9 @@ pub fn canvas_input(
 ) {
     let response = input.response;
     let ppp = input.pixels_per_point;
+    if editor.active_tool != ToolId::Select {
+        editor.leave_node_edit();
+    }
     let space_held = response.ctx.input(|i| i.key_down(egui::Key::Space));
     let temporary_pan = response.dragged_by(egui::PointerButton::Middle)
         || (space_held && response.dragged_by(egui::PointerButton::Primary));
@@ -125,9 +203,14 @@ pub fn canvas_input(
     };
     let shift = response.ctx.input(|i| i.modifiers.shift);
     match editor.active_tool {
+        ToolId::Select if editor.node_edit().is_some() => {
+            node_edit_tool(editor, view, state, input);
+        }
+        ToolId::LandBrush => land_brush(editor, view, state, input),
+        ToolId::Lasso => lasso_tool(editor, view, state, input),
         ToolId::Select => {
             let bounds = Bounds::of_selection(editor);
-            let rotatable = selection_rotates(editor);
+            let rotatable = selection_has_label(editor);
             let grip_at = |pos: egui::Pos2| {
                 let bounds = bounds?;
                 handles::hit(&bounds, view, response.rect.min, ppp, pos, rotatable)
@@ -167,11 +250,13 @@ pub fn canvas_input(
             if let Some(pos) = response.interact_pointer_pos() {
                 let point = to_canvas(pos);
                 if response.double_clicked() {
-                    if let Some(id) = editor.pick(point)
-                        && editor.label(id).is_some()
-                    {
-                        editor.select(vec![id]);
-                        state.edit_text(editor, id);
+                    if let Some(id) = editor.pick(point) {
+                        if editor.label(id).is_some() {
+                            editor.select(vec![id]);
+                            state.edit_text(editor, id);
+                        } else {
+                            editor.enter_node_edit(id);
+                        }
                     }
                 } else if response.clicked() {
                     let hit = editor.pick(point);
@@ -181,13 +266,16 @@ pub fn canvas_input(
         }
         ToolId::Pan => {}
         ToolId::Stamp => {
+            if response.hovered() {
+                response.ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+            }
             if response.clicked()
                 && let Some(pos) = response.interact_pointer_pos()
             {
-                if editor.next_stamp_asset().is_some() {
-                    editor.place_stamp(to_canvas(pos));
+                if editor.selected_asset.is_none() {
+                    editor.error("Choose an Asset in the Asset browser first");
                 } else {
-                    editor.error("Choose an Asset in the Asset browser first".to_owned());
+                    editor.place_stamp(to_canvas(pos));
                 }
             }
         }
@@ -206,6 +294,609 @@ pub fn canvas_input(
             }
         }
     }
+    if editor.active_tool != ToolId::Lasso {
+        state.lasso = None;
+    }
+    editor.tool_busy = state.lasso.is_some();
+}
+
+/// Paint land by dragging, or erase with the erase modifier held. Each stroke is one Undo
+/// step, made on release; Escape drops a stroke in progress. The brush rules (what merges,
+/// what is created, what is erased) live in [`land::brush_command`].
+fn land_brush(editor: &mut Editor, view: &View, state: &mut ToolState, input: &CanvasInput<'_>) {
+    let response = input.response;
+    let radius = editor.brush_size / 2.0;
+    let erase_held = response.ctx.input(|i| i.modifiers.alt);
+    if response.hovered() {
+        response.ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+    }
+
+    // A click is a stroke of one point: a single dab.
+    let pressed = response.drag_started_by(egui::PointerButton::Primary)
+        || response.clicked_by(egui::PointerButton::Primary);
+    if pressed && state.stroke.is_none() && !editor.gesture_open() {
+        let origin = response.ctx.input(|i| i.pointer.press_origin());
+        if let Some(origin) = origin.or(response.interact_pointer_pos()) {
+            editor.begin_gesture(editor.brush_label(erase_held));
+            state.stroke = Some(Stroke {
+                points: vec![input.canvas_point(view, origin)],
+                erase: erase_held,
+                preview: None,
+            });
+        }
+    }
+
+    let Some(stroke) = &mut state.stroke else {
+        return;
+    };
+    // Escape rolled the gesture back: drop the stroke.
+    if !editor.gesture_open() {
+        state.stroke = None;
+        return;
+    }
+    if let Some(pos) = response.interact_pointer_pos() {
+        let point = input.canvas_point(view, pos);
+        // A tenth of the radius, but at least a screen pixel, keeps the path light.
+        let spacing = (radius * 0.1).max(1.0 / view.zoom);
+        let last = *stroke.points.last().expect("a stroke starts with a point");
+        if (point[0] - last[0]).hypot(point[1] - last[1]) >= spacing {
+            stroke.points.push(point);
+        }
+    }
+
+    let released = response.drag_stopped() || response.clicked();
+    if released && let Some(stroke) = state.stroke.take() {
+        let tolerance = land::simplify_tolerance(radius, 1.0 / view.zoom);
+        editor.finish_brush_stroke(BrushStroke {
+            region: land::brush_region(&stroke.points, radius, tolerance),
+            start: stroke.points[0],
+            erase: stroke.erase,
+        });
+    }
+}
+
+/// Draw a region to add to land, or with the erase modifier to cut out: drag a freehand loop, or
+/// click corners and close the loop by clicking the first one, double-clicking or pressing
+/// Enter. Escape drops a loop in progress. The region follows the land brush's merge rules.
+fn lasso_tool(editor: &mut Editor, view: &View, state: &mut ToolState, input: &CanvasInput<'_>) {
+    let response = input.response;
+    let (alt, enter) = response
+        .ctx
+        .input(|i| (i.modifiers.alt, i.key_pressed(egui::Key::Enter)));
+    if response.hovered() {
+        response.ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+    }
+    if std::mem::take(&mut editor.cancel_tool) {
+        state.lasso = None;
+        return;
+    }
+    let pointer = response
+        .interact_pointer_pos()
+        .map(|pos| input.canvas_point(view, pos));
+    let near_first = |lasso: &Lasso, point: Point| {
+        let first = lasso.points[0];
+        let reach = NODE_GRAB * input.pixels_per_point / view.zoom;
+        lasso.points.len() >= 3 && (point[0] - first[0]).hypot(point[1] - first[1]) <= reach
+    };
+
+    if response.drag_started_by(egui::PointerButton::Primary)
+        && state.lasso.is_none()
+        && let Some(origin) = response.ctx.input(|i| i.pointer.press_origin())
+    {
+        state.lasso = Some(Lasso {
+            points: vec![input.canvas_point(view, origin)],
+            freehand: true,
+            erase: alt,
+        });
+    }
+    if response.dragged_by(egui::PointerButton::Primary)
+        && let Some(lasso) = &mut state.lasso
+        && lasso.freehand
+        && let Some(point) = pointer
+    {
+        let spacing = 2.0 * input.pixels_per_point / view.zoom;
+        let last = *lasso.points.last().expect("a loop starts with a point");
+        if (point[0] - last[0]).hypot(point[1] - last[1]) >= spacing {
+            lasso.points.push(point);
+        }
+    }
+
+    let mut close = false;
+    if response.drag_stopped() && state.lasso.as_ref().is_some_and(|l| l.freehand) {
+        close = true;
+    } else if response.clicked_by(egui::PointerButton::Primary)
+        && let Some(point) = pointer
+    {
+        match &mut state.lasso {
+            None => {
+                state.lasso = Some(Lasso {
+                    points: vec![point],
+                    freehand: false,
+                    erase: alt,
+                });
+            }
+            Some(lasso) if near_first(lasso, point) => close = true,
+            Some(lasso) => lasso.points.push(point),
+        }
+    }
+    if enter || (response.double_clicked_by(egui::PointerButton::Primary) && state.lasso.is_some())
+    {
+        close = true;
+    }
+
+    if close && let Some(lasso) = state.lasso.take() {
+        let tolerance = if lasso.freehand {
+            land::simplify_tolerance(4.0 / view.zoom, 1.0 / view.zoom)
+        } else {
+            0.0
+        };
+        let region = land::lasso_region(&lasso.points, tolerance);
+        if region.is_empty() {
+            editor.info("The loop doesn't enclose any area");
+            return;
+        }
+        editor.begin_gesture(editor.brush_label(lasso.erase));
+        editor.finish_brush_stroke(BrushStroke {
+            region,
+            start: lasso.points[0],
+            erase: lasso.erase,
+        });
+    }
+}
+
+/// Draws a lasso loop in progress: the corners so far, and a line to the pointer.
+fn paint_lasso(
+    painter: &egui::Painter,
+    view: &View,
+    state: &ToolState,
+    origin: egui::Pos2,
+    hover: Option<egui::Pos2>,
+    ppp: f64,
+) {
+    let Some(lasso) = &state.lasso else {
+        return;
+    };
+    let color = if lasso.erase {
+        egui::Color32::from_rgb(200, 60, 50)
+    } else {
+        egui::Color32::from_rgb(90, 70, 40)
+    };
+    let mut points: Vec<egui::Pos2> = lasso
+        .points
+        .iter()
+        .map(|&p| crate::handles::to_screen(view, origin, ppp, p))
+        .collect();
+    if !lasso.freehand
+        && let Some(hover) = hover
+    {
+        points.push(hover);
+    }
+    painter.add(egui::Shape::line(
+        points.clone(),
+        egui::Stroke::new(3.0, egui::Color32::WHITE),
+    ));
+    painter.add(egui::Shape::line(points, egui::Stroke::new(1.5, color)));
+    if !lasso.freehand {
+        for &p in &lasso.points {
+            let pos = crate::handles::to_screen(view, origin, ppp, p);
+            painter.circle_filled(pos, 3.5, color);
+        }
+    }
+}
+
+/// Where the pointer is in an outline being edited.
+enum NodeHit {
+    Node(NodeRef),
+    /// On an edge: the edge's first node, and the nearest point on it.
+    Edge(NodeRef, Point),
+    Inside,
+    Outside,
+}
+
+fn hit_outline(outline: &MultiPolygon, point: Point, node_reach: f64, edge_reach: f64) -> NodeHit {
+    let mut best_node: Option<(f64, NodeRef)> = None;
+    let mut best_edge: Option<(f64, NodeRef, Point)> = None;
+    for (part, polygon) in outline.0.iter().enumerate() {
+        for (ring_number, ring) in polygon.rings().enumerate() {
+            for (index, &a) in ring.iter().enumerate() {
+                let node = NodeRef {
+                    part,
+                    ring: ring_number,
+                    index,
+                };
+                let d = (a[0] - point[0]).hypot(a[1] - point[1]);
+                if d <= node_reach && best_node.is_none_or(|(best, _)| d < best) {
+                    best_node = Some((d, node));
+                }
+                let b = ring[(index + 1) % ring.len()];
+                let (d, nearest) = nearest_on_segment(a, b, point);
+                if d <= edge_reach && best_edge.is_none_or(|(best, ..)| d < best) {
+                    best_edge = Some((d, node, nearest));
+                }
+            }
+        }
+    }
+    if let Some((_, node)) = best_node {
+        NodeHit::Node(node)
+    } else if let Some((_, edge, nearest)) = best_edge {
+        NodeHit::Edge(edge, nearest)
+    } else if outline.contains(point) {
+        NodeHit::Inside
+    } else {
+        NodeHit::Outside
+    }
+}
+
+fn nearest_on_segment(a: Point, b: Point, p: Point) -> (f64, Point) {
+    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+    let length_squared = dx * dx + dy * dy;
+    let t = if length_squared == 0.0 {
+        0.0
+    } else {
+        (((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length_squared).clamp(0.0, 1.0)
+    };
+    let nearest = [a[0] + t * dx, a[1] + t * dy];
+    ((p[0] - nearest[0]).hypot(p[1] - nearest[1]), nearest)
+}
+
+/// Node-edit mode (double-click a Landmass or Lake): click a node to select it (Shift adds),
+/// drag nodes to move them, drag empty space to box-select, double-click an edge to add a node,
+/// Delete removes the selected nodes, and Escape or a click outside the shape leaves. Each
+/// drag is one Undo step.
+fn node_edit_tool(
+    editor: &mut Editor,
+    view: &View,
+    state: &mut ToolState,
+    input: &CanvasInput<'_>,
+) {
+    let response = input.response;
+    let shift = response.ctx.input(|i| i.modifiers.shift);
+    let per_point = input.pixels_per_point / view.zoom;
+    let hit_at = |editor: &Editor, pos: egui::Pos2| {
+        let point = input.canvas_point(view, pos);
+        editor.edited_outline().map(|outline| {
+            hit_outline(outline, point, NODE_GRAB * per_point, EDGE_GRAB * per_point)
+        })
+    };
+
+    if let Some(pos) = response.hover_pos()
+        && state.node_drag.is_none()
+        && let Some(NodeHit::Node(_)) = hit_at(editor, pos)
+    {
+        response.ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+
+    // Drag: move nodes, or box-select.
+    if response.drag_started_by(egui::PointerButton::Primary) && !editor.gesture_open() {
+        let origin = response
+            .ctx
+            .input(|i| i.pointer.press_origin())
+            .or(response.interact_pointer_pos());
+        if let Some(origin) = origin {
+            let start = input.canvas_point(view, origin);
+            match hit_at(editor, origin) {
+                Some(NodeHit::Node(node)) => {
+                    let mut nodes = editor
+                        .node_edit()
+                        .map(|e| e.nodes.clone())
+                        .unwrap_or_default();
+                    if !nodes.contains(&node) {
+                        if shift {
+                            nodes.push(node);
+                        } else {
+                            nodes = vec![node];
+                        }
+                        editor.select_nodes(nodes);
+                    }
+                    state.node_drag = Some(NodeDrag {
+                        start,
+                        shape: editor.edited_shape(),
+                    });
+                    editor.begin_gesture("Move Nodes");
+                }
+                _ => state.marquee = Some((start, start)),
+            }
+        }
+    }
+
+    if response.dragged_by(egui::PointerButton::Primary)
+        && let Some(pos) = response.interact_pointer_pos()
+    {
+        let point = input.canvas_point(view, pos);
+        if let Some(drag) = &state.node_drag {
+            if !editor.gesture_open() {
+                // Escape rolled the gesture back.
+                state.node_drag = None;
+            } else if let Some(edit) = editor.node_edit().cloned() {
+                let offset = [point[0] - drag.start[0], point[1] - drag.start[1]];
+                editor.gesture_replace(Command::MoveNodes {
+                    id: edit.id,
+                    nodes: edit.nodes,
+                    offset,
+                });
+            }
+        } else if let Some((_, end)) = &mut state.marquee {
+            *end = point;
+        }
+    }
+
+    if response.drag_stopped() {
+        if let Some(drag) = state.node_drag.take() {
+            editor.end_gesture();
+            editor.keep_nodes_if_shape(&drag.shape);
+        } else if let Some((a, b)) = state.marquee.take() {
+            let (min, max) = (
+                [a[0].min(b[0]), a[1].min(b[1])],
+                [a[0].max(b[0]), a[1].max(b[1])],
+            );
+            let mut nodes = if shift {
+                editor
+                    .node_edit()
+                    .map(|e| e.nodes.clone())
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+            if let Some(outline) = editor.edited_outline() {
+                for (part, polygon) in outline.0.iter().enumerate() {
+                    for (ring_number, ring) in polygon.rings().enumerate() {
+                        for (index, p) in ring.iter().enumerate() {
+                            let node = NodeRef {
+                                part,
+                                ring: ring_number,
+                                index,
+                            };
+                            if p[0] >= min[0]
+                                && p[0] <= max[0]
+                                && p[1] >= min[1]
+                                && p[1] <= max[1]
+                                && !nodes.contains(&node)
+                            {
+                                nodes.push(node);
+                            }
+                        }
+                    }
+                }
+            }
+            editor.select_nodes(nodes);
+        }
+    }
+
+    if response.double_clicked_by(egui::PointerButton::Primary)
+        && let Some(pos) = response.interact_pointer_pos()
+        && let Some(NodeHit::Edge(edge, point)) = hit_at(editor, pos)
+    {
+        editor.insert_node(edge, point);
+        return;
+    }
+
+    if response.clicked_by(egui::PointerButton::Primary)
+        && let Some(pos) = response.interact_pointer_pos()
+    {
+        let current = editor
+            .node_edit()
+            .map(|e| e.nodes.clone())
+            .unwrap_or_default();
+        match hit_at(editor, pos) {
+            Some(NodeHit::Node(node)) if shift && current.contains(&node) => {
+                editor.select_nodes(current.into_iter().filter(|&n| n != node).collect());
+            }
+            Some(NodeHit::Node(node)) if shift => {
+                let mut nodes = current;
+                nodes.push(node);
+                editor.select_nodes(nodes);
+            }
+            Some(NodeHit::Node(node)) => editor.select_nodes(vec![node]),
+            Some(NodeHit::Edge(..) | NodeHit::Inside) => {
+                if !shift {
+                    editor.select_nodes(Vec::new());
+                }
+            }
+            Some(NodeHit::Outside) | None => editor.leave_node_edit(),
+        }
+    }
+}
+
+/// Draws the outline being edited, its nodes (those in view, thinned when crowded) and a
+/// box-select in progress.
+fn paint_nodes(
+    painter: &egui::Painter,
+    editor: &Editor,
+    view: &View,
+    state: &ToolState,
+    origin: egui::Pos2,
+    hover: Option<egui::Pos2>,
+    ppp: f64,
+) {
+    let (Some(edit), Some(outline)) = (editor.node_edit(), editor.edited_outline()) else {
+        return;
+    };
+    let to_screen = |p: Point| crate::handles::to_screen(view, origin, ppp, p);
+    let area = painter.clip_rect().expand(24.0);
+    let line = egui::Stroke::new(1.5, egui::Color32::from_rgb(40, 120, 220));
+
+    let mut visible: Vec<(NodeRef, egui::Pos2)> = Vec::new();
+    for (part, polygon) in outline.0.iter().enumerate() {
+        for (ring_number, ring) in polygon.rings().enumerate() {
+            let mut run: Vec<egui::Pos2> = Vec::new();
+            let screen: Vec<egui::Pos2> = ring.iter().map(|&p| to_screen(p)).collect();
+            for (index, &a) in screen.iter().enumerate() {
+                let b = screen[(index + 1) % screen.len()];
+                if area.contains(a) {
+                    visible.push((
+                        NodeRef {
+                            part,
+                            ring: ring_number,
+                            index,
+                        },
+                        a,
+                    ));
+                }
+                if area.intersects(egui::Rect::from_two_pos(a, b)) {
+                    if run.is_empty() {
+                        run.push(a);
+                    }
+                    run.push(b);
+                } else if !run.is_empty() {
+                    painter.add(egui::Shape::line(std::mem::take(&mut run), line));
+                }
+            }
+            if !run.is_empty() {
+                painter.add(egui::Shape::line(run, line));
+            }
+        }
+    }
+    let stride = visible.len().div_ceil(MAX_DRAWN_NODES).max(1);
+    let hovered = hover.and_then(|pos| {
+        let reach = NODE_GRAB as f32;
+        visible
+            .iter()
+            .find(|(_, p)| p.distance(pos) <= reach)
+            .map(|(node, _)| *node)
+    });
+    for (n, (node, pos)) in visible.iter().enumerate() {
+        let selected = edit.nodes.contains(node);
+        if !selected && hovered != Some(*node) && n % stride != 0 {
+            continue;
+        }
+        let half = if selected || hovered == Some(*node) {
+            4.5
+        } else {
+            3.0
+        };
+        let rect = egui::Rect::from_center_size(*pos, egui::vec2(half * 2.0, half * 2.0));
+        let fill = if selected {
+            egui::Color32::from_rgb(40, 120, 220)
+        } else {
+            egui::Color32::WHITE
+        };
+        painter.rect_filled(rect, 1.0, fill);
+        painter.rect_stroke(
+            rect,
+            1.0,
+            egui::Stroke::new(1.0, egui::Color32::from_rgb(40, 120, 220)),
+            egui::StrokeKind::Middle,
+        );
+    }
+    if let Some((a, b)) = state.marquee {
+        let rect = egui::Rect::from_two_pos(to_screen(a), to_screen(b));
+        painter.rect_filled(
+            rect,
+            0.0,
+            egui::Color32::from_rgba_unmultiplied(40, 120, 220, 40),
+        );
+        painter.rect_stroke(rect, 0.0, line, egui::StrokeKind::Middle);
+    }
+}
+
+/// Draws what the active tool shows over the Canvas: the land brush's outline under the
+/// pointer, and the area a stroke in progress covers.
+pub fn paint_overlay(
+    painter: &egui::Painter,
+    editor: &Editor,
+    view: &View,
+    state: &mut ToolState,
+    origin: egui::Pos2,
+    hover: Option<egui::Pos2>,
+    ppp: f64,
+) {
+    if editor.active_tool == ToolId::Select {
+        paint_nodes(painter, editor, view, state, origin, hover, ppp);
+    }
+    if editor.active_tool == ToolId::Lasso {
+        paint_lasso(painter, view, state, origin, hover, ppp);
+    }
+    if editor.active_tool != ToolId::LandBrush {
+        return;
+    }
+    let erase_held = painter.ctx().input(|i| i.modifiers.alt);
+    let erasing = state.stroke.as_ref().map_or(erase_held, |s| s.erase);
+    let (fill, line) = if erasing {
+        (
+            egui::Color32::from_rgba_unmultiplied(200, 60, 50, 70),
+            egui::Color32::from_rgb(200, 60, 50),
+        )
+    } else {
+        (
+            egui::Color32::from_rgba_unmultiplied(216, 196, 154, 140),
+            egui::Color32::from_rgb(90, 70, 40),
+        )
+    };
+    let radius = editor.brush_size / 2.0;
+    if let Some(stroke) = &mut state.stroke {
+        let preview = match &stroke.preview {
+            Some((count, region)) if *count == stroke.points.len() => region,
+            _ => {
+                let region = land::stroke_region(&stroke.points, radius);
+                &stroke.preview.insert((stroke.points.len(), region)).1
+            }
+        };
+        let to_screen = |p: Point| crate::handles::to_screen(view, origin, ppp, p);
+        painter.add(egui::Shape::mesh(region_mesh(preview, fill, to_screen)));
+        for ring in preview.0.iter().flat_map(|polygon| polygon.rings()) {
+            let points = ring.iter().map(|&p| to_screen(p)).collect();
+            painter.add(egui::Shape::closed_line(
+                points,
+                egui::Stroke::new(1.0, line),
+            ));
+        }
+    }
+    if let Some(pos) = hover {
+        let screen_radius = (radius * view.zoom / ppp) as f32;
+        painter.circle_stroke(
+            pos,
+            screen_radius,
+            egui::Stroke::new(1.5, egui::Color32::WHITE),
+        );
+        painter.circle_stroke(pos, screen_radius, egui::Stroke::new(0.75, line));
+    }
+}
+
+/// A filled region as an egui mesh in screen points. Holes stay open (even-odd).
+fn region_mesh(
+    region: &MultiPolygon,
+    color: egui::Color32,
+    to_screen: impl Fn(Point) -> egui::Pos2,
+) -> egui::Mesh {
+    let mut builder = Path::builder();
+    for ring in region.0.iter().flat_map(|polygon| polygon.rings()) {
+        let mut points = ring.iter().map(|&p| {
+            let screen = to_screen(p);
+            point(screen.x, screen.y)
+        });
+        let Some(first) = points.next() else {
+            continue;
+        };
+        builder.begin(first);
+        for p in points {
+            builder.line_to(p);
+        }
+        builder.close();
+    }
+    let mut buffers: VertexBuffers<egui::Pos2, u32> = VertexBuffers::new();
+    let options = FillOptions::tolerance(0.25).with_fill_rule(FillRule::EvenOdd);
+    let tessellated = FillTessellator::new().tessellate_path(
+        &builder.build(),
+        &options,
+        &mut BuffersBuilder::new(&mut buffers, |vertex: FillVertex| {
+            let p = vertex.position();
+            egui::pos2(p.x, p.y)
+        }),
+    );
+    let mut mesh = egui::Mesh::default();
+    if tessellated.is_ok() {
+        mesh.indices = buffers.indices;
+        mesh.vertices = buffers
+            .vertices
+            .into_iter()
+            .map(|pos| egui::epaint::Vertex {
+                pos,
+                uv: egui::epaint::WHITE_UV,
+                color,
+            })
+            .collect();
+    }
+    mesh
 }
 
 /// A click: selects what is under the pointer, Shift adds or removes it, and empty Canvas
@@ -229,7 +920,7 @@ fn click_select(editor: &mut Editor, hit: Option<Id>, shift: bool) {
 }
 
 /// Whether the selection holds a Label or a Stamp, the only selected things that rotate.
-pub(crate) fn selection_rotates(editor: &Editor) -> bool {
+pub(crate) fn selection_has_label(editor: &Editor) -> bool {
     editor
         .selection()
         .iter()
@@ -287,12 +978,13 @@ fn start_drag(
 
 /// What a drag does to each Label, from how it was when the drag began.
 type LabelTransform = Box<dyn Fn(&Label) -> Label>;
+
 /// What a drag does to each Stamp.
 type StampTransform = Box<dyn Fn(&Stamp) -> Stamp>;
 
 /// The Commands that put the dragged selection where the pointer at `point` says: one for
-/// the Landmasses and Lakes, then one per Label. `None` keeps the last frame's, as when a
-/// resize reaches the opposite edge and the box has no size.
+/// the Landmasses and Lakes, then one per Label and per Stamp. `None` keeps the last frame's,
+/// as when a resize reaches the opposite edge and the box has no size.
 fn drag_commands(drag: &Drag, point: [f64; 2], snap: bool) -> Option<Vec<Command>> {
     let delta = [point[0] - drag.start[0], point[1] - drag.start[1]];
     let ids = drag.outlines.clone();
@@ -301,7 +993,7 @@ fn drag_commands(drag: &Drag, point: [f64; 2], snap: bool) -> Option<Vec<Command
             None => (
                 Some(Command::Translate { ids, offset: delta }),
                 Box::new(move |label| handles::moved(label, delta)),
-                Box::new(move |stamp| handles::stamp_moved(stamp, delta)),
+                Box::new(move |stamp| handles::moved_stamp(stamp, delta)),
             ),
             Some(Grip::Resize(handle)) => {
                 let resized = drag.bounds.resized(handle, delta);
@@ -313,7 +1005,7 @@ fn drag_commands(drag: &Drag, point: [f64; 2], snap: bool) -> Option<Vec<Command
                 (
                     Some(Command::Transform { ids, transform }),
                     Box::new(move |label| handles::scaled(label, scale, fixed)),
-                    Box::new(move |stamp| handles::stamp_scaled(stamp, scale, fixed)),
+                    Box::new(move |stamp| handles::scaled_stamp(stamp, scale, fixed)),
                 )
             }
             Some(Grip::Rotate) => {
@@ -326,7 +1018,7 @@ fn drag_commands(drag: &Drag, point: [f64; 2], snap: bool) -> Option<Vec<Command
                 (
                     None,
                     Box::new(move |label| handles::rotated(label, degrees, centre)),
-                    Box::new(move |stamp| handles::stamp_rotated(stamp, degrees, centre)),
+                    Box::new(move |stamp| handles::rotated_stamp(stamp, degrees, centre)),
                 )
             }
         };
@@ -337,7 +1029,7 @@ fn drag_commands(drag: &Drag, point: [f64; 2], snap: bool) -> Option<Vec<Command
     });
     let stamps = drag.stamps.iter().map(|(id, stamp)| Command::SetStamp {
         id: *id,
-        stamp: stamp_transform(stamp),
+        stamp: Box::new(stamp_transform(stamp)),
     });
     Some(outlines.into_iter().chain(labels).chain(stamps).collect())
 }
@@ -356,7 +1048,6 @@ mod tests {
                 max: [100.0, 50.0],
             },
             outlines: Vec::new(),
-            stamps: Vec::new(),
             labels: vec![(
                 Id::new(),
                 Label {
@@ -365,6 +1056,7 @@ mod tests {
                     ..Label::default()
                 },
             )],
+            stamps: Vec::new(),
         }
     }
 
@@ -393,35 +1085,40 @@ mod tests {
     }
 
     #[test]
-    fn stamps_move_scale_and_rotate_with_the_drag() {
-        let stamp = Stamp {
-            position: [10.0, 0.0],
-            ..Stamp::new("test/box".parse().unwrap())
-        };
+    fn stamps_move_scale_and_rotate_about_the_drag() {
         let id = Id::new();
         let with_stamp = |grip| Drag {
             labels: Vec::new(),
-            stamps: vec![(id, stamp.clone())],
+            stamps: vec![(
+                id,
+                Stamp {
+                    position: [10.0, 20.0],
+                    ..Stamp::default()
+                },
+            )],
             ..drag(grip)
         };
-        let only = |commands: Option<Vec<Command>>| match commands.unwrap().remove(0) {
-            Command::SetStamp { stamp, .. } => stamp,
-            other => panic!("{other:?}"),
+        let stamp = |commands: Vec<Command>| match commands.into_iter().next() {
+            Some(Command::SetStamp { stamp, .. }) => *stamp,
+            other => panic!("expected SetStamp, got {other:?}"),
         };
-        let moved = only(drag_commands(&with_stamp(None), [130.0, 20.0], false));
-        assert_eq!(moved.position, [40.0, 20.0]);
-        let scaled = only(drag_commands(
-            &with_stamp(Some(Grip::Resize(Handle::Right))),
-            [300.0, 0.0],
-            false,
-        ));
-        assert_eq!(scaled.scale, 2.0);
-        let rotated = only(drag_commands(
-            &with_stamp(Some(Grip::Rotate)),
-            [0.0, 100.0],
-            false,
-        ));
-        assert!((rotated.rotation - 90.0).abs() < 1e-9);
+        let moved = stamp(drag_commands(&with_stamp(None), [130.0, 20.0], false).unwrap());
+        assert_eq!(moved.position, [40.0, 40.0]);
+        // Doubling the box about the middle of its left edge doubles the Stamp and its
+        // distance from that point (-100, 0).
+        let grown = stamp(
+            drag_commands(
+                &with_stamp(Some(Grip::Resize(Handle::Right))),
+                [300.0, 0.0],
+                false,
+            )
+            .unwrap(),
+        );
+        assert_eq!(grown.scale, 2.0);
+        assert_eq!(grown.position, [-100.0 + 110.0 * 2.0, 20.0 * 2.0]);
+        let turned =
+            stamp(drag_commands(&with_stamp(Some(Grip::Rotate)), [0.0, 100.0], false).unwrap());
+        assert_eq!(turned.rotation, 90.0);
     }
 
     #[test]

@@ -1,22 +1,22 @@
 //! Editor state around one Map: history, Selection, the active Layer and tool, and the
 //! message bar. Every change to the Map goes through a Command here.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ssmap_core::asset::PackLibrary;
+use ssmap_core::asset::AssetRef;
+use ssmap_core::land::{self, BrushStroke};
 use ssmap_core::{
-    AssetRef, Command, CommandError, ExecuteError, History, Id, Label, Map, Node, ObjectKind, Op,
-    PickIndex, RoughnessCache, Selection, Stamp,
+    Command, CommandError, ExecuteError, History, Id, Label, Map, MultiPolygon, Node, NodeRef,
+    ObjectKind, Op, PickIndex, Point, Rect, RoughnessCache, Selection, Stamp, StampIndex,
 };
-use ssmap_render::wgpu;
-use ssmap_render::{
-    Content, Fonts, LabelLayout, MapScene, StampAtlas, StampIndex, StampShape, StampSource,
-};
+use ssmap_render::{Content, Fonts, LabelLayout, MapScene, SpriteStore};
 
 use crate::layer_tree::node_name;
 use crate::tools::ToolId;
+
+/// The land brush's starting diameter, in Canvas units.
+pub const DEFAULT_BRUSH_SIZE: f64 = 48.0;
 
 /// How long a message stays in the status bar.
 pub const NOTICE_DURATION: Duration = Duration::from_secs(5);
@@ -31,6 +31,13 @@ pub struct Editor {
     /// The Layer new Objects go into.
     active_layer: Option<Id>,
     pub active_tool: ToolId,
+    /// The land brush's diameter, in Canvas units.
+    pub brush_size: f64,
+    node_edit: Option<NodeEdit>,
+    /// Set by a tool while it holds something Escape should drop (a lasso half drawn).
+    pub tool_busy: bool,
+    /// Set by Escape for the busy tool to act on.
+    pub cancel_tool: bool,
     notice: Option<Notice>,
     /// Set while a gesture's transaction is open.
     gesture_open: bool,
@@ -40,16 +47,29 @@ pub struct Editor {
     pick_index: Option<PickIndex>,
     /// Roughened outlines, shared by the screen and picking so they agree.
     roughness: RoughnessCache,
-    /// Every loaded Asset pack.
-    pub library: Arc<PackLibrary>,
+    /// Stamp art, shared with the Canvas renderer. Absent in headless tests.
+    sprites: Option<SpriteStore>,
+    stamp_index: Option<StampIndex>,
     /// The Asset the Stamp tool places, chosen in the Asset browser.
     pub selected_asset: Option<AssetRef>,
-    /// The shapes of the Assets drawn so far, for picking and selection bounds.
-    stamp_shapes: HashMap<AssetRef, StampShape>,
-    /// The Map revision `stamp_shapes` was last gathered for.
-    shapes_revision: Option<u64>,
-    /// Rebuilt lazily once the Map has changed.
-    stamp_index: Option<StampIndex>,
+}
+
+/// A pseudo-random number below `n` (which must be above 0), unseeded: Stamp variants are
+/// chosen when placed and then stored, so nothing needs to replay them.
+fn random_below(n: usize) -> usize {
+    use std::hash::{BuildHasher as _, Hasher as _};
+    (std::collections::hash_map::RandomState::new()
+        .build_hasher()
+        .finish() as usize)
+        % n
+}
+
+/// Node-edit mode: one Landmass or Lake whose stored vertices show as nodes, and the nodes
+/// selected among them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NodeEdit {
+    pub id: Id,
+    pub nodes: Vec<NodeRef>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -70,29 +90,29 @@ impl Editor {
             selection: Vec::new(),
             active_layer: None,
             active_tool: ToolId::Select,
+            brush_size: DEFAULT_BRUSH_SIZE,
+            node_edit: None,
+            tool_busy: false,
+            cancel_tool: false,
             notice: None,
             gesture_open: false,
             gesture_selection: Vec::new(),
             pick_index: None,
             roughness: RoughnessCache::new(),
-            library: Arc::default(),
-            selected_asset: None,
-            stamp_shapes: HashMap::new(),
-            shapes_revision: None,
+            sprites: None,
             stamp_index: None,
+            selected_asset: None,
         }
     }
 
-    pub fn with_library(map: Map, library: Arc<PackLibrary>) -> Self {
-        let selected_asset = library.packs().iter().find_map(|pack| {
-            let asset = pack.assets.first()?;
-            AssetRef::new(&pack.id, &asset.id).ok()
-        });
-        Self {
-            library,
-            selected_asset,
-            ..Self::new(map)
-        }
+    /// Where Stamp art comes from: it sizes Stamps for picking and handles.
+    pub fn set_sprites(&mut self, sprites: SpriteStore) {
+        self.sprites = Some(sprites);
+        self.stamp_index = None;
+    }
+
+    pub fn sprites(&self) -> Option<&SpriteStore> {
+        self.sprites.as_ref()
     }
 
     pub fn selection(&self) -> &[Id] {
@@ -106,12 +126,105 @@ impl Editor {
     /// Replaces the Selection. The active Layer follows it: a selected Layer, or the Layer
     /// holding a selected Object.
     pub fn select(&mut self, ids: Vec<Id>) {
+        if self.node_edit.as_ref().is_some_and(|edit| ids != [edit.id]) {
+            self.node_edit = None;
+        }
         self.selection = ids;
         if let Some(&last) = self.selection.last() {
             self.active_layer = match self.map.node(last) {
                 Some(Node::Layer(_)) => Some(last),
                 _ => self.map.parent(last),
             };
+        }
+    }
+
+    pub fn node_edit(&self) -> Option<&NodeEdit> {
+        self.node_edit.as_ref()
+    }
+
+    /// The stored outline (not the roughened one) of the Object in node-edit mode.
+    pub fn edited_outline(&self) -> Option<&MultiPolygon> {
+        match self.map.node(self.node_edit.as_ref()?.id)? {
+            Node::Object(object) => object.kind.geometry(),
+            Node::Layer(_) => None,
+        }
+    }
+
+    /// Enters node-edit mode on a Landmass or Lake, selecting it.
+    pub fn enter_node_edit(&mut self, id: Id) {
+        self.node_edit = None;
+        self.select(vec![id]);
+        self.node_edit = Some(NodeEdit {
+            id,
+            nodes: Vec::new(),
+        });
+    }
+
+    pub fn leave_node_edit(&mut self) {
+        self.node_edit = None;
+    }
+
+    /// Selects nodes of the Object being edited.
+    pub fn select_nodes(&mut self, nodes: Vec<NodeRef>) {
+        if let Some(edit) = &mut self.node_edit {
+            edit.nodes = nodes;
+        }
+    }
+
+    /// The shape of the outline being edited: how many points each ring has. Node numbers
+    /// stay meaningful while it does not change.
+    pub fn edited_shape(&self) -> Vec<usize> {
+        self.edited_outline()
+            .map(|outline| {
+                outline
+                    .0
+                    .iter()
+                    .flat_map(|polygon| polygon.rings().map(<[Point]>::len))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Forgets the node selection unless the outline still has `shape`: a repair may have
+    /// renumbered its nodes.
+    pub fn keep_nodes_if_shape(&mut self, shape: &[usize]) {
+        if self.edited_shape() != shape {
+            self.select_nodes(Vec::new());
+        }
+    }
+
+    /// Adds a node on an edge and selects it. One Undo step.
+    pub fn insert_node(&mut self, edge: NodeRef, point: Point) {
+        let Some(id) = self.node_edit.as_ref().map(|edit| edit.id) else {
+            return;
+        };
+        if self.run(Command::InsertNode { id, edge, point }) {
+            let added = NodeRef {
+                index: edge.index + 1,
+                ..edge
+            };
+            let landed = self
+                .edited_outline()
+                .is_some_and(|outline| outline.node(added) == Some(point));
+            self.select_nodes(if landed { vec![added] } else { Vec::new() });
+        }
+    }
+
+    /// Deletes the selected nodes. One Undo step; refused if a ring would be left with fewer
+    /// than three points.
+    pub fn delete_selected_nodes(&mut self) {
+        let Some(edit) = self.node_edit.clone() else {
+            return;
+        };
+        if edit.nodes.is_empty() {
+            return;
+        }
+        let command = Command::DeleteNodes {
+            id: edit.id,
+            nodes: edit.nodes,
+        };
+        if self.run(command) {
+            self.select_nodes(Vec::new());
         }
     }
 
@@ -125,40 +238,15 @@ impl Editor {
         index.pick(point)
     }
 
-    /// What the Canvas draws for the Map, rebuilt only once it has changed. Drops roughened
-    /// outlines of Objects that are gone.
-    ///
-    /// `gpu` is the Stamp atlas and device it lives on; without one (UI tests) Stamps draw
-    /// nothing. Building the content also loads every Asset the Stamps use, so afterwards
-    /// picking and selection bounds know their shapes.
-    pub fn scene_content(
-        &mut self,
-        gpu: Option<(&mut StampAtlas, &wgpu::Device, &wgpu::Queue)>,
-    ) -> Content {
-        self.roughness.retain(&self.map);
-        let mut source = gpu.map(|(atlas, device, queue)| StampSource {
-            library: &self.library,
-            atlas,
-            device,
-            queue,
-        });
-        let content = self
-            .scene
-            .content(&self.map, &mut self.roughness, source.as_mut());
-        if self.shapes_revision != Some(self.map.revision())
-            && let Some(source) = &source
-        {
-            self.shapes_revision = Some(self.map.revision());
-            for id in self.map.draw_order() {
-                if let Some(stamp) = self.stamp(id)
-                    && let Some(sprite) = source.atlas.loaded(&stamp.asset)
-                {
-                    self.stamp_shapes
-                        .insert(stamp.asset.clone(), sprite.shape.clone());
-                }
-            }
-        }
-        content
+    /// The topmost unlocked Stamp whose Silhouette is under `point`, in Canvas units.
+    fn pick_stamp(&mut self, point: [f64; 2]) -> Option<Id> {
+        let sprites = self.sprites.as_ref()?;
+        let map = &self.map;
+        let index = match &mut self.stamp_index {
+            Some(index) if index.is_current(map) => index,
+            slot => slot.insert(StampIndex::build(map, |asset| sprites.shape(asset))),
+        };
+        index.pick(point, |asset, uv| sprites.contains(asset, uv))
     }
 
     /// The Stamp with id `id`, if it is one.
@@ -172,20 +260,17 @@ impl Editor {
         }
     }
 
-    /// What a Stamp's Asset looks like, once it has been drawn.
-    pub fn stamp_shape(&self, asset: &AssetRef) -> Option<&StampShape> {
-        self.stamp_shapes.get(asset)
+    /// The box around a Stamp's placed art, if its Asset is installed.
+    pub fn stamp_bounds(&self, id: Id) -> Option<Rect> {
+        let stamp = self.stamp(id)?;
+        Some(stamp.bounds(&self.sprites.as_ref()?.shape(&stamp.asset)?))
     }
 
-    /// The topmost unlocked Stamp whose Silhouette is under `point`.
-    fn pick_stamp(&mut self, point: [f64; 2]) -> Option<Id> {
-        let map = &self.map;
-        let shapes = &self.stamp_shapes;
-        let index = match &mut self.stamp_index {
-            Some(index) if index.is_current(map) => index,
-            slot => slot.insert(StampIndex::build(map, |asset| shapes.get(asset))),
-        };
-        index.pick(point).map(|(id, _)| id)
+    /// What the Canvas draws for the Map, rebuilt only once it has changed. Drops roughened
+    /// outlines of Objects that are gone.
+    pub fn scene_content(&mut self) -> Content {
+        self.roughness.retain(&self.map);
+        self.scene.content(&self.map, &mut self.roughness)
     }
 
     /// The selected Landmasses and Lakes, which move and resize with the handles.
@@ -264,6 +349,133 @@ impl Editor {
                 .commit(self.selection.clone())
                 .expect("the gesture's transaction is open");
         }
+    }
+
+    /// What a land brush stroke started now would be called in the undo history: it paints or
+    /// erases a selected Lake, and otherwise land.
+    pub fn brush_label(&self, erase: bool) -> &'static str {
+        let lake = self.selection.iter().any(|&id| {
+            matches!(self.map.node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Lake(_)))
+        });
+        match (erase, lake) {
+            (false, false) => "Paint Land",
+            (false, true) => "Paint Lake",
+            (true, false) => "Erase Land",
+            (true, true) => "Erase Lake",
+        }
+    }
+
+    /// Finishes the land brush stroke whose gesture is open: runs the one Command the brush
+    /// rules choose ([`land::brush_command`]) and commits it as the gesture's Undo step. A new
+    /// Landmass becomes the Selection, so the next stroke merges into it. A stroke that changes
+    /// nothing, or is refused, leaves no Undo step.
+    pub fn finish_brush_stroke(&mut self, stroke: BrushStroke) {
+        let new_id = Id::new();
+        let planned = land::brush_command(
+            &self.map,
+            &mut self.roughness,
+            &self.selection,
+            self.active_layer,
+            stroke,
+            new_id,
+        );
+        match planned {
+            Ok(Some(command)) => {
+                let creates = matches!(command, Command::CreateLandmass { .. });
+                if self.gesture(command) {
+                    if creates {
+                        self.select(vec![new_id]);
+                    }
+                    self.end_gesture();
+                } else {
+                    self.cancel_gesture();
+                }
+            }
+            Ok(None) => self.cancel_gesture(),
+            Err(err) => {
+                self.cancel_gesture();
+                let text = err.to_string();
+                let mut chars = text.chars();
+                let first = chars.next().map(|c| c.to_uppercase().to_string());
+                self.error(first.unwrap_or_default() + chars.as_str());
+            }
+        }
+    }
+
+    /// The selected Landmasses, topmost first.
+    fn selected_landmasses(&self) -> Vec<Id> {
+        let order = self.map.draw_order();
+        let mut ids: Vec<Id> = self
+            .selection
+            .iter()
+            .copied()
+            .filter(|&id| {
+                matches!(self.map.node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Landmass(_)))
+            })
+            .collect();
+        ids.sort_by_key(|&id| std::cmp::Reverse(order.iter().position(|&o| o == id)));
+        ids
+    }
+
+    /// Whether Union and Subtract have enough to work on: two or more selected Landmasses.
+    pub fn can_combine(&self) -> bool {
+        self.selected_landmasses().len() >= 2
+    }
+
+    /// Whether a selected Landmass has more than one part.
+    pub fn can_split(&self) -> bool {
+        self.selected_landmasses()
+            .iter()
+            .any(|&id| self.part_count(id) > 1)
+    }
+
+    fn part_count(&self, id: Id) -> usize {
+        match self.map.node(id) {
+            Some(Node::Object(o)) => o.kind.geometry().map_or(0, |g| g.0.len()),
+            _ => 0,
+        }
+    }
+
+    /// Merges the selected Landmasses into the topmost one, which stays selected.
+    pub fn union_selection(&mut self) {
+        let ids = self.selected_landmasses();
+        if let Some(&keeper) = ids.first() {
+            self.run_selecting(Command::Union { ids }, vec![keeper]);
+        }
+    }
+
+    /// Cuts the topmost selected Landmass out of the others.
+    pub fn subtract_selection(&mut self) {
+        let ids = self.selected_landmasses();
+        let rest: Vec<Id> = ids.iter().skip(1).copied().collect();
+        if !ids.is_empty() {
+            self.run_selecting(Command::Subtract { ids }, rest);
+        }
+    }
+
+    /// Makes each part of every selected Landmass a Landmass of its own, as one Undo step.
+    pub fn split_selection(&mut self) {
+        let targets: Vec<Id> = self
+            .selected_landmasses()
+            .into_iter()
+            .filter(|&id| self.part_count(id) > 1)
+            .collect();
+        if targets.is_empty() {
+            return;
+        }
+        let mut selection = Vec::new();
+        self.begin_gesture("Split Apart");
+        for id in targets {
+            let new_ids: Vec<Id> = (1..self.part_count(id)).map(|_| Id::new()).collect();
+            selection.push(id);
+            selection.extend(&new_ids);
+            if !self.gesture(Command::SplitApart { id, new_ids }) {
+                self.cancel_gesture();
+                return;
+            }
+        }
+        self.select(selection);
+        self.end_gesture();
     }
 
     /// Escape: undoes everything the open gesture did, Selection included.
@@ -447,7 +659,7 @@ impl Editor {
     pub fn place_label(&mut self, position: [f64; 2]) -> Option<Id> {
         self.end_gesture();
         self.begin_gesture("Add Label");
-        let Some(parent) = self.target_layer() else {
+        let Some(parent) = self.placement_layer() else {
             self.cancel_gesture();
             return None;
         };
@@ -470,60 +682,23 @@ impl Editor {
         Some(id)
     }
 
-    /// The Layer new Objects go into: the active Layer, else the topmost, creating one if the
-    /// Map has none. Runs inside an open gesture.
-    fn target_layer(&mut self) -> Option<Id> {
-        if let Some(layer) = self.active_layer.filter(|&id| self.map.contains(id)) {
-            return Some(layer);
-        }
-        if let Some(&top) = self.map.children(None).last() {
-            return Some(top);
-        }
-        let id = Id::new();
-        let name = format!("Layer {}", self.layer_count() + 1);
-        self.gesture(Command::CreateLayer {
-            id,
-            parent: None,
-            index: None,
-            name,
-        })
-        .then_some(id)
-    }
-
-    /// The Asset the Stamp tool places next: the selected one, or a random member of its
-    /// Variant group. The Stamp records the concrete Asset, so the Map never depends on the
-    /// pack's grouping afterwards.
-    pub fn next_stamp_asset(&self) -> Option<AssetRef> {
-        let selected = self.selected_asset.clone()?;
-        let (pack, asset) = self.library.asset(&selected)?;
-        let Some(group) = &asset.variant_group else {
-            return Some(selected);
-        };
-        let members: Vec<&ssmap_core::asset::Asset> = pack.variant_group(group).collect();
-        let pick = members[random_below(members.len())];
-        AssetRef::new(&pack.id, &pick.id).ok()
-    }
-
-    /// Places the selected Asset as a Stamp at `position` in the active Layer, creating a
-    /// Layer if the Map has none, as one Undo step.
+    /// Places the selected Asset (or a random member of its Variant group) as a Stamp at
+    /// `position` in the active Layer, as one Undo step, and selects it. Does nothing when no
+    /// Asset is selected.
     pub fn place_stamp(&mut self, position: [f64; 2]) -> Option<Id> {
-        let asset = self.next_stamp_asset()?;
+        let asset = self.placement_asset()?;
         self.end_gesture();
         self.begin_gesture("Add Stamp");
-        let Some(parent) = self.target_layer() else {
+        let Some(parent) = self.placement_layer() else {
             self.cancel_gesture();
             return None;
         };
         let id = Id::new();
-        let stamp = Stamp {
-            position,
-            ..Stamp::new(asset)
-        };
         if !self.gesture(Command::CreateStamp {
             id,
             parent,
             index: None,
-            stamp,
+            stamp: Box::new(Stamp::new(asset, position)),
         }) {
             self.cancel_gesture();
             return None;
@@ -531,6 +706,45 @@ impl Editor {
         self.select(vec![id]);
         self.end_gesture();
         Some(id)
+    }
+
+    /// The concrete Asset the next Stamp gets: the selected one, or a random sibling from its
+    /// Variant group.
+    fn placement_asset(&self) -> Option<AssetRef> {
+        let selected = self.selected_asset.as_ref()?;
+        let library = self.sprites.as_ref()?.library();
+        let (pack, asset) = library.asset(selected)?;
+        let Some(group) = &asset.variant_group else {
+            return Some(selected.clone());
+        };
+        let members: Vec<&str> = pack
+            .variant_group(group)
+            .map(|member| member.id.as_str())
+            .collect();
+        let pick = members[random_below(members.len())];
+        AssetRef::new(pack.id.clone(), pick).ok()
+    }
+
+    /// The Layer new Objects go into: the active one, else the top Layer, creating a Layer if
+    /// the Map has none. Runs inside the open gesture.
+    fn placement_layer(&mut self) -> Option<Id> {
+        match self.active_layer.filter(|&id| self.map.contains(id)) {
+            Some(layer) => Some(layer),
+            None => match self.map.children(None).last() {
+                Some(&top) => Some(top),
+                None => {
+                    let id = Id::new();
+                    let name = format!("Layer {}", self.layer_count() + 1);
+                    let command = Command::CreateLayer {
+                        id,
+                        parent: None,
+                        index: None,
+                        name,
+                    };
+                    self.gesture(command).then_some(id)
+                }
+            },
+        }
     }
 
     fn layer_count(&self) -> usize {
@@ -542,25 +756,14 @@ impl Editor {
 
     /// Restores a recorded Selection, dropping anything that no longer exists.
     fn restore(&mut self, mut selection: Selection) {
+        // Undo and redo can renumber nodes.
+        self.select_nodes(Vec::new());
         selection.retain(|&id| self.map.contains(id));
         self.select(selection);
         if self.active_layer.is_some_and(|id| !self.map.contains(id)) {
             self.active_layer = None;
         }
     }
-}
-
-/// A pseudo-random number below `bound` (at least 1), seeded from the clock. Used only to
-/// choose among variants; the choice is recorded in the Command, so replay is exact.
-fn random_below(bound: usize) -> usize {
-    use std::hash::{BuildHasher, Hasher};
-    let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
-    hasher.write_u128(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_nanos()),
-    );
-    (hasher.finish() % bound as u64) as usize
 }
 
 #[cfg(test)]
@@ -693,91 +896,204 @@ mod tests {
         assert_eq!(editor.pick([50.0, 50.0]), None);
     }
 
-    /// An editor holding the core test pack, with its first Asset selected.
-    fn stamping_editor() -> Editor {
-        let roots = ssmap_core::asset::PackRoots {
+    fn opacity(editor: &Editor, id: Id) -> f32 {
+        match editor.map.node(id) {
+            Some(Node::Layer(layer)) => layer.opacity,
+            _ => panic!("a Layer"),
+        }
+    }
+
+    fn editor_with_square() -> (Editor, Id) {
+        let mut editor = editor();
+        let layer = editor.new_layer().unwrap();
+        let id = Id::new();
+        editor.run(Command::CreateLandmass {
+            id,
+            parent: layer,
+            index: None,
+            geometry: MultiPolygon(vec![ssmap_core::Polygon {
+                exterior: vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+                holes: Vec::new(),
+            }]),
+            fill: None,
+        });
+        (editor, id)
+    }
+
+    fn node(index: usize) -> NodeRef {
+        NodeRef {
+            part: 0,
+            ring: 0,
+            index,
+        }
+    }
+
+    #[test]
+    fn node_edit_mode_follows_the_selection_and_edits_undo_cleanly() {
+        let (mut editor, id) = editor_with_square();
+        editor.enter_node_edit(id);
+        assert_eq!(editor.selection(), &[id]);
+
+        // A drag is one gesture and one Undo step, however many frames it takes.
+        editor.select_nodes(vec![node(2)]);
+        editor.begin_gesture("Move Nodes");
+        for step in 1..=5 {
+            editor.gesture_replace(Command::MoveNodes {
+                id,
+                nodes: vec![node(2)],
+                offset: [f64::from(step), 0.0],
+            });
+        }
+        editor.end_gesture();
+        assert_eq!(
+            editor.edited_outline().unwrap().node(node(2)),
+            Some([15.0, 10.0])
+        );
+        editor.undo();
+        assert_eq!(
+            editor.edited_outline().unwrap().node(node(2)),
+            Some([10.0, 10.0])
+        );
+        assert!(editor.node_edit().is_some_and(|edit| edit.nodes.is_empty()));
+
+        editor.insert_node(node(0), [5.0, -2.0]);
+        assert_eq!(editor.node_edit().unwrap().nodes, vec![node(1)]);
+        assert_eq!(editor.edited_shape(), vec![5]);
+        editor.delete_selected_nodes();
+        assert_eq!(editor.edited_shape(), vec![4]);
+
+        // Leaving, or selecting something else, ends the mode.
+        editor.select(Vec::new());
+        assert!(editor.node_edit().is_none());
+    }
+
+    #[test]
+    fn deleting_nodes_that_would_leave_fewer_than_three_is_refused() {
+        let (mut editor, id) = editor_with_square();
+        editor.enter_node_edit(id);
+        editor.select_nodes(vec![node(0), node(1)]);
+        editor.delete_selected_nodes();
+        assert_eq!(editor.edited_shape(), vec![4]);
+        assert!(editor.notice().is_some_and(|notice| notice.is_error));
+    }
+
+    #[test]
+    fn union_and_split_apart_work_on_the_selection_in_one_undo_step() {
+        let (mut editor, a) = editor_with_square();
+        let layer = editor.map.parent(a).unwrap();
+        let b = Id::new();
+        editor.run(Command::CreateLandmass {
+            id: b,
+            parent: layer,
+            index: None,
+            geometry: MultiPolygon(vec![ssmap_core::Polygon {
+                exterior: vec![[5.0, 5.0], [20.0, 5.0], [20.0, 20.0], [5.0, 20.0]],
+                holes: Vec::new(),
+            }]),
+            fill: None,
+        });
+        editor.select(vec![a, b]);
+        assert!(editor.can_combine() && !editor.can_split());
+        editor.union_selection();
+        assert_eq!(editor.selection(), &[b]);
+        assert!(!editor.map.contains(a));
+
+        editor.undo();
+        assert!(editor.map.contains(a) && editor.map.contains(b));
+
+        // Two islands split into two Landmasses with one Undo step.
+        editor.select(vec![a]);
+        editor.run(Command::AddRegion {
+            id: a,
+            region: MultiPolygon(vec![ssmap_core::Polygon {
+                exterior: vec![[50.0, 50.0], [60.0, 50.0], [60.0, 60.0], [50.0, 60.0]],
+                holes: Vec::new(),
+            }]),
+        });
+        assert!(editor.can_split());
+        let before = editor.map.children(Some(layer)).len();
+        editor.split_selection();
+        assert_eq!(editor.map.children(Some(layer)).len(), before + 1);
+        assert_eq!(editor.selection().len(), 2);
+        editor.undo();
+        assert_eq!(editor.map.children(Some(layer)).len(), before);
+    }
+    /// An Editor whose sprites come from the core crate's test pack.
+    fn editor_with_assets() -> Editor {
+        use ssmap_core::asset::{PackLibrary, PackRoots};
+        let roots = PackRoots {
             built_in: std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("../core/tests/packs"),
             user: None,
         };
         let (library, problems) = PackLibrary::load(&roots);
         assert!(problems.is_empty(), "{problems:?}");
-        Editor::with_library(
-            Map::new(Canvas::new(500, 500, Scale::new(1.0, DistanceUnit::Miles))),
-            Arc::new(library),
-        )
+        let mut editor = editor();
+        editor.set_sprites(SpriteStore::new(Arc::new(library)));
+        editor
+    }
+
+    fn asset(reference: &str) -> AssetRef {
+        reference.parse().unwrap()
     }
 
     #[test]
-    fn placing_a_stamp_creates_a_layer_and_is_one_undo_step() {
-        let mut editor = stamping_editor();
-        assert_eq!(
-            editor.selected_asset,
-            Some("test-pack/mountain-1".parse().unwrap())
-        );
-        let id = editor.place_stamp([200.0, 150.0]).unwrap();
-        assert_eq!(editor.stamp(id).unwrap().position, [200.0, 150.0]);
+    fn the_stamp_tool_places_the_selected_asset_in_one_undo_step() {
+        let mut editor = editor_with_assets();
+        assert_eq!(editor.place_stamp([40.0, 50.0]), None, "no Asset chosen");
+        assert!(editor.map.children(None).is_empty(), "and nothing was made");
+
+        editor.selected_asset = Some(asset("test-pack/castle"));
+        let id = editor.place_stamp([40.0, 50.0]).unwrap();
+        let stamp = editor.stamp(id).unwrap();
+        assert_eq!(stamp.asset, asset("test-pack/castle"));
+        assert_eq!(stamp.position, [40.0, 50.0]);
         assert_eq!(editor.selection(), &[id]);
+        // The Layer the Map lacked was made in the same step.
+        assert_eq!(editor.map.children(None).len(), 1);
         assert_eq!(editor.undo_label(), Some("Add Stamp"));
         editor.undo();
-        assert!(
-            editor.map.children(None).is_empty(),
-            "the Layer is undone too"
-        );
+        assert!(editor.map.children(None).is_empty());
     }
 
     #[test]
-    fn placing_picks_a_variant_but_records_a_concrete_asset() {
-        let mut editor = stamping_editor();
+    fn a_variant_group_gives_its_members_and_stamps_keep_what_they_got() {
+        let mut editor = editor_with_assets();
+        editor.selected_asset = Some(asset("test-pack/mountain-1"));
         let mut seen = std::collections::HashSet::new();
-        for _ in 0..64 {
-            let asset = editor.next_stamp_asset().unwrap();
-            assert_eq!(asset.pack, "test-pack");
-            seen.insert(asset.asset);
+        for i in 0..60 {
+            let id = editor.place_stamp([f64::from(i), 0.0]).unwrap();
+            let got = editor.stamp(id).unwrap().asset.to_string();
+            assert!(
+                got == "test-pack/mountain-1" || got == "test-pack/mountain-2",
+                "{got}"
+            );
+            seen.insert(got);
         }
-        let expected: std::collections::HashSet<String> =
-            ["mountain-1".to_owned(), "mountain-2".to_owned()].into();
-        assert_eq!(seen, expected, "only the Variant group, and both of them");
-        // A lone Asset is always itself.
-        editor.selected_asset = Some("test-pack/castle".parse().unwrap());
-        assert_eq!(
-            editor.next_stamp_asset(),
-            Some("test-pack/castle".parse().unwrap())
-        );
-        editor.selected_asset = Some("test-pack/ghost".parse().unwrap());
-        assert_eq!(editor.next_stamp_asset(), None, "not in any pack");
+        assert_eq!(seen.len(), 2, "both variants turn up in 60 tries");
     }
 
     #[test]
-    fn picking_finds_the_stamp_under_its_silhouette() {
-        let mut editor = stamping_editor();
-        editor.selected_asset = Some("test-pack/castle".parse().unwrap());
-        let id = editor.place_stamp([200.0, 200.0]).unwrap();
-        let mut mask = ssmap_render::raster::Raster::new(2, 2);
-        mask.pixels = vec![255; 16];
-        // A 100x100 box with its Anchor at the bottom centre: x 150..250, y 100..200.
-        editor.stamp_shapes.insert(
-            "test-pack/castle".parse().unwrap(),
-            StampShape {
-                size: [100.0, 100.0],
-                anchor: [0.5, 1.0],
-                mask: Arc::new(mask),
-            },
-        );
-        assert_eq!(editor.pick([200.0, 150.0]), Some(id));
-        assert_eq!(editor.pick([200.0, 250.0]), None, "below the Anchor");
-        editor.run(Command::SetLocked { id, locked: true });
+    fn picking_goes_by_silhouette_and_the_topmost_stamp_wins() {
+        let mut editor = editor_with_assets();
+        editor.selected_asset = Some(asset("test-pack/castle"));
+        let below = editor.place_stamp([200.0, 200.0]).unwrap();
+        let above = editor.place_stamp([210.0, 200.0]).unwrap();
+        // The Anchor is on the art, so a point just above it is inside the Silhouette.
+        assert_eq!(editor.pick([205.0, 190.0]), Some(above));
+        assert_eq!(editor.pick([-50.0, -50.0]), None);
+        // The box's corner, outside the outline, finds nothing.
+        let bounds = editor.stamp_bounds(below).unwrap();
         assert_eq!(
-            editor.pick([200.0, 150.0]),
-            None,
-            "locked Stamps aren't picked"
+            editor.pick([bounds.min[0] + 0.1, bounds.min[1] + 0.1]),
+            None
         );
-    }
 
-    fn opacity(editor: &Editor, id: Id) -> f32 {
-        match editor.map.node(id) {
-            Some(Node::Layer(layer)) => layer.opacity,
-            _ => panic!("a Layer"),
-        }
+        // A locked Stamp can't be picked there, so what's beneath is.
+        editor.run(Command::SetLocked {
+            id: above,
+            locked: true,
+        });
+        assert_eq!(editor.pick([205.0, 190.0]), Some(below));
     }
 }

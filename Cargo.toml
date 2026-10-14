@@ -21,6 +21,7 @@ directories = "6.0"
 eframe = { version = "0.36", features = ["persistence"] }
 egui-file-dialog = "0.15"
 etagere = "0.3"
+geo = { version = "0.33", default-features = false }
 image = { version = "0.25", default-features = false, features = ["png"] }
 insta = { version = "1.49", features = ["glob", "json"] }
 lyon = "1.0"

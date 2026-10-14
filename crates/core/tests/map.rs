@@ -51,7 +51,7 @@ fn objects_cannot_sit_at_the_top_level() {
         .apply(Op::Insert {
             parent: None,
             index: 0,
-            subtree: object(ObjectKind::Stamp(Stamp::new("test/stamp".parse().unwrap()))),
+            subtree: object(ObjectKind::Stamp(Stamp::default())),
         })
         .unwrap_err();
     assert_eq!(err, OpError::ObjectAtRoot);
@@ -64,7 +64,7 @@ fn objects_cannot_hold_children() {
     let stamp = insert(
         &mut map,
         Some(land),
-        object(ObjectKind::Stamp(Stamp::new("test/stamp".parse().unwrap()))),
+        object(ObjectKind::Stamp(Stamp::default())),
     );
     let err = map
         .apply(Op::Move {
@@ -98,7 +98,7 @@ fn objects_only_have_the_locked_property() {
     let stamp = insert(
         &mut map,
         Some(land),
-        object(ObjectKind::Stamp(Stamp::new("test/stamp".parse().unwrap()))),
+        object(ObjectKind::Stamp(Stamp::default())),
     );
     assert_eq!(
         map.apply(Op::SetProperty {
@@ -122,7 +122,7 @@ fn only_landmasses_and_lakes_have_geometry() {
     let stamp = insert(
         &mut map,
         Some(land),
-        object(ObjectKind::Stamp(Stamp::new("test/stamp".parse().unwrap()))),
+        object(ObjectKind::Stamp(Stamp::default())),
     );
     assert_eq!(
         map.apply(Op::ReplaceGeometry {
@@ -177,7 +177,7 @@ fn moving_touches_both_parents() {
     let stamp = insert(
         &mut map,
         Some(a),
-        object(ObjectKind::Stamp(Stamp::new("test/stamp".parse().unwrap()))),
+        object(ObjectKind::Stamp(Stamp::default())),
     );
     let before = (map.version(a).unwrap(), map.version(b).unwrap());
     map.apply(Op::Move {
@@ -199,7 +199,7 @@ fn removing_a_layer_returns_its_whole_branch() {
     let stamp = insert(
         &mut map,
         Some(group),
-        object(ObjectKind::Stamp(Stamp::new("test/stamp".parse().unwrap()))),
+        object(ObjectKind::Stamp(Stamp::default())),
     );
     let inverse = map.apply(Op::Remove { id: group }).unwrap();
     assert!(!map.contains(stamp));
