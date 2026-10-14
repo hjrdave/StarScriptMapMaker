@@ -16,12 +16,13 @@ mod node;
 mod op;
 mod pick;
 mod roughness;
+pub mod scatter;
 mod shore;
 mod stamp_pick;
 
 pub use asset::AssetRef;
 pub use color::{Color, ParseColorError};
-pub use command::{Command, CommandError};
+pub use command::{Command, CommandError, PlacedStamp};
 pub use extra::Extra;
 pub use geometry::{Affine, MultiPolygon, NodeRef, Point, Polygon, Rect};
 pub use history::{DEFAULT_BUDGET_BYTES, ExecuteError, History, HistoryError, Selection, UndoStep};
