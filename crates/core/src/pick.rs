@@ -1,20 +1,24 @@
 //! Finding Objects by position: an rstar R-tree of outline boxes for the broad phase, then an
-//! exact even-odd point-in-polygon test.
+//! exact even-odd point-in-polygon test. Both use the roughened outline, so what you click is
+//! what you see (ADR 0002).
+
+use std::sync::Arc;
 
 use rstar::primitives::{GeomWithData, Rectangle};
 use rstar::{AABB, RTree};
 
-use crate::geometry::{Point, Rect};
+use crate::geometry::{MultiPolygon, Point, Rect};
 use crate::id::Id;
 use crate::map::Map;
-use crate::node::Node;
+use crate::roughness::RoughnessCache;
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 struct Entry {
     id: Id,
     /// Position in the draw order; higher draws above.
     rank: usize,
     locked: bool,
+    outline: Arc<MultiPolygon>,
 }
 
 type Indexed = GeomWithData<Rectangle<[f64; 2]>, Entry>;
@@ -27,20 +31,20 @@ pub struct PickIndex {
 }
 
 impl PickIndex {
-    pub fn build(map: &Map) -> Self {
+    /// Indexes `map`, taking roughened outlines from `roughness`.
+    pub fn build(map: &Map, roughness: &mut RoughnessCache) -> Self {
         let entries = map
             .draw_order()
             .into_iter()
             .enumerate()
             .filter_map(|(rank, id)| {
-                let Some(Node::Object(object)) = map.node(id) else {
-                    return None;
-                };
-                let bounds = object.kind.geometry()?.bounds()?;
+                let outline = roughness.outline(map, id)?;
+                let bounds = outline.bounds()?;
                 let entry = Entry {
                     id,
                     rank,
                     locked: map.is_locked(id),
+                    outline,
                 };
                 Some(GeomWithData::new(
                     Rectangle::from_corners(bounds.min, bounds.max),
@@ -61,27 +65,20 @@ impl PickIndex {
 
     /// The topmost unlocked Landmass or Lake whose fill covers `point`. Holes don't count, so
     /// a click in a hole finds whatever lies beneath.
-    pub fn pick(&self, map: &Map, point: Point) -> Option<Id> {
+    pub fn pick(&self, point: Point) -> Option<Id> {
         self.tree
             .locate_all_at_point(&point)
-            .filter(|candidate| !candidate.data.locked)
-            .filter(|candidate| {
-                matches!(
-                    map.node(candidate.data.id),
-                    Some(Node::Object(object))
-                        if object.kind.geometry().is_some_and(|g| g.contains(point))
-                )
-            })
+            .filter(|candidate| !candidate.data.locked && candidate.data.outline.contains(point))
             .max_by_key(|candidate| candidate.data.rank)
             .map(|candidate| candidate.data.id)
     }
 
     /// Landmasses and Lakes whose bounds meet `rect`, locked or not, first lowest.
     pub fn intersecting(&self, rect: &Rect) -> Vec<Id> {
-        let mut found: Vec<Entry> = self
+        let mut found: Vec<&Entry> = self
             .tree
             .locate_in_envelope_intersecting(&AABB::from_corners(rect.min, rect.max))
-            .map(|candidate| candidate.data)
+            .map(|candidate| &candidate.data)
             .collect();
         found.sort_by_key(|entry| entry.rank);
         found.into_iter().map(|entry| entry.id).collect()

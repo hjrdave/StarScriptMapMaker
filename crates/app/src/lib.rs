@@ -132,6 +132,11 @@ impl MapMakerApp {
         self.recent.paths()
     }
 
+    /// The screen position of a Canvas point in the Canvas panel, once it has been drawn.
+    pub fn canvas_to_screen(&self, point: [f64; 2]) -> Option<egui::Pos2> {
+        self.canvas_view.to_screen(point)
+    }
+
     /// The Recovery journal being written for the open Map, once there is one.
     pub fn recovery_journal(&self) -> Option<&Path> {
         self.recovery.journal_path()
@@ -140,11 +145,6 @@ impl MapMakerApp {
     /// Whether edits are waiting to be written to the Recovery journal.
     pub fn has_unjournaled_changes(&self) -> bool {
         self.recovery.has_pending()
-    }
-
-    /// The screen position of a Canvas point in the Canvas panel, once it has been drawn.
-    pub fn canvas_to_screen(&self, point: [f64; 2]) -> Option<egui::Pos2> {
-        self.canvas_view.to_screen(point)
     }
 
     /// The window title, as last sent to the window.
@@ -403,9 +403,9 @@ impl MapMakerApp {
     }
 
     /// The preview PNG stored with each save, rendered like the screen.
-    fn preview_png(&self) -> Option<Vec<u8>> {
+    fn preview_png(&mut self) -> Option<Vec<u8>> {
         let render_state = self.render_state.as_ref()?;
-        let image = canvas_view::render_whole_canvas(render_state, &self.editor.map, PREVIEW_SIZE)?;
+        let image = canvas_view::render_whole_canvas(render_state, &mut self.editor, PREVIEW_SIZE)?;
         let mut png = Vec::new();
         image::ImageEncoder::write_image(
             image::codecs::png::PngEncoder::new(&mut png),

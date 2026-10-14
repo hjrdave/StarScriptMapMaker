@@ -10,7 +10,9 @@
 
 use std::path::PathBuf;
 
-use ssmap_core::{Canvas, Command, DistanceUnit, Lake, Landmass, Map, Scale};
+use ssmap_core::{
+    Canvas, Command, DistanceUnit, Lake, Landmass, Map, Roughness, RoughnessCache, Scale,
+};
 use ssmap_render::{
     CanvasRenderer, CanvasScene, GpuCapabilities, Headless, RgbaImage, View, render_to_image,
 };
@@ -199,17 +201,21 @@ fn land_and_water() -> Map {
     map
 }
 
+/// 0.4 px per unit: the 1000-unit Canvas is 400 px at (16, 16).
+fn land_and_water_view() -> View {
+    View {
+        origin: [-40.0, -40.0],
+        zoom: 0.4,
+        size: [432, 432],
+    }
+}
+
 #[test]
 fn island_with_a_hole_and_a_lake() {
     let Some(gpu) = gpu() else { return };
     let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
-    let scene = CanvasScene::from_map(&land_and_water());
-    // 0.4 px per unit: the 1000-unit Canvas is 400 px at (16, 16).
-    let view = View {
-        origin: [-40.0, -40.0],
-        zoom: 0.4,
-        size: [432, 432],
-    };
+    let scene = CanvasScene::from_map(&land_and_water(), &mut RoughnessCache::new());
+    let view = land_and_water_view();
     let image = render(headless, &scene, &view);
     let at = |x: f64, y: f64| pixel(&image, (16.0 + x * 0.4) as u32, (16.0 + y * 0.4) as u32);
     let near = |actual: [u8; 4], expected: ssmap_core::Color| {
@@ -228,5 +234,27 @@ fn island_with_a_hole_and_a_lake() {
     }
     if let Gpu::Software(_) = gpu {
         assert_matches_golden("island_with_a_hole_and_a_lake", &image);
+    }
+}
+
+#[test]
+fn rough_coastlines() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let mut map = land_and_water();
+    map.execute(&Command::SetDefaultRoughness {
+        roughness: Roughness::new(14.0, 60.0, 3),
+    })
+    .expect("valid Roughness");
+    let scene = CanvasScene::from_map(&map, &mut RoughnessCache::new());
+    let image = render(headless, &scene, &land_and_water_view());
+    let smooth = render(
+        headless,
+        &CanvasScene::from_map(&land_and_water(), &mut RoughnessCache::new()),
+        &land_and_water_view(),
+    );
+    assert_ne!(image.pixels, smooth.pixels, "Roughness changes the coast");
+    if let Gpu::Software(_) = gpu {
+        assert_matches_golden("rough_coastlines", &image);
     }
 }

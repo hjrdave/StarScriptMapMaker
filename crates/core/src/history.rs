@@ -162,6 +162,8 @@ impl History {
     pub fn rewind(&mut self, map: &mut Map) -> Result<(), HistoryError> {
         let transaction = self.open.as_mut().ok_or(HistoryError::NoTransaction)?;
         map.revert(std::mem::take(&mut transaction.inverses));
+        // The journal never sees what was rewound, as it never sees a rollback.
+        transaction.applied.clear();
         Ok(())
     }
 

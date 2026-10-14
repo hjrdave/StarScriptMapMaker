@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use lyon::math::point;
 use lyon::path::Path;
-use ssmap_core::{Map, MultiPolygon, Node, Polygon};
+use ssmap_core::{Map, MultiPolygon, Node, Polygon, RoughnessCache};
 
 use crate::color::Color;
 use crate::vector::FillPath;
@@ -12,7 +12,8 @@ use crate::vector::FillPath;
 /// One Landmass or Lake fill.
 #[derive(Clone, PartialEq, Debug)]
 pub struct ShapeFill {
-    pub geometry: MultiPolygon,
+    /// The roughened outline, shared with the Roughness cache.
+    pub geometry: Arc<MultiPolygon>,
     pub color: Color,
 }
 
@@ -33,15 +34,16 @@ impl Shapes {
         Self(fills.into())
     }
 
-    /// Every visible Landmass and Lake of `map`, in [`Map::draw_order`].
-    pub fn from_map(map: &Map) -> Self {
+    /// Every visible Landmass and Lake of `map`, in [`Map::draw_order`], with its roughened
+    /// outline from `roughness`.
+    pub fn from_map(map: &Map, roughness: &mut RoughnessCache) -> Self {
         let fills = map
             .draw_order()
             .into_iter()
             .filter_map(|id| match map.node(id) {
                 Some(Node::Object(object)) => Some(ShapeFill {
-                    geometry: object.kind.geometry()?.clone(),
                     color: object.kind.fill()?.into(),
+                    geometry: roughness.outline(map, id)?,
                 }),
                 _ => None,
             })

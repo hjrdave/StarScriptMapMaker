@@ -60,16 +60,6 @@ pub enum Command {
     Delete {
         ids: Vec<Id>,
     },
-    /// Sets the Roughness of Landmasses and Lakes, or with `None` returns them to the Map-wide
-    /// default.
-    SetRoughness {
-        ids: Vec<Id>,
-        roughness: Option<Roughness>,
-    },
-    /// Sets the Roughness of every Landmass and Lake without its own.
-    SetDefaultRoughness {
-        roughness: Roughness,
-    },
     /// Creates a Landmass with the given id and outline inside Layer `parent`. `index` counts
     /// from the bottom of the Stacking order; omitted, the Landmass goes on top. Without a
     /// `fill`, it takes the default land colour.
@@ -108,6 +98,16 @@ pub enum Command {
         ids: Vec<Id>,
         fill: Color,
     },
+    /// Sets the Roughness of Landmasses and Lakes, or with `None` returns them to the Map-wide
+    /// default.
+    SetRoughness {
+        ids: Vec<Id>,
+        roughness: Option<Roughness>,
+    },
+    /// Sets the Roughness of every Landmass and Lake without its own.
+    SetDefaultRoughness {
+        roughness: Roughness,
+    },
 }
 
 #[derive(Clone, PartialEq, Debug, Error)]
@@ -128,12 +128,12 @@ pub enum CommandError {
     InvalidOpacity(f32),
     #[error("{0} is not a Landmass or Lake")]
     NoOutline(Id),
-    #[error("Roughness needs an amount of 0 or more and a scale above 0, not {amount} and {scale}")]
-    InvalidRoughness { amount: f64, scale: f64 },
     #[error("the outline of {id} is invalid: {problem}")]
     InvalidGeometry { id: Id, problem: String },
     #[error("the transform {0:?} is not finite or collapses shapes")]
     InvalidTransform([f64; 6]),
+    #[error("Roughness needs an amount of 0 or more and a scale above 0, not {amount} and {scale}")]
+    InvalidRoughness { amount: f64, scale: f64 },
     #[error(transparent)]
     Op(#[from] OpError),
 }
@@ -149,13 +149,13 @@ impl Command {
             Command::SetLocked { .. } => "Change Lock",
             Command::SetOpacity { .. } => "Change Opacity",
             Command::Delete { .. } => "Delete",
-            Command::SetRoughness { .. } => "Change Roughness",
-            Command::SetDefaultRoughness { .. } => "Change Default Roughness",
             Command::CreateLandmass { .. } => "Create Landmass",
             Command::CreateLake { .. } => "Create Lake",
             Command::Translate { .. } => "Move",
             Command::Transform { .. } => "Transform",
             Command::SetFill { .. } => "Change Fill",
+            Command::SetRoughness { .. } => "Change Roughness",
+            Command::SetDefaultRoughness { .. } => "Change Default Roughness",
         }
     }
 
@@ -224,30 +224,6 @@ impl Command {
                 Ok(vec![set(*id, Property::Opacity(*opacity))])
             }
             Command::Delete { ids } => delete(map, ids),
-            Command::SetRoughness { ids, roughness } => {
-                if let Some(roughness) = roughness {
-                    valid_roughness(roughness)?;
-                }
-                let mut ops = Vec::with_capacity(ids.len());
-                for &id in ids {
-                    match existing(map, id)? {
-                        Node::Object(object) if object.kind.geometry().is_some() => {}
-                        _ => return Err(CommandError::NoOutline(id)),
-                    }
-                    unlocked(map, id)?;
-                    ops.push(set(id, Property::Roughness(roughness.clone())));
-                }
-                Ok(ops)
-            }
-            Command::SetDefaultRoughness { roughness } => {
-                valid_roughness(roughness)?;
-                Ok(vec![Op::SetDefaults {
-                    defaults: MapDefaults {
-                        roughness: roughness.clone(),
-                        ..map.defaults().clone()
-                    },
-                }])
-            }
             Command::CreateLandmass {
                 id,
                 parent,
@@ -282,6 +258,25 @@ impl Command {
                     .into_iter()
                     .map(|id| set(id, Property::Fill(*fill)))
                     .collect())
+            }
+            Command::SetRoughness { ids, roughness } => {
+                if let Some(roughness) = roughness {
+                    valid_roughness(roughness)?;
+                }
+                let ids = outlined(map, ids)?;
+                Ok(ids
+                    .into_iter()
+                    .map(|id| set(id, Property::Roughness(roughness.clone())))
+                    .collect())
+            }
+            Command::SetDefaultRoughness { roughness } => {
+                valid_roughness(roughness)?;
+                Ok(vec![Op::SetDefaults {
+                    defaults: MapDefaults {
+                        roughness: roughness.clone(),
+                        ..map.defaults().clone()
+                    },
+                }])
             }
         }
     }
@@ -368,15 +363,6 @@ fn delete(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
     Ok(ops)
 }
 
-fn valid_roughness(roughness: &Roughness) -> Result<(), CommandError> {
-    let Roughness { amount, scale, .. } = *roughness;
-    if amount.is_finite() && amount >= 0.0 && scale.is_finite() && scale > 0.0 {
-        Ok(())
-    } else {
-        Err(CommandError::InvalidRoughness { amount, scale })
-    }
-}
-
 fn create_object(
     map: &Map,
     id: Id,
@@ -443,6 +429,15 @@ fn outline(map: &Map, id: Id) -> &MultiPolygon {
     match map.node(id) {
         Some(Node::Object(object)) => object.kind.geometry().expect("checked"),
         _ => unreachable!("checked"),
+    }
+}
+
+fn valid_roughness(roughness: &Roughness) -> Result<(), CommandError> {
+    let Roughness { amount, scale, .. } = *roughness;
+    if amount.is_finite() && amount >= 0.0 && scale.is_finite() && scale > 0.0 {
+        Ok(())
+    } else {
+        Err(CommandError::InvalidRoughness { amount, scale })
     }
 }
 

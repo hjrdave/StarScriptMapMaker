@@ -56,10 +56,10 @@ pub enum Property {
     /// Layers only. Ops don't check the target, so that inverses always apply; Commands
     /// keep it pointing at a Landmass.
     Clip(Option<Id>),
-    /// Landmasses and Lakes only. `None` uses the Map-wide default.
-    Roughness(Option<Roughness>),
     /// Landmasses and Lakes only.
     Fill(Color),
+    /// Landmasses and Lakes only. `None` uses the Map-wide default.
+    Roughness(Option<Roughness>),
 }
 
 #[derive(Clone, PartialEq, Debug, Error)]
@@ -225,8 +225,8 @@ fn check_index(index: usize, len: usize) -> Result<(), OpError> {
 /// Fails with the property's name if `node` does not have it.
 fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> {
     match (node, property) {
-        (Node::Layer(_), Property::Roughness(_)) => Err("roughness"),
         (Node::Layer(_), Property::Fill(_)) => Err("fill"),
+        (Node::Layer(_), Property::Roughness(_)) => Err("roughness"),
         (Node::Object(object), Property::Roughness(_)) if object.kind.geometry().is_none() => {
             Err("roughness")
         }
@@ -262,13 +262,13 @@ fn set_property(node: &mut Node, property: Property) -> Property {
         (Node::Object(object), Property::Locked(locked)) => {
             Property::Locked(std::mem::replace(&mut object.locked, locked))
         }
-        (Node::Object(object), Property::Roughness(roughness)) => {
-            let slot = object.kind.roughness_mut().expect("checked");
-            Property::Roughness(std::mem::replace(slot, roughness))
-        }
         (Node::Object(object), Property::Fill(fill)) => {
             let slot = object.kind.fill_mut().expect("checked");
             Property::Fill(std::mem::replace(slot, fill))
+        }
+        (Node::Object(object), Property::Roughness(roughness)) => {
+            let slot = object.kind.roughness_mut().expect("checked");
+            Property::Roughness(std::mem::replace(slot, roughness))
         }
         (_, _) => unreachable!("rejected by check_property"),
     }
