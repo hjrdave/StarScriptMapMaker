@@ -53,6 +53,32 @@ fn label() -> impl Strategy<Value = Label> {
         )
 }
 
+fn stamp() -> impl Strategy<Value = Stamp> {
+    (
+        point(),
+        0.1..8.0f64,
+        -360.0..360.0f64,
+        any::<bool>(),
+        (any::<[u8; 4]>(), prop::option::of(any::<[u8; 4]>())),
+        0.0..=1.0f32,
+    )
+        .prop_map(
+            |(position, scale, rotation, flip, (tint, fill), opacity)| {
+                let color = |[r, g, b, a]: [u8; 4]| Color::rgba(r, g, b, a);
+                Stamp {
+                    position,
+                    scale,
+                    rotation,
+                    flip,
+                    tint: color(tint),
+                    fill: fill.map(color),
+                    opacity,
+                    ..Stamp::new("test/stamp".parse().unwrap())
+                }
+            },
+        )
+}
+
 fn object() -> impl Strategy<Value = Object> {
     let kind = prop_oneof![
         (geometry(), prop::option::of(roughness())).prop_map(|(geometry, roughness)| {
@@ -69,7 +95,7 @@ fn object() -> impl Strategy<Value = Object> {
                 ..Default::default()
             })
         }),
-        Just(ObjectKind::Stamp(Stamp::default())),
+        stamp().prop_map(ObjectKind::Stamp),
         label().prop_map(|label| ObjectKind::Label(Box::new(label))),
     ];
     (any::<bool>(), kind).prop_map(|(locked, kind)| Object {
@@ -182,6 +208,7 @@ fn property() -> impl Strategy<Value = Property> {
         any::<[u8; 4]>().prop_map(|[r, g, b, a]| Property::Fill(Color::rgba(r, g, b, a))),
         prop::option::of(roughness()).prop_map(Property::Roughness),
         label().prop_map(|label| Property::Label(Box::new(label))),
+        stamp().prop_map(|stamp| Property::Stamp(Box::new(stamp))),
     ]
 }
 

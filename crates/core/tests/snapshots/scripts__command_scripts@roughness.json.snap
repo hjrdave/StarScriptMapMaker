@@ -150,7 +150,17 @@ input_file: crates/core/tests/scripts/roughness.json
                 {
                   "id": "00000000-0000-7000-8000-000000000005",
                   "kind": {
-                    "kind": "stamp"
+                    "asset": "test/stamp",
+                    "flip": false,
+                    "kind": "stamp",
+                    "opacity": 1.0,
+                    "position": [
+                      0.0,
+                      0.0
+                    ],
+                    "rotation": 0.0,
+                    "scale": 1.0,
+                    "tint": "#ffffff"
                   },
                   "locked": false,
                   "type": "object"
@@ -374,7 +384,17 @@ input_file: crates/core/tests/scripts/roughness.json
                 {
                   "id": "00000000-0000-7000-8000-000000000005",
                   "kind": {
-                    "kind": "stamp"
+                    "asset": "test/stamp",
+                    "flip": false,
+                    "kind": "stamp",
+                    "opacity": 1.0,
+                    "position": [
+                      0.0,
+                      0.0
+                    ],
+                    "rotation": 0.0,
+                    "scale": 1.0,
+                    "tint": "#ffffff"
                   },
                   "locked": false,
                   "type": "object"
@@ -516,7 +536,17 @@ input_file: crates/core/tests/scripts/roughness.json
           {
             "id": "00000000-0000-7000-8000-000000000005",
             "kind": {
-              "kind": "stamp"
+              "asset": "test/stamp",
+              "flip": false,
+              "kind": "stamp",
+              "opacity": 1.0,
+              "position": [
+                0.0,
+                0.0
+              ],
+              "rotation": 0.0,
+              "scale": 1.0,
+              "tint": "#ffffff"
             },
             "locked": false,
             "type": "object"

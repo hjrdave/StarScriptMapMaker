@@ -4,7 +4,7 @@
     {"op": "insert", "parent": "00000000-0000-7000-8000-000000000001", "index": 0, "subtree": {"id": "00000000-0000-7000-8000-000000000002", "type": "object", "locked": false, "kind": {"kind": "landmass", "geometry": [{"exterior": [[0, 0], [100, 0], [100, 100]]}]}}},
     {"op": "insert", "parent": "00000000-0000-7000-8000-000000000001", "index": 1, "subtree": {"id": "00000000-0000-7000-8000-000000000003", "type": "object", "locked": false, "kind": {"kind": "lake", "geometry": [{"exterior": [[10, 10], [20, 10], [20, 20]]}]}}},
     {"op": "insert", "parent": "00000000-0000-7000-8000-000000000001", "index": 2, "subtree": {"id": "00000000-0000-7000-8000-000000000004", "type": "object", "locked": true, "kind": {"kind": "landmass", "geometry": [{"exterior": [[200, 0], [300, 0], [300, 100]]}]}}},
-    {"op": "insert", "parent": "00000000-0000-7000-8000-000000000001", "index": 3, "subtree": {"id": "00000000-0000-7000-8000-000000000005", "type": "object", "locked": false, "kind": {"kind": "stamp"}}}
+    {"op": "insert", "parent": "00000000-0000-7000-8000-000000000001", "index": 3, "subtree": {"id": "00000000-0000-7000-8000-000000000005", "type": "object", "locked": false, "kind": {"kind": "stamp", "asset": "test/stamp"}}}
   ],
   "steps": [
     {"step": {"command": "set_default_roughness", "roughness": {"amount": 4, "scale": 40, "seed": 7}}},

@@ -77,7 +77,7 @@ fn a_layer_with_100k_objects_lays_out_only_visible_rows() {
     let stamps = (0..100_000)
         .map(|_| Subtree {
             id: Id::new(),
-            node: Node::Object(Object::new(ObjectKind::Stamp(Stamp::default()))),
+            node: Node::Object(Object::new(ObjectKind::Stamp(Stamp::new("test/stamp".parse().unwrap())))),
             children: Vec::new(),
         })
         .collect();

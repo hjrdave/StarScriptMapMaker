@@ -4,6 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::asset::AssetRef;
 use crate::color::Color;
 use crate::extra::Extra;
 use crate::geometry::{MultiPolygon, Point};
@@ -249,11 +250,67 @@ fn default_lake_fill() -> Color {
     Lake::DEFAULT_FILL
 }
 
-/// One placed Asset. Fields arrive with the Stamps ticket.
-#[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize, JsonSchema)]
+/// One placed Asset (ADR 0003). Position, scale and rotation all pivot on the Asset's Anchor.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Stamp {
+    /// The concrete Asset, never a Variant group, so editing a pack never reshuffles a Map.
+    pub asset: AssetRef,
+    /// Where the Anchor lands, in Canvas units.
+    #[serde(default)]
+    pub position: Point,
+    /// A multiple of the Asset's default size.
+    #[serde(default = "one")]
+    pub scale: f64,
+    /// Degrees clockwise about the Anchor.
+    #[serde(default)]
+    pub rotation: f64,
+    /// Mirrors the art left to right about the Anchor, before rotating.
+    #[serde(default)]
+    pub flip: bool,
+    /// Multiplies the art's colours. White leaves them as drawn.
+    #[serde(default = "white")]
+    pub tint: Color,
+    /// The colour under the line art, inside the Silhouette. Without one, the Map's land colour.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill: Option<Color>,
+    /// From 0 (transparent) to 1 (opaque).
+    #[serde(default = "one_f32")]
+    pub opacity: f32,
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+impl Stamp {
+    pub fn new(asset: AssetRef) -> Self {
+        Self {
+            asset,
+            position: [0.0, 0.0],
+            scale: 1.0,
+            rotation: 0.0,
+            flip: false,
+            tint: Color::WHITE,
+            fill: None,
+            opacity: 1.0,
+            extra: Extra::new(),
+        }
+    }
+
+    /// The fill under the art: this Stamp's own, or the Map's land colour.
+    pub fn fill_or_land(&self) -> Color {
+        self.fill.unwrap_or(Landmass::DEFAULT_FILL)
+    }
+}
+
+fn one() -> f64 {
+    1.0
+}
+
+fn one_f32() -> f32 {
+    1.0
+}
+
+fn white() -> Color {
+    Color::WHITE
 }
 
 /// Text placed on the Map, sized in Canvas units so it is part of the picture (ADR 0006).
