@@ -14,12 +14,20 @@
 //! transaction, so a crash mid-save leaves the previous save intact. Save As and new files
 //! are written beside the destination and renamed over it, for the same reason.
 //!
+//! Between saves, a Recovery journal beside the file records the Ops applied since (see
+//! [`Journal`]).
+//!
 //! Rows, meta keys, columns and tables this version doesn't know are left alone, and unknown
 //! JSON fields ride along in each object's [`Extra`](crate::Extra), so a file from a newer
 //! minor format version round-trips without loss.
 
 mod blob;
+mod journal;
 mod migrate;
+
+pub use journal::{
+    JOURNAL_VERSION, Journal, JournalBase, JournalError, Recovered, recovery_path, remove_journal,
+};
 
 use std::collections::HashMap;
 use std::fmt;
