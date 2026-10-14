@@ -8,6 +8,10 @@
 //! - `{"execute": <Command>}`: run a Command inside the open transaction.
 //! - `{"step": <Command>}`: run a Command as its own Undo step.
 //! - `"undo"`, `"redo"`.
+//! - `{"brush": {"selection": [ids], "active_layer": id, "start": [x, y], "region": <outline>,
+//!   "erase": bool, "new_id": id}}`: a finished land brush stroke. The runner records the
+//!   Command the brush rules choose and runs it as its own Undo step. Regions are given
+//!   directly, since stroking a path uses trigonometry that differs in the last bit by OS.
 //! - `"snapshot"`: record the read view at this point. The final view is always recorded.
 //!
 //! The snapshot lists every step with its outcome. After every step the runner checks that
@@ -15,8 +19,10 @@
 
 use serde::Deserialize;
 use serde_json::{Value, json};
+use ssmap_core::land::{BrushStroke, brush_command};
 use ssmap_core::{
-    Canvas, Command, DistanceUnit, History, Map, Node, ObjectKind, Op, Scale, Selection,
+    Canvas, Command, DistanceUnit, History, Id, Map, MultiPolygon, Node, ObjectKind, Op, Point,
+    RoughnessCache, Scale, Selection,
 };
 
 #[derive(Deserialize)]
@@ -44,6 +50,16 @@ enum Action {
     Step(Command),
     Undo,
     Redo,
+    Brush {
+        #[serde(default)]
+        selection: Selection,
+        active_layer: Option<Id>,
+        start: Point,
+        region: MultiPolygon,
+        #[serde(default)]
+        erase: bool,
+        new_id: Id,
+    },
     Snapshot,
 }
 
@@ -70,6 +86,36 @@ fn run(script: Script) -> Value {
             Action::Step(command) => result(history.execute_step(&mut map, &command, Vec::new())),
             Action::Undo => restored(history.undo(&mut map)),
             Action::Redo => restored(history.redo(&mut map)),
+            Action::Brush {
+                selection,
+                active_layer,
+                start,
+                region,
+                erase,
+                new_id,
+            } => {
+                let stroke = BrushStroke {
+                    region,
+                    start,
+                    erase,
+                };
+                let mut roughness = RoughnessCache::new();
+                match brush_command(
+                    &map,
+                    &mut roughness,
+                    &selection,
+                    active_layer,
+                    stroke,
+                    new_id,
+                ) {
+                    Ok(Some(command)) => json!({
+                        "command": command,
+                        "result": result(history.execute_step(&mut map, &command, selection)),
+                    }),
+                    Ok(None) => json!("nothing to do"),
+                    Err(err) => json!({ "error": err.to_string() }),
+                }
+            }
             Action::Snapshot => json!({ "view": map.view() }),
         };
         check(&map);

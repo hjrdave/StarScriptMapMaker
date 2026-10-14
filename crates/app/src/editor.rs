@@ -3,13 +3,17 @@
 
 use std::time::{Duration, Instant};
 
+use ssmap_core::land::{self, BrushStroke};
 use ssmap_core::{
-    Command, CommandError, ExecuteError, History, Id, Map, Node, Op, PickIndex, Point,
+    Command, CommandError, ExecuteError, History, Id, Map, Node, ObjectKind, Op, PickIndex, Point,
     RoughnessCache, Selection,
 };
 
 use crate::layer_tree::node_name;
 use crate::tools::ToolId;
+
+/// The land brush's starting diameter, in Canvas units.
+pub const DEFAULT_BRUSH_SIZE: f64 = 48.0;
 
 /// How long a message stays in the status bar.
 pub const NOTICE_DURATION: Duration = Duration::from_secs(5);
@@ -21,6 +25,8 @@ pub struct Editor {
     /// The Layer new Objects go into.
     active_layer: Option<Id>,
     pub active_tool: ToolId,
+    /// The land brush's diameter, in Canvas units.
+    pub brush_size: f64,
     notice: Option<Notice>,
     /// Set while a gesture's transaction is open.
     gesture_open: bool,
@@ -47,6 +53,7 @@ impl Editor {
             selection: Vec::new(),
             active_layer: None,
             active_tool: ToolId::Select,
+            brush_size: DEFAULT_BRUSH_SIZE,
             notice: None,
             gesture_open: false,
             pick_index: None,
@@ -165,6 +172,57 @@ impl Editor {
             self.history
                 .commit(self.selection.clone())
                 .expect("the gesture's transaction is open");
+        }
+    }
+
+    /// What a land brush stroke started now would be called in the undo history: it paints or
+    /// erases a selected Lake, and otherwise land.
+    pub fn brush_label(&self, erase: bool) -> &'static str {
+        let lake = self.selection.iter().any(|&id| {
+            matches!(self.map.node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Lake(_)))
+        });
+        match (erase, lake) {
+            (false, false) => "Paint Land",
+            (false, true) => "Paint Lake",
+            (true, false) => "Erase Land",
+            (true, true) => "Erase Lake",
+        }
+    }
+
+    /// Finishes the land brush stroke whose gesture is open: runs the one Command the brush
+    /// rules choose ([`land::brush_command`]) and commits it as the gesture's Undo step. A new
+    /// Landmass becomes the Selection, so the next stroke merges into it. A stroke that changes
+    /// nothing, or is refused, leaves no Undo step.
+    pub fn finish_brush_stroke(&mut self, stroke: BrushStroke) {
+        let new_id = Id::new();
+        let planned = land::brush_command(
+            &self.map,
+            &mut self.roughness,
+            &self.selection,
+            self.active_layer,
+            stroke,
+            new_id,
+        );
+        match planned {
+            Ok(Some(command)) => {
+                let creates = matches!(command, Command::CreateLandmass { .. });
+                if self.gesture(command) {
+                    if creates {
+                        self.select(vec![new_id]);
+                    }
+                    self.end_gesture();
+                } else {
+                    self.cancel_gesture();
+                }
+            }
+            Ok(None) => self.cancel_gesture(),
+            Err(err) => {
+                self.cancel_gesture();
+                let text = err.to_string();
+                let mut chars = text.chars();
+                let first = chars.next().map(|c| c.to_uppercase().to_string());
+                self.error(first.unwrap_or_default() + chars.as_str());
+            }
         }
     }
 

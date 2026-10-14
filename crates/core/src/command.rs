@@ -12,6 +12,7 @@ use thiserror::Error;
 use crate::color::Color;
 use crate::geometry::{Affine, MultiPolygon};
 use crate::id::Id;
+use crate::land;
 use crate::map::{Map, MapDefaults, Subtree};
 use crate::node::{Lake, Landmass, Layer, Node, Object, ObjectKind};
 use crate::op::{Op, OpError, Property};
@@ -93,6 +94,19 @@ pub enum Command {
         ids: Vec<Id>,
         transform: Affine,
     },
+    /// Adds `region` to the outline of a Landmass or Lake, as a land brush or lasso stroke
+    /// does. Parts it joins become one part; a hole it covers fills in.
+    AddRegion {
+        id: Id,
+        region: MultiPolygon,
+    },
+    /// Cuts `region` out of the outlines of Landmasses and Lakes. One it splits keeps every
+    /// part, one it leaves with nothing is deleted (clearing Clips to it), and one it misses
+    /// is left alone.
+    SubtractRegion {
+        ids: Vec<Id>,
+        region: MultiPolygon,
+    },
     /// Sets the fill colour of Landmasses and Lakes.
     SetFill {
         ids: Vec<Id>,
@@ -153,6 +167,8 @@ impl Command {
             Command::CreateLake { .. } => "Create Lake",
             Command::Translate { .. } => "Move",
             Command::Transform { .. } => "Transform",
+            Command::AddRegion { .. } => "Add Region",
+            Command::SubtractRegion { .. } => "Subtract Region",
             Command::SetFill { .. } => "Change Fill",
             Command::SetRoughness { .. } => "Change Roughness",
             Command::SetDefaultRoughness { .. } => "Change Default Roughness",
@@ -252,6 +268,41 @@ impl Command {
             }
             Command::Translate { ids, offset } => transform(map, ids, &Affine::translate(*offset)),
             Command::Transform { ids, transform: t } => transform(map, ids, t),
+            Command::AddRegion { id, region } => {
+                let [id] = outlined(map, &[*id])?[..] else {
+                    unreachable!("one id in, one id out")
+                };
+                valid_region(id, region)?;
+                let geometry = land::union(outline(map, id), region);
+                if let Some(problem) = geometry.problem() {
+                    return Err(CommandError::InvalidGeometry { id, problem });
+                }
+                Ok(vec![Op::ReplaceGeometry { id, geometry }])
+            }
+            Command::SubtractRegion { ids, region } => {
+                let ids = outlined(map, ids)?;
+                if let Some(&first) = ids.first() {
+                    valid_region(first, region)?;
+                }
+                let mut ops = Vec::new();
+                let mut emptied = Vec::new();
+                for id in ids {
+                    let current = outline(map, id);
+                    if !land::intersects(current, region) {
+                        continue;
+                    }
+                    let geometry = land::difference(current, region);
+                    if geometry.is_empty() {
+                        emptied.push(id);
+                    } else {
+                        ops.push(Op::ReplaceGeometry { id, geometry });
+                    }
+                }
+                if !emptied.is_empty() {
+                    ops.extend(delete(map, &emptied)?);
+                }
+                Ok(ops)
+            }
             Command::SetFill { ids, fill } => {
                 let ids = outlined(map, ids)?;
                 Ok(ids
@@ -429,6 +480,18 @@ fn outline(map: &Map, id: Id) -> &MultiPolygon {
     match map.node(id) {
         Some(Node::Object(object)) => object.kind.geometry().expect("checked"),
         _ => unreachable!("checked"),
+    }
+}
+
+/// A region to add or subtract must itself be a valid outline. Errors name `id`, the Object
+/// being edited.
+fn valid_region(id: Id, region: &MultiPolygon) -> Result<(), CommandError> {
+    match region.problem() {
+        Some(problem) => Err(CommandError::InvalidGeometry {
+            id,
+            problem: format!("the region: {problem}"),
+        }),
+        None => Ok(()),
     }
 }
 

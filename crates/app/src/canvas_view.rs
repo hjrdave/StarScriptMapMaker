@@ -171,6 +171,15 @@ impl CanvasView {
         if let Some(bounds) = Bounds::of_selection(&editor.map, editor.selection()) {
             handles::paint(&painter, &bounds, &view, rect.min, ppp);
         }
+        tools::paint_overlay(
+            &painter,
+            editor,
+            &view,
+            &mut self.tools,
+            rect.min,
+            response.hover_pos(),
+            ppp,
+        );
     }
 }
 

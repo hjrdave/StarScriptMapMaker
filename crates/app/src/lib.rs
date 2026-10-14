@@ -28,6 +28,9 @@ use crate::recent::RecentFiles;
 use crate::recovery::{Found, Recovery};
 use crate::tools::ToolId;
 
+/// How much `[` and `]` shrink or grow the land brush.
+const BRUSH_SIZE_STEP: f64 = 1.25;
+
 /// The Map file to open at launch, from the command-line arguments after the program name.
 ///
 /// Windows (the installer's file association) and Linux (the `.desktop` file's `%F`) pass a
@@ -656,6 +659,17 @@ impl MapMakerApp {
                     editor.active_tool = tool;
                 }
             }
+            if editor.active_tool == ToolId::LandBrush {
+                let step = if input.consume_key(Modifiers::NONE, Key::OpenBracket) {
+                    1.0 / BRUSH_SIZE_STEP
+                } else if input.consume_key(Modifiers::NONE, Key::CloseBracket) {
+                    BRUSH_SIZE_STEP
+                } else {
+                    1.0
+                };
+                editor.brush_size = (editor.brush_size * step)
+                    .clamp(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end());
+            }
         });
     }
 
@@ -673,6 +687,18 @@ impl MapMakerApp {
                 {
                     editor.active_tool = tool;
                 }
+            }
+            if editor.active_tool == ToolId::LandBrush {
+                ui.add(
+                    egui::Slider::new(&mut editor.brush_size, tools::BRUSH_SIZES)
+                        .logarithmic(true)
+                        .max_decimals(0)
+                        .text("Size"),
+                )
+                .on_hover_text(format!(
+                    "Brush diameter in Canvas units ([ and ]). Hold {} to erase.",
+                    tools::ERASE_MODIFIER
+                ));
             }
             ui.separator();
             let undo_hint = editor.undo_label().map(|l| format!("Undo {l}"));
