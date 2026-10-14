@@ -11,7 +11,10 @@
 use std::path::PathBuf;
 
 use ssmap_core::asset::{ArtFormat, PackSource, read_pack};
-use ssmap_core::{Align, Canvas, Color, Command, DistanceUnit, FontFace, Id, Label, Map, Scale};
+use ssmap_core::{
+    Align, Canvas, Color, Command, DistanceUnit, FontFace, Id, Label, Lake, Landmass, Map,
+    Roughness, RoughnessCache, Scale,
+};
 use ssmap_render::atlas::{Atlas, AtlasEntry, MIN_PAGE_SIZE};
 use ssmap_render::raster::{Art, Raster};
 use ssmap_render::{
@@ -185,6 +188,88 @@ fn whole_canvas_preview_shows_no_pasteboard() {
     }
 }
 
+/// The Map built by `core`'s `land_and_water` Command script: an island with a hole and an
+/// islet, plus a Lake listed beneath the island in the tree.
+/// Everything `map` draws, as the editor and export build it.
+fn scene_of(map: &Map) -> CanvasScene {
+    let content = MapScene::new(Fonts::bundled()).content(map, &mut RoughnessCache::new());
+    CanvasScene::new(&map.canvas).with_content(content)
+}
+
+fn land_and_water() -> Map {
+    let text = include_str!("../../core/tests/scripts/land_and_water.json");
+    let script: serde_json::Value = serde_json::from_str(text).expect("the script is JSON");
+    let mut map = Map::new(Canvas::new(
+        1000,
+        1000,
+        Scale::new(1.0, DistanceUnit::Miles),
+    ));
+    for step in script["steps"].as_array().expect("steps") {
+        let command: Command =
+            serde_json::from_value(step["step"].clone()).expect("every step is a Command");
+        map.execute(&command).expect("the script's Commands apply");
+    }
+    map
+}
+
+/// 0.4 px per unit: the 1000-unit Canvas is 400 px at (16, 16).
+fn land_and_water_view() -> View {
+    View {
+        origin: [-40.0, -40.0],
+        zoom: 0.4,
+        size: [432, 432],
+    }
+}
+
+#[test]
+fn island_with_a_hole_and_a_lake() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let scene = scene_of(&land_and_water());
+    let view = land_and_water_view();
+    let image = render(headless, &scene, &view);
+    let at = |x: f64, y: f64| pixel(&image, (16.0 + x * 0.4) as u32, (16.0 + y * 0.4) as u32);
+    let near = |actual: [u8; 4], expected: ssmap_core::Color| {
+        let expected = [expected.r, expected.g, expected.b, expected.a];
+        actual.iter().zip(expected).all(|(a, e)| a.abs_diff(e) <= 2)
+    };
+    assert!(near(at(450.0, 650.0), Landmass::DEFAULT_FILL), "land");
+    assert!(
+        near(at(600.0, 400.0), Lake::DEFAULT_FILL),
+        "the Lake draws above the land"
+    );
+    assert!(near(at(860.0, 850.0), Landmass::DEFAULT_FILL), "the islet");
+    for (x, y) in [(320.0, 560.0), (50.0, 50.0)] {
+        let water = at(x, y);
+        assert!(water[2] > water[0], "ocean at ({x}, {y}): {water:?}");
+    }
+    if let Gpu::Software(_) = gpu {
+        assert_matches_golden("island_with_a_hole_and_a_lake", &image);
+    }
+}
+
+#[test]
+fn rough_coastlines() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let mut map = land_and_water();
+    map.execute(&Command::SetDefaultRoughness {
+        roughness: Roughness::new(14.0, 60.0, 3),
+    })
+    .expect("valid Roughness");
+    let scene = scene_of(&map);
+    let image = render(headless, &scene, &land_and_water_view());
+    let smooth = render(
+        headless,
+        &scene_of(&land_and_water()),
+        &land_and_water_view(),
+    );
+    assert_ne!(image.pixels, smooth.pixels, "Roughness changes the coast");
+    if let Gpu::Software(_) = gpu {
+        assert_matches_golden("rough_coastlines", &image);
+    }
+}
+
 /// Fills a 2048 page with the test pack's art and Silhouettes at many sizes, until the atlas
 /// spills onto a second page, and compares the first page with its golden image. The page
 /// holds premultiplied pixels, so the golden PNG shows them as stored, not as drawn.
@@ -281,7 +366,8 @@ fn render_labels(headless: &Headless, size: [u32; 2], labels: Vec<Label>) -> Rgb
         .unwrap();
     }
     let mut scene = MapScene::new(Fonts::bundled());
-    let canvas = CanvasScene::new(&map.canvas).with_content(scene.content(&map));
+    let canvas =
+        CanvasScene::new(&map.canvas).with_content(scene.content(&map, &mut RoughnessCache::new()));
     let view = View::whole_canvas(canvas.canvas_size, size[0].max(size[1]) / 2);
     render(headless, &canvas, &view)
 }

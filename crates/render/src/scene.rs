@@ -1,14 +1,18 @@
 //! Turns a Map into what the Canvas draws, keeping derived data (Label layouts) between
-//! edits so only what changed is rebuilt.
+//! edits so only what changed is rebuilt. Roughened outlines come from the caller's
+//! [`RoughnessCache`], which picking shares.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use ssmap_core::{Id, Label, Map, Node, ObjectKind};
+use lyon::math::point;
+use lyon::path::Path;
+use ssmap_core::{Id, Label, Map, Node, ObjectKind, Polygon, RoughnessCache};
 
 use crate::canvas::Content;
+use crate::color::ColorExt as _;
 use crate::text::{Fonts, LabelLayout, LayoutKey};
-use crate::vector::VectorGroup;
+use crate::vector::{FillRule, VectorGroup};
 
 /// The Map's drawn Objects and the derived data behind them. The editor keeps one per open
 /// Map; export builds its own.
@@ -35,7 +39,8 @@ impl MapScene {
     }
 
     /// What the Canvas draws for `map`, rebuilt only when the Map has changed since.
-    pub fn content(&mut self, map: &Map) -> Content {
+    /// Landmasses and Lakes use their roughened outlines from `roughness`.
+    pub fn content(&mut self, map: &Map, roughness: &mut RoughnessCache) -> Content {
         if let Some((revision, content)) = &self.built
             && *revision == map.revision()
         {
@@ -43,8 +48,8 @@ impl MapScene {
         }
         let mut groups = Vec::new();
         let mut seen = Vec::new();
-        for &layer in map.children(None) {
-            self.collect(map, layer, 1.0, &mut groups, &mut seen);
+        for id in map.draw_order() {
+            self.draw(map, roughness, id, &mut groups, &mut seen);
         }
         self.layouts.retain(|id, _| seen.contains(id));
         let content = Content::new(groups);
@@ -65,36 +70,65 @@ impl MapScene {
         layout
     }
 
-    /// Adds what `id` and everything inside it draw, in Stacking order. Hidden Layers draw
-    /// nothing, and Layer opacity fades what they hold.
-    fn collect(
+    /// Adds what the Object `id` draws, faded by the opacity of the Layers holding it.
+    fn draw(
         &mut self,
         map: &Map,
+        roughness: &mut RoughnessCache,
         id: Id,
-        opacity: f32,
         groups: &mut Vec<VectorGroup>,
         seen: &mut Vec<Id>,
     ) {
-        match map.node(id) {
-            Some(Node::Layer(layer)) => {
-                if !layer.visible {
+        let Some(Node::Object(object)) = map.node(id) else {
+            return;
+        };
+        let opacity = layer_opacity(map, id);
+        match &object.kind {
+            ObjectKind::Label(label) => {
+                seen.push(id);
+                let layout = self.label_layout(id, label);
+                groups.push(layout.group(label, opacity));
+            }
+            kind => {
+                let (Some(fill), Some(outline)) = (kind.fill(), roughness.outline(map, id)) else {
                     return;
-                }
-                let opacity = opacity * layer.opacity;
-                for &child in map.children(Some(id)) {
-                    self.collect(map, child, opacity, groups, seen);
-                }
+                };
+                // One path per part, each holding its exterior and holes, filled even-odd so
+                // holes stay open. Parts are separate groups so overlapping parts never
+                // cancel out.
+                let color = fill.faded(opacity);
+                groups.extend(outline.0.iter().map(|polygon| {
+                    VectorGroup::fill(polygon_path(polygon), color, FillRule::EvenOdd)
+                }));
             }
-            Some(Node::Object(object)) => {
-                if let ObjectKind::Label(label) = &object.kind {
-                    seen.push(id);
-                    let layout = self.label_layout(id, label);
-                    groups.push(layout.group(label, opacity));
-                }
-            }
-            None => {}
         }
     }
+}
+
+/// The product of the opacities of every Layer above `id`.
+fn layer_opacity(map: &Map, id: Id) -> f32 {
+    std::iter::successors(map.parent(id), |&layer| map.parent(layer))
+        .filter_map(|layer| match map.node(layer) {
+            Some(Node::Layer(layer)) => Some(layer.opacity),
+            _ => None,
+        })
+        .product()
+}
+
+fn polygon_path(polygon: &Polygon) -> Path {
+    let mut builder = Path::builder();
+    for ring in polygon.rings() {
+        let mut points = ring.iter().map(|&[x, y]| point(x as f32, y as f32));
+        let Some(first) = points.next() else {
+            continue;
+        };
+        builder.begin(first);
+        for p in points {
+            builder.line_to(p);
+        }
+        builder.close();
+    }
+    builder.build()
 }
 
 #[cfg(test)]
@@ -130,15 +164,19 @@ mod tests {
     fn content_is_rebuilt_only_after_an_edit() {
         let (mut map, layer, _) = map_with_label();
         let mut scene = MapScene::new(Fonts::bundled());
-        let first = scene.content(&map);
+        let first = scene.content(&map, &mut RoughnessCache::new());
         assert_eq!(first.groups().len(), 1);
-        assert_eq!(scene.content(&map), first, "same build");
+        assert_eq!(
+            scene.content(&map, &mut RoughnessCache::new()),
+            first,
+            "same build"
+        );
         map.execute(&Command::SetOpacity {
             id: layer,
             opacity: 0.5,
         })
         .unwrap();
-        let faded = scene.content(&map);
+        let faded = scene.content(&map, &mut RoughnessCache::new());
         assert_ne!(faded, first);
         assert_eq!(faded.groups()[0].shapes[0].color.a, 128);
     }
@@ -176,6 +214,11 @@ mod tests {
         })
         .unwrap();
         let mut scene = MapScene::new(Fonts::bundled());
-        assert!(scene.content(&map).groups().is_empty());
+        assert!(
+            scene
+                .content(&map, &mut RoughnessCache::new())
+                .groups()
+                .is_empty()
+        );
     }
 }

@@ -3,7 +3,7 @@
 //! register here.
 
 use eframe::egui;
-use ssmap_core::{Command, Id, Label};
+use ssmap_core::{Affine, Command, Id, Label};
 use ssmap_render::View;
 
 use crate::editor::Editor;
@@ -60,13 +60,16 @@ pub struct TextEditing {
     pub just_opened: bool,
 }
 
-/// A Select-tool drag on the selection.
+/// A Select-tool drag on the selection. Each frame re-issues the whole move, scale or
+/// rotation from where it started, so nothing drifts.
 struct Drag {
     grip: Option<Grip>,
     /// Where the drag began, in Canvas units.
     start: [f64; 2],
     /// The selection's bounds when it began.
     bounds: Bounds,
+    /// The selected Landmasses and Lakes, which move and resize but don't rotate.
+    outlines: Vec<Id>,
     /// The selected Labels as they were, so every frame transforms from the start and
     /// rounding never builds up.
     labels: Vec<(Id, Label)>,
@@ -118,18 +121,23 @@ pub fn canvas_input(
     let shift = response.ctx.input(|i| i.modifiers.shift);
     match editor.active_tool {
         ToolId::Select => {
+            let bounds = Bounds::of_selection(editor);
+            let rotatable = selection_has_label(editor);
+            let grip_at = |pos: egui::Pos2| {
+                let bounds = bounds?;
+                handles::hit(&bounds, view, response.rect.min, ppp, pos, rotatable)
+            };
+            if state.drag.is_none()
+                && let Some(pos) = response.hover_pos()
+                && let Some(grip) = grip_at(pos)
+            {
+                response.ctx.set_cursor_icon(grip.cursor());
+            }
             if response.drag_started_by(egui::PointerButton::Primary)
+                && !editor.gesture_open()
                 && let Some(pos) = response.ctx.input(|i| i.pointer.press_origin())
             {
-                start_drag(
-                    editor,
-                    view,
-                    state,
-                    response.rect.min,
-                    ppp,
-                    pos,
-                    to_canvas(pos),
-                );
+                start_drag(editor, state, bounds, grip_at(pos), to_canvas(pos));
             }
             if let Some(drag) = &state.drag {
                 // Escape or undo ended the gesture under the drag.
@@ -137,8 +145,12 @@ pub fn canvas_input(
                     state.drag = None;
                 } else if response.dragged_by(egui::PointerButton::Primary)
                     && let Some(pos) = response.interact_pointer_pos()
+                    && let Some(commands) = drag_commands(drag, to_canvas(pos), shift)
                 {
-                    let commands = drag_commands(drag, to_canvas(pos), shift);
+                    let mut commands = commands.into_iter();
+                    if let Some(first) = commands.next() {
+                        editor.gesture_replace(first);
+                    }
                     for command in commands {
                         editor.gesture(command);
                     }
@@ -200,61 +212,80 @@ fn click_select(editor: &mut Editor, hit: Option<Id>, shift: bool) {
     }
 }
 
-/// Starts moving, scaling or rotating the selection, picking what is under the pointer
-/// first if it isn't selected.
+/// Whether the selection holds a Label, the only selected things that rotate.
+pub(crate) fn selection_has_label(editor: &Editor) -> bool {
+    editor
+        .selection()
+        .iter()
+        .any(|&id| editor.label(id).is_some())
+}
+
+/// Starts moving, scaling or rotating the selection from the Canvas point `point`, picking
+/// what is under the pointer first if it isn't selected. `grip` is the handle under it.
 fn start_drag(
     editor: &mut Editor,
-    view: &View,
     state: &mut ToolState,
-    origin: egui::Pos2,
-    ppp: f64,
-    pos: egui::Pos2,
+    mut bounds: Option<Bounds>,
+    grip: Option<Grip>,
     point: [f64; 2],
 ) {
-    let mut grip = None;
-    let mut bounds = Bounds::of_selection(editor);
-    match bounds.and_then(|b| handles::hit(&b, view, origin, ppp, pos)) {
-        Some(hit) => grip = Some(hit),
-        None => {
-            let on_selection = bounds.is_some_and(|b| b.contains(point));
-            if !on_selection {
-                let Some(id) = editor.pick(point) else {
-                    return;
-                };
-                editor.select(vec![id]);
-                bounds = Bounds::of_selection(editor);
-            }
+    if grip.is_none() && !bounds.is_some_and(|b| b.contains(point)) {
+        let Some(id) = editor.pick(point) else {
+            return;
+        };
+        if !editor.is_selected(id) {
+            editor.select(vec![id]);
         }
+        bounds = Bounds::of_selection(editor);
     }
+    let outlines = editor.selected_outlines();
     let labels: Vec<(Id, Label)> = editor
         .selection()
         .iter()
         .filter_map(|&id| editor.label(id).map(|label| (id, label.clone())))
         .collect();
-    let Some(bounds) = bounds.filter(|_| !labels.is_empty()) else {
+    let Some(bounds) = bounds.filter(|_| !(outlines.is_empty() && labels.is_empty())) else {
         return;
     };
     editor.begin_gesture(match grip {
         None => "Move",
-        Some(Grip::Resize(_)) => "Scale",
+        Some(Grip::Resize(_)) => "Resize",
         Some(Grip::Rotate) => "Rotate",
     });
     state.drag = Some(Drag {
         grip,
         start: point,
         bounds,
+        outlines,
         labels,
     });
 }
 
-/// The Commands that put the dragged Labels where the pointer at `point` says.
-fn drag_commands(drag: &Drag, point: [f64; 2], snap: bool) -> Vec<Command> {
+/// What a drag does to each Label, from how it was when the drag began.
+type LabelTransform = Box<dyn Fn(&Label) -> Label>;
+
+/// The Commands that put the dragged selection where the pointer at `point` says: one for
+/// the Landmasses and Lakes, then one per Label. `None` keeps the last frame's, as when a
+/// resize reaches the opposite edge and the box has no size.
+fn drag_commands(drag: &Drag, point: [f64; 2], snap: bool) -> Option<Vec<Command>> {
     let delta = [point[0] - drag.start[0], point[1] - drag.start[1]];
-    let transform: Box<dyn Fn(&Label) -> Label> = match drag.grip {
-        None => Box::new(move |label| handles::moved(label, delta)),
+    let ids = drag.outlines.clone();
+    let (outlines, transform): (Option<Command>, LabelTransform) = match drag.grip {
+        None => (
+            Some(Command::Translate { ids, offset: delta }),
+            Box::new(move |label| handles::moved(label, delta)),
+        ),
         Some(Grip::Resize(handle)) => {
+            let resized = drag.bounds.resized(handle, delta);
+            let transform = Affine::rect_to_rect(&drag.bounds.rect(), &resized.rect());
+            if !transform.is_invertible() {
+                return None;
+            }
             let (scale, fixed) = drag.bounds.scaling(handle, delta);
-            Box::new(move |label| handles::scaled(label, scale, fixed))
+            (
+                Some(Command::Transform { ids, transform }),
+                Box::new(move |label| handles::scaled(label, scale, fixed)),
+            )
         }
         Some(Grip::Rotate) => {
             let centre = drag.bounds.centre();
@@ -263,16 +294,18 @@ fn drag_commands(drag: &Drag, point: [f64; 2], snap: bool) -> Vec<Command> {
             if snap {
                 degrees = (degrees / 15.0).round() * 15.0;
             }
-            Box::new(move |label| handles::rotated(label, degrees, centre))
+            (
+                None,
+                Box::new(move |label| handles::rotated(label, degrees, centre)),
+            )
         }
     };
-    drag.labels
-        .iter()
-        .map(|(id, label)| Command::SetLabel {
-            id: *id,
-            label: Box::new(transform(label)),
-        })
-        .collect()
+    let outlines = outlines.filter(|_| !drag.outlines.is_empty());
+    let labels = drag.labels.iter().map(|(id, label)| Command::SetLabel {
+        id: *id,
+        label: Box::new(transform(label)),
+    });
+    Some(outlines.into_iter().chain(labels).collect())
 }
 
 #[cfg(test)]
@@ -288,6 +321,7 @@ mod tests {
                 min: [-100.0, -50.0],
                 max: [100.0, 50.0],
             },
+            outlines: Vec::new(),
             labels: vec![(
                 Id::new(),
                 Label {
@@ -300,7 +334,7 @@ mod tests {
     }
 
     fn dragged(drag: &Drag, point: [f64; 2], snap: bool) -> Label {
-        match drag_commands(drag, point, snap).remove(0) {
+        match drag_commands(drag, point, snap).unwrap().remove(0) {
             Command::SetLabel { label, .. } => *label,
             other => panic!("{other:?}"),
         }
@@ -321,5 +355,40 @@ mod tests {
         assert!((rotated.rotation - 90.0).abs() < 1e-9);
         let snapped = dragged(&drag(Some(Grip::Rotate)), [100.0, 20.0], true);
         assert!((snapped.rotation - 15.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn outlines_move_and_resize_with_labels_but_do_not_rotate() {
+        let outline = Id::new();
+        let mixed = |grip| Drag {
+            outlines: vec![outline],
+            ..drag(grip)
+        };
+        let commands = drag_commands(&mixed(None), [130.0, 20.0], false).unwrap();
+        assert!(matches!(
+            &commands[..],
+            [Command::Translate { ids, offset: [30.0, 20.0] }, Command::SetLabel { .. }]
+                if ids == &vec![outline]
+        ));
+        let commands = drag_commands(
+            &mixed(Some(Grip::Resize(Handle::Right))),
+            [300.0, 0.0],
+            false,
+        )
+        .unwrap();
+        assert!(matches!(
+            &commands[..],
+            [Command::Transform { transform, .. }, Command::SetLabel { .. }]
+                if transform.0 == [2.0, 0.0, 0.0, 1.0, 100.0, 0.0]
+        ));
+        let commands = drag_commands(&mixed(Some(Grip::Rotate)), [0.0, 100.0], false).unwrap();
+        assert!(matches!(&commands[..], [Command::SetLabel { .. }]));
+        // Dragging the right edge onto the left leaves no box to map onto.
+        let collapsed = drag_commands(
+            &mixed(Some(Grip::Resize(Handle::Right))),
+            [-100.0, 0.0],
+            false,
+        );
+        assert!(collapsed.is_none());
     }
 }

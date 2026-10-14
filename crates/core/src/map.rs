@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::extra::Extra;
 use crate::id::Id;
-use crate::node::{Node, Object};
+use crate::node::{Node, Object, ObjectKind};
 use crate::roughness::Roughness;
 
 /// The bounded drawing area of a Map.
@@ -216,6 +216,41 @@ impl Map {
             current = self.parent(node);
         }
         false
+    }
+
+    /// The Objects that draw, first lowest: the tree in Stacking order, skipping hidden
+    /// Layers, except that a Layer's Lakes draw above all its other content, so water always
+    /// lies over the land around it.
+    pub fn draw_order(&self) -> Vec<Id> {
+        let mut out = Vec::new();
+        for &layer in &self.root {
+            self.collect_draw_order(layer, &mut out);
+        }
+        out
+    }
+
+    fn collect_draw_order(&self, layer: Id, out: &mut Vec<Id>) {
+        if !matches!(self.node(layer), Some(Node::Layer(l)) if l.visible) {
+            return;
+        }
+        let mut lakes = Vec::new();
+        for &child in self.children(Some(layer)) {
+            match self.node(child) {
+                Some(Node::Layer(_)) => self.collect_draw_order(child, out),
+                Some(Node::Object(object)) if matches!(object.kind, ObjectKind::Lake(_)) => {
+                    lakes.push(child);
+                }
+                Some(Node::Object(_)) => out.push(child),
+                None => {}
+            }
+        }
+        out.extend(lakes);
+    }
+
+    /// `id` is locked itself or through a Layer above it.
+    pub fn is_locked(&self, id: Id) -> bool {
+        std::iter::successors(Some(id), |&n| self.parent(n))
+            .any(|n| self.node(n).is_some_and(Node::locked))
     }
 
     /// Checks the tree's structural rules. A Map built only through Ops always passes.

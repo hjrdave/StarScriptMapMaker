@@ -120,6 +120,12 @@ fn recorded_ops_replay_commits_undos_and_redos_onto_the_starting_map() {
     history.begin("Cancelled", vec![]).unwrap();
     history.execute(&mut map, &create(Id::new(), "C")).unwrap();
     history.rollback(&mut map).unwrap();
+    // A rewound gesture counts only what it holds when it commits.
+    history.begin("Rewound", vec![]).unwrap();
+    history.execute(&mut map, &create(Id::new(), "C")).unwrap();
+    history.rewind(&mut map).unwrap();
+    history.execute(&mut map, &create(Id::new(), "D")).unwrap();
+    history.commit(vec![]).unwrap();
     // A refused Command records nothing.
     let missing = Command::RenameLayer {
         id: Id::new(),

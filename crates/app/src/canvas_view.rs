@@ -3,10 +3,9 @@
 
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
-use ssmap_core::{Command, Map};
+use ssmap_core::Command;
 use ssmap_render::{
-    CanvasRenderer, CanvasScene, GpuCapabilities, MapScene, Presenter, RgbaImage, View,
-    render_to_image,
+    CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, RgbaImage, View, render_to_image,
 };
 
 use crate::editor::Editor;
@@ -44,15 +43,14 @@ pub fn install(render_state: &egui_wgpu::RenderState) {
 /// stored in a Map file. Uses the same renderer as the screen.
 pub fn render_whole_canvas(
     render_state: &egui_wgpu::RenderState,
-    map: &Map,
-    map_scene: &mut MapScene,
+    editor: &mut Editor,
     longest_side: u32,
 ) -> Option<RgbaImage> {
     let mut egui_renderer = render_state.renderer.write();
     let resources = egui_renderer
         .callback_resources
         .get_mut::<CanvasResources>()?;
-    let scene = CanvasScene::new(&map.canvas).with_content(map_scene.content(map));
+    let scene = CanvasScene::new(&editor.map.canvas).with_content(editor.scene_content());
     let view = View::whole_canvas(scene.canvas_size, longest_side);
     Some(render_to_image(
         &render_state.device,
@@ -69,6 +67,8 @@ pub struct CanvasView {
     /// False without a wgpu device (as in UI tests); the Canvas is then a flat placeholder.
     gpu: bool,
     tools: ToolState,
+    /// Where the panel was last drawn, in points, and the pixels per point then.
+    panel: Option<(egui::Rect, f64)>,
 }
 
 impl CanvasView {
@@ -77,6 +77,7 @@ impl CanvasView {
             view: None,
             gpu,
             tools: ToolState::default(),
+            panel: None,
         }
     }
 
@@ -85,7 +86,19 @@ impl CanvasView {
         self.tools.editing.is_some()
     }
 
-    /// Fits the Canvas to the panel again on the next frame, as after opening a Map.
+    /// The screen position of a Canvas point, as last drawn.
+    pub fn to_screen(&self, point: [f64; 2]) -> Option<egui::Pos2> {
+        let (rect, ppp) = self.panel?;
+        Some(handles::to_screen(
+            self.view.as_ref()?,
+            rect.min,
+            ppp,
+            point,
+        ))
+    }
+
+    /// Starts afresh for another Map: fits it to the panel on the next frame and forgets
+    /// what was drawn and dragged.
     pub fn refit(&mut self) {
         self.view = None;
         self.tools = ToolState::default();
@@ -130,22 +143,23 @@ impl CanvasView {
             }
         }
 
+        let view = *view;
+        self.panel = Some((rect, ppp));
         // After input, so this frame shows this frame's edits.
-        let content = editor.scene.content(&editor.map);
-        let scene = CanvasScene::new(&editor.map.canvas).with_content(content);
+        let scene = CanvasScene::new(&editor.map.canvas).with_content(editor.scene_content());
         let painter = ui.painter_at(rect);
         if self.gpu {
             painter.add(egui_wgpu::Callback::new_paint_callback(
                 rect,
-                CanvasCallback { scene, view: *view },
+                CanvasCallback { scene, view },
             ));
         } else {
-            paint_placeholder(&painter, rect, &scene, view, ppp);
+            paint_placeholder(&painter, rect, &scene, &view, ppp);
         }
         if let Some(bounds) = Bounds::of_selection(editor) {
-            handles::paint(&painter, &bounds, view, rect.min, ppp);
+            let rotatable = tools::selection_has_label(editor);
+            handles::paint(&painter, &bounds, &view, rect.min, ppp, rotatable);
         }
-        let view = *view;
         self.text_box(ui, editor, &view, rect.min, ppp);
     }
 

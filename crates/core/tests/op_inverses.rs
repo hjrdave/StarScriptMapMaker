@@ -2,7 +2,7 @@
 
 use proptest::prelude::*;
 use ssmap_core::{
-    Canvas, DistanceUnit, Id, Label, Lake, Landmass, Layer, Map, MapDefaults, MapView,
+    Canvas, Color, DistanceUnit, Id, Label, Lake, Landmass, Layer, Map, MapDefaults, MapView,
     MultiPolygon, Node, Object, ObjectKind, Op, Point, Polygon, Property, Roughness, Scale, Stamp,
     Subtree,
 };
@@ -179,6 +179,7 @@ fn property() -> impl Strategy<Value = Property> {
         any::<bool>().prop_map(Property::Locked),
         (0.0..=1.0f32).prop_map(Property::Opacity),
         Just(Property::Clip(None)),
+        any::<[u8; 4]>().prop_map(|[r, g, b, a]| Property::Fill(Color::rgba(r, g, b, a))),
         prop::option::of(roughness()).prop_map(Property::Roughness),
         label().prop_map(|label| Property::Label(Box::new(label))),
     ]

@@ -1,8 +1,9 @@
 //! Figma-style selection bounds and transform handles: drag inside to move, a handle to
-//! scale, and the knob above to rotate. Object tickets hook their transforms onto these.
+//! scale, and the knob above to rotate. The Select tool resizes Landmasses and Lakes from
+//! the handles, and scales Labels.
 
 use eframe::egui;
-use ssmap_core::{Label, Node};
+use ssmap_core::{Label, Node, Rect};
 use ssmap_render::View;
 
 use crate::editor::Editor;
@@ -39,6 +40,16 @@ impl Handle {
         Handle::Left,
     ];
 
+    /// The pointer shown over the handle.
+    pub fn cursor(self) -> egui::CursorIcon {
+        match self {
+            Handle::TopLeft | Handle::BottomRight => egui::CursorIcon::ResizeNwSe,
+            Handle::TopRight | Handle::BottomLeft => egui::CursorIcon::ResizeNeSw,
+            Handle::Top | Handle::Bottom => egui::CursorIcon::ResizeVertical,
+            Handle::Left | Handle::Right => egui::CursorIcon::ResizeHorizontal,
+        }
+    }
+
     /// Where on the box the handle sits, from (0, 0) top-left to (1, 1) bottom-right.
     fn anchor(self) -> [f64; 2] {
         match self {
@@ -60,6 +71,16 @@ pub enum Grip {
     Resize(Handle),
     /// The knob above the top edge.
     Rotate,
+}
+
+impl Grip {
+    /// The pointer shown over the grip.
+    pub fn cursor(self) -> egui::CursorIcon {
+        match self {
+            Grip::Resize(handle) => handle.cursor(),
+            Grip::Rotate => egui::CursorIcon::Grab,
+        }
+    }
 }
 
 /// Half the size of a handle square, in points.
@@ -132,6 +153,13 @@ impl Bounds {
             _ => (ratio(0) * ratio(1)).sqrt(),
         };
         (scale.max(MIN_SCALE), self.point([1.0 - ax, 1.0 - ay]))
+    }
+
+    pub fn rect(&self) -> Rect {
+        Rect {
+            min: self.min,
+            max: self.max,
+        }
     }
 
     fn point(&self, anchor: [f64; 2]) -> [f64; 2] {
@@ -213,16 +241,17 @@ fn rotate_knob(bounds: &Bounds, view: &View, origin: egui::Pos2, ppp: f64) -> eg
     to_screen(view, origin, ppp, bounds.point([0.5, 0.0])) - egui::vec2(0.0, ROTATE_OFFSET)
 }
 
-/// The handle or knob under `pointer`, if any.
+/// The handle or knob under `pointer`, if any. The knob is there only when `rotatable`.
 pub fn hit(
     bounds: &Bounds,
     view: &View,
     origin: egui::Pos2,
     ppp: f64,
     pointer: egui::Pos2,
+    rotatable: bool,
 ) -> Option<Grip> {
     let near = |centre: egui::Pos2| (pointer - centre).abs().max_elem() <= HANDLE_RADIUS + 2.0;
-    if near(rotate_knob(bounds, view, origin, ppp)) {
+    if rotatable && near(rotate_knob(bounds, view, origin, ppp)) {
         return Some(Grip::Rotate);
     }
     // On a box too small to grab inside between its handles, inside means move.
@@ -239,7 +268,15 @@ pub fn hit(
         .map(Grip::Resize)
 }
 
-pub fn paint(painter: &egui::Painter, bounds: &Bounds, view: &View, origin: egui::Pos2, ppp: f64) {
+/// Draws the selection box and its handles, with the rotate knob when `rotatable`.
+pub fn paint(
+    painter: &egui::Painter,
+    bounds: &Bounds,
+    view: &View,
+    origin: egui::Pos2,
+    ppp: f64,
+    rotatable: bool,
+) {
     let accent = egui::Color32::from_rgb(24, 160, 251);
     let rect = egui::Rect::from_two_pos(
         to_screen(view, origin, ppp, bounds.min),
@@ -251,17 +288,19 @@ pub fn paint(painter: &egui::Painter, bounds: &Bounds, view: &View, origin: egui
         egui::Stroke::new(1.5, accent),
         egui::StrokeKind::Outside,
     );
-    let knob = rotate_knob(bounds, view, origin, ppp);
-    painter.line_segment(
-        [knob, egui::pos2(knob.x, rect.min.y)],
-        egui::Stroke::new(1.0, accent),
-    );
-    painter.circle(
-        knob,
-        HANDLE_RADIUS,
-        egui::Color32::WHITE,
-        egui::Stroke::new(1.0, accent),
-    );
+    if rotatable {
+        let knob = rotate_knob(bounds, view, origin, ppp);
+        painter.line_segment(
+            [knob, egui::pos2(knob.x, rect.min.y)],
+            egui::Stroke::new(1.0, accent),
+        );
+        painter.circle(
+            knob,
+            HANDLE_RADIUS,
+            egui::Color32::WHITE,
+            egui::Stroke::new(1.0, accent),
+        );
+    }
     for handle in Handle::ALL {
         let centre = to_screen(view, origin, ppp, bounds.point(handle.anchor()));
         let square = egui::Rect::from_center_size(centre, egui::Vec2::splat(2.0 * HANDLE_RADIUS));
@@ -312,13 +351,17 @@ mod tests {
         // BottomRight at Canvas (110, 70) is 2x zoom at 1 ppp: (220, 140) past the origin.
         let at = origin + egui::vec2(221.0, 139.0);
         assert_eq!(
-            hit(&BOX, &view, origin, 1.0, at),
+            hit(&BOX, &view, origin, 1.0, at, true),
             Some(Grip::Resize(Handle::BottomRight))
         );
-        assert_eq!(hit(&BOX, &view, origin, 1.0, origin), None);
+        assert_eq!(hit(&BOX, &view, origin, 1.0, origin, true), None);
         // Top centre at Canvas (60, 20) is (120, 40), and the knob 20 points above it.
         let knob = origin + egui::vec2(120.0, 20.0);
-        assert_eq!(hit(&BOX, &view, origin, 1.0, knob), Some(Grip::Rotate));
+        assert_eq!(
+            hit(&BOX, &view, origin, 1.0, knob, true),
+            Some(Grip::Rotate)
+        );
+        assert_eq!(hit(&BOX, &view, origin, 1.0, knob, false), None, "no knob");
 
         // A box a few points tall is moved from inside, not scaled from its edges.
         let thin = Bounds {
@@ -326,10 +369,10 @@ mod tests {
             max: [110.0, 25.0],
         };
         let top_centre = origin + egui::vec2(120.0, 42.0);
-        assert_eq!(hit(&thin, &view, origin, 1.0, top_centre), None);
+        assert_eq!(hit(&thin, &view, origin, 1.0, top_centre, true), None);
         let outside = origin + egui::vec2(221.0, 52.0);
         assert_eq!(
-            hit(&thin, &view, origin, 1.0, outside),
+            hit(&thin, &view, origin, 1.0, outside, true),
             Some(Grip::Resize(Handle::BottomRight))
         );
     }

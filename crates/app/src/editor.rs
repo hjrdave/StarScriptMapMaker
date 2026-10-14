@@ -5,9 +5,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ssmap_core::{
-    Command, CommandError, ExecuteError, History, Id, Label, Map, Node, ObjectKind, Op, Selection,
+    Command, CommandError, ExecuteError, History, Id, Label, Map, Node, ObjectKind, Op, PickIndex,
+    RoughnessCache, Selection,
 };
-use ssmap_render::{Fonts, LabelLayout, MapScene};
+use ssmap_render::{Content, Fonts, LabelLayout, MapScene};
 
 use crate::layer_tree::node_name;
 use crate::tools::ToolId;
@@ -30,6 +31,10 @@ pub struct Editor {
     gesture_open: bool,
     /// The Selection when the open gesture began, restored if it is cancelled.
     gesture_selection: Selection,
+    /// Rebuilt lazily once the Map has changed.
+    pick_index: Option<PickIndex>,
+    /// Roughened outlines, shared by the screen and picking so they agree.
+    roughness: RoughnessCache,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -53,6 +58,8 @@ impl Editor {
             notice: None,
             gesture_open: false,
             gesture_selection: Vec::new(),
+            pick_index: None,
+            roughness: RoughnessCache::new(),
         }
     }
 
@@ -74,6 +81,34 @@ impl Editor {
                 _ => self.map.parent(last),
             };
         }
+    }
+
+    /// The topmost unlocked Landmass or Lake drawn at `point`, in Canvas units.
+    fn pick_outline(&mut self, point: [f64; 2]) -> Option<Id> {
+        let map = &self.map;
+        let index = match &mut self.pick_index {
+            Some(index) if index.is_current(map) => index,
+            slot => slot.insert(PickIndex::build(map, &mut self.roughness)),
+        };
+        index.pick(point)
+    }
+
+    /// What the Canvas draws for the Map, rebuilt only once it has changed. Drops roughened
+    /// outlines of Objects that are gone.
+    pub fn scene_content(&mut self) -> Content {
+        self.roughness.retain(&self.map);
+        self.scene.content(&self.map, &mut self.roughness)
+    }
+
+    /// The selected Landmasses and Lakes, which move and resize with the handles.
+    pub fn selected_outlines(&self) -> Vec<Id> {
+        self.selection
+            .iter()
+            .copied()
+            .filter(|&id| {
+                matches!(self.map.node(id), Some(Node::Object(o)) if o.kind.geometry().is_some())
+            })
+            .collect()
     }
 
     pub fn is_selected(&self, id: Id) -> bool {
@@ -152,6 +187,19 @@ impl Editor {
             let selection = std::mem::take(&mut self.gesture_selection);
             self.restore(selection);
         }
+    }
+
+    /// Replaces everything the open gesture has done so far with `command`. Drags use it to
+    /// re-issue their whole effect each frame, so the Undo step holds one Command and nothing
+    /// drifts. Without an open gesture it runs `command` as its own step.
+    pub fn gesture_replace(&mut self, command: Command) -> bool {
+        if !self.gesture_open {
+            return self.run(command);
+        }
+        self.history
+            .rewind(&mut self.map)
+            .expect("the gesture's transaction is open");
+        self.gesture(command)
     }
 
     pub fn gesture_open(&self) -> bool {
@@ -287,34 +335,22 @@ impl Editor {
     /// The topmost Object under a Canvas point that can be selected there: visible, and
     /// neither locked nor in a locked Layer.
     pub fn pick(&mut self, point: [f64; 2]) -> Option<Id> {
-        fn walk(editor: &mut Editor, parent: Option<Id>, point: [f64; 2]) -> Option<Id> {
-            let children = editor.map.children(parent).to_vec();
-            for id in children.into_iter().rev() {
-                let Some(node) = editor.map.node(id) else {
-                    continue;
-                };
-                if node.locked() {
-                    continue;
-                }
-                match node {
-                    Node::Layer(layer) if !layer.visible => {}
-                    Node::Layer(_) => {
-                        if let Some(hit) = walk(editor, Some(id), point) {
-                            return Some(hit);
-                        }
-                    }
-                    Node::Object(_) => {
-                        if let Some((label, layout)) = editor.label_layout(id)
-                            && layout.contains(&label, point)
-                        {
-                            return Some(id);
-                        }
-                    }
-                }
+        // The index finds the topmost Landmass or Lake whose roughened fill is under the
+        // point; Labels are weighed against it in draw order, so what shows on top is
+        // what's picked.
+        let outline = self.pick_outline(point);
+        for id in self.map.draw_order().into_iter().rev() {
+            if Some(id) == outline {
+                return outline;
             }
-            None
+            if !self.map.is_locked(id)
+                && let Some((label, layout)) = self.label_layout(id)
+                && layout.contains(&label, point)
+            {
+                return Some(id);
+            }
         }
-        walk(self, None, point)
+        None
     }
 
     /// Opens an "Add Label" gesture and places a Label at `position` in the active Layer,

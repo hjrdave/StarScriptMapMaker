@@ -13,13 +13,14 @@ mod id;
 mod map;
 mod node;
 mod op;
+mod pick;
 mod roughness;
 
 pub use asset::AssetRef;
-pub use color::Color;
+pub use color::{Color, ParseColorError};
 pub use command::{Command, CommandError};
 pub use extra::Extra;
-pub use geometry::{MultiPolygon, Point, Polygon};
+pub use geometry::{Affine, MultiPolygon, Point, Polygon, Rect};
 pub use history::{DEFAULT_BUDGET_BYTES, ExecuteError, History, HistoryError, Selection, UndoStep};
 pub use id::Id;
 pub use map::{Canvas, DistanceUnit, InvariantError, Map, MapDefaults, MapView, Scale, Subtree};
@@ -27,4 +28,5 @@ pub use node::{
     Align, FontFace, Halo, Label, Lake, Landmass, Layer, Node, Object, ObjectKind, Stamp,
 };
 pub use op::{Op, OpError, Property};
+pub use pick::PickIndex;
 pub use roughness::{Roughness, RoughnessCache, roughen};

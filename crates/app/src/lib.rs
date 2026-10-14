@@ -5,7 +5,6 @@ mod canvas_view;
 pub mod document;
 pub mod editor;
 pub mod handles;
-pub mod install;
 mod layer_tree;
 mod properties;
 mod recent;
@@ -151,6 +150,11 @@ impl MapMakerApp {
     /// Whether a Label's text box is open on the Canvas.
     pub fn editing_label_text(&self) -> bool {
         self.canvas_view.editing_text()
+    }
+
+    /// The screen position of a Canvas point in the Canvas panel, once it has been drawn.
+    pub fn canvas_to_screen(&self, point: [f64; 2]) -> Option<egui::Pos2> {
+        self.canvas_view.to_screen(point)
     }
 
     /// The Recovery journal being written for the open Map, once there is one.
@@ -421,13 +425,7 @@ impl MapMakerApp {
     /// The preview PNG stored with each save, rendered like the screen.
     fn preview_png(&mut self) -> Option<Vec<u8>> {
         let render_state = self.render_state.as_ref()?;
-        let editor = &mut self.editor;
-        let image = canvas_view::render_whole_canvas(
-            render_state,
-            &editor.map,
-            &mut editor.scene,
-            PREVIEW_SIZE,
-        )?;
+        let image = canvas_view::render_whole_canvas(render_state, &mut self.editor, PREVIEW_SIZE)?;
         let mut png = Vec::new();
         image::ImageEncoder::write_image(
             image::codecs::png::PngEncoder::new(&mut png),

@@ -6,8 +6,9 @@ use std::str::FromStr;
 
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use thiserror::Error;
 
-/// An sRGB colour with straight (not premultiplied) alpha. Stored as `"#rrggbb"`, or
+/// An sRGB colour with straight (not premultiplied) alpha. It is stored as `"#rrggbb"`, or
 /// `"#rrggbbaa"` when not opaque.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Color {
@@ -40,21 +41,25 @@ impl fmt::Display for Color {
     }
 }
 
-impl FromStr for Color {
-    type Err = String;
+#[derive(Clone, PartialEq, Eq, Debug, Error)]
+#[error("“{0}” is not a colour; expected #rrggbb or #rrggbbaa")]
+pub struct ParseColorError(String);
 
-    fn from_str(s: &str) -> Result<Self, String> {
-        let invalid = || format!("{s:?} is not a colour like \"#rrggbb\" or \"#rrggbbaa\"");
-        let hex = s.strip_prefix('#').ok_or_else(invalid)?;
+impl FromStr for Color {
+    type Err = ParseColorError;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let error = || ParseColorError(text.to_owned());
+        let hex = text.strip_prefix('#').ok_or_else(error)?;
         if !(hex.len() == 6 || hex.len() == 8) || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(invalid());
+            return Err(error());
         }
-        let channel = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).expect("checked hex");
+        let channel = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|_| error());
         Ok(Self {
-            r: channel(0),
-            g: channel(2),
-            b: channel(4),
-            a: if hex.len() == 8 { channel(6) } else { 255 },
+            r: channel(0)?,
+            g: channel(2)?,
+            b: channel(4)?,
+            a: if hex.len() == 8 { channel(6)? } else { 255 },
         })
     }
 }
@@ -80,8 +85,8 @@ impl JsonSchema for Color {
     fn json_schema(_: &mut SchemaGenerator) -> Schema {
         json_schema!({
             "type": "string",
-            "pattern": "^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$",
-            "description": "sRGB as \"#rrggbb\", or \"#rrggbbaa\" with straight alpha",
+            "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
+            "description": "An sRGB colour as #rrggbb, or #rrggbbaa with straight alpha.",
         })
     }
 }
@@ -91,21 +96,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn round_trips_through_hex() {
-        for (color, text) in [
-            (Color::rgb(0x12, 0xab, 0xff), "\"#12abff\""),
-            (Color::rgba(0, 0, 0, 0x80), "\"#00000080\""),
-        ] {
-            assert_eq!(serde_json::to_string(&color).unwrap(), text);
-            assert_eq!(serde_json::from_str::<Color>(text).unwrap(), color);
+    fn colours_round_trip_through_hex() {
+        for text in ["#d8c49a", "#3d6e8c80"] {
+            let color: Color = text.parse().unwrap();
+            assert_eq!(color.to_string(), text);
         }
-        assert_eq!("#ABCDEF".parse::<Color>(), Ok(Color::rgb(0xab, 0xcd, 0xef)));
-    }
-
-    #[test]
-    fn rejects_other_forms() {
-        for text in ["12abff", "#12abf", "#12abffz0", "#+1abff"] {
-            assert!(text.parse::<Color>().is_err(), "{text}");
+        assert_eq!("#FFFFFF".parse(), Ok(Color::rgb(255, 255, 255)));
+        assert_eq!("#000000ff".parse::<Color>().unwrap().to_string(), "#000000");
+        for bad in ["d8c49a", "#d8c49", "#gg0000", "#d8c49a0", "#é8c49a"] {
+            assert!(bad.parse::<Color>().is_err(), "{bad}");
         }
     }
 }
