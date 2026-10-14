@@ -24,7 +24,7 @@ ad-hoc signature.
 ## Install layout
 
 The repo's `assets/` (the built-in Asset packs and fonts) is copied read-only into each
-package. `ssmap_app::install::assets_root` is the only code that knows where it goes:
+package. `ssmap_core::asset::assets_dir` is the only code that knows where it goes:
 
 | Package | Binary | Assets |
 | --- | --- | --- |
@@ -33,6 +33,7 @@ package. `ssmap_app::install::assets_root` is the only code that knows where it 
 | Linux (.deb, AppImage) | `/usr/bin/starscript-map-maker` | `/usr/lib/starscript-map-maker/assets/` |
 
 From a source checkout (`cargo run`, tests) it falls back to the repo's `assets/`.
+`SSMAP_ASSETS_DIR` overrides all of these.
 
 `LICENSE` sits beside `assets/` in every package. It is a plain file, not a license the
 installer or DMG asks the user to accept.
