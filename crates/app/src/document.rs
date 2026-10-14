@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use ssmap_core::Map;
 use ssmap_core::file::{FileError, MapFile};
+use uuid::Uuid;
 
 /// File extension of Map files.
 pub const EXTENSION: &str = "ssmap";
@@ -25,6 +26,19 @@ impl Document {
             file: Some(file),
         };
         Ok((document, map))
+    }
+
+    /// A Map never saved, recovered after a crash: it has unsaved changes until saved.
+    pub fn recovered() -> Self {
+        Self {
+            file: None,
+            saved_revision: u64::MAX,
+        }
+    }
+
+    /// The open file's save generation, which its Recovery journal records.
+    pub fn save_generation(&self) -> Option<Uuid> {
+        self.file.as_ref().map(MapFile::save_generation)
     }
 
     pub fn path(&self) -> Option<&Path> {
