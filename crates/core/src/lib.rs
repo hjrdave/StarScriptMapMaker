@@ -21,7 +21,7 @@ pub use asset::AssetRef;
 pub use color::{Color, ParseColorError};
 pub use command::{Command, CommandError};
 pub use extra::Extra;
-pub use geometry::{Affine, MultiPolygon, Point, Polygon, Rect};
+pub use geometry::{Affine, MultiPolygon, NodeRef, Point, Polygon, Rect};
 pub use history::{DEFAULT_BUDGET_BYTES, ExecuteError, History, HistoryError, Selection, UndoStep};
 pub use id::Id;
 pub use map::{Canvas, DistanceUnit, InvariantError, Map, MapDefaults, MapView, Scale, Subtree};

@@ -168,7 +168,9 @@ impl CanvasView {
         } else {
             paint_placeholder(&painter, rect, &scene, &view, ppp);
         }
-        if let Some(bounds) = Bounds::of_selection(&editor.map, editor.selection()) {
+        if editor.node_edit().is_none()
+            && let Some(bounds) = Bounds::of_selection(&editor.map, editor.selection())
+        {
             handles::paint(&painter, &bounds, &view, rect.min, ppp);
         }
         tools::paint_overlay(

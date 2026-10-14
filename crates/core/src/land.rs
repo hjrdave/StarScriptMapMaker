@@ -11,7 +11,7 @@ use geo::{
 };
 
 use crate::command::Command;
-use crate::geometry::{MultiPolygon, Point, Polygon};
+use crate::geometry::{MultiPolygon, NodeRef, Point, Polygon};
 use crate::id::Id;
 use crate::map::Map;
 use crate::node::{Node, ObjectKind};
@@ -183,6 +183,191 @@ pub fn intersects(a: &MultiPolygon, b: &MultiPolygon) -> bool {
     }
 }
 
+/// Why a node edit could not be made.
+#[derive(Clone, PartialEq, Debug, thiserror::Error)]
+pub enum NodeEditError {
+    #[error("the outline has no node at part {}, ring {}, point {}", .0.part, .0.ring, .0.index)]
+    NoSuchNode(NodeRef),
+    #[error("a ring needs at least three points")]
+    TooFewPoints,
+    #[error("the edit would leave nothing of the outline")]
+    Collapsed,
+}
+
+/// `outline` with each of `nodes` moved by `offset`. A result that crosses itself is repaired.
+pub fn move_nodes(
+    outline: &MultiPolygon,
+    nodes: &[NodeRef],
+    offset: Point,
+) -> Result<MultiPolygon, NodeEditError> {
+    let mut edited = outline.clone();
+    let mut moved = std::collections::HashSet::new();
+    for &node in nodes {
+        let point = edited
+            .ring_mut(node.part, node.ring)
+            .and_then(|ring| ring.get_mut(node.index))
+            .ok_or(NodeEditError::NoSuchNode(node))?;
+        // A node named twice still moves once.
+        if moved.insert(node) {
+            *point = [point[0] + offset[0], point[1] + offset[1]];
+        }
+    }
+    repaired(edited)
+}
+
+/// `outline` with a node added at `point` on the edge that starts at `edge` and runs to the
+/// next point of its ring (the last point's edge closes the ring).
+pub fn insert_node(
+    outline: &MultiPolygon,
+    edge: NodeRef,
+    point: Point,
+) -> Result<MultiPolygon, NodeEditError> {
+    let mut edited = outline.clone();
+    let ring = edited
+        .ring_mut(edge.part, edge.ring)
+        .filter(|ring| edge.index < ring.len())
+        .ok_or(NodeEditError::NoSuchNode(edge))?;
+    ring.insert(edge.index + 1, point);
+    repaired(edited)
+}
+
+/// `outline` without `nodes`. Refuses to leave a ring with fewer than three points.
+pub fn delete_nodes(
+    outline: &MultiPolygon,
+    nodes: &[NodeRef],
+) -> Result<MultiPolygon, NodeEditError> {
+    let mut doomed = nodes.to_vec();
+    doomed.sort_by_key(|n| std::cmp::Reverse((n.part, n.ring, n.index)));
+    doomed.dedup();
+    let mut edited = outline.clone();
+    for node in doomed {
+        let ring = edited
+            .ring_mut(node.part, node.ring)
+            .filter(|ring| node.index < ring.len())
+            .ok_or(NodeEditError::NoSuchNode(node))?;
+        ring.remove(node.index);
+        if ring.len() < 3 {
+            return Err(NodeEditError::TooFewPoints);
+        }
+    }
+    repaired(edited)
+}
+
+/// A hand-edited outline made valid. One that is already valid is returned as it is, so node
+/// indices stay put; one that crosses itself is cleaned up by i_overlay, which can renumber
+/// its nodes.
+fn repaired(outline: MultiPolygon) -> Result<MultiPolygon, NodeEditError> {
+    if outline.problem().is_some() {
+        return Err(NodeEditError::TooFewPoints);
+    }
+    if is_clean(&outline) {
+        return Ok(outline);
+    }
+    let cleaned = normalised(to_geo(&outline).union(&geo::MultiPolygon::<f64>::new(Vec::new())));
+    if cleaned.is_empty() {
+        Err(NodeEditError::Collapsed)
+    } else {
+        Ok(cleaned)
+    }
+}
+
+/// Whether an outline is already a valid stored one: oriented, no edge touching another
+/// except where neighbours meet, and no part or hole sitting inside another by drifting there
+/// whole. Segments go in an R-tree, so this is near-linear on coastlines (geo's own
+/// validation is quadratic and takes seconds at 50k vertices).
+fn is_clean(outline: &MultiPolygon) -> bool {
+    use geo::algorithm::line_intersection::line_intersection;
+    use rstar::primitives::{GeomWithData, Rectangle};
+
+    let oriented = outline.0.iter().all(|polygon| {
+        signed_area(&polygon.exterior) > 0.0 && polygon.holes.iter().all(|h| signed_area(h) < 0.0)
+    });
+    if !oriented {
+        return false;
+    }
+    // (ring number across the whole outline, index of the segment within its ring, ring length)
+    type Segment = GeomWithData<Rectangle<Point>, (usize, usize, usize)>;
+    let mut segments: Vec<Segment> = Vec::new();
+    let mut rings: Vec<&[Point]> = Vec::new();
+    for ring in outline.0.iter().flat_map(Polygon::rings) {
+        let number = rings.len();
+        rings.push(ring);
+        for (i, &a) in ring.iter().enumerate() {
+            let b = ring[(i + 1) % ring.len()];
+            segments.push(GeomWithData::new(
+                Rectangle::from_corners(
+                    [a[0].min(b[0]), a[1].min(b[1])],
+                    [a[0].max(b[0]), a[1].max(b[1])],
+                ),
+                (number, i, ring.len()),
+            ));
+        }
+    }
+    let line = |(ring, i, len): (usize, usize, usize)| {
+        let (a, b) = (rings[ring][i], rings[ring][(i + 1) % len]);
+        geo::Line::new(
+            geo::coord! {x: a[0], y: a[1]},
+            geo::coord! {x: b[0], y: b[1]},
+        )
+    };
+    let tree = rstar::RTree::bulk_load(segments);
+    for entry in tree.iter() {
+        let (ring, i, len) = entry.data;
+        let envelope = rstar::AABB::from_corners(entry.geom().lower(), entry.geom().upper());
+        for other in tree.locate_in_envelope_intersecting(&envelope) {
+            let (other_ring, j, _) = other.data;
+            if (other_ring, j) <= (ring, i) {
+                continue;
+            }
+            let neighbours = other_ring == ring
+                && (j == (i + 1) % len || i == (j + 1) % len || (len == 3 && i != j));
+            if neighbours {
+                // Neighbours share an end; they must not overlap along a line as well.
+                if let Some(geo::algorithm::line_intersection::LineIntersection::Collinear {
+                    ..
+                }) = line_intersection(line(entry.data), line(other.data))
+                {
+                    return false;
+                }
+            } else if line_intersection(line(entry.data), line(other.data)).is_some() {
+                return false;
+            }
+        }
+    }
+    // No edges meet, so a ring is wholly inside or outside another: check one vertex each.
+    for (number, ring) in rings.iter().enumerate() {
+        let probe = ring[0];
+        let mut ring_number = 0;
+        for polygon in &outline.0 {
+            let first = ring_number;
+            ring_number += 1 + polygon.holes.len();
+            let is_hole = number > first && number < ring_number;
+            let own = (first..ring_number).contains(&number);
+            if own && number == first {
+                continue; // the exterior against its own polygon
+            }
+            if own && is_hole {
+                // A hole belongs inside its own exterior.
+                if !ring_contains_point(&polygon.exterior, probe) {
+                    return false;
+                }
+            } else if !own && polygon.contains(probe) {
+                // A ring inside another part's fill: overlapping parts.
+                return false;
+            }
+        }
+    }
+    true
+}
+
+fn ring_contains_point(ring: &[Point], point: Point) -> bool {
+    Polygon {
+        exterior: ring.to_vec(),
+        holes: Vec::new(),
+    }
+    .contains(point)
+}
+
 /// The signed shoelace area of an implicitly closed ring: positive when counter-clockwise.
 pub fn signed_area(ring: &[Point]) -> f64 {
     let Some(&last) = ring.last() else {
@@ -249,6 +434,8 @@ fn from_geo(region: &geo::MultiPolygon<f64>) -> MultiPolygon {
 
 #[cfg(test)]
 mod tests {
+    use geo::Validation;
+
     use super::*;
 
     fn square(min: f64, max: f64) -> MultiPolygon {
@@ -357,5 +544,88 @@ mod tests {
         assert!(intersects(&l_shape, &square(1.0, 3.0)));
         assert!(!intersects(&l_shape, &square(5.0, 9.0)));
         assert!(!intersects(&l_shape, &square(20.0, 30.0)));
+    }
+
+    fn node(part: usize, ring: usize, index: usize) -> NodeRef {
+        NodeRef { part, ring, index }
+    }
+
+    #[test]
+    fn moving_nodes_keeps_indices_when_the_outline_stays_valid() {
+        let moved = move_nodes(&square(0.0, 10.0), &[node(0, 0, 2)], [5.0, 5.0]).unwrap();
+        assert_eq!(moved.0[0].exterior[2], [15.0, 15.0]);
+        assert_eq!(moved.0[0].exterior.len(), 4);
+        // Naming a node twice moves it once.
+        let moved = move_nodes(&square(0.0, 10.0), &[node(0, 0, 2); 2], [5.0, 0.0]).unwrap();
+        assert_eq!(moved.0[0].exterior[2], [15.0, 10.0]);
+        assert_eq!(
+            move_nodes(&square(0.0, 10.0), &[node(0, 0, 9)], [1.0, 1.0]),
+            Err(NodeEditError::NoSuchNode(node(0, 0, 9)))
+        );
+    }
+
+    #[test]
+    fn dragging_a_node_across_the_outline_is_repaired() {
+        // Dragging a corner past the opposite one ties the square into a bow-tie.
+        let bowtie = move_nodes(&square(0.0, 10.0), &[node(0, 0, 2)], [-20.0, 0.0]).unwrap();
+        assert!(to_geo(&bowtie).is_valid());
+        assert_oriented(&bowtie);
+    }
+
+    #[test]
+    fn insert_adds_a_node_after_the_edge_start_and_the_last_edge_wraps() {
+        let inserted = insert_node(&square(0.0, 10.0), node(0, 0, 0), [5.0, -3.0]).unwrap();
+        assert_eq!(inserted.0[0].exterior[1], [5.0, -3.0]);
+        assert_eq!(inserted.0[0].exterior.len(), 5);
+        let closing = insert_node(&square(0.0, 10.0), node(0, 0, 3), [-2.0, 5.0]).unwrap();
+        assert_eq!(closing.0[0].exterior[4], [-2.0, 5.0]);
+        assert_oriented(&closing);
+    }
+
+    #[test]
+    fn delete_refuses_to_leave_a_ring_with_fewer_than_three_points() {
+        let pentagon = MultiPolygon(vec![Polygon {
+            exterior: vec![
+                [0.0, 0.0],
+                [10.0, 0.0],
+                [12.0, 6.0],
+                [5.0, 10.0],
+                [-2.0, 6.0],
+            ],
+            holes: Vec::new(),
+        }]);
+        let fewer =
+            delete_nodes(&pentagon, &[node(0, 0, 1), node(0, 0, 3), node(0, 0, 3)]).unwrap();
+        assert_eq!(fewer.0[0].exterior.len(), 3);
+        assert_eq!(
+            delete_nodes(&pentagon, &[node(0, 0, 0), node(0, 0, 1), node(0, 0, 2)]),
+            Err(NodeEditError::TooFewPoints)
+        );
+        assert_eq!(
+            delete_nodes(&square(0.0, 10.0), &[node(0, 0, 0), node(0, 0, 2)]),
+            Err(NodeEditError::TooFewPoints)
+        );
+    }
+
+    #[test]
+    fn a_big_coastline_stays_quick_to_edit() {
+        let n = 50_000;
+        let ring: Vec<Point> = (0..n)
+            .map(|i| {
+                let t = f64::from(i) / f64::from(n) * std::f64::consts::TAU;
+                let r = 10_000.0 + 400.0 * (t * 37.0).sin();
+                [r * t.cos(), r * t.sin()]
+            })
+            .collect();
+        let coast = MultiPolygon(vec![Polygon {
+            exterior: ring,
+            holes: Vec::new(),
+        }]);
+        let started = std::time::Instant::now();
+        let edited = move_nodes(&coast, &[node(0, 0, 25_000)], [30.0, 0.0]).unwrap();
+        assert_eq!(edited.0[0].exterior.len(), 50_000);
+        let elapsed = started.elapsed();
+        // Generous for debug builds; a drag runs this every frame.
+        assert!(elapsed.as_millis() < 1500, "took {elapsed:?}");
     }
 }

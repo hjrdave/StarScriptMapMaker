@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 
 use ssmap_core::land::{self, BrushStroke};
 use ssmap_core::{
-    Command, CommandError, ExecuteError, History, Id, Map, Node, ObjectKind, Op, PickIndex, Point,
-    RoughnessCache, Selection,
+    Command, CommandError, ExecuteError, History, Id, Map, MultiPolygon, Node, NodeRef, ObjectKind,
+    Op, PickIndex, Point, RoughnessCache, Selection,
 };
 
 use crate::layer_tree::node_name;
@@ -27,6 +27,7 @@ pub struct Editor {
     pub active_tool: ToolId,
     /// The land brush's diameter, in Canvas units.
     pub brush_size: f64,
+    node_edit: Option<NodeEdit>,
     notice: Option<Notice>,
     /// Set while a gesture's transaction is open.
     gesture_open: bool,
@@ -34,6 +35,14 @@ pub struct Editor {
     pick_index: Option<PickIndex>,
     /// Roughened outlines, shared by the screen and picking so they agree.
     roughness: RoughnessCache,
+}
+
+/// Node-edit mode: one Landmass or Lake whose stored vertices show as nodes, and the nodes
+/// selected among them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NodeEdit {
+    pub id: Id,
+    pub nodes: Vec<NodeRef>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -54,6 +63,7 @@ impl Editor {
             active_layer: None,
             active_tool: ToolId::Select,
             brush_size: DEFAULT_BRUSH_SIZE,
+            node_edit: None,
             notice: None,
             gesture_open: false,
             pick_index: None,
@@ -72,12 +82,105 @@ impl Editor {
     /// Replaces the Selection. The active Layer follows it: a selected Layer, or the Layer
     /// holding a selected Object.
     pub fn select(&mut self, ids: Vec<Id>) {
+        if self.node_edit.as_ref().is_some_and(|edit| ids != [edit.id]) {
+            self.node_edit = None;
+        }
         self.selection = ids;
         if let Some(&last) = self.selection.last() {
             self.active_layer = match self.map.node(last) {
                 Some(Node::Layer(_)) => Some(last),
                 _ => self.map.parent(last),
             };
+        }
+    }
+
+    pub fn node_edit(&self) -> Option<&NodeEdit> {
+        self.node_edit.as_ref()
+    }
+
+    /// The stored outline (not the roughened one) of the Object in node-edit mode.
+    pub fn edited_outline(&self) -> Option<&MultiPolygon> {
+        match self.map.node(self.node_edit.as_ref()?.id)? {
+            Node::Object(object) => object.kind.geometry(),
+            Node::Layer(_) => None,
+        }
+    }
+
+    /// Enters node-edit mode on a Landmass or Lake, selecting it.
+    pub fn enter_node_edit(&mut self, id: Id) {
+        self.node_edit = None;
+        self.select(vec![id]);
+        self.node_edit = Some(NodeEdit {
+            id,
+            nodes: Vec::new(),
+        });
+    }
+
+    pub fn leave_node_edit(&mut self) {
+        self.node_edit = None;
+    }
+
+    /// Selects nodes of the Object being edited.
+    pub fn select_nodes(&mut self, nodes: Vec<NodeRef>) {
+        if let Some(edit) = &mut self.node_edit {
+            edit.nodes = nodes;
+        }
+    }
+
+    /// The shape of the outline being edited: how many points each ring has. Node numbers
+    /// stay meaningful while it does not change.
+    pub fn edited_shape(&self) -> Vec<usize> {
+        self.edited_outline()
+            .map(|outline| {
+                outline
+                    .0
+                    .iter()
+                    .flat_map(|polygon| polygon.rings().map(<[Point]>::len))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Forgets the node selection unless the outline still has `shape`: a repair may have
+    /// renumbered its nodes.
+    pub fn keep_nodes_if_shape(&mut self, shape: &[usize]) {
+        if self.edited_shape() != shape {
+            self.select_nodes(Vec::new());
+        }
+    }
+
+    /// Adds a node on an edge and selects it. One Undo step.
+    pub fn insert_node(&mut self, edge: NodeRef, point: Point) {
+        let Some(id) = self.node_edit.as_ref().map(|edit| edit.id) else {
+            return;
+        };
+        if self.run(Command::InsertNode { id, edge, point }) {
+            let added = NodeRef {
+                index: edge.index + 1,
+                ..edge
+            };
+            let landed = self
+                .edited_outline()
+                .is_some_and(|outline| outline.node(added) == Some(point));
+            self.select_nodes(if landed { vec![added] } else { Vec::new() });
+        }
+    }
+
+    /// Deletes the selected nodes. One Undo step; refused if a ring would be left with fewer
+    /// than three points.
+    pub fn delete_selected_nodes(&mut self) {
+        let Some(edit) = self.node_edit.clone() else {
+            return;
+        };
+        if edit.nodes.is_empty() {
+            return;
+        }
+        let command = Command::DeleteNodes {
+            id: edit.id,
+            nodes: edit.nodes,
+        };
+        if self.run(command) {
+            self.select_nodes(Vec::new());
         }
     }
 
@@ -369,6 +472,8 @@ impl Editor {
 
     /// Restores a recorded Selection, dropping anything that no longer exists.
     fn restore(&mut self, mut selection: Selection) {
+        // Undo and redo can renumber nodes.
+        self.select_nodes(Vec::new());
         selection.retain(|&id| self.map.contains(id));
         self.select(selection);
         if self.active_layer.is_some_and(|id| !self.map.contains(id)) {
@@ -461,5 +566,79 @@ mod tests {
             Some(Node::Layer(layer)) => layer.opacity,
             _ => panic!("a Layer"),
         }
+    }
+
+    fn editor_with_square() -> (Editor, Id) {
+        let mut editor = editor();
+        let layer = editor.new_layer().unwrap();
+        let id = Id::new();
+        editor.run(Command::CreateLandmass {
+            id,
+            parent: layer,
+            index: None,
+            geometry: MultiPolygon(vec![ssmap_core::Polygon {
+                exterior: vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+                holes: Vec::new(),
+            }]),
+            fill: None,
+        });
+        (editor, id)
+    }
+
+    fn node(index: usize) -> NodeRef {
+        NodeRef {
+            part: 0,
+            ring: 0,
+            index,
+        }
+    }
+
+    #[test]
+    fn node_edit_mode_follows_the_selection_and_edits_undo_cleanly() {
+        let (mut editor, id) = editor_with_square();
+        editor.enter_node_edit(id);
+        assert_eq!(editor.selection(), &[id]);
+
+        // A drag is one gesture and one Undo step, however many frames it takes.
+        editor.select_nodes(vec![node(2)]);
+        editor.begin_gesture("Move Nodes");
+        for step in 1..=5 {
+            editor.gesture_replace(Command::MoveNodes {
+                id,
+                nodes: vec![node(2)],
+                offset: [f64::from(step), 0.0],
+            });
+        }
+        editor.end_gesture();
+        assert_eq!(
+            editor.edited_outline().unwrap().node(node(2)),
+            Some([15.0, 10.0])
+        );
+        editor.undo();
+        assert_eq!(
+            editor.edited_outline().unwrap().node(node(2)),
+            Some([10.0, 10.0])
+        );
+        assert!(editor.node_edit().is_some_and(|edit| edit.nodes.is_empty()));
+
+        editor.insert_node(node(0), [5.0, -2.0]);
+        assert_eq!(editor.node_edit().unwrap().nodes, vec![node(1)]);
+        assert_eq!(editor.edited_shape(), vec![5]);
+        editor.delete_selected_nodes();
+        assert_eq!(editor.edited_shape(), vec![4]);
+
+        // Leaving, or selecting something else, ends the mode.
+        editor.select(Vec::new());
+        assert!(editor.node_edit().is_none());
+    }
+
+    #[test]
+    fn deleting_nodes_that_would_leave_fewer_than_three_is_refused() {
+        let (mut editor, id) = editor_with_square();
+        editor.enter_node_edit(id);
+        editor.select_nodes(vec![node(0), node(1)]);
+        editor.delete_selected_nodes();
+        assert_eq!(editor.edited_shape(), vec![4]);
+        assert!(editor.notice().is_some_and(|notice| notice.is_error));
     }
 }

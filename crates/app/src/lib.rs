@@ -645,11 +645,17 @@ impl MapMakerApp {
             if input.consume_key(Modifiers::NONE, Key::Delete)
                 || input.consume_key(Modifiers::NONE, Key::Backspace)
             {
-                editor.delete_selection();
+                if editor.node_edit().is_some() {
+                    editor.delete_selected_nodes();
+                } else {
+                    editor.delete_selection();
+                }
             }
             if input.consume_key(Modifiers::NONE, Key::Escape) {
                 if editor.gesture_open() {
                     editor.cancel_gesture();
+                } else if editor.node_edit().is_some() {
+                    editor.leave_node_edit();
                 } else {
                     editor.select(Vec::new());
                 }

@@ -14,6 +14,15 @@ pub struct Polygon {
     pub holes: Vec<Vec<Point>>,
 }
 
+/// One stored vertex of an outline: `part` is the Polygon, `ring` is 0 for its exterior and
+/// 1 and up for its holes, and `index` is the point within the ring.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct NodeRef {
+    pub part: usize,
+    pub ring: usize,
+    pub index: usize,
+}
+
 /// A region made of zero or more Polygons.
 #[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(transparent)]
@@ -101,6 +110,21 @@ impl Polygon {
         std::iter::once(self.exterior.as_slice()).chain(self.holes.iter().map(Vec::as_slice))
     }
 
+    /// The ring `ring` names: 0 is the exterior, 1 and up are holes.
+    pub fn ring(&self, ring: usize) -> Option<&Vec<Point>> {
+        match ring {
+            0 => Some(&self.exterior),
+            hole => self.holes.get(hole - 1),
+        }
+    }
+
+    fn ring_mut(&mut self, ring: usize) -> Option<&mut Vec<Point>> {
+        match ring {
+            0 => Some(&mut self.exterior),
+            hole => self.holes.get_mut(hole - 1),
+        }
+    }
+
     /// Inside the exterior and outside every hole.
     pub fn contains(&self, point: Point) -> bool {
         ring_contains(&self.exterior, point)
@@ -121,6 +145,20 @@ impl MultiPolygon {
     /// Inside any part. A point in a hole is outside: the hole shows what lies beneath.
     pub fn contains(&self, point: Point) -> bool {
         self.0.iter().any(|polygon| polygon.contains(point))
+    }
+
+    /// The stored point a node names.
+    pub fn node(&self, node: NodeRef) -> Option<Point> {
+        self.0
+            .get(node.part)?
+            .ring(node.ring)?
+            .get(node.index)
+            .copied()
+    }
+
+    /// The ring a node (or edge) names, mutably.
+    pub(crate) fn ring_mut(&mut self, part: usize, ring: usize) -> Option<&mut Vec<Point>> {
+        self.0.get_mut(part)?.ring_mut(ring)
     }
 
     pub fn transformed(&self, transform: &Affine) -> MultiPolygon {

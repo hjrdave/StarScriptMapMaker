@@ -1,0 +1,26 @@
+{
+  "setup": [
+    {"op": "insert", "parent": null, "index": 0, "subtree": {"id": "00000000-0000-7000-8000-000000000010", "type": "layer", "name": "Land", "visible": true, "locked": false, "opacity": 1.0}}
+  ],
+  "steps": [
+    {"step": {"command": "create_landmass", "id": "00000000-0000-7000-8000-000000000011", "parent": "00000000-0000-7000-8000-000000000010", "geometry": [{"exterior": [[0, 0], [100, 0], [100, 100], [0, 100]]}]}},
+    {"step": {"command": "move_nodes", "id": "00000000-0000-7000-8000-000000000011", "nodes": [{"part": 0, "ring": 0, "index": 2}], "offset": [20, 30]}},
+    {"step": {"command": "insert_node", "id": "00000000-0000-7000-8000-000000000011", "edge": {"part": 0, "ring": 0, "index": 0}, "point": [50, -15]}},
+    {"step": {"command": "delete_nodes", "id": "00000000-0000-7000-8000-000000000011", "nodes": [{"part": 0, "ring": 0, "index": 3}]}},
+    "snapshot",
+    "undo",
+    "undo",
+    "redo",
+    {"step": {"command": "move_nodes", "id": "00000000-0000-7000-8000-000000000011", "nodes": [{"part": 0, "ring": 0, "index": 1}], "offset": [-200, 150]}},
+    "snapshot",
+    {"step": {"command": "delete_nodes", "id": "00000000-0000-7000-8000-000000000011", "nodes": [{"part": 0, "ring": 0, "index": 0}, {"part": 0, "ring": 0, "index": 1}, {"part": 0, "ring": 0, "index": 2}]}},
+    {"step": {"command": "delete_nodes", "id": "00000000-0000-7000-8000-000000000011", "nodes": [{"part": 0, "ring": 0, "index": 99}]}},
+    {"step": {"command": "move_nodes", "id": "00000000-0000-7000-8000-000000000011", "nodes": [{"part": 3, "ring": 0, "index": 0}], "offset": [1, 1]}},
+    {"step": {"command": "move_nodes", "id": "00000000-0000-7000-8000-000000000010", "nodes": [], "offset": [1, 1]}},
+    {"step": {"command": "set_locked", "id": "00000000-0000-7000-8000-000000000011", "locked": true}},
+    {"step": {"command": "insert_node", "id": "00000000-0000-7000-8000-000000000011", "edge": {"part": 0, "ring": 0, "index": 0}, "point": [1, 1]}},
+    {"step": {"command": "create_lake", "id": "00000000-0000-7000-8000-000000000012", "parent": "00000000-0000-7000-8000-000000000010", "geometry": [{"exterior": [[10, 10], [40, 10], [40, 40], [10, 40]]}]}},
+    {"step": {"command": "move_nodes", "id": "00000000-0000-7000-8000-000000000012", "nodes": [{"part": 0, "ring": 0, "index": 0}, {"part": 0, "ring": 0, "index": 1}], "offset": [5, 0]}},
+    "snapshot"
+  ]
+}

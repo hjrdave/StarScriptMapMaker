@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::color::Color;
-use crate::geometry::{Affine, MultiPolygon};
+use crate::geometry::{Affine, MultiPolygon, NodeRef, Point};
 use crate::id::Id;
 use crate::land;
 use crate::map::{Map, MapDefaults, Subtree};
@@ -107,6 +107,24 @@ pub enum Command {
         ids: Vec<Id>,
         region: MultiPolygon,
     },
+    /// Moves nodes of a Landmass or Lake by `offset` Canvas units. If that makes the outline
+    /// cross itself, it is repaired.
+    MoveNodes {
+        id: Id,
+        nodes: Vec<NodeRef>,
+        offset: [f64; 2],
+    },
+    /// Adds a node at `point` on the edge that runs from `edge` to the next point of its ring.
+    InsertNode {
+        id: Id,
+        edge: NodeRef,
+        point: Point,
+    },
+    /// Deletes nodes. A ring cannot be left with fewer than three points.
+    DeleteNodes {
+        id: Id,
+        nodes: Vec<NodeRef>,
+    },
     /// Sets the fill colour of Landmasses and Lakes.
     SetFill {
         ids: Vec<Id>,
@@ -144,6 +162,8 @@ pub enum CommandError {
     NoOutline(Id),
     #[error("the outline of {id} is invalid: {problem}")]
     InvalidGeometry { id: Id, problem: String },
+    #[error("cannot edit the nodes of {id}: {problem}")]
+    NodeEdit { id: Id, problem: String },
     #[error("the transform {0:?} is not finite or collapses shapes")]
     InvalidTransform([f64; 6]),
     #[error("Roughness needs an amount of 0 or more and a scale above 0, not {amount} and {scale}")]
@@ -169,6 +189,9 @@ impl Command {
             Command::Transform { .. } => "Transform",
             Command::AddRegion { .. } => "Add Region",
             Command::SubtractRegion { .. } => "Subtract Region",
+            Command::MoveNodes { .. } => "Move Nodes",
+            Command::InsertNode { .. } => "Add Node",
+            Command::DeleteNodes { .. } => "Delete Nodes",
             Command::SetFill { .. } => "Change Fill",
             Command::SetRoughness { .. } => "Change Roughness",
             Command::SetDefaultRoughness { .. } => "Change Default Roughness",
@@ -302,6 +325,15 @@ impl Command {
                     ops.extend(delete(map, &emptied)?);
                 }
                 Ok(ops)
+            }
+            Command::MoveNodes { id, nodes, offset } => node_edit(map, *id, |outline| {
+                land::move_nodes(outline, nodes, *offset)
+            }),
+            Command::InsertNode { id, edge, point } => node_edit(map, *id, |outline| {
+                land::insert_node(outline, *edge, *point)
+            }),
+            Command::DeleteNodes { id, nodes } => {
+                node_edit(map, *id, |outline| land::delete_nodes(outline, nodes))
             }
             Command::SetFill { ids, fill } => {
                 let ids = outlined(map, ids)?;
@@ -456,6 +488,25 @@ fn transform(map: &Map, ids: &[Id], transform: &Affine) -> Result<Vec<Op>, Comma
         ops.push(Op::ReplaceGeometry { id, geometry });
     }
     Ok(ops)
+}
+
+/// Replaces the outline of one Landmass or Lake with the result of a node edit.
+fn node_edit(
+    map: &Map,
+    id: Id,
+    edit: impl FnOnce(&MultiPolygon) -> Result<MultiPolygon, land::NodeEditError>,
+) -> Result<Vec<Op>, CommandError> {
+    let [id] = outlined(map, &[id])?[..] else {
+        unreachable!("one id in, one id out")
+    };
+    let geometry = edit(outline(map, id)).map_err(|e| CommandError::NodeEdit {
+        id,
+        problem: e.to_string(),
+    })?;
+    if let Some(problem) = geometry.problem() {
+        return Err(CommandError::InvalidGeometry { id, problem });
+    }
+    Ok(vec![Op::ReplaceGeometry { id, geometry }])
 }
 
 /// Checks that every id is an unlocked Landmass or Lake, and drops repeats.
