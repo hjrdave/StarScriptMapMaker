@@ -40,7 +40,6 @@ identifier = "io.github.hjrdave.StarScriptMapMaker"
 publisher = "StarScript Map Maker"
 authors = ["StarScript Map Maker contributors"]
 homepage = "https://github.com/hjrdave/StarScriptMapMaker"
-license-file = "../../LICENSE"
 category = "GraphicsAndDesign"
 before-packaging-command = "cargo build --release --locked -p app"
 out-dir = "../../target/packages"
@@ -52,9 +51,14 @@ icons = [
   "packaging/icons/512x512.png",
   "packaging/icons/icon.ico",
 ]
-# Built-in Asset packs and fonts, read-only inside the install. `install::assets_root` is
-# the one place that knows where each package puts them.
-resources = [{ src = "../../assets", target = "assets" }]
+# Built-in Asset packs and fonts, read-only inside the install. `ssmap_core::asset::assets_dir`
+# is the one place that knows where each package puts them.
+# LICENSE ships as a plain file. Setting `license-file` would make the DMG and the installer
+# demand acceptance, which MIT doesn't ask for (and a DMG with one can't mount unattended).
+resources = [
+  { src = "../../assets", target = "assets" },
+  { src = "../../LICENSE", target = "LICENSE" },
+]
 
 [[package.metadata.packager.file-associations]]
 extensions = ["ssmap"]
