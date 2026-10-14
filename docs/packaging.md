@@ -34,6 +34,9 @@ package. `ssmap_app::install::assets_root` is the only code that knows where it 
 
 From a source checkout (`cargo run`, tests) it falls back to the repo's `assets/`.
 
+`LICENSE` sits beside `assets/` in every package. It is a plain file, not a license the
+installer or DMG asks the user to accept.
+
 User packs and settings do not belong here. They go in the platform data and config
 folders.
 
