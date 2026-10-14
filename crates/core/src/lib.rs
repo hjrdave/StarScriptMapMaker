@@ -2,6 +2,7 @@
 //!
 //! This crate must never depend on egui or wgpu (ADR 0001); CI enforces it.
 
+pub mod asset;
 mod command;
 mod extra;
 pub mod file;
@@ -13,6 +14,7 @@ mod node;
 mod op;
 mod roughness;
 
+pub use asset::AssetRef;
 pub use command::{Command, CommandError};
 pub use extra::Extra;
 pub use geometry::{MultiPolygon, Point, Polygon};
