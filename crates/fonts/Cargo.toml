@@ -1,0 +1,12 @@
+[package]
+name = "ssmap-fonts"
+description = "The fonts bundled with StarScript Map Maker, under the SIL Open Font License."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+# The fonts' licence, not our code's: this crate holds only font data (see deny.toml).
+license = "OFL-1.1"
+publish.workspace = true
+
+[lints]
+workspace = true

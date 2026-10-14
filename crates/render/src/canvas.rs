@@ -1,20 +1,24 @@
 //! The Canvas renderer: an offscreen, multisampled target holding the backdrop and the Map's
-//! Landmass and Lake fills.
+//! Objects.
+
+use std::sync::Arc;
 
 use lyon::math::Box2D;
 use lyon::path::{Path, Winding};
 use wgpu::util::DeviceExt;
 
-use crate::color::Color;
+use crate::color::{Color, ColorExt as _};
 use crate::gpu::GpuCapabilities;
 use crate::ocean::{OceanPass, OceanUniform};
-use crate::shapes::Shapes;
-use crate::vector::{FillPath, LyonRenderer, VectorRenderer};
+use crate::vector::{FillRule, LyonRenderer, VectorGroup, VectorRenderer};
 use crate::view::View;
 
 /// The resolved Canvas target's format. Blending happens in linear space, and readback bytes
 /// are already sRGB-encoded for PNG.
 pub const CANVAS_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+
+/// The Canvas pass's stencil, which lets a [`VectorGroup`] paint each sample once.
+const STENCIL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Stencil8;
 
 /// The ocean: a background fill plus a texture over it.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -33,6 +37,28 @@ impl Default for Backdrop {
     }
 }
 
+/// The Map's Objects as vector groups, first drawn lowest, as [`MapScene`](crate::MapScene)
+/// builds them. Two are equal only if they are the same build (or both empty), so comparing
+/// scenes every frame stays cheap.
+#[derive(Clone, Debug, Default)]
+pub struct Content(Arc<[VectorGroup]>);
+
+impl Content {
+    pub fn new(groups: Vec<VectorGroup>) -> Self {
+        Self(groups.into())
+    }
+
+    pub fn groups(&self) -> &[VectorGroup] {
+        &self.0
+    }
+}
+
+impl PartialEq for Content {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0) || (self.0.is_empty() && other.0.is_empty())
+    }
+}
+
 /// Everything the Canvas renderer draws.
 #[derive(Clone, PartialEq, Debug)]
 pub struct CanvasScene {
@@ -41,46 +67,44 @@ pub struct CanvasScene {
     pub backdrop: Backdrop,
     /// The area around the Canvas. Editor-only; export never shows it.
     pub pasteboard: Color,
-    /// Landmass and Lake fills, drawn over the backdrop.
-    pub shapes: Shapes,
+    /// Drawn over the backdrop.
+    pub content: Content,
 }
 
 impl CanvasScene {
-    /// A Canvas with only its backdrop.
     pub fn new(canvas: &ssmap_core::Canvas) -> Self {
         Self {
             canvas_size: [f64::from(canvas.width), f64::from(canvas.height)],
             backdrop: Backdrop::default(),
             pasteboard: Color::rgb(0x1c, 0x1c, 0x1f),
-            shapes: Shapes::default(),
+            content: Content::default(),
         }
     }
 
-    /// The whole Map: its Canvas and everything drawn on it, with roughened outlines from
-    /// `roughness`.
-    pub fn from_map(map: &ssmap_core::Map, roughness: &mut ssmap_core::RoughnessCache) -> Self {
-        Self {
-            shapes: Shapes::from_map(map, roughness),
-            ..Self::new(&map.canvas)
-        }
+    pub fn with_content(mut self, content: Content) -> Self {
+        self.content = content;
+        self
     }
+}
 
-    /// Whether `other` has the same backdrop, ignoring what is drawn over it.
-    fn same_backdrop(&self, other: &CanvasScene) -> bool {
-        self.canvas_size == other.canvas_size && self.backdrop == other.backdrop
-    }
+/// The parts of a scene that change the backdrop.
+#[derive(Clone, PartialEq, Debug)]
+struct BackdropKey {
+    canvas_size: [f64; 2],
+    backdrop: Backdrop,
 }
 
 pub struct CanvasRenderer {
     capabilities: GpuCapabilities,
     view_uniform: wgpu::Buffer,
     view_bind_group: wgpu::BindGroup,
-    /// The water fill beneath the ocean texture.
-    vector: LyonRenderer,
+    /// The water under the ocean texture.
+    backdrop: LyonRenderer,
     ocean: OceanPass,
-    /// Landmass and Lake fills over the ocean.
-    shapes: LyonRenderer,
-    scene: Option<CanvasScene>,
+    /// The Map's Objects, over the ocean.
+    content: LyonRenderer,
+    drawn_backdrop: Option<BackdropKey>,
+    drawn_content: Option<Content>,
     target: Option<Target>,
 }
 
@@ -90,6 +114,8 @@ struct Target {
     msaa: Option<wgpu::TextureView>,
     resolved: wgpu::Texture,
     resolved_view: wgpu::TextureView,
+    /// At the multisampled size; its contents are never kept between frames.
+    stencil: wgpu::TextureView,
 }
 
 impl CanvasRenderer {
@@ -110,13 +136,14 @@ impl CanvasRenderer {
             }],
         });
         Self {
-            vector: LyonRenderer::new(device, &view_layout, samples),
-            shapes: LyonRenderer::new(device, &view_layout, samples),
+            backdrop: LyonRenderer::new(device, &view_layout, samples),
             ocean: OceanPass::new(device, &view_layout, samples),
+            content: LyonRenderer::new(device, &view_layout, samples),
             capabilities,
             view_uniform,
             view_bind_group,
-            scene: None,
+            drawn_backdrop: None,
+            drawn_content: None,
             target: None,
         }
     }
@@ -135,14 +162,17 @@ impl CanvasRenderer {
         scene: &CanvasScene,
         view: &View,
     ) -> &wgpu::Texture {
-        let previous = self.scene.take();
-        if !previous.as_ref().is_some_and(|p| p.same_backdrop(scene)) {
-            self.set_backdrop(device, queue, scene);
+        let backdrop = BackdropKey {
+            canvas_size: scene.canvas_size,
+            backdrop: scene.backdrop,
+        };
+        if self.drawn_backdrop.as_ref() != Some(&backdrop) {
+            self.set_backdrop(device, queue, backdrop);
         }
-        if previous.is_none_or(|p| p.shapes != scene.shapes) {
-            self.shapes.set_fills(device, &scene.shapes.fill_paths());
+        if self.drawn_content.as_ref() != Some(&scene.content) {
+            self.content.set_groups(device, scene.content.groups());
+            self.drawn_content = Some(scene.content.clone());
         }
-        self.scene = Some(scene.clone());
         self.ensure_target(device, view.size);
         queue.write_buffer(&self.view_uniform, 0, bytemuck::bytes_of(&view.uniform()));
 
@@ -162,29 +192,38 @@ impl CanvasRenderer {
                     store: wgpu::StoreOp::Store,
                 },
             })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &target.stencil,
+                depth_ops: None,
+                stencil_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(0),
+                    store: wgpu::StoreOp::Discard,
+                }),
+            }),
             ..Default::default()
         });
         pass.set_bind_group(0, &self.view_bind_group, &[]);
-        self.vector.draw(&mut pass);
+        self.backdrop.draw(&mut pass);
         self.ocean.draw(&mut pass);
-        self.shapes.draw(&mut pass);
+        self.content.draw(&mut pass);
         drop(pass);
         &target.resolved
     }
 
-    fn set_backdrop(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, scene: &CanvasScene) {
+    fn set_backdrop(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, scene: BackdropKey) {
         let [w, h] = scene.canvas_size.map(|v| v as f32);
         let mut builder = Path::builder();
         builder.add_rectangle(
             &Box2D::new((0.0, 0.0).into(), (w, h).into()),
             Winding::Positive,
         );
-        self.vector.set_fills(
+        self.backdrop.set_groups(
             device,
-            &[FillPath {
-                path: builder.build(),
-                color: scene.backdrop.water,
-            }],
+            &[VectorGroup::fill(
+                builder.build(),
+                scene.backdrop.water,
+                FillRule::NonZero,
+            )],
         );
         self.ocean.set(
             queue,
@@ -194,6 +233,7 @@ impl CanvasRenderer {
                 _pad: 0.0,
             },
         );
+        self.drawn_backdrop = Some(scene);
     }
 
     fn ensure_target(&mut self, device: &wgpu::Device, size: [u32; 2]) {
@@ -235,11 +275,24 @@ impl CanvasRenderer {
             view_formats: &[CANVAS_FORMAT.remove_srgb_suffix()],
         });
         let resolved_view = resolved.create_view(&Default::default());
+        let stencil = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("canvas stencil"),
+                size: extent,
+                mip_level_count: 1,
+                sample_count: samples,
+                dimension: wgpu::TextureDimension::D2,
+                format: STENCIL_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            })
+            .create_view(&Default::default());
         self.target = Some(Target {
             size,
             msaa,
             resolved,
             resolved_view,
+            stencil,
         });
     }
 }
@@ -260,6 +313,57 @@ pub(crate) fn uniform_layout(device: &wgpu::Device, label: &str) -> wgpu::BindGr
     })
 }
 
+/// How a Canvas pipeline uses the stencil, which starts each frame at 0.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum StencilUse {
+    Ignore,
+    /// Draws only where the stencil is 0 and marks what it draws, so overlapping triangles
+    /// in one draw paint each sample once.
+    PaintOnce,
+    /// Draws no colour and clears marks, ready for the next `PaintOnce` draw.
+    Reset,
+}
+
+impl StencilUse {
+    fn state(self) -> wgpu::DepthStencilState {
+        let face = |compare, pass_op| wgpu::StencilFaceState {
+            compare,
+            fail_op: wgpu::StencilOperation::Keep,
+            depth_fail_op: wgpu::StencilOperation::Keep,
+            pass_op,
+        };
+        let (face, write_mask) = match self {
+            StencilUse::Ignore => (wgpu::StencilFaceState::IGNORE, 0),
+            StencilUse::PaintOnce => (
+                face(
+                    wgpu::CompareFunction::Equal,
+                    wgpu::StencilOperation::IncrementClamp,
+                ),
+                0xff,
+            ),
+            StencilUse::Reset => (
+                face(
+                    wgpu::CompareFunction::NotEqual,
+                    wgpu::StencilOperation::Zero,
+                ),
+                0xff,
+            ),
+        };
+        wgpu::DepthStencilState {
+            format: STENCIL_FORMAT,
+            depth_write_enabled: None,
+            depth_compare: None,
+            stencil: wgpu::StencilState {
+                front: face,
+                back: face,
+                read_mask: 0xff,
+                write_mask,
+            },
+            bias: Default::default(),
+        }
+    }
+}
+
 /// A pipeline drawing premultiplied colour into the Canvas target.
 pub(crate) fn canvas_pipeline(
     device: &wgpu::Device,
@@ -268,6 +372,7 @@ pub(crate) fn canvas_pipeline(
     shader: &wgpu::ShaderModule,
     buffers: &[Option<wgpu::VertexBufferLayout<'_>>],
     samples: u32,
+    stencil: StencilUse,
 ) -> wgpu::RenderPipeline {
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some(label),
@@ -284,12 +389,16 @@ pub(crate) fn canvas_pipeline(
             targets: &[Some(wgpu::ColorTargetState {
                 format: CANVAS_FORMAT,
                 blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
+                write_mask: if stencil == StencilUse::Reset {
+                    wgpu::ColorWrites::empty()
+                } else {
+                    wgpu::ColorWrites::ALL
+                },
             })],
             compilation_options: Default::default(),
         }),
         primitive: Default::default(),
-        depth_stencil: None,
+        depth_stencil: Some(stencil.state()),
         multisample: wgpu::MultisampleState {
             count: samples,
             ..Default::default()

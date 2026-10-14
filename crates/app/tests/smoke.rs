@@ -182,6 +182,94 @@ fn a_file_that_fails_to_open_shows_why() {
     assert!(harness.state().document().path().is_none());
 }
 
+/// Clicks the Canvas at a screen point.
+fn click_at(harness: &mut Harness<'static, MapMakerApp>, pos: egui::Pos2) {
+    harness.event(egui::Event::PointerMoved(pos));
+    harness.run();
+    for pressed in [true, false] {
+        harness.event(egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.run();
+    }
+}
+
+#[test]
+fn the_label_tool_places_a_label_and_types_its_text_in_one_undo_step() {
+    let mut harness = app();
+    harness.key_press(egui::Key::T);
+    harness.run();
+    // The middle of the Canvas panel, between the Layers and Properties panels.
+    let canvas = egui::pos2(640.0, 400.0);
+    click_at(&mut harness, canvas);
+    assert!(harness.state().editing_label_text());
+    // The placeholder text is selected, so typing replaces it.
+    harness.event(egui::Event::Text("Ærendál".into()));
+    harness.run();
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    assert!(!harness.state().editing_label_text());
+
+    let editor = harness.state().editor();
+    let [id] = editor.selection() else {
+        panic!("the new Label is selected")
+    };
+    let id = *id;
+    assert_eq!(editor.label(id).map(|l| l.text.as_str()), Some("Ærendál"));
+    assert_eq!(editor.undo_label(), Some("Add Label"));
+    // Its first line names it in the Layers panel.
+    harness.get_by_label("Ærendál");
+
+    // Clicking empty Canvas deselects it, and clicking it picks it again.
+    click_at(&mut harness, egui::pos2(300.0, 120.0));
+    assert!(harness.state().editor().selection().is_empty());
+    click_at(&mut harness, canvas);
+    assert_eq!(harness.state().editor().selection(), &[id]);
+
+    // Dragging it moves it, as one Undo step.
+    let before = harness.state().editor().label(id).unwrap().position;
+    harness.event(egui::Event::PointerButton {
+        pos: canvas,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.run();
+    for step in 1..=5 {
+        harness.event(egui::Event::PointerMoved(
+            canvas + egui::vec2(10.0 * step as f32, 0.0),
+        ));
+        harness.run();
+    }
+    harness.event(egui::Event::PointerButton {
+        pos: canvas + egui::vec2(50.0, 0.0),
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.run();
+    let editor = harness.state().editor();
+    let after = editor.label(id).unwrap().position;
+    assert!(
+        after[0] > before[0] && after[1] == before[1],
+        "{before:?} -> {after:?}"
+    );
+    assert_eq!(editor.undo_label(), Some("Move"));
+
+    for _ in 0..2 {
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+        harness.run();
+    }
+    let editor = harness.state().editor();
+    assert!(
+        editor.map.children(None).is_empty(),
+        "the Layer it made goes too"
+    );
+}
+
 /// One Layer holding an island with a hole (0..400) and a Lake (100..200) above it.
 fn island_map() -> (ssmap_core::Map, ssmap_core::Id, ssmap_core::Id) {
     use ssmap_core::{Canvas, Command, DistanceUnit, Id, Map, MultiPolygon, Polygon, Scale};

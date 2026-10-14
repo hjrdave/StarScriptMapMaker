@@ -12,7 +12,7 @@ use crate::color::Color;
 use crate::geometry::MultiPolygon;
 use crate::id::Id;
 use crate::map::{InvariantError, Map, MapDefaults, Subtree};
-use crate::node::Node;
+use crate::node::{Label, Node, ObjectKind};
 use crate::roughness::Roughness;
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
@@ -60,6 +60,8 @@ pub enum Property {
     Fill(Color),
     /// Landmasses and Lakes only. `None` uses the Map-wide default.
     Roughness(Option<Roughness>),
+    /// Label Objects only: every field of the Label at once.
+    Label(Box<Label>),
 }
 
 #[derive(Clone, PartialEq, Debug, Error)]
@@ -226,10 +228,15 @@ fn check_index(index: usize, len: usize) -> Result<(), OpError> {
 fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> {
     match (node, property) {
         (Node::Layer(_), Property::Fill(_)) => Err("fill"),
+        (Node::Layer(_), Property::Label(_)) => Err("label"),
         (Node::Layer(_), Property::Roughness(_)) => Err("roughness"),
         (Node::Object(object), Property::Roughness(_)) if object.kind.geometry().is_none() => {
             Err("roughness")
         }
+        (Node::Object(object), Property::Label(_)) => match object.kind {
+            ObjectKind::Label(_) => Ok(()),
+            _ => Err("label"),
+        },
         (Node::Layer(_), _) | (Node::Object(_), Property::Locked(_) | Property::Roughness(_)) => {
             Ok(())
         }
@@ -270,6 +277,10 @@ fn set_property(node: &mut Node, property: Property) -> Property {
             let slot = object.kind.roughness_mut().expect("checked");
             Property::Roughness(std::mem::replace(slot, roughness))
         }
+        (Node::Object(object), Property::Label(label)) => match &mut object.kind {
+            ObjectKind::Label(old) => Property::Label(std::mem::replace(old, label)),
+            _ => unreachable!("rejected by check_property"),
+        },
         (_, _) => unreachable!("rejected by check_property"),
     }
 }

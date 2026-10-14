@@ -3,9 +3,9 @@
 
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
+use ssmap_core::Command;
 use ssmap_render::{
-    CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, RgbaImage, Shapes, View,
-    render_to_image,
+    CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, RgbaImage, View, render_to_image,
 };
 
 use crate::editor::Editor;
@@ -50,8 +50,7 @@ pub fn render_whole_canvas(
     let resources = egui_renderer
         .callback_resources
         .get_mut::<CanvasResources>()?;
-    let (map, roughness) = editor.map_and_roughness();
-    let scene = CanvasScene::from_map(map, roughness);
+    let scene = CanvasScene::new(&editor.map.canvas).with_content(editor.scene_content());
     let view = View::whole_canvas(scene.canvas_size, longest_side);
     Some(render_to_image(
         &render_state.device,
@@ -70,8 +69,6 @@ pub struct CanvasView {
     tools: ToolState,
     /// Where the panel was last drawn, in points, and the pixels per point then.
     panel: Option<(egui::Rect, f64)>,
-    /// The fills last built, and the Map revision they show.
-    shapes: Option<(u64, Shapes)>,
 }
 
 impl CanvasView {
@@ -81,8 +78,12 @@ impl CanvasView {
             gpu,
             tools: ToolState::default(),
             panel: None,
-            shapes: None,
         }
+    }
+
+    /// Whether a Label's text box is open.
+    pub fn editing_text(&self) -> bool {
+        self.tools.editing.is_some()
     }
 
     /// The screen position of a Canvas point, as last drawn.
@@ -101,20 +102,6 @@ impl CanvasView {
     pub fn refit(&mut self) {
         self.view = None;
         self.tools = ToolState::default();
-        self.shapes = None;
-    }
-
-    /// The Map's fills, built again only when the Map has changed.
-    fn shapes(&mut self, editor: &mut Editor) -> Shapes {
-        match &self.shapes {
-            Some((revision, shapes)) if *revision == editor.map.revision() => shapes.clone(),
-            _ => {
-                let (map, roughness) = editor.map_and_roughness();
-                let shapes = Shapes::from_map(map, roughness);
-                self.shapes = Some((map.revision(), shapes.clone()));
-                shapes
-            }
-        }
     }
 
     /// Zoom as a share of 1:1, in points rather than physical pixels.
@@ -130,10 +117,11 @@ impl CanvasView {
             (f64::from(rect.width()) * ppp).round().max(1.0) as u32,
             (f64::from(rect.height()) * ppp).round().max(1.0) as u32,
         ];
-        let mut scene = CanvasScene::new(&editor.map.canvas);
-        let view = self
-            .view
-            .get_or_insert_with(|| View::fit(scene.canvas_size, size, FIT_MARGIN * ppp));
+        let view = self.view.get_or_insert_with(|| {
+            let canvas = &editor.map.canvas;
+            let canvas = [f64::from(canvas.width), f64::from(canvas.height)];
+            View::fit(canvas, size, FIT_MARGIN * ppp)
+        });
         view.size = size;
 
         tools::canvas_input(
@@ -157,8 +145,8 @@ impl CanvasView {
 
         let view = *view;
         self.panel = Some((rect, ppp));
-        // After the tools, so a drag shows on the frame it happens.
-        scene.shapes = self.shapes(editor);
+        // After input, so this frame shows this frame's edits.
+        let scene = CanvasScene::new(&editor.map.canvas).with_content(editor.scene_content());
         let painter = ui.painter_at(rect);
         if self.gpu {
             painter.add(egui_wgpu::Callback::new_paint_callback(
@@ -168,8 +156,84 @@ impl CanvasView {
         } else {
             paint_placeholder(&painter, rect, &scene, &view, ppp);
         }
-        if let Some(bounds) = Bounds::of_selection(&editor.map, editor.selection()) {
-            handles::paint(&painter, &bounds, &view, rect.min, ppp);
+        if let Some(bounds) = Bounds::of_selection(editor) {
+            let rotatable = tools::selection_has_label(editor);
+            handles::paint(&painter, &bounds, &view, rect.min, ppp, rotatable);
+        }
+        self.text_box(ui, editor, &view, rect.min, ppp);
+    }
+
+    /// The box a Label's text is typed in, just below the Label so its real render shows
+    /// live above. Clicking away or Escape commits; emptying it deletes the Label.
+    fn text_box(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        view: &View,
+        origin: egui::Pos2,
+        ppp: f64,
+    ) {
+        let Some(editing) = &mut self.tools.editing else {
+            return;
+        };
+        let id = editing.id;
+        let Some((label, layout)) = editor.label_layout(id) else {
+            // Undone or deleted meanwhile.
+            self.tools.editing = None;
+            editor.end_gesture();
+            return;
+        };
+        let bounds = Bounds::around(&layout.corners(&label)).expect("four corners");
+        let at = handles::to_screen(view, origin, ppp, [bounds.min[0], bounds.max[1]]);
+        let text_id = egui::Id::new("label_text").with(id);
+        let mut output = None;
+        egui::Area::new(egui::Id::new("label_text_box"))
+            .fixed_pos(at + egui::vec2(0.0, 6.0))
+            .order(egui::Order::Foreground)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                    output = Some(
+                        egui::TextEdit::multiline(&mut editing.text)
+                            .id(text_id)
+                            .desired_rows(1)
+                            .desired_width(220.0)
+                            .hint_text("Label text")
+                            .show(ui),
+                    );
+                });
+            });
+        let Some(mut output) = output else { return };
+        let response = output.response.response.clone();
+        if editing.just_opened {
+            // A new Area's first frame only sizes it, so keep asking until the box has the
+            // keyboard, then select the text so typing replaces it.
+            if response.has_focus() {
+                editing.just_opened = false;
+                output
+                    .state
+                    .cursor
+                    .set_char_range(Some(egui::text::CCursorRange::select_all(&output.galley)));
+                output.state.store(ui.ctx(), text_id);
+            } else {
+                response.request_focus();
+            }
+            ui.ctx().request_repaint();
+            return;
+        }
+        if response.changed() && !editing.text.is_empty() && editing.text != label.text {
+            let text = editing.text.clone();
+            editor.gesture(Command::SetLabel {
+                id,
+                label: Box::new(ssmap_core::Label { text, ..label }),
+            });
+        }
+        if response.lost_focus() {
+            if editing.text.is_empty() {
+                editor.gesture(Command::Delete { ids: vec![id] });
+                editor.select(Vec::new());
+            }
+            self.tools.editing = None;
+            editor.end_gesture();
         }
     }
 }

@@ -1,24 +1,73 @@
-//! Vector fills behind a trait, so the renderer can be swapped (ADR 0001).
+//! Vector fills and strokes behind a trait, so the renderer can be swapped (ADR 0001).
+
+use std::ops::Range;
 
 use lyon::path::Path;
 use lyon::tessellation::{
-    BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, VertexBuffers,
+    BuffersBuilder, FillOptions, FillTessellator, FillVertex, LineCap, LineJoin, StrokeOptions,
+    StrokeTessellator, StrokeVertex, VertexBuffers,
 };
 use wgpu::util::DeviceExt;
 
-use crate::color::Color;
+pub use lyon::tessellation::FillRule;
 
-/// One filled path in Canvas units, filled even-odd: a subpath inside another is a hole.
-#[derive(Clone, Debug)]
-pub struct FillPath {
-    pub path: Path,
-    pub color: Color,
+use crate::canvas::StencilUse;
+use crate::color::{Color, ColorExt as _};
+
+/// How a path is painted.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Paint {
+    Fill(FillRule),
+    /// A stroke centred on the path, `width` Canvas units across, with round joins and caps.
+    Stroke {
+        width: f32,
+    },
 }
 
-/// Draws vector fills into a Canvas render pass whose group 0 is the view uniform.
+/// One painted path in Canvas units.
+#[derive(Clone, Debug)]
+pub struct VectorShape {
+    pub path: Path,
+    pub color: Color,
+    pub paint: Paint,
+}
+
+/// Shapes painted as one, such as a Label's fill and its halo. Every sample takes the colour
+/// of the first shape in the group that covers it, so the group never blends with itself:
+/// a translucent stroke doesn't darken where it overlaps itself, and a halo listed after the
+/// fill shows only around it.
+#[derive(Clone, Debug, Default)]
+pub struct VectorGroup {
+    pub shapes: Vec<VectorShape>,
+}
+
+impl VectorGroup {
+    pub fn fill(path: Path, color: Color, rule: FillRule) -> Self {
+        Self {
+            shapes: vec![VectorShape {
+                path,
+                color,
+                paint: Paint::Fill(rule),
+            }],
+        }
+    }
+
+    /// Whether drawing the group's triangles plainly could cover a sample twice. Fill
+    /// tessellation never overlaps itself; strokes and stacked shapes do.
+    fn may_overlap(&self) -> bool {
+        match self.shapes.as_slice() {
+            [] => false,
+            [shape] => matches!(shape.paint, Paint::Stroke { .. }),
+            _ => true,
+        }
+    }
+}
+
+/// Draws vector groups into a Canvas render pass whose group 0 is the view uniform and which
+/// has a stencil attachment cleared to 0.
 pub trait VectorRenderer {
-    /// Replaces what is drawn. Fills draw in order, first lowest.
-    fn set_fills(&mut self, device: &wgpu::Device, fills: &[FillPath]);
+    /// Replaces what is drawn. Groups draw in order, first lowest.
+    fn set_groups(&mut self, device: &wgpu::Device, groups: &[VectorGroup]);
 
     fn draw(&self, pass: &mut wgpu::RenderPass<'_>);
 }
@@ -32,14 +81,26 @@ struct Vertex {
 
 /// lyon tessellation drawn as plain triangles; antialiasing comes from the target's MSAA.
 pub struct LyonRenderer {
-    pipeline: wgpu::RenderPipeline,
+    /// Draws without touching the stencil.
+    plain: wgpu::RenderPipeline,
+    /// Draws only where the stencil is 0, and marks what it draws.
+    once: wgpu::RenderPipeline,
+    /// Draws no colour, and clears the marks `once` left.
+    reset: wgpu::RenderPipeline,
     mesh: Option<Mesh>,
 }
 
 struct Mesh {
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
-    count: u32,
+    draws: Vec<Draw>,
+}
+
+/// A run of indices: either several groups that can't overlap themselves, drawn plainly,
+/// or one group drawn once per sample.
+struct Draw {
+    indices: Range<u32>,
+    once: bool,
 }
 
 /// Curve flattening tolerance in Canvas units.
@@ -66,62 +127,122 @@ impl LyonRenderer {
             bind_group_layouts: &[Some(view_layout)],
             immediate_size: 0,
         });
-        let pipeline = crate::canvas::canvas_pipeline(
-            device,
-            "fill",
-            &layout,
-            &shader,
-            &[Some(wgpu::VertexBufferLayout {
-                array_stride: std::mem::size_of::<Vertex>() as u64,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4],
-            })],
-            samples,
-        );
+        let pipeline = |label, stencil| {
+            crate::canvas::canvas_pipeline(
+                device,
+                label,
+                &layout,
+                &shader,
+                &[Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Vertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4],
+                })],
+                samples,
+                stencil,
+            )
+        };
         Self {
-            pipeline,
+            plain: pipeline("fill", StencilUse::Ignore),
+            once: pipeline("fill once", StencilUse::PaintOnce),
+            reset: pipeline("fill reset", StencilUse::Reset),
             mesh: None,
         }
     }
 }
 
 impl VectorRenderer for LyonRenderer {
-    fn set_fills(&mut self, device: &wgpu::Device, fills: &[FillPath]) {
+    fn set_groups(&mut self, device: &wgpu::Device, groups: &[VectorGroup]) {
         let mut geometry: VertexBuffers<Vertex, u32> = VertexBuffers::new();
-        let mut tessellator = FillTessellator::new();
-        let options = FillOptions::tolerance(TOLERANCE).with_fill_rule(FillRule::EvenOdd);
-        for fill in fills {
-            let color = fill.color.to_linear_premultiplied();
-            // A path lyon cannot fill draws nothing rather than failing the frame.
-            let _ = tessellator.tessellate_path(
-                &fill.path,
-                &options,
-                &mut BuffersBuilder::new(&mut geometry, |vertex: FillVertex| Vertex {
-                    position: vertex.position().to_array(),
-                    color,
+        let mut fill = FillTessellator::new();
+        let mut stroke = StrokeTessellator::new();
+        let mut draws: Vec<Draw> = Vec::new();
+        for group in groups {
+            let start = geometry.indices.len() as u32;
+            for shape in &group.shapes {
+                tessellate(shape, &mut geometry, &mut fill, &mut stroke);
+            }
+            let end = geometry.indices.len() as u32;
+            if start == end {
+                continue;
+            }
+            let once = group.may_overlap();
+            match draws.last_mut() {
+                Some(last) if !once && !last.once => last.indices.end = end,
+                _ => draws.push(Draw {
+                    indices: start..end,
+                    once,
                 }),
-            );
+            }
         }
         self.mesh = (!geometry.indices.is_empty()).then(|| Mesh {
             vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("fill vertices"),
+                label: Some("vector vertices"),
                 contents: bytemuck::cast_slice(&geometry.vertices),
                 usage: wgpu::BufferUsages::VERTEX,
             }),
             indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("fill indices"),
+                label: Some("vector indices"),
                 contents: bytemuck::cast_slice(&geometry.indices),
                 usage: wgpu::BufferUsages::INDEX,
             }),
-            count: geometry.indices.len() as u32,
+            draws,
         });
     }
 
     fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
         let Some(mesh) = &self.mesh else { return };
-        pass.set_pipeline(&self.pipeline);
         pass.set_vertex_buffer(0, mesh.vertices.slice(..));
         pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
-        pass.draw_indexed(0..mesh.count, 0, 0..1);
+        pass.set_stencil_reference(0);
+        for draw in &mesh.draws {
+            if draw.once {
+                pass.set_pipeline(&self.once);
+                pass.draw_indexed(draw.indices.clone(), 0, 0..1);
+                pass.set_pipeline(&self.reset);
+                pass.draw_indexed(draw.indices.clone(), 0, 0..1);
+            } else {
+                pass.set_pipeline(&self.plain);
+                pass.draw_indexed(draw.indices.clone(), 0, 0..1);
+            }
+        }
+    }
+}
+
+/// Adds one shape's triangles. A path lyon cannot tessellate draws nothing rather than
+/// failing the frame.
+fn tessellate(
+    shape: &VectorShape,
+    geometry: &mut VertexBuffers<Vertex, u32>,
+    fill: &mut FillTessellator,
+    stroke: &mut StrokeTessellator,
+) {
+    let color = shape.color.to_linear_premultiplied();
+    match shape.paint {
+        Paint::Fill(rule) => {
+            let options = FillOptions::tolerance(TOLERANCE).with_fill_rule(rule);
+            let _ = fill.tessellate_path(
+                &shape.path,
+                &options,
+                &mut BuffersBuilder::new(geometry, |vertex: FillVertex| Vertex {
+                    position: vertex.position().to_array(),
+                    color,
+                }),
+            );
+        }
+        Paint::Stroke { width } => {
+            let options = StrokeOptions::tolerance(TOLERANCE)
+                .with_line_width(width)
+                .with_line_join(LineJoin::Round)
+                .with_line_cap(LineCap::Round);
+            let _ = stroke.tessellate_path(
+                &shape.path,
+                &options,
+                &mut BuffersBuilder::new(geometry, |vertex: StrokeVertex| Vertex {
+                    position: vertex.position().to_array(),
+                    color,
+                }),
+            );
+        }
     }
 }

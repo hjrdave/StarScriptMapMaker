@@ -59,6 +59,7 @@ impl OceanPass {
             &shader,
             &[],
             samples,
+            crate::canvas::StencilUse::Ignore,
         );
         Self {
             pipeline,

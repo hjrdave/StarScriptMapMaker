@@ -27,6 +27,32 @@ fn roughness() -> impl Strategy<Value = Roughness> {
         .prop_map(|(amount, scale, seed)| Roughness::new(amount, scale, seed))
 }
 
+fn label() -> impl Strategy<Value = Label> {
+    (
+        "[A-Za-zÆá\n ]{1,12}",
+        point(),
+        -360.0..360.0f64,
+        1.0..200.0f64,
+        any::<bool>(),
+        (0.0..=1.0f32, 0.0..8.0f64),
+    )
+        .prop_map(
+            |(text, position, rotation, size, all_caps, (opacity, halo))| {
+                let mut label = Label {
+                    text,
+                    position,
+                    rotation,
+                    size,
+                    all_caps,
+                    opacity,
+                    ..Label::default()
+                };
+                label.halo.width = halo;
+                label
+            },
+        )
+}
+
 fn object() -> impl Strategy<Value = Object> {
     let kind = prop_oneof![
         (geometry(), prop::option::of(roughness())).prop_map(|(geometry, roughness)| {
@@ -44,7 +70,7 @@ fn object() -> impl Strategy<Value = Object> {
             })
         }),
         Just(ObjectKind::Stamp(Stamp::default())),
-        Just(ObjectKind::Label(Label::default())),
+        label().prop_map(|label| ObjectKind::Label(Box::new(label))),
     ];
     (any::<bool>(), kind).prop_map(|(locked, kind)| Object {
         locked,
@@ -155,6 +181,7 @@ fn property() -> impl Strategy<Value = Property> {
         Just(Property::Clip(None)),
         any::<[u8; 4]>().prop_map(|[r, g, b, a]| Property::Fill(Color::rgba(r, g, b, a))),
         prop::option::of(roughness()).prop_map(Property::Roughness),
+        label().prop_map(|label| Property::Label(Box::new(label))),
     ]
 }
 
