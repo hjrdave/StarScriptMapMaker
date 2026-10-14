@@ -10,16 +10,16 @@
 
 use std::path::PathBuf;
 
-use ssmap_core::asset::{ArtFormat, PackSource, read_pack};
+use ssmap_core::asset::{ArtFormat, PackLibrary, PackRoots, PackSource, read_pack};
 use ssmap_core::{
     Align, Canvas, Color, Command, DistanceUnit, FontFace, Id, Label, Lake, Landmass, Map,
-    Roughness, RoughnessCache, Scale,
+    Roughness, RoughnessCache, Scale, Stamp,
 };
 use ssmap_render::atlas::{Atlas, AtlasEntry, MIN_PAGE_SIZE};
 use ssmap_render::raster::{Art, Raster};
 use ssmap_render::{
-    CanvasRenderer, CanvasScene, Fonts, GpuCapabilities, Headless, MapScene, RgbaImage, View,
-    read_texture, render_to_image,
+    CanvasRenderer, CanvasScene, Fonts, GpuCapabilities, Headless, MapScene, RgbaImage,
+    StampSource, View, read_texture, render_to_image,
 };
 
 /// Largest allowed difference in any channel before a pixel counts as differing.
@@ -192,7 +192,7 @@ fn whole_canvas_preview_shows_no_pasteboard() {
 /// islet, plus a Lake listed beneath the island in the tree.
 /// Everything `map` draws, as the editor and export build it.
 fn scene_of(map: &Map) -> CanvasScene {
-    let content = MapScene::new(Fonts::bundled()).content(map, &mut RoughnessCache::new());
+    let content = MapScene::new(Fonts::bundled()).content(map, &mut RoughnessCache::new(), None);
     CanvasScene::new(&map.canvas).with_content(content)
 }
 
@@ -366,8 +366,11 @@ fn render_labels(headless: &Headless, size: [u32; 2], labels: Vec<Label>) -> Rgb
         .unwrap();
     }
     let mut scene = MapScene::new(Fonts::bundled());
-    let canvas =
-        CanvasScene::new(&map.canvas).with_content(scene.content(&map, &mut RoughnessCache::new()));
+    let canvas = CanvasScene::new(&map.canvas).with_content(scene.content(
+        &map,
+        &mut RoughnessCache::new(),
+        None,
+    ));
     let view = View::whole_canvas(canvas.canvas_size, size[0].max(size[1]) / 2);
     render(headless, &canvas, &view)
 }
@@ -484,4 +487,140 @@ fn halos_never_show_through_translucent_fill() {
     // Just outside the stem, the halo shows.
     let beside = |image: &RgbaImage| (60..100).map(|x| pixel(image, x, 100)[0]).max().unwrap();
     assert!(beside(&with_halo) > beside(&plain) + 40);
+}
+
+/// The test pack's Assets as Stamps on a 800x400 Canvas, rendered at half size.
+fn render_stamps(headless: &Headless, stamps: Vec<Stamp>) -> RgbaImage {
+    let roots = PackRoots {
+        built_in: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../core/tests/packs"),
+        user: None,
+    };
+    let (library, problems) = PackLibrary::load(&roots);
+    assert!(problems.is_empty(), "{problems:?}");
+    let mut map = Map::new(Canvas::new(800, 400, Scale::new(1.0, DistanceUnit::Miles)));
+    let layer = Id::new();
+    map.execute(&Command::CreateLayer {
+        id: layer,
+        parent: None,
+        index: None,
+        name: "Terrain".into(),
+    })
+    .unwrap();
+    for stamp in stamps {
+        map.execute(&Command::CreateStamp {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            stamp,
+        })
+        .unwrap();
+    }
+    let capabilities = GpuCapabilities::query(&headless.adapter);
+    let mut renderer = CanvasRenderer::new(&headless.device, capabilities);
+    let content = MapScene::new(Fonts::bundled()).content(
+        &map,
+        &mut RoughnessCache::new(),
+        Some(&mut StampSource {
+            library: &library,
+            atlas: renderer.stamp_atlas(),
+            device: &headless.device,
+            queue: &headless.queue,
+        }),
+    );
+    let scene = CanvasScene::new(&map.canvas).with_content(content);
+    render_to_image(
+        &headless.device,
+        &headless.queue,
+        &mut renderer,
+        &scene,
+        &View::whole_canvas(scene.canvas_size, 400),
+    )
+}
+
+fn stamp(asset: &str, position: [f64; 2]) -> Stamp {
+    Stamp {
+        position,
+        ..Stamp::new(format!("test-pack/{asset}").parse().unwrap())
+    }
+}
+
+/// Tint, flip, fill, opacity, rotation and scale, each on its own Stamp.
+#[test]
+fn stamps() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let image = render_stamps(
+        headless,
+        vec![
+            stamp("mountain-1", [100.0, 120.0]),
+            Stamp {
+                tint: Color::rgb(0xb0, 0x30, 0x30),
+                ..stamp("mountain-1", [260.0, 120.0])
+            },
+            Stamp {
+                fill: Some(Color::rgb(0x4a, 0x7a, 0x3a)),
+                ..stamp("mountain-1", [420.0, 120.0])
+            },
+            Stamp {
+                opacity: 0.5,
+                ..stamp("mountain-1", [580.0, 120.0])
+            },
+            Stamp {
+                scale: 2.0,
+                ..stamp("mountain-2", [720.0, 200.0])
+            },
+            stamp("castle", [100.0, 300.0]),
+            Stamp {
+                flip: true,
+                ..stamp("castle", [260.0, 300.0])
+            },
+            Stamp {
+                rotation: 30.0,
+                ..stamp("tree", [420.0, 300.0])
+            },
+            Stamp {
+                scale: 3.0,
+                ..stamp("well", [580.0, 300.0])
+            },
+            Stamp {
+                scale: 3.0,
+                tint: Color::rgb(0xff, 0x90, 0x40),
+                ..stamp("well", [720.0, 300.0])
+            },
+        ],
+    );
+    // Tinting the well's blue water shifts its colours from blue to orange.
+    let total = |x: u32, channel: usize| -> u32 {
+        (140..160)
+            .flat_map(|y| (x - 15..x + 15).map(move |x| (x, y)))
+            .map(|(x, y)| u32::from(pixel(&image, x, y)[channel]))
+            .sum()
+    };
+    assert!(total(290, 2) > total(360, 2) + 500, "less blue once tinted");
+    if let Gpu::Software(_) = gpu {
+        assert_matches_golden("stamps", &image);
+    }
+}
+
+/// Mountains placed back to front: each Silhouette hides the line art behind it.
+#[test]
+fn overlapping_stamps_occlude_each_other() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let image = render_stamps(
+        headless,
+        vec![
+            Stamp {
+                scale: 3.0,
+                ..stamp("mountain-1", [300.0, 250.0])
+            },
+            Stamp {
+                scale: 3.0,
+                ..stamp("mountain-2", [340.0, 300.0])
+            },
+        ],
+    );
+    if let Gpu::Software(_) = gpu {
+        assert_matches_golden("stamps_occlusion", &image);
+    }
 }

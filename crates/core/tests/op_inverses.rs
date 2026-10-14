@@ -62,21 +62,19 @@ fn stamp() -> impl Strategy<Value = Stamp> {
         (any::<[u8; 4]>(), prop::option::of(any::<[u8; 4]>())),
         0.0..=1.0f32,
     )
-        .prop_map(
-            |(position, scale, rotation, flip, (tint, fill), opacity)| {
-                let color = |[r, g, b, a]: [u8; 4]| Color::rgba(r, g, b, a);
-                Stamp {
-                    position,
-                    scale,
-                    rotation,
-                    flip,
-                    tint: color(tint),
-                    fill: fill.map(color),
-                    opacity,
-                    ..Stamp::new("test/stamp".parse().unwrap())
-                }
-            },
-        )
+        .prop_map(|(position, scale, rotation, flip, (tint, fill), opacity)| {
+            let color = |[r, g, b, a]: [u8; 4]| Color::rgba(r, g, b, a);
+            Stamp {
+                position,
+                scale,
+                rotation,
+                flip,
+                tint: color(tint),
+                fill: fill.map(color),
+                opacity,
+                ..Stamp::new("test/stamp".parse().unwrap())
+            }
+        })
 }
 
 fn object() -> impl Strategy<Value = Object> {

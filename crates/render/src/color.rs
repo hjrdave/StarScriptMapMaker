@@ -7,6 +7,9 @@ pub(crate) trait ColorExt {
     /// Linear, premultiplied RGBA, which is what the sRGB render target blends in.
     fn to_linear_premultiplied(self) -> [f32; 4];
 
+    /// Linear RGBA with straight alpha, for shaders that apply alpha themselves.
+    fn to_linear(self) -> [f32; 4];
+
     fn to_wgpu(self) -> wgpu::Color;
 
     /// The same colour with its alpha multiplied by `opacity`, from 0 to 1.
@@ -21,6 +24,15 @@ impl ColorExt for Color {
             srgb_to_linear(self.g) * a,
             srgb_to_linear(self.b) * a,
             a,
+        ]
+    }
+
+    fn to_linear(self) -> [f32; 4] {
+        [
+            srgb_to_linear(self.r),
+            srgb_to_linear(self.g),
+            srgb_to_linear(self.b),
+            f32::from(self.a) / 255.0,
         ]
     }
 

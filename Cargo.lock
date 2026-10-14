@@ -3699,6 +3699,7 @@ dependencies = [
  "lyon",
  "pollster",
  "resvg",
+ "rstar",
  "serde_json",
  "ssmap-core",
  "ssmap-fonts",

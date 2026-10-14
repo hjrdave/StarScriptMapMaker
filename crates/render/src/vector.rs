@@ -93,7 +93,8 @@ pub struct LyonRenderer {
 struct Mesh {
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
-    draws: Vec<Draw>,
+    /// The draws of each run of groups, in run order.
+    runs: Vec<Vec<Draw>>,
 }
 
 /// A run of indices: either several groups that can't overlap themselves, drawn plainly,
@@ -151,30 +152,38 @@ impl LyonRenderer {
     }
 }
 
-impl VectorRenderer for LyonRenderer {
-    fn set_groups(&mut self, device: &wgpu::Device, groups: &[VectorGroup]) {
+impl LyonRenderer {
+    /// Like [`VectorRenderer::set_groups`], but in separate runs that [`Self::draw_run`] draws
+    /// one at a time, so something else can be drawn between them.
+    pub(crate) fn set_runs(&mut self, device: &wgpu::Device, runs: &[&[VectorGroup]]) {
         let mut geometry: VertexBuffers<Vertex, u32> = VertexBuffers::new();
         let mut fill = FillTessellator::new();
         let mut stroke = StrokeTessellator::new();
-        let mut draws: Vec<Draw> = Vec::new();
-        for group in groups {
-            let start = geometry.indices.len() as u32;
-            for shape in &group.shapes {
-                tessellate(shape, &mut geometry, &mut fill, &mut stroke);
-            }
-            let end = geometry.indices.len() as u32;
-            if start == end {
-                continue;
-            }
-            let once = group.may_overlap();
-            match draws.last_mut() {
-                Some(last) if !once && !last.once => last.indices.end = end,
-                _ => draws.push(Draw {
-                    indices: start..end,
-                    once,
-                }),
-            }
-        }
+        let runs: Vec<Vec<Draw>> = runs
+            .iter()
+            .map(|groups| {
+                let mut draws: Vec<Draw> = Vec::new();
+                for group in *groups {
+                    let start = geometry.indices.len() as u32;
+                    for shape in &group.shapes {
+                        tessellate(shape, &mut geometry, &mut fill, &mut stroke);
+                    }
+                    let end = geometry.indices.len() as u32;
+                    if start == end {
+                        continue;
+                    }
+                    let once = group.may_overlap();
+                    match draws.last_mut() {
+                        Some(last) if !once && !last.once => last.indices.end = end,
+                        _ => draws.push(Draw {
+                            indices: start..end,
+                            once,
+                        }),
+                    }
+                }
+                draws
+            })
+            .collect();
         self.mesh = (!geometry.indices.is_empty()).then(|| Mesh {
             vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("vector vertices"),
@@ -186,16 +195,20 @@ impl VectorRenderer for LyonRenderer {
                 contents: bytemuck::cast_slice(&geometry.indices),
                 usage: wgpu::BufferUsages::INDEX,
             }),
-            draws,
+            runs,
         });
     }
 
-    fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
+    /// Draws run `run`, as numbered in [`Self::set_runs`].
+    pub(crate) fn draw_run(&self, pass: &mut wgpu::RenderPass<'_>, run: usize) {
         let Some(mesh) = &self.mesh else { return };
+        let Some(draws) = mesh.runs.get(run).filter(|draws| !draws.is_empty()) else {
+            return;
+        };
         pass.set_vertex_buffer(0, mesh.vertices.slice(..));
         pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
         pass.set_stencil_reference(0);
-        for draw in &mesh.draws {
+        for draw in draws {
             if draw.once {
                 pass.set_pipeline(&self.once);
                 pass.draw_indexed(draw.indices.clone(), 0, 0..1);
@@ -205,6 +218,18 @@ impl VectorRenderer for LyonRenderer {
                 pass.set_pipeline(&self.plain);
                 pass.draw_indexed(draw.indices.clone(), 0, 0..1);
             }
+        }
+    }
+}
+
+impl VectorRenderer for LyonRenderer {
+    fn set_groups(&mut self, device: &wgpu::Device, groups: &[VectorGroup]) {
+        self.set_runs(device, &[groups]);
+    }
+
+    fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
+        for run in 0..self.mesh.as_ref().map_or(0, |mesh| mesh.runs.len()) {
+            self.draw_run(pass, run);
         }
     }
 }

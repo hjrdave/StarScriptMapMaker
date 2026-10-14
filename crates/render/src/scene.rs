@@ -7,12 +7,24 @@ use std::sync::Arc;
 
 use lyon::math::point;
 use lyon::path::Path;
-use ssmap_core::{Id, Label, Map, Node, ObjectKind, Polygon, RoughnessCache};
+use ssmap_core::asset::PackLibrary;
+use ssmap_core::{Id, Label, Map, Node, ObjectKind, Polygon, RoughnessCache, Stamp};
 
-use crate::canvas::Content;
+use crate::canvas::{Content, Item};
 use crate::color::ColorExt as _;
+use crate::stamp_pass::{StampDraw, StampInstance};
+use crate::stamps::{StampAtlas, StampSprite};
 use crate::text::{Fonts, LabelLayout, LayoutKey};
 use crate::vector::{FillRule, VectorGroup};
+
+/// Where Stamp art comes from while content is built: the packs, and the atlas (with the GPU
+/// handles to fill it) that the Canvas renderer draws from.
+pub struct StampSource<'a> {
+    pub library: &'a PackLibrary,
+    pub atlas: &'a mut StampAtlas,
+    pub device: &'a wgpu::Device,
+    pub queue: &'a wgpu::Queue,
+}
 
 /// The Map's drawn Objects and the derived data behind them. The editor keeps one per open
 /// Map; export builds its own.
@@ -40,19 +52,33 @@ impl MapScene {
 
     /// What the Canvas draws for `map`, rebuilt only when the Map has changed since.
     /// Landmasses and Lakes use their roughened outlines from `roughness`.
-    pub fn content(&mut self, map: &Map, roughness: &mut RoughnessCache) -> Content {
+    /// Stamps whose Asset is in no loaded pack draw nothing, and so do all Stamps without a
+    /// `StampSource`.
+    pub fn content(
+        &mut self,
+        map: &Map,
+        roughness: &mut RoughnessCache,
+        mut stamps: Option<&mut StampSource<'_>>,
+    ) -> Content {
         if let Some((revision, content)) = &self.built
             && *revision == map.revision()
         {
             return content.clone();
         }
-        let mut groups = Vec::new();
+        let mut items = Vec::new();
         let mut seen = Vec::new();
         for id in map.draw_order() {
-            self.draw(map, roughness, id, &mut groups, &mut seen);
+            self.draw(
+                map,
+                roughness,
+                stamps.as_deref_mut(),
+                id,
+                &mut items,
+                &mut seen,
+            );
         }
         self.layouts.retain(|id, _| seen.contains(id));
-        let content = Content::new(groups);
+        let content = Content::from_items(items);
         self.built = Some((map.revision(), content.clone()));
         content
     }
@@ -75,8 +101,9 @@ impl MapScene {
         &mut self,
         map: &Map,
         roughness: &mut RoughnessCache,
+        stamps: Option<&mut StampSource<'_>>,
         id: Id,
-        groups: &mut Vec<VectorGroup>,
+        items: &mut Vec<Item>,
         seen: &mut Vec<Id>,
     ) {
         let Some(Node::Object(object)) = map.node(id) else {
@@ -87,7 +114,17 @@ impl MapScene {
             ObjectKind::Label(label) => {
                 seen.push(id);
                 let layout = self.label_layout(id, label);
-                groups.push(layout.group(label, opacity));
+                items.push(Item::Vector(layout.group(label, opacity)));
+            }
+            ObjectKind::Stamp(stamp) => {
+                let Some(stamps) = stamps else { return };
+                let sprite =
+                    stamps
+                        .atlas
+                        .sprite(stamps.device, stamps.queue, stamps.library, &stamp.asset);
+                if let Ok(sprite) = sprite {
+                    items.push(Item::Stamp(stamp_draw(stamp, sprite, opacity)));
+                }
             }
             kind => {
                 let (Some(fill), Some(outline)) = (kind.fill(), roughness.outline(map, id)) else {
@@ -97,11 +134,47 @@ impl MapScene {
                 // holes stay open. Parts are separate groups so overlapping parts never
                 // cancel out.
                 let color = fill.faded(opacity);
-                groups.extend(outline.0.iter().map(|polygon| {
-                    VectorGroup::fill(polygon_path(polygon), color, FillRule::EvenOdd)
+                items.extend(outline.0.iter().map(|polygon| {
+                    Item::Vector(VectorGroup::fill(
+                        polygon_path(polygon),
+                        color,
+                        FillRule::EvenOdd,
+                    ))
                 }));
             }
         }
+    }
+}
+
+/// What the Canvas draws for a Stamp, faded by the opacity of the Layers holding it.
+fn stamp_draw(stamp: &Stamp, sprite: &StampSprite, layer_opacity: f32) -> StampDraw {
+    let size = sprite.shape.size.map(|side| side * stamp.scale as f32);
+    let tint = stamp.tint.to_linear();
+    let fill = stamp
+        .fill_or_land()
+        .faded(stamp.opacity * layer_opacity)
+        .to_linear_premultiplied();
+    StampDraw {
+        art_page: sprite.art.page,
+        silhouette_page: sprite.silhouette.page,
+        instance: StampInstance {
+            position: stamp.position.map(|v| v as f32),
+            size,
+            anchor: sprite.shape.anchor,
+            turn: [
+                stamp.rotation.to_radians() as f32,
+                if stamp.flip { -1.0 } else { 1.0 },
+            ],
+            art_uv: sprite.art_uv,
+            silhouette_uv: sprite.silhouette_uv,
+            tint: [
+                tint[0],
+                tint[1],
+                tint[2],
+                tint[3] * stamp.opacity * layer_opacity,
+            ],
+            fill,
+        },
     }
 }
 
@@ -164,10 +237,10 @@ mod tests {
     fn content_is_rebuilt_only_after_an_edit() {
         let (mut map, layer, _) = map_with_label();
         let mut scene = MapScene::new(Fonts::bundled());
-        let first = scene.content(&map, &mut RoughnessCache::new());
-        assert_eq!(first.groups().len(), 1);
+        let first = scene.content(&map, &mut RoughnessCache::new(), None);
+        assert_eq!(first.groups().count(), 1);
         assert_eq!(
-            scene.content(&map, &mut RoughnessCache::new()),
+            scene.content(&map, &mut RoughnessCache::new(), None),
             first,
             "same build"
         );
@@ -176,9 +249,9 @@ mod tests {
             opacity: 0.5,
         })
         .unwrap();
-        let faded = scene.content(&map, &mut RoughnessCache::new());
+        let faded = scene.content(&map, &mut RoughnessCache::new(), None);
         assert_ne!(faded, first);
-        assert_eq!(faded.groups()[0].shapes[0].color.a, 128);
+        assert_eq!(faded.groups().next().unwrap().shapes[0].color.a, 128);
     }
 
     #[test]
@@ -216,9 +289,10 @@ mod tests {
         let mut scene = MapScene::new(Fonts::bundled());
         assert!(
             scene
-                .content(&map, &mut RoughnessCache::new())
+                .content(&map, &mut RoughnessCache::new(), None)
                 .groups()
-                .is_empty()
+                .next()
+                .is_none()
         );
     }
 }

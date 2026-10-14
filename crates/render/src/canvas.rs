@@ -10,6 +10,8 @@ use wgpu::util::DeviceExt;
 use crate::color::{Color, ColorExt as _};
 use crate::gpu::GpuCapabilities;
 use crate::ocean::{OceanPass, OceanUniform};
+use crate::stamp_pass::{StampDraw, StampPass};
+use crate::stamps::StampAtlas;
 use crate::vector::{FillRule, LyonRenderer, VectorGroup, VectorRenderer};
 use crate::view::View;
 
@@ -37,19 +39,59 @@ impl Default for Backdrop {
     }
 }
 
-/// The Map's Objects as vector groups, first drawn lowest, as [`MapScene`](crate::MapScene)
+/// One thing the Canvas draws for an Object.
+#[derive(Clone, Debug)]
+pub enum Item {
+    Vector(VectorGroup),
+    Stamp(StampDraw),
+}
+
+/// Consecutive items of one kind, drawn together.
+#[derive(Clone, Debug)]
+enum Run {
+    Vector(Vec<VectorGroup>),
+    Stamps(Vec<StampDraw>),
+}
+
+/// The Map's Objects as drawn items, first drawn lowest, as [`MapScene`](crate::MapScene)
 /// builds them. Two are equal only if they are the same build (or both empty), so comparing
 /// scenes every frame stays cheap.
 #[derive(Clone, Debug, Default)]
-pub struct Content(Arc<[VectorGroup]>);
+pub struct Content(Arc<[Run]>);
 
 impl Content {
     pub fn new(groups: Vec<VectorGroup>) -> Self {
-        Self(groups.into())
+        Self::from_items(groups.into_iter().map(Item::Vector).collect())
     }
 
-    pub fn groups(&self) -> &[VectorGroup] {
-        &self.0
+    /// Items in Stacking order. Vector groups and Stamps keep that order against each other.
+    pub fn from_items(items: Vec<Item>) -> Self {
+        let mut runs: Vec<Run> = Vec::new();
+        for item in items {
+            match (item, runs.last_mut()) {
+                (Item::Vector(group), Some(Run::Vector(groups))) => groups.push(group),
+                (Item::Stamp(draw), Some(Run::Stamps(draws))) => draws.push(draw),
+                (Item::Vector(group), _) => runs.push(Run::Vector(vec![group])),
+                (Item::Stamp(draw), _) => runs.push(Run::Stamps(vec![draw])),
+            }
+        }
+        Self(runs.into())
+    }
+
+    /// The vector groups, first lowest.
+    pub fn groups(&self) -> impl Iterator<Item = &VectorGroup> {
+        self.0.iter().flat_map(|run| match run {
+            Run::Vector(groups) => groups.as_slice(),
+            Run::Stamps(_) => &[],
+        })
+    }
+
+    /// The Stamps, first lowest.
+    pub fn stamps(&self) -> impl Iterator<Item = &StampDraw> {
+        self.0.iter().flat_map(|run| match run {
+            Run::Stamps(draws) => draws.as_slice(),
+            Run::Vector(_) => &[],
+        })
     }
 }
 
@@ -103,6 +145,8 @@ pub struct CanvasRenderer {
     ocean: OceanPass,
     /// The Map's Objects, over the ocean.
     content: LyonRenderer,
+    stamp_pass: StampPass,
+    stamp_atlas: StampAtlas,
     drawn_backdrop: Option<BackdropKey>,
     drawn_content: Option<Content>,
     target: Option<Target>,
@@ -139,6 +183,8 @@ impl CanvasRenderer {
             backdrop: LyonRenderer::new(device, &view_layout, samples),
             ocean: OceanPass::new(device, &view_layout, samples),
             content: LyonRenderer::new(device, &view_layout, samples),
+            stamp_pass: StampPass::new(device, &view_layout, samples),
+            stamp_atlas: StampAtlas::new(&capabilities.limits),
             capabilities,
             view_uniform,
             view_bind_group,
@@ -150,6 +196,11 @@ impl CanvasRenderer {
 
     pub fn capabilities(&self) -> &GpuCapabilities {
         &self.capabilities
+    }
+
+    /// The atlas of Stamp art, which [`MapScene`](crate::MapScene) fills as it builds content.
+    pub fn stamp_atlas(&mut self) -> &mut StampAtlas {
+        &mut self.stamp_atlas
     }
 
     /// Records the Canvas render into `encoder` and returns the resolved target, which holds
@@ -170,9 +221,26 @@ impl CanvasRenderer {
             self.set_backdrop(device, queue, backdrop);
         }
         if self.drawn_content.as_ref() != Some(&scene.content) {
-            self.content.set_groups(device, scene.content.groups());
+            let no_groups: &[VectorGroup] = &[];
+            let no_stamps: &[StampDraw] = &[];
+            let (mut vectors, mut stamps) = (Vec::new(), Vec::new());
+            for run in scene.content.0.iter() {
+                match run {
+                    Run::Vector(groups) => {
+                        vectors.push(groups.as_slice());
+                        stamps.push(no_stamps);
+                    }
+                    Run::Stamps(draws) => {
+                        vectors.push(no_groups);
+                        stamps.push(draws.as_slice());
+                    }
+                }
+            }
+            self.content.set_runs(device, &vectors);
+            self.stamp_pass.set_runs(device, &stamps);
             self.drawn_content = Some(scene.content.clone());
         }
+        self.stamp_pass.prepare(device, self.stamp_atlas.atlas());
         self.ensure_target(device, view.size);
         queue.write_buffer(&self.view_uniform, 0, bytemuck::bytes_of(&view.uniform()));
 
@@ -205,7 +273,10 @@ impl CanvasRenderer {
         pass.set_bind_group(0, &self.view_bind_group, &[]);
         self.backdrop.draw(&mut pass);
         self.ocean.draw(&mut pass);
-        self.content.draw(&mut pass);
+        for run in 0..scene.content.0.len() {
+            self.content.draw_run(&mut pass, run);
+            self.stamp_pass.draw_run(&mut pass, run);
+        }
         drop(pass);
         &target.resolved
     }
