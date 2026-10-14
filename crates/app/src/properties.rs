@@ -2,8 +2,8 @@
 
 use eframe::egui;
 use ssmap_core::{
-    Align, Color, Command, DistanceUnit, Id, Label, MAX_RIPPLES, Node, ObjectKind, Roughness,
-    ShoreKind, ShoreStyle,
+    Align, Color, Command, DistanceUnit, Id, Label, Landmass, MAX_RIPPLES, Node, ObjectKind,
+    Roughness, ShoreKind, ShoreStyle, Stamp,
 };
 use ssmap_fonts::LABEL_FAMILIES;
 
@@ -42,6 +42,12 @@ impl PropertiesPanel {
                             unreachable!("matched above")
                         };
                         self.label_properties(ui, editor, id, object.locked, &label);
+                    }
+                    Some(Node::Object(object)) if matches!(object.kind, ObjectKind::Stamp(_)) => {
+                        let ObjectKind::Stamp(stamp) = object.kind else {
+                            unreachable!("matched above")
+                        };
+                        self.stamp_properties(ui, editor, id, object.locked, &stamp);
                     }
                     Some(Node::Object(object)) => {
                         egui::Grid::new("object").num_columns(2).show(ui, |ui| {
@@ -510,6 +516,145 @@ impl PropertiesPanel {
             }
             editor.gesture(set);
         } else if clicked && next != *label {
+            editor.run(set);
+        }
+    }
+}
+
+impl PropertiesPanel {
+    /// Every override of a Stamp. Dragging a value is one gesture, a click one step, and a
+    /// colour pick everything until the pointer lets go.
+    fn stamp_properties(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        id: Id,
+        locked: bool,
+        stamp: &Stamp,
+    ) {
+        if self.colour_gesture && ui.input(|i| !i.pointer.any_down()) {
+            self.colour_gesture = false;
+            editor.end_gesture();
+        }
+        let mut next = stamp.clone();
+        let mut dragged: Option<egui::Response> = None;
+        let mut clicked = false;
+        let mut coloured = false;
+        egui::Grid::new("stamp").num_columns(2).show(ui, |ui| {
+            ui.label("Asset");
+            ui.label(next.asset.to_string());
+            ui.end_row();
+
+            ui.label("Position");
+            ui.horizontal(|ui| {
+                drag(
+                    ui.add(
+                        egui::DragValue::new(&mut next.position[0])
+                            .speed(0.5)
+                            .prefix("x "),
+                    ),
+                    &mut dragged,
+                );
+                drag(
+                    ui.add(
+                        egui::DragValue::new(&mut next.position[1])
+                            .speed(0.5)
+                            .prefix("y "),
+                    ),
+                    &mut dragged,
+                );
+            });
+            ui.end_row();
+
+            ui.label("Scale");
+            drag(
+                ui.add(
+                    egui::DragValue::new(&mut next.scale)
+                        .range(0.01..=100.0)
+                        .speed(0.01)
+                        .suffix("×"),
+                ),
+                &mut dragged,
+            );
+            ui.end_row();
+
+            ui.label("Rotation");
+            drag(
+                ui.add(
+                    egui::DragValue::new(&mut next.rotation)
+                        .speed(0.5)
+                        .suffix("°"),
+                ),
+                &mut dragged,
+            );
+            ui.end_row();
+
+            ui.label("Flip");
+            clicked |= ui.checkbox(&mut next.flip, "Horizontal").changed();
+            ui.end_row();
+
+            ui.label("Tint");
+            ui.horizontal(|ui| {
+                let mut tinted = next.tint.is_some();
+                if ui.checkbox(&mut tinted, "").changed() {
+                    next.tint = tinted.then(|| Color::rgb(0xff, 0xff, 0xff));
+                    clicked = true;
+                }
+                if let Some(tint) = &mut next.tint {
+                    coloured |= colour_button(ui, tint);
+                }
+            });
+            ui.end_row();
+
+            ui.label("Fill");
+            ui.horizontal(|ui| {
+                let mut own = next.fill.is_some();
+                if ui.checkbox(&mut own, "Own colour").changed() {
+                    next.fill = own.then_some(Landmass::DEFAULT_FILL);
+                    clicked = true;
+                }
+                if let Some(fill) = &mut next.fill {
+                    coloured |= colour_button(ui, fill);
+                }
+            });
+            ui.end_row();
+
+            ui.label("Opacity");
+            let mut percent = next.opacity * 100.0;
+            let slider = ui.add(egui::Slider::new(&mut percent, 0.0..=100.0).suffix("%"));
+            next.opacity = (percent / 100.0).clamp(0.0, 1.0);
+            drag(slider, &mut dragged);
+            ui.end_row();
+
+            ui.label("Locked");
+            let mut lock = locked;
+            if ui.checkbox(&mut lock, "").changed() {
+                editor.run(Command::SetLocked { id, locked: lock });
+            }
+            ui.end_row();
+        });
+
+        let set = Command::SetStamp {
+            id,
+            stamp: Box::new(next.clone()),
+        };
+        if let Some(response) = dragged {
+            if response.drag_started() {
+                editor.begin_gesture("Edit Stamp");
+            }
+            if next != *stamp {
+                editor.gesture(set);
+            }
+            if response.drag_stopped() {
+                editor.end_gesture();
+            }
+        } else if coloured && next != *stamp {
+            if !self.colour_gesture {
+                editor.begin_gesture("Change Colour");
+                self.colour_gesture = true;
+            }
+            editor.gesture(set);
+        } else if clicked && next != *stamp {
             editor.run(set);
         }
     }
