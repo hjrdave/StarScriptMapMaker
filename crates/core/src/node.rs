@@ -4,8 +4,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::color::Color;
 use crate::extra::Extra;
-use crate::geometry::MultiPolygon;
+use crate::geometry::{MultiPolygon, Point};
 use crate::id::Id;
 
 /// A Layer or an Object.
@@ -83,7 +84,8 @@ pub enum ObjectKind {
     Landmass(Landmass),
     Lake(Lake),
     Stamp(Stamp),
-    Label(Label),
+    /// Boxed: a Label carries far more fields than other kinds, and Maps hold many nodes.
+    Label(Box<Label>),
 }
 
 impl ObjectKind {
@@ -157,9 +159,118 @@ pub struct Stamp {
     pub extra: Extra,
 }
 
-/// Text placed on the Map. Fields arrive with the Labels ticket.
-#[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize, JsonSchema)]
+/// Text placed on the Map, sized in Canvas units so it is part of the picture (ADR 0006).
+/// It has no geometry blob: its fields are plain JSON in the Map file.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
 pub struct Label {
+    /// The text, with explicit line breaks as `\n`.
+    pub text: String,
+    /// The anchor in Canvas units: the vertical centre of the text block, and its left edge,
+    /// centre or right edge according to `align`.
+    pub position: Point,
+    pub align: Align,
+    /// Degrees clockwise about `position`.
+    pub rotation: f64,
+    pub font: FontFace,
+    /// The em size in Canvas units.
+    pub size: f64,
+    /// Extra space after each character, as a share of `size`.
+    pub letter_spacing: f64,
+    /// The distance from one baseline to the next, as a multiple of `size`.
+    pub line_height: f64,
+    /// Shows the text in capitals without changing what is stored.
+    pub all_caps: bool,
+    pub fill: Color,
+    /// From 0 (transparent) to 1 (opaque), for fill and halo alike.
+    pub opacity: f32,
+    pub halo: Halo,
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+impl Default for Label {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            position: [0.0, 0.0],
+            align: Align::Centre,
+            rotation: 0.0,
+            font: FontFace::default(),
+            size: 48.0,
+            letter_spacing: 0.0,
+            line_height: 1.2,
+            all_caps: false,
+            fill: Color::rgb(0x2b, 0x21, 0x18),
+            opacity: 1.0,
+            halo: Halo::default(),
+            extra: Extra::new(),
+        }
+    }
+}
+
+impl Label {
+    /// The text as drawn: in capitals when `all_caps` is set.
+    pub fn display_text(&self) -> String {
+        if self.all_caps {
+            self.text.to_uppercase()
+        } else {
+            self.text.clone()
+        }
+    }
+}
+
+/// How the lines of a Label line up with each other and with its position.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Align {
+    Left,
+    #[default]
+    Centre,
+    Right,
+}
+
+/// A font family and style. v1 offers the bundled fonts only (ADR 0006); characters a family
+/// lacks fall back to Noto Serif.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct FontFace {
+    pub family: String,
+    /// The CSS weight, from 1 to 1000; 400 is regular and 700 bold.
+    pub weight: u16,
+    pub italic: bool,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+impl Default for FontFace {
+    fn default() -> Self {
+        Self {
+            family: "Cinzel".into(),
+            weight: 400,
+            italic: false,
+            extra: Extra::new(),
+        }
+    }
+}
+
+/// A stroke drawn under a Label's fill, so it reads over busy art.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct Halo {
+    /// How far the halo reaches past the glyph edges, in Canvas units. 0 draws none.
+    pub width: f64,
+    pub color: Color,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+impl Default for Halo {
+    fn default() -> Self {
+        Self {
+            width: 0.0,
+            color: Color::rgb(0xf4, 0xec, 0xd8),
+            extra: Extra::new(),
+        }
+    }
 }

@@ -10,9 +10,10 @@
 
 use std::path::PathBuf;
 
-use ssmap_core::{Canvas, DistanceUnit, Scale};
+use ssmap_core::{Align, Canvas, Color, Command, DistanceUnit, FontFace, Id, Label, Map, Scale};
 use ssmap_render::{
-    CanvasRenderer, CanvasScene, GpuCapabilities, Headless, RgbaImage, View, render_to_image,
+    CanvasRenderer, CanvasScene, Fonts, GpuCapabilities, Headless, MapScene, RgbaImage, View,
+    render_to_image,
 };
 
 /// Largest allowed difference in any channel before a pixel counts as differing.
@@ -179,4 +180,148 @@ fn whole_canvas_preview_shows_no_pasteboard() {
             "corner ({x}, {y}) is water, not pasteboard: {corner:?}"
         );
     }
+}
+
+/// A Map with one Layer holding `labels`, rendered whole at half size.
+fn render_labels(headless: &Headless, size: [u32; 2], labels: Vec<Label>) -> RgbaImage {
+    let mut map = Map::new(Canvas::new(
+        size[0],
+        size[1],
+        Scale::new(1.0, DistanceUnit::Miles),
+    ));
+    let layer = Id::new();
+    map.execute(&Command::CreateLayer {
+        id: layer,
+        parent: None,
+        index: None,
+        name: "Labels".into(),
+    })
+    .unwrap();
+    for label in labels {
+        map.execute(&Command::CreateLabel {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            label: Box::new(label),
+        })
+        .unwrap();
+    }
+    let mut scene = MapScene::new(Fonts::bundled());
+    let canvas = CanvasScene::new(&map.canvas).with_content(scene.content(&map));
+    let view = View::whole_canvas(canvas.canvas_size, size[0].max(size[1]) / 2);
+    render(headless, &canvas, &view)
+}
+
+fn label(text: &str, family: &str, position: [f64; 2]) -> Label {
+    Label {
+        text: text.into(),
+        position,
+        font: FontFace {
+            family: family.into(),
+            ..FontFace::default()
+        },
+        size: 64.0,
+        ..Label::default()
+    }
+}
+
+/// Multi-line, letter-spaced, all-caps and haloed Labels, one in each quarter.
+#[test]
+fn labels() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let multi_line = Label {
+        align: Align::Left,
+        line_height: 1.1,
+        ..label(
+            "The Sundered\nIsles of\nWestmarch",
+            "IM Fell Double Pica",
+            [40.0, 200.0],
+        )
+    };
+    let spaced = Label {
+        letter_spacing: 0.35,
+        rotation: -12.0,
+        ..label("Spaced Out", "Almendra", [900.0, 200.0])
+    };
+    let all_caps = Label {
+        all_caps: true,
+        letter_spacing: 0.1,
+        font: FontFace {
+            family: "Cinzel".into(),
+            weight: 700,
+            ..FontFace::default()
+        },
+        ..label("Kingdom of Thule", "Cinzel", [520.0, 640.0])
+    };
+    let haloed = Label {
+        fill: Color::rgb(0x6b, 0x16, 0x10),
+        halo: ssmap_core::Halo {
+            width: 5.0,
+            color: Color::rgb(0xf4, 0xec, 0xd8),
+            ..Default::default()
+        },
+        align: Align::Right,
+        ..label("Haloed\nRight", "Uncial Antiqua", [1160.0, 560.0])
+    };
+    let image = render_labels(
+        headless,
+        [1200, 800],
+        vec![multi_line, spaced, all_caps, haloed],
+    );
+    if let Gpu::Software(_) = gpu {
+        assert_matches_golden("labels", &image);
+    }
+}
+
+/// "Ærendál" in every display family, then Greek that only Noto Serif has, with no
+/// missing-glyph boxes.
+#[test]
+fn label_fallback() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let mut labels: Vec<Label> = ssmap_fonts::LABEL_FAMILIES
+        .iter()
+        .enumerate()
+        .map(|(i, family)| label("Ærendál", family, [300.0, 70.0 + 110.0 * i as f64]))
+        .collect();
+    labels.push(Label {
+        size: 56.0,
+        ..label("Ærendál\nΩμέγα", "Uncial Antiqua", [880.0, 300.0])
+    });
+    let image = render_labels(headless, [1200, 600], labels);
+    if let Gpu::Software(_) = gpu {
+        assert_matches_golden("label_fallback", &image);
+    }
+}
+
+/// A translucent Label looks the same inside its letters with or without a halo: the halo
+/// sits only around the fill, and its own overlaps don't build up.
+#[test]
+fn halos_never_show_through_translucent_fill() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let stem = Label {
+        opacity: 0.5,
+        size: 400.0,
+        ..label("I", "Noto Serif", [200.0, 200.0])
+    };
+    let haloed = Label {
+        halo: ssmap_core::Halo {
+            width: 12.0,
+            color: Color::rgba(0xff, 0xff, 0xff, 0x80),
+            ..Default::default()
+        },
+        ..stem.clone()
+    };
+    let plain = render_labels(headless, [400, 400], vec![stem]);
+    let with_halo = render_labels(headless, [400, 400], vec![haloed]);
+    // The centre of the stem, at half size.
+    let (inside, inside_haloed) = (pixel(&plain, 100, 100), pixel(&with_halo, 100, 100));
+    for (a, b) in inside.iter().zip(inside_haloed.iter()) {
+        assert!(a.abs_diff(*b) <= 2, "{inside:?} vs {inside_haloed:?}");
+    }
+    // Just outside the stem, the halo shows.
+    let beside = |image: &RgbaImage| (60..100).map(|x| pixel(image, x, 100)[0]).max().unwrap();
+    assert!(beside(&with_halo) > beside(&plain) + 40);
 }

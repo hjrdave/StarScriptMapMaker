@@ -1,9 +1,11 @@
-//! Figma-style selection bounds and transform handles. Object tickets hook their transforms
-//! onto these; for now the Selection's outline bounds are drawn with handles.
+//! Figma-style selection bounds and transform handles: drag inside to move, a handle to
+//! scale, and the knob above to rotate. Object tickets hook their transforms onto these.
 
 use eframe::egui;
-use ssmap_core::{Id, Map, Node};
+use ssmap_core::{Label, Node};
 use ssmap_render::View;
+
+use crate::editor::Editor;
 
 /// An axis-aligned box in Canvas units.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -52,36 +54,84 @@ impl Handle {
     }
 }
 
+/// What a pointer can grab on the selection.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Grip {
+    Resize(Handle),
+    /// The knob above the top edge.
+    Rotate,
+}
+
 /// Half the size of a handle square, in points.
 const HANDLE_RADIUS: f32 = 4.0;
+/// Below this many points across, the inside of the box moves rather than resizes.
+const SMALL_BOX: f32 = 6.0 * HANDLE_RADIUS;
+/// How far the rotate knob sits above the top edge, in points.
+const ROTATE_OFFSET: f32 = 20.0;
 
 impl Bounds {
-    /// Combines the outlines of every selected Object that has one.
-    pub fn of_selection(map: &Map, selection: &[Id]) -> Option<Self> {
-        let mut bounds: Option<Bounds> = None;
-        for &id in selection {
-            let Some(Node::Object(object)) = map.node(id) else {
+    /// Combines the outlines of every selected Object that has one, and the text blocks
+    /// of selected Labels.
+    pub fn of_selection(editor: &mut Editor) -> Option<Self> {
+        let mut points: Vec<[f64; 2]> = Vec::new();
+        for id in editor.selection().to_vec() {
+            if let Some((label, layout)) = editor.label_layout(id) {
+                points.extend(layout.corners(&label));
+                continue;
+            }
+            let Some(Node::Object(object)) = editor.map.node(id) else {
                 continue;
             };
             let Some(geometry) = object.kind.geometry() else {
                 continue;
             };
             for polygon in &geometry.0 {
-                for &[x, y] in &polygon.exterior {
-                    bounds = Some(match bounds {
-                        None => Bounds {
-                            min: [x, y],
-                            max: [x, y],
-                        },
-                        Some(b) => Bounds {
-                            min: [b.min[0].min(x), b.min[1].min(y)],
-                            max: [b.max[0].max(x), b.max[1].max(y)],
-                        },
-                    });
-                }
+                points.extend(&polygon.exterior);
             }
         }
-        bounds
+        Self::around(&points)
+    }
+
+    /// The smallest box holding every point.
+    pub fn around(points: &[[f64; 2]]) -> Option<Self> {
+        let (&first, rest) = points.split_first()?;
+        Some(rest.iter().fold(
+            Bounds {
+                min: first,
+                max: first,
+            },
+            |b, &[x, y]| Bounds {
+                min: [b.min[0].min(x), b.min[1].min(y)],
+                max: [b.max[0].max(x), b.max[1].max(y)],
+            },
+        ))
+    }
+
+    pub fn centre(&self) -> [f64; 2] {
+        self.point([0.5, 0.5])
+    }
+
+    pub fn contains(&self, point: [f64; 2]) -> bool {
+        (self.min[0]..=self.max[0]).contains(&point[0])
+            && (self.min[1]..=self.max[1]).contains(&point[1])
+    }
+
+    /// The uniform scale and the fixed point for dragging `handle` by `delta`: corners
+    /// scale by the mean of both axes, edges by their own axis, about the opposite side.
+    pub fn scaling(&self, handle: Handle, delta: [f64; 2]) -> (f64, [f64; 2]) {
+        let [ax, ay] = handle.anchor();
+        let resized = self.resized(handle, delta);
+        let ratio = |axis: usize| {
+            let before = self.max[axis] - self.min[axis];
+            let after = resized.max[axis] - resized.min[axis];
+            if before > 0.0 { after / before } else { 1.0 }
+        };
+        let scale = match (ax == 0.5, ay == 0.5) {
+            (true, _) => ratio(1),
+            (_, true) => ratio(0),
+            _ => (ratio(0) * ratio(1)).sqrt(),
+        };
+        (scale.max(MIN_SCALE), self.point([1.0 - ax, 1.0 - ay]))
     }
 
     fn point(&self, anchor: [f64; 2]) -> [f64; 2] {
@@ -114,25 +164,79 @@ impl Bounds {
     }
 }
 
+/// The smallest scale a drag can apply, so Labels never shrink to nothing.
+const MIN_SCALE: f64 = 0.01;
+
+/// `label` moved by `delta` Canvas units.
+pub fn moved(label: &Label, delta: [f64; 2]) -> Label {
+    Label {
+        position: [label.position[0] + delta[0], label.position[1] + delta[1]],
+        ..label.clone()
+    }
+}
+
+/// `label` scaled by `scale` about the Canvas point `fixed`. Its size and halo scale with it;
+/// spacing and line height are relative to the size already.
+pub fn scaled(label: &Label, scale: f64, fixed: [f64; 2]) -> Label {
+    let mut out = label.clone();
+    out.position = [
+        fixed[0] + (label.position[0] - fixed[0]) * scale,
+        fixed[1] + (label.position[1] - fixed[1]) * scale,
+    ];
+    out.size = label.size * scale;
+    out.halo.width = label.halo.width * scale;
+    out
+}
+
+/// `label` rotated clockwise by `degrees` about the Canvas point `centre`.
+pub fn rotated(label: &Label, degrees: f64, centre: [f64; 2]) -> Label {
+    let (sin, cos) = degrees.to_radians().sin_cos();
+    let [dx, dy] = [label.position[0] - centre[0], label.position[1] - centre[1]];
+    let mut out = label.clone();
+    out.position = [
+        centre[0] + dx * cos - dy * sin,
+        centre[1] + dx * sin + dy * cos,
+    ];
+    out.rotation = (label.rotation + degrees).rem_euclid(360.0);
+    out
+}
+
 /// Converts a Canvas point to a screen position inside the Canvas panel at `origin`.
-fn to_screen(view: &View, origin: egui::Pos2, ppp: f64, point: [f64; 2]) -> egui::Pos2 {
+pub fn to_screen(view: &View, origin: egui::Pos2, ppp: f64, point: [f64; 2]) -> egui::Pos2 {
     let x = (point[0] - view.origin[0]) * view.zoom / ppp;
     let y = (point[1] - view.origin[1]) * view.zoom / ppp;
     origin + egui::vec2(x as f32, y as f32)
 }
 
-/// The handle under `pointer`, if any.
+/// Where the rotate knob is drawn.
+fn rotate_knob(bounds: &Bounds, view: &View, origin: egui::Pos2, ppp: f64) -> egui::Pos2 {
+    to_screen(view, origin, ppp, bounds.point([0.5, 0.0])) - egui::vec2(0.0, ROTATE_OFFSET)
+}
+
+/// The handle or knob under `pointer`, if any.
 pub fn hit(
     bounds: &Bounds,
     view: &View,
     origin: egui::Pos2,
     ppp: f64,
     pointer: egui::Pos2,
-) -> Option<Handle> {
-    Handle::ALL.into_iter().find(|&handle| {
-        let centre = to_screen(view, origin, ppp, bounds.point(handle.anchor()));
-        (pointer - centre).abs().max_elem() <= HANDLE_RADIUS + 2.0
-    })
+) -> Option<Grip> {
+    let near = |centre: egui::Pos2| (pointer - centre).abs().max_elem() <= HANDLE_RADIUS + 2.0;
+    if near(rotate_knob(bounds, view, origin, ppp)) {
+        return Some(Grip::Rotate);
+    }
+    // On a box too small to grab inside between its handles, inside means move.
+    let rect = egui::Rect::from_two_pos(
+        to_screen(view, origin, ppp, bounds.min),
+        to_screen(view, origin, ppp, bounds.max),
+    );
+    if rect.contains(pointer) && rect.width().min(rect.height()) < SMALL_BOX {
+        return None;
+    }
+    Handle::ALL
+        .into_iter()
+        .find(|&handle| near(to_screen(view, origin, ppp, bounds.point(handle.anchor()))))
+        .map(Grip::Resize)
 }
 
 pub fn paint(painter: &egui::Painter, bounds: &Bounds, view: &View, origin: egui::Pos2, ppp: f64) {
@@ -146,6 +250,17 @@ pub fn paint(painter: &egui::Painter, bounds: &Bounds, view: &View, origin: egui
         0.0,
         egui::Stroke::new(1.5, accent),
         egui::StrokeKind::Outside,
+    );
+    let knob = rotate_knob(bounds, view, origin, ppp);
+    painter.line_segment(
+        [knob, egui::pos2(knob.x, rect.min.y)],
+        egui::Stroke::new(1.0, accent),
+    );
+    painter.circle(
+        knob,
+        HANDLE_RADIUS,
+        egui::Color32::WHITE,
+        egui::Stroke::new(1.0, accent),
     );
     for handle in Handle::ALL {
         let centre = to_screen(view, origin, ppp, bounds.point(handle.anchor()));
@@ -196,7 +311,54 @@ mod tests {
         let origin = egui::pos2(100.0, 50.0);
         // BottomRight at Canvas (110, 70) is 2x zoom at 1 ppp: (220, 140) past the origin.
         let at = origin + egui::vec2(221.0, 139.0);
-        assert_eq!(hit(&BOX, &view, origin, 1.0, at), Some(Handle::BottomRight));
+        assert_eq!(
+            hit(&BOX, &view, origin, 1.0, at),
+            Some(Grip::Resize(Handle::BottomRight))
+        );
         assert_eq!(hit(&BOX, &view, origin, 1.0, origin), None);
+        // Top centre at Canvas (60, 20) is (120, 40), and the knob 20 points above it.
+        let knob = origin + egui::vec2(120.0, 20.0);
+        assert_eq!(hit(&BOX, &view, origin, 1.0, knob), Some(Grip::Rotate));
+
+        // A box a few points tall is moved from inside, not scaled from its edges.
+        let thin = Bounds {
+            min: [10.0, 20.0],
+            max: [110.0, 25.0],
+        };
+        let top_centre = origin + egui::vec2(120.0, 42.0);
+        assert_eq!(hit(&thin, &view, origin, 1.0, top_centre), None);
+        let outside = origin + egui::vec2(221.0, 52.0);
+        assert_eq!(
+            hit(&thin, &view, origin, 1.0, outside),
+            Some(Grip::Resize(Handle::BottomRight))
+        );
+    }
+
+    #[test]
+    fn corners_scale_uniformly_about_the_opposite_corner() {
+        // Doubling the width and height from the bottom-right keeps the top-left.
+        let (scale, fixed) = BOX.scaling(Handle::BottomRight, [100.0, 50.0]);
+        assert_eq!((scale, fixed), (2.0, BOX.min));
+        // An edge scales by its own axis.
+        let (scale, fixed) = BOX.scaling(Handle::Top, [7.0, -50.0]);
+        assert_eq!((scale, fixed), (2.0, [60.0, 70.0]));
+        // Never to nothing.
+        assert_eq!(BOX.scaling(Handle::Right, [-100.0, 0.0]).0, MIN_SCALE);
+    }
+
+    #[test]
+    fn label_transforms_move_scale_and_rotate() {
+        let label = Label {
+            position: [10.0, 0.0],
+            size: 20.0,
+            rotation: 350.0,
+            ..Label::default()
+        };
+        assert_eq!(moved(&label, [1.0, 2.0]).position, [11.0, 2.0]);
+        let big = scaled(&label, 2.0, [0.0, 0.0]);
+        assert_eq!((big.position, big.size), ([20.0, 0.0], 40.0));
+        let turned = rotated(&label, 90.0, [0.0, 0.0]);
+        assert!((turned.position[0]).abs() < 1e-9 && (turned.position[1] - 10.0).abs() < 1e-9);
+        assert!((turned.rotation - 80.0).abs() < 1e-9);
     }
 }

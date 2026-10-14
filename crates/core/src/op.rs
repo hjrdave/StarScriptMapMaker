@@ -11,7 +11,7 @@ use thiserror::Error;
 use crate::geometry::MultiPolygon;
 use crate::id::Id;
 use crate::map::{InvariantError, Map, Subtree};
-use crate::node::Node;
+use crate::node::{Label, Node, ObjectKind};
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case")]
@@ -52,6 +52,8 @@ pub enum Property {
     /// Layers only. Ops don't check the target, so that inverses always apply; Commands
     /// keep it pointing at a Landmass.
     Clip(Option<Id>),
+    /// Label Objects only: every field of the Label at once.
+    Label(Box<Label>),
 }
 
 #[derive(Clone, PartialEq, Debug, Error)]
@@ -213,7 +215,12 @@ fn check_index(index: usize, len: usize) -> Result<(), OpError> {
 /// Fails with the property's name if `node` does not have it.
 fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> {
     match (node, property) {
+        (Node::Layer(_), Property::Label(_)) => Err("label"),
         (Node::Layer(_), _) | (Node::Object(_), Property::Locked(_)) => Ok(()),
+        (Node::Object(object), Property::Label(_)) => match object.kind {
+            ObjectKind::Label(_) => Ok(()),
+            _ => Err("label"),
+        },
         (Node::Object(_), Property::Name(_)) => Err("name"),
         (Node::Object(_), Property::Visible(_)) => Err("visible"),
         (Node::Object(_), Property::Opacity(_)) => Err("opacity"),
@@ -242,6 +249,10 @@ fn set_property(node: &mut Node, property: Property) -> Property {
         (Node::Object(object), Property::Locked(locked)) => {
             Property::Locked(std::mem::replace(&mut object.locked, locked))
         }
-        (Node::Object(_), _) => unreachable!("rejected by check_property"),
+        (Node::Object(object), Property::Label(label)) => match &mut object.kind {
+            ObjectKind::Label(old) => Property::Label(std::mem::replace(old, label)),
+            _ => unreachable!("rejected by check_property"),
+        },
+        (_, _) => unreachable!("rejected by check_property"),
     }
 }

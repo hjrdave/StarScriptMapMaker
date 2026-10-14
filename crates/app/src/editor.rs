@@ -1,9 +1,13 @@
 //! Editor state around one Map: history, Selection, the active Layer and tool, and the
 //! message bar. Every change to the Map goes through a Command here.
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ssmap_core::{Command, CommandError, ExecuteError, History, Id, Map, Node, Selection};
+use ssmap_core::{
+    Command, CommandError, ExecuteError, History, Id, Label, Map, Node, ObjectKind, Selection,
+};
+use ssmap_render::{Fonts, LabelLayout, MapScene};
 
 use crate::layer_tree::node_name;
 use crate::tools::ToolId;
@@ -13,6 +17,9 @@ pub const NOTICE_DURATION: Duration = Duration::from_secs(5);
 
 pub struct Editor {
     pub map: Map,
+    /// What the Canvas draws, derived from the Map, and the Label layouts that picking and
+    /// handles share with it.
+    pub scene: MapScene,
     history: History,
     selection: Selection,
     /// The Layer new Objects go into.
@@ -21,6 +28,8 @@ pub struct Editor {
     notice: Option<Notice>,
     /// Set while a gesture's transaction is open.
     gesture_open: bool,
+    /// The Selection when the open gesture began, restored if it is cancelled.
+    gesture_selection: Selection,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -34,12 +43,14 @@ impl Editor {
     pub fn new(map: Map) -> Self {
         Self {
             map,
+            scene: MapScene::new(Fonts::bundled()),
             history: History::default(),
             selection: Vec::new(),
             active_layer: None,
             active_tool: ToolId::Select,
             notice: None,
             gesture_open: false,
+            gesture_selection: Vec::new(),
         }
     }
 
@@ -105,6 +116,7 @@ impl Editor {
             .begin(label, self.selection.clone())
             .expect("no other transaction is open");
         self.gesture_open = true;
+        self.gesture_selection = self.selection.clone();
     }
 
     /// Runs a Command inside the open gesture, or as its own step if none is open.
@@ -129,12 +141,14 @@ impl Editor {
         }
     }
 
-    /// Escape: undoes everything the open gesture did.
+    /// Escape: undoes everything the open gesture did, Selection included.
     pub fn cancel_gesture(&mut self) {
         if std::mem::take(&mut self.gesture_open) {
             self.history
                 .rollback(&mut self.map)
                 .expect("the gesture's transaction is open");
+            let selection = std::mem::take(&mut self.gesture_selection);
+            self.restore(selection);
         }
     }
 
@@ -244,6 +258,102 @@ impl Editor {
         self.error(text);
     }
 
+    /// The Label with id `id`, if it is one.
+    pub fn label(&self, id: Id) -> Option<&Label> {
+        match self.map.node(id) {
+            Some(Node::Object(object)) => match &object.kind {
+                ObjectKind::Label(label) => Some(label),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// A Label and its shaped text.
+    pub fn label_layout(&mut self, id: Id) -> Option<(Label, Arc<LabelLayout>)> {
+        let label = self.label(id)?.clone();
+        let layout = self.scene.label_layout(id, &label);
+        Some((label, layout))
+    }
+
+    /// The topmost Object under a Canvas point that can be selected there: visible, and
+    /// neither locked nor in a locked Layer.
+    pub fn pick(&mut self, point: [f64; 2]) -> Option<Id> {
+        fn walk(editor: &mut Editor, parent: Option<Id>, point: [f64; 2]) -> Option<Id> {
+            let children = editor.map.children(parent).to_vec();
+            for id in children.into_iter().rev() {
+                let Some(node) = editor.map.node(id) else {
+                    continue;
+                };
+                if node.locked() {
+                    continue;
+                }
+                match node {
+                    Node::Layer(layer) if !layer.visible => {}
+                    Node::Layer(_) => {
+                        if let Some(hit) = walk(editor, Some(id), point) {
+                            return Some(hit);
+                        }
+                    }
+                    Node::Object(_) => {
+                        if let Some((label, layout)) = editor.label_layout(id)
+                            && layout.contains(&label, point)
+                        {
+                            return Some(id);
+                        }
+                    }
+                }
+            }
+            None
+        }
+        walk(self, None, point)
+    }
+
+    /// Opens an "Add Label" gesture and places a Label at `position` in the active Layer,
+    /// creating a Layer if the Map has none. The gesture stays open for typing the text.
+    pub fn place_label(&mut self, position: [f64; 2]) -> Option<Id> {
+        self.end_gesture();
+        self.begin_gesture("Add Label");
+        let parent = match self.active_layer.filter(|&id| self.map.contains(id)) {
+            Some(layer) => layer,
+            None => match self.map.children(None).last() {
+                Some(&top) => top,
+                None => {
+                    let id = Id::new();
+                    let name = format!("Layer {}", self.layer_count() + 1);
+                    let command = Command::CreateLayer {
+                        id,
+                        parent: None,
+                        index: None,
+                        name,
+                    };
+                    if !self.gesture(command) {
+                        self.cancel_gesture();
+                        return None;
+                    }
+                    id
+                }
+            },
+        };
+        let id = Id::new();
+        let label = Label {
+            text: "Label".into(),
+            position,
+            ..Label::default()
+        };
+        if !self.gesture(Command::CreateLabel {
+            id,
+            parent,
+            index: None,
+            label: Box::new(label),
+        }) {
+            self.cancel_gesture();
+            return None;
+        }
+        self.select(vec![id]);
+        Some(id)
+    }
+
     fn layer_count(&self) -> usize {
         self.map
             .ids()
@@ -338,6 +448,57 @@ mod tests {
         editor.cancel_gesture();
         assert_eq!(opacity(&editor, layer), 1.0);
         assert_eq!(editor.redo_label(), Some("Change Opacity"));
+    }
+
+    #[test]
+    fn placing_a_label_creates_a_layer_and_is_one_undo_step() {
+        let mut editor = editor();
+        let id = editor.place_label([50.0, 50.0]).unwrap();
+        let mut label = editor.label(id).unwrap().clone();
+        label.text = "Thule".into();
+        editor.gesture(Command::SetLabel {
+            id,
+            label: Box::new(label),
+        });
+        editor.end_gesture();
+        assert_eq!(editor.selection(), &[id]);
+        assert_eq!(editor.label(id).unwrap().text, "Thule");
+        assert_eq!(editor.undo_label(), Some("Add Label"));
+        editor.undo();
+        assert!(editor.map.children(None).is_empty());
+        assert!(editor.selection().is_empty());
+    }
+
+    #[test]
+    fn cancelling_a_placement_restores_the_selection() {
+        let mut editor = editor();
+        let layer = editor.new_layer().unwrap();
+        editor.place_label([50.0, 50.0]).unwrap();
+        editor.cancel_gesture();
+        assert_eq!(editor.map.children(Some(layer)).len(), 0);
+        assert_eq!(editor.selection(), &[layer]);
+    }
+
+    #[test]
+    fn picking_finds_the_topmost_unlocked_visible_label() {
+        let mut editor = editor();
+        let below = editor.place_label([50.0, 50.0]).unwrap();
+        editor.end_gesture();
+        let above = editor.place_label([52.0, 50.0]).unwrap();
+        editor.end_gesture();
+        assert_eq!(editor.pick([50.0, 50.0]), Some(above));
+        assert_eq!(editor.pick([-500.0, 50.0]), None);
+        editor.run(Command::SetLocked {
+            id: above,
+            locked: true,
+        });
+        assert_eq!(editor.pick([50.0, 50.0]), Some(below));
+        let layer = editor.map.parent(below).unwrap();
+        editor.run(Command::SetVisible {
+            id: layer,
+            visible: false,
+        });
+        assert_eq!(editor.pick([50.0, 50.0]), None);
     }
 
     fn opacity(editor: &Editor, id: Id) -> f32 {

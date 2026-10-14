@@ -12,7 +12,7 @@ use crate::command::{Command, CommandError};
 use crate::geometry::MultiPolygon;
 use crate::id::Id;
 use crate::map::{Map, Subtree};
-use crate::node::Node;
+use crate::node::{Label, Node, ObjectKind};
 use crate::op::{Op, Property};
 
 /// The Objects and Layers picked in the editor. It is editor state, not part of the Map, but
@@ -234,6 +234,10 @@ fn op_bytes(op: &Op) -> usize {
                 property: Property::Name(name),
                 ..
             } => name.len(),
+            Op::SetProperty {
+                property: Property::Label(label),
+                ..
+            } => std::mem::size_of::<Label>() + label.text.len(),
             Op::ReplaceGeometry { geometry, .. } => geometry_bytes(geometry),
             Op::Remove { .. } | Op::SetProperty { .. } | Op::Move { .. } => 0,
         }
@@ -242,7 +246,10 @@ fn op_bytes(op: &Op) -> usize {
 fn subtree_bytes(subtree: &Subtree) -> usize {
     let own = match &subtree.node {
         Node::Layer(layer) => layer.name.len(),
-        Node::Object(object) => object.kind.geometry().map_or(0, geometry_bytes),
+        Node::Object(object) => match &object.kind {
+            ObjectKind::Label(label) => label.text.len(),
+            kind => kind.geometry().map_or(0, geometry_bytes),
+        },
     };
     std::mem::size_of::<Subtree>() + own + subtree.children.iter().map(subtree_bytes).sum::<usize>()
 }

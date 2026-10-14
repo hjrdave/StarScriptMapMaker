@@ -17,6 +17,7 @@ path = "src/main.rs"
 [dependencies]
 ssmap-core.workspace = true
 ssmap-render.workspace = true
+ssmap-fonts.workspace = true
 eframe.workspace = true
 egui-file-dialog.workspace = true
 image.workspace = true

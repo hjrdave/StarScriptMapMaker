@@ -10,15 +10,19 @@ mod gpu;
 mod ocean;
 mod offscreen;
 mod present;
+mod scene;
+pub mod text;
 mod vector;
 mod view;
 
-pub use canvas::{Backdrop, CANVAS_FORMAT, CanvasRenderer, CanvasScene};
+pub use canvas::{Backdrop, CANVAS_FORMAT, CanvasRenderer, CanvasScene, Content};
 pub use color::Color;
 pub use gpu::{GpuCapabilities, Headless, HeadlessError};
 pub use offscreen::{RgbaImage, render_to_image};
 pub use present::Presenter;
-pub use vector::{FillPath, LyonRenderer, VectorRenderer};
+pub use scene::MapScene;
+pub use text::{Fonts, LabelLayout};
+pub use vector::{FillRule, LyonRenderer, Paint, VectorGroup, VectorRenderer, VectorShape};
 pub use view::View;
 
 /// The wgpu version this crate is built against, for callers that share a device with it.

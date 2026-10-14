@@ -11,7 +11,7 @@ use thiserror::Error;
 
 use crate::id::Id;
 use crate::map::{Map, Subtree};
-use crate::node::{Layer, Node};
+use crate::node::{Label, Layer, Node, Object, ObjectKind};
 use crate::op::{Op, OpError, Property};
 
 /// One edit to a Map. Commands name every id they touch or create, so replaying one gives
@@ -57,6 +57,20 @@ pub enum Command {
     Delete {
         ids: Vec<Id>,
     },
+    /// Places a Label with the given id inside Layer `parent`. `index` counts from the bottom
+    /// of the Stacking order; omitted, the Label goes on top.
+    CreateLabel {
+        id: Id,
+        parent: Id,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<usize>,
+        label: Box<Label>,
+    },
+    /// Replaces every field of a Label, as one edit: text, placement, typography or colour.
+    SetLabel {
+        id: Id,
+        label: Box<Label>,
+    },
 }
 
 #[derive(Clone, PartialEq, Debug, Error)]
@@ -75,6 +89,10 @@ pub enum CommandError {
     ContainsLocked { target: Id, locked: Id },
     #[error("opacity must be from 0 to 1, not {0}")]
     InvalidOpacity(f32),
+    #[error("{0} is not a Label")]
+    NotALabel(Id),
+    #[error("invalid Label: {0}")]
+    InvalidLabel(&'static str),
     #[error(transparent)]
     Op(#[from] OpError),
 }
@@ -90,6 +108,8 @@ impl Command {
             Command::SetLocked { .. } => "Change Lock",
             Command::SetOpacity { .. } => "Change Opacity",
             Command::Delete { .. } => "Delete",
+            Command::CreateLabel { .. } => "Add Label",
+            Command::SetLabel { .. } => "Edit Label",
         }
     }
 
@@ -158,6 +178,40 @@ impl Command {
                 Ok(vec![set(*id, Property::Opacity(*opacity))])
             }
             Command::Delete { ids } => delete(map, ids),
+            Command::CreateLabel {
+                id,
+                parent,
+                index,
+                label,
+            } => {
+                if map.contains(*id) {
+                    return Err(CommandError::IdInUse(*id));
+                }
+                layer(map, *parent)?;
+                unlocked(map, *parent)?;
+                check_label(label)?;
+                Ok(vec![Op::Insert {
+                    parent: Some(*parent),
+                    index: index.unwrap_or(map.children(Some(*parent)).len()),
+                    subtree: Subtree {
+                        id: *id,
+                        node: Node::Object(Object::new(ObjectKind::Label(label.clone()))),
+                        children: Vec::new(),
+                    },
+                }])
+            }
+            Command::SetLabel { id, label } => {
+                match existing(map, *id)? {
+                    Node::Object(Object {
+                        kind: ObjectKind::Label(_),
+                        ..
+                    }) => {}
+                    _ => return Err(CommandError::NotALabel(*id)),
+                }
+                unlocked(map, *id)?;
+                check_label(label)?;
+                Ok(vec![set(*id, Property::Label(label.clone()))])
+            }
         }
     }
 }
@@ -224,6 +278,36 @@ fn delete(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
     }
     ops.extend(roots.into_iter().map(|id| Op::Remove { id }));
     Ok(ops)
+}
+
+/// Checks a Label's values are drawable.
+fn check_label(label: &Label) -> Result<(), CommandError> {
+    let invalid = |reason| Err(CommandError::InvalidLabel(reason));
+    if label.text.is_empty() {
+        return invalid("the text is empty");
+    }
+    if !label.position.iter().all(|v| v.is_finite()) || !label.rotation.is_finite() {
+        return invalid("the position and rotation must be finite");
+    }
+    if !(label.size.is_finite() && label.size > 0.0) {
+        return invalid("the size must be greater than 0");
+    }
+    if !label.letter_spacing.is_finite() {
+        return invalid("the letter spacing must be finite");
+    }
+    if !(label.line_height.is_finite() && label.line_height > 0.0) {
+        return invalid("the line height must be greater than 0");
+    }
+    if !(1..=1000).contains(&label.font.weight) {
+        return invalid("the font weight must be from 1 to 1000");
+    }
+    if !(label.halo.width.is_finite() && label.halo.width >= 0.0) {
+        return invalid("the halo width must be 0 or more");
+    }
+    if !(0.0..=1.0).contains(&label.opacity) {
+        return Err(CommandError::InvalidOpacity(label.opacity));
+    }
+    Ok(())
 }
 
 fn set(id: Id, property: Property) -> Op {

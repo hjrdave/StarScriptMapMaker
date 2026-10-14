@@ -9,13 +9,17 @@ publish.workspace = true
 
 [dependencies]
 bytemuck.workspace = true
+cosmic-text.workspace = true
 lyon.workspace = true
 pollster.workspace = true
 ssmap-core.workspace = true
+ssmap-fonts.workspace = true
+unicode-script.workspace = true
 wgpu.workspace = true
 
 [dev-dependencies]
 image.workspace = true
+ssmap-fonts.workspace = true
 
 [lints]
 workspace = true

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/render", "crates/app"]
+members = ["crates/core", "crates/fonts", "crates/render", "crates/app"]
 
 [workspace.package]
 version = "0.1.0"
@@ -12,8 +12,11 @@ publish = false
 
 [workspace.dependencies]
 ssmap-core = { path = "crates/core" }
+ssmap-fonts = { path = "crates/fonts" }
 ssmap-render = { path = "crates/render" }
 bytemuck = { version = "1.25", features = ["derive"] }
+# Text shaping without system fonts; Labels use bundled fonts only (ADR 0006).
+cosmic-text = { version = "0.19", default-features = false, features = ["std"] }
 eframe = { version = "0.36", features = ["persistence"] }
 egui-file-dialog = "0.15"
 image = { version = "0.25", default-features = false, features = ["png"] }
@@ -27,6 +30,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
 tempfile = "3.27"
 thiserror = "2.0"
+# Must match cosmic-text's, whose font fallback hook names its Script type.
+unicode-script = "0.5"
 uuid = { version = "1.28", features = ["v7", "serde"] }
 
 # Must match the wgpu version egui-wgpu uses, so `render` and `app` share one device.

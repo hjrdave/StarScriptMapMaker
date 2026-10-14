@@ -1,0 +1,362 @@
+---
+source: crates/core/tests/scripts.rs
+expression: run(script)
+input_file: crates/core/tests/scripts/labels.json
+---
+{
+  "log": [
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_layer",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "name": "Labels",
+          "parent": null
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_label",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "label": {
+            "align": "centre",
+            "all_caps": true,
+            "fill": "#2b2118",
+            "font": {
+              "family": "Cinzel",
+              "italic": false,
+              "weight": 700
+            },
+            "halo": {
+              "color": "#f4ecd8c0",
+              "width": 3
+            },
+            "letter_spacing": 0.2,
+            "line_height": 1.1,
+            "opacity": 0.9,
+            "position": [
+              500,
+              300
+            ],
+            "rotation": -8.5,
+            "size": 64,
+            "text": "The Northern\nReaches"
+          },
+          "parent": "00000000-0000-7000-8000-000000000001"
+        }
+      }
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "layers": [
+            {
+              "children": [
+                {
+                  "id": "00000000-0000-7000-8000-000000000002",
+                  "kind": {
+                    "align": "centre",
+                    "all_caps": true,
+                    "fill": "#2b2118",
+                    "font": {
+                      "family": "Cinzel",
+                      "italic": false,
+                      "weight": 700
+                    },
+                    "halo": {
+                      "color": "#f4ecd8c0",
+                      "width": 3.0
+                    },
+                    "kind": "label",
+                    "letter_spacing": 0.2,
+                    "line_height": 1.1,
+                    "opacity": 0.8999999761581421,
+                    "position": [
+                      500.0,
+                      300.0
+                    ],
+                    "rotation": -8.5,
+                    "size": 64.0,
+                    "text": "The Northern\nReaches"
+                  },
+                  "locked": false,
+                  "type": "object"
+                }
+              ],
+              "id": "00000000-0000-7000-8000-000000000001",
+              "locked": false,
+              "name": "Labels",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "begin": {
+          "label": "Move",
+          "selection": [
+            "00000000-0000-7000-8000-000000000002"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "execute": {
+          "command": "set_label",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "label": {
+            "position": [
+              510,
+              300
+            ],
+            "size": 64,
+            "text": "The Northern\nReaches"
+          }
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "execute": {
+          "command": "set_label",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "label": {
+            "position": [
+              540,
+              310
+            ],
+            "size": 64,
+            "text": "The Northern\nReaches"
+          }
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "commit": {
+          "selection": [
+            "00000000-0000-7000-8000-000000000002"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "invalid Label: the text is empty"
+      },
+      "step": {
+        "step": {
+          "command": "set_label",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "label": {
+            "text": ""
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "invalid Label: the size must be greater than 0"
+      },
+      "step": {
+        "step": {
+          "command": "set_label",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "label": {
+            "size": 0,
+            "text": "Ærendál"
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "opacity must be from 0 to 1, not 1.5"
+      },
+      "step": {
+        "step": {
+          "command": "set_label",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "label": {
+            "opacity": 1.5,
+            "text": "Ærendál"
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000001 is not a Label"
+      },
+      "step": {
+        "step": {
+          "command": "set_label",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "label": {
+            "text": "Not a Label"
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000002 is not a Layer"
+      },
+      "step": {
+        "step": {
+          "command": "create_label",
+          "id": "00000000-0000-7000-8000-000000000003",
+          "label": {
+            "text": "Inside an Object"
+          },
+          "parent": "00000000-0000-7000-8000-000000000002"
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_locked",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "locked": true
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000002 is locked"
+      },
+      "step": {
+        "step": {
+          "command": "set_label",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "label": {
+            "text": "Locked"
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "selection": [
+          "00000000-0000-7000-8000-000000000002"
+        ]
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "layers": [
+            {
+              "children": [
+                {
+                  "id": "00000000-0000-7000-8000-000000000002",
+                  "kind": {
+                    "align": "centre",
+                    "all_caps": true,
+                    "fill": "#2b2118",
+                    "font": {
+                      "family": "Cinzel",
+                      "italic": false,
+                      "weight": 700
+                    },
+                    "halo": {
+                      "color": "#f4ecd8c0",
+                      "width": 3.0
+                    },
+                    "kind": "label",
+                    "letter_spacing": 0.2,
+                    "line_height": 1.1,
+                    "opacity": 0.8999999761581421,
+                    "position": [
+                      500.0,
+                      300.0
+                    ],
+                    "rotation": -8.5,
+                    "size": 64.0,
+                    "text": "The Northern\nReaches"
+                  },
+                  "locked": false,
+                  "type": "object"
+                }
+              ],
+              "id": "00000000-0000-7000-8000-000000000001",
+              "locked": false,
+              "name": "Labels",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    }
+  ],
+  "redo_steps": 3,
+  "undo_steps": 1,
+  "view": {
+    "canvas": {
+      "height": 1000,
+      "scale": {
+        "distance_per_unit": 1.0,
+        "unit": "miles"
+      },
+      "width": 1000
+    },
+    "layers": [
+      {
+        "id": "00000000-0000-7000-8000-000000000001",
+        "locked": false,
+        "name": "Labels",
+        "opacity": 1.0,
+        "type": "layer",
+        "visible": true
+      }
+    ]
+  }
+}

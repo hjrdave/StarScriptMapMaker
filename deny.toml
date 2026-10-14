@@ -37,6 +37,11 @@ unused-allowed-license = "allow"
 crate = "epaint_default_fonts"
 allow = ["OFL-1.1", "Ubuntu-font-1.0"]
 
+# Our bundled Label fonts (assets/fonts/, ADR 0006). The crate holds only font data.
+[[licenses.exceptions]]
+crate = "ssmap-fonts"
+allow = ["OFL-1.1"]
+
 [bans]
 multiple-versions = "allow"
 wildcards = "deny"

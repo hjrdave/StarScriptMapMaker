@@ -101,6 +101,11 @@ impl MapMakerApp {
         self.recent.paths()
     }
 
+    /// Whether a Label's text box is open on the Canvas.
+    pub fn editing_label_text(&self) -> bool {
+        self.canvas_view.editing_text()
+    }
+
     /// The window title, as last sent to the window.
     pub fn title(&self) -> &str {
         &self.title
@@ -194,9 +199,15 @@ impl MapMakerApp {
     }
 
     /// The preview PNG stored with each save, rendered like the screen.
-    fn preview_png(&self) -> Option<Vec<u8>> {
+    fn preview_png(&mut self) -> Option<Vec<u8>> {
         let render_state = self.render_state.as_ref()?;
-        let image = canvas_view::render_whole_canvas(render_state, &self.editor.map, PREVIEW_SIZE)?;
+        let editor = &mut self.editor;
+        let image = canvas_view::render_whole_canvas(
+            render_state,
+            &editor.map,
+            &mut editor.scene,
+            PREVIEW_SIZE,
+        )?;
         let mut png = Vec::new();
         image::ImageEncoder::write_image(
             image::codecs::png::PngEncoder::new(&mut png),
@@ -299,8 +310,9 @@ impl MapMakerApp {
     }
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
-        // Text fields keep their own undo and keys.
-        if ctx.egui_wants_keyboard_input() {
+        // Text fields keep their own undo and keys. The Label text box keeps Escape too,
+        // which egui takes its focus away for before this runs.
+        if ctx.egui_wants_keyboard_input() || self.canvas_view.editing_text() {
             return;
         }
         use egui::{Key, KeyboardShortcut, Modifiers};

@@ -6,8 +6,8 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 use ssmap_core::file::{FORMAT_VERSION, FileError, MapFile, SaveStats, read_preview};
 use ssmap_core::{
-    Canvas, DistanceUnit, Id, Label, Lake, Landmass, Layer, Map, MultiPolygon, Node, Object,
-    ObjectKind, Op, Polygon, Property, Scale, Stamp, Subtree,
+    Canvas, Color, DistanceUnit, Halo, Id, Label, Lake, Landmass, Layer, Map, MultiPolygon, Node,
+    Object, ObjectKind, Op, Polygon, Property, Scale, Stamp, Subtree,
 };
 
 fn insert(map: &mut Map, parent: Option<Id>, node: Node) -> Id {
@@ -82,7 +82,19 @@ fn sample_map() -> (Map, Id, Id) {
             object(ObjectKind::Stamp(Stamp::default())),
         );
     }
-    let mut label = Object::new(ObjectKind::Label(Label::default()));
+    let mut label = Object::new(ObjectKind::Label(Box::new(Label {
+        text: "Ærendál\nthe Old Kingdom".into(),
+        position: [1234.5, 678.25],
+        rotation: 12.0,
+        letter_spacing: 0.15,
+        all_caps: true,
+        halo: Halo {
+            width: 2.5,
+            color: Color::rgba(255, 250, 240, 200),
+            ..Halo::default()
+        },
+        ..Label::default()
+    })));
     label.locked = true;
     insert(&mut map, Some(assets), Node::Object(label));
     insert(&mut map, None, Node::Layer(Layer::new("Empty")));
