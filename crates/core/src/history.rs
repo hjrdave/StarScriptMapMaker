@@ -38,6 +38,8 @@ struct Transaction {
     label: String,
     selection_before: Selection,
     inverses: Vec<Op>,
+    /// The Ops applied so far, when recording.
+    applied: Vec<Op>,
 }
 
 #[derive(Clone, PartialEq, Debug, Error)]
@@ -55,6 +57,9 @@ pub struct History {
     open: Option<Transaction>,
     budget: usize,
     used: usize,
+    /// Ops that committed transactions, undo and redo applied, in order, since the last
+    /// `take_applied`. `None` unless recording.
+    applied: Option<Vec<Op>>,
 }
 
 impl Default for History {
@@ -71,7 +76,25 @@ impl History {
             open: None,
             budget: budget_bytes,
             used: 0,
+            applied: None,
         }
+    }
+
+    /// Starts or stops recording the Ops that change the Map for good: those of committed
+    /// transactions, undo and redo, as the Recovery journal needs. Stopping drops any not yet
+    /// taken.
+    pub fn set_recording(&mut self, on: bool) {
+        self.applied = on.then(Vec::new);
+    }
+
+    /// Takes the Ops recorded since the last call, in the order they were applied. Replaying
+    /// them on the Map as it was then gives the Map as it is now. Rolled-back Ops are not
+    /// included, and a transaction's Ops appear only once it commits.
+    pub fn take_applied(&mut self) -> Vec<Op> {
+        self.applied
+            .as_mut()
+            .map(std::mem::take)
+            .unwrap_or_default()
     }
 
     /// Opens a transaction. Commands executed until `commit` become one Undo step.
@@ -87,6 +110,7 @@ impl History {
             label: label.into(),
             selection_before: selection,
             inverses: Vec::new(),
+            applied: Vec::new(),
         });
         Ok(())
     }
@@ -95,7 +119,8 @@ impl History {
     /// leaves the transaction open.
     pub fn execute(&mut self, map: &mut Map, command: &Command) -> Result<(), ExecuteError> {
         let transaction = self.open.as_mut().ok_or(HistoryError::NoTransaction)?;
-        let inverses = map.execute(command)?;
+        let applied = self.applied.is_some().then_some(&mut transaction.applied);
+        let inverses = map.execute_recording(command, applied)?;
         transaction.inverses.extend(inverses);
         Ok(())
     }
@@ -106,6 +131,9 @@ impl History {
         let transaction = self.open.take().ok_or(HistoryError::NoTransaction)?;
         if transaction.inverses.is_empty() {
             return Ok(());
+        }
+        if let Some(applied) = &mut self.applied {
+            applied.extend(transaction.applied);
         }
         let step = UndoStep {
             bytes: step_bytes(&transaction.inverses),
@@ -151,6 +179,7 @@ impl History {
         let Some(mut step) = self.undo.pop_back() else {
             return Ok(None);
         };
+        self.record_revert(&step);
         step.inverses = map.revert(std::mem::take(&mut step.inverses));
         let selection = step.selection_before.clone();
         self.redo.push(step);
@@ -163,6 +192,7 @@ impl History {
         let Some(mut step) = self.redo.pop() else {
             return Ok(None);
         };
+        self.record_revert(&step);
         step.inverses = map.revert(std::mem::take(&mut step.inverses));
         let selection = step.selection_after.clone();
         self.undo.push_back(step);
@@ -195,6 +225,13 @@ impl History {
         self.redo.clear();
         self.open = None;
         self.used = 0;
+    }
+
+    /// Records the Ops that reverting `step` is about to apply: its inverses, newest first.
+    fn record_revert(&mut self, step: &UndoStep) {
+        if let Some(applied) = &mut self.applied {
+            applied.extend(step.inverses.iter().rev().cloned());
+        }
     }
 
     fn ensure_closed(&self) -> Result<(), HistoryError> {
@@ -235,7 +272,10 @@ fn op_bytes(op: &Op) -> usize {
                 ..
             } => name.len(),
             Op::ReplaceGeometry { geometry, .. } => geometry_bytes(geometry),
-            Op::Remove { .. } | Op::SetProperty { .. } | Op::Move { .. } => 0,
+            Op::Remove { .. }
+            | Op::SetProperty { .. }
+            | Op::Move { .. }
+            | Op::SetDefaults { .. } => 0,
         }
 }
 
