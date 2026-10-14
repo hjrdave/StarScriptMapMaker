@@ -93,3 +93,70 @@ fn commands_have_a_json_schema() {
     let schema = serde_json::to_value(schemars::schema_for!(Command)).unwrap();
     assert_eq!(schema["title"], "Command");
 }
+
+#[test]
+fn recorded_ops_replay_commits_undos_and_redos_onto_the_starting_map() {
+    let start = empty_map();
+    let mut map = start.clone();
+    let mut history = History::default();
+    history.set_recording(true);
+    let (a, b) = (Id::new(), Id::new());
+    history
+        .execute_step(&mut map, &create(a, "A"), vec![])
+        .unwrap();
+    history
+        .execute_step(&mut map, &create(b, "B"), vec![])
+        .unwrap();
+    // A gesture's Ops count only once it commits; a rolled-back one never.
+    history.begin("Rename", vec![]).unwrap();
+    for name in ["A1", "A2"] {
+        let rename = Command::RenameLayer {
+            id: a,
+            name: name.into(),
+        };
+        history.execute(&mut map, &rename).unwrap();
+    }
+    history.commit(vec![]).unwrap();
+    history.begin("Cancelled", vec![]).unwrap();
+    history.execute(&mut map, &create(Id::new(), "C")).unwrap();
+    history.rollback(&mut map).unwrap();
+    // A refused Command records nothing.
+    let missing = Command::RenameLayer {
+        id: Id::new(),
+        name: "Nowhere".into(),
+    };
+    assert!(history.execute_step(&mut map, &missing, vec![]).is_err());
+    history.undo(&mut map).unwrap();
+    history.undo(&mut map).unwrap();
+    history.redo(&mut map).unwrap();
+
+    let mut replayed = start.clone();
+    for op in history.take_applied() {
+        replayed.apply(op).unwrap();
+    }
+    assert_eq!(replayed.view(), map.view());
+    assert!(
+        history.take_applied().is_empty(),
+        "taking drains the record"
+    );
+
+    // Recording resumes from wherever the Map is now.
+    let checkpoint = map.clone();
+    history.undo(&mut map).unwrap();
+    let mut replayed = checkpoint;
+    for op in history.take_applied() {
+        replayed.apply(op).unwrap();
+    }
+    assert_eq!(replayed.view(), map.view());
+}
+
+#[test]
+fn history_records_nothing_unless_asked() {
+    let mut map = empty_map();
+    let mut history = History::default();
+    history
+        .execute_step(&mut map, &create(Id::new(), "A"), vec![])
+        .unwrap();
+    history.undo(&mut map).unwrap();
+    assert!(history.take_applied().is_empty());
+}

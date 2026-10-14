@@ -206,6 +206,7 @@ dependencies = [
 name = "app"
 version = "0.1.0"
 dependencies = [
+ "directories",
  "eframe",
  "egui-file-dialog",
  "egui_kittest",
@@ -214,6 +215,7 @@ dependencies = [
  "ssmap-core",
  "ssmap-render",
  "tempfile",
+ "uuid",
 ]
 
 [[package]]

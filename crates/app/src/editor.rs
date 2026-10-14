@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use ssmap_core::{Command, CommandError, ExecuteError, History, Id, Map, Node, Selection};
+use ssmap_core::{Command, CommandError, ExecuteError, History, Id, Map, Node, Op, Selection};
 
 use crate::layer_tree::node_name;
 use crate::tools::ToolId;
@@ -32,9 +32,11 @@ pub struct Notice {
 
 impl Editor {
     pub fn new(map: Map) -> Self {
+        let mut history = History::default();
+        history.set_recording(true);
         Self {
             map,
-            history: History::default(),
+            history,
             selection: Vec::new(),
             active_layer: None,
             active_tool: ToolId::Select,
@@ -170,6 +172,12 @@ impl Editor {
         if let Ok(Some(selection)) = self.history.redo(&mut self.map) {
             self.restore(selection);
         }
+    }
+
+    /// Takes the Ops that committed steps, undo and redo applied since the last call, for the
+    /// Recovery journal.
+    pub fn take_applied(&mut self) -> Vec<Op> {
+        self.history.take_applied()
     }
 
     /// Creates a Layer above the active one (or on top), selects it and returns its id.
