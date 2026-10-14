@@ -1,0 +1,11 @@
+# game-icons.net icons, an optional pack (see README.md in this folder). The icons are not
+# bundled yet: add one `[[asset]]` per icon after running `colorize-svgs.sh`. Every icon is
+# credited to its own author, so give each `[[asset]]` that icon's `author`.
+[pack]
+id = "game-icons"
+name = "game-icons.net"
+licence = "CC-BY-3.0"
+licence_url = "https://creativecommons.org/licenses/by/3.0/"
+credits = "Icons made by the authors named in the credits. Available on https://game-icons.net"
+attribution_required = true
+source_url = "https://game-icons.net"

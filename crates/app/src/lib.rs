@@ -3,6 +3,7 @@
 
 mod asset_browser;
 mod canvas_view;
+pub mod credits;
 pub mod document;
 pub mod editor;
 pub mod handles;
@@ -25,6 +26,7 @@ use std::time::{Duration, Instant};
 
 use crate::asset_browser::AssetBrowser;
 use crate::canvas_view::CanvasView;
+use crate::credits::Credits;
 use crate::document::Document;
 use crate::editor::Editor;
 use crate::layer_tree::LayerTree;
@@ -59,6 +61,7 @@ pub struct MapMakerApp {
     /// The installed Asset packs' art, shared with the Canvas renderer and picking.
     sprites: SpriteStore,
     canvas_view: CanvasView,
+    credits: Credits,
     recent: RecentFiles,
     open_dialog: FileDialog,
     save_dialog: FileDialog,
@@ -107,6 +110,7 @@ impl MapMakerApp {
         for problem in &problems {
             eprintln!("Asset pack problem: {problem}");
         }
+        let credits = Credits::new(&library);
         let sprites = SpriteStore::new(Arc::new(library));
         let gpu = match cc.wgpu_render_state.as_ref() {
             Some(render_state) => {
@@ -141,6 +145,7 @@ impl MapMakerApp {
             asset_browser: AssetBrowser::default(),
             sprites,
             canvas_view: CanvasView::new(gpu),
+            credits,
             recent: RecentFiles::load(cc.storage),
             open_dialog: map_files().title("Open Map"),
             save_dialog: map_files().title("Save Map As"),
@@ -484,6 +489,12 @@ impl MapMakerApp {
             }
             if ui.button("Save As…").clicked() {
                 self.show_save_dialog();
+            }
+        });
+        ui.menu_button("Help", |ui| {
+            if ui.button("Credits…").clicked() {
+                self.credits.open = true;
+                ui.close();
             }
         });
     }
@@ -852,6 +863,7 @@ impl eframe::App for MapMakerApp {
         }
         self.dialogs(&ctx);
         self.update_title(&ctx);
+        self.credits.show(&ctx);
         egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));
         egui::Panel::bottom("assets")
