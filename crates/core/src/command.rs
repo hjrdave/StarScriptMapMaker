@@ -10,9 +10,10 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::id::Id;
-use crate::map::{Map, Subtree};
+use crate::map::{Map, MapDefaults, Subtree};
 use crate::node::{Layer, Node};
 use crate::op::{Op, OpError, Property};
+use crate::roughness::Roughness;
 
 /// One edit to a Map. Commands name every id they touch or create, so replaying one gives
 /// the same Map every time.
@@ -57,6 +58,16 @@ pub enum Command {
     Delete {
         ids: Vec<Id>,
     },
+    /// Sets the Roughness of Landmasses and Lakes, or with `None` returns them to the Map-wide
+    /// default.
+    SetRoughness {
+        ids: Vec<Id>,
+        roughness: Option<Roughness>,
+    },
+    /// Sets the Roughness of every Landmass and Lake without its own.
+    SetDefaultRoughness {
+        roughness: Roughness,
+    },
 }
 
 #[derive(Clone, PartialEq, Debug, Error)]
@@ -75,6 +86,10 @@ pub enum CommandError {
     ContainsLocked { target: Id, locked: Id },
     #[error("opacity must be from 0 to 1, not {0}")]
     InvalidOpacity(f32),
+    #[error("{0} is not a Landmass or Lake")]
+    NoOutline(Id),
+    #[error("Roughness needs an amount of 0 or more and a scale above 0, not {amount} and {scale}")]
+    InvalidRoughness { amount: f64, scale: f64 },
     #[error(transparent)]
     Op(#[from] OpError),
 }
@@ -90,6 +105,8 @@ impl Command {
             Command::SetLocked { .. } => "Change Lock",
             Command::SetOpacity { .. } => "Change Opacity",
             Command::Delete { .. } => "Delete",
+            Command::SetRoughness { .. } => "Change Roughness",
+            Command::SetDefaultRoughness { .. } => "Change Default Roughness",
         }
     }
 
@@ -158,6 +175,30 @@ impl Command {
                 Ok(vec![set(*id, Property::Opacity(*opacity))])
             }
             Command::Delete { ids } => delete(map, ids),
+            Command::SetRoughness { ids, roughness } => {
+                if let Some(roughness) = roughness {
+                    valid_roughness(roughness)?;
+                }
+                let mut ops = Vec::with_capacity(ids.len());
+                for &id in ids {
+                    match existing(map, id)? {
+                        Node::Object(object) if object.kind.geometry().is_some() => {}
+                        _ => return Err(CommandError::NoOutline(id)),
+                    }
+                    unlocked(map, id)?;
+                    ops.push(set(id, Property::Roughness(roughness.clone())));
+                }
+                Ok(ops)
+            }
+            Command::SetDefaultRoughness { roughness } => {
+                valid_roughness(roughness)?;
+                Ok(vec![Op::SetDefaults {
+                    defaults: MapDefaults {
+                        roughness: roughness.clone(),
+                        ..map.defaults().clone()
+                    },
+                }])
+            }
         }
     }
 }
@@ -241,6 +282,15 @@ fn delete(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
     }
     ops.extend(roots.into_iter().map(|id| Op::Remove { id }));
     Ok(ops)
+}
+
+fn valid_roughness(roughness: &Roughness) -> Result<(), CommandError> {
+    let Roughness { amount, scale, .. } = *roughness;
+    if amount.is_finite() && amount >= 0.0 && scale.is_finite() && scale > 0.0 {
+        Ok(())
+    } else {
+        Err(CommandError::InvalidRoughness { amount, scale })
+    }
 }
 
 fn set(id: Id, property: Property) -> Op {

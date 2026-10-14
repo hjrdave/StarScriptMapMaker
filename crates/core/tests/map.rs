@@ -216,6 +216,7 @@ fn from_view_rejects_duplicate_ids() {
     let layer = layer("Land");
     let view = MapView {
         canvas: empty_map().canvas,
+        defaults: Default::default(),
         layers: vec![layer.clone(), layer],
     };
     assert!(Map::from_view(view).is_err());

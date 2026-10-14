@@ -1,0 +1,384 @@
+//! Roughness: generated jagged detail on coastlines (ADR 0002).
+//!
+//! The roughened outline is derived from the stored outline plus [`Roughness`] settings. Render,
+//! picking, Clip and export all use it, so it must be the same everywhere: the computation uses
+//! only IEEE-754 operations that are correctly rounded on every platform (`+ - * /` and `sqrt`),
+//! never `sin`, `exp` or `powf`, and draws its randomness from an integer hash.
+//!
+//! Each edge of a stored ring is cut into pieces about `scale` long, then each piece is refined by
+//! midpoint displacement along the edge's normal, halving the amplitude at every level. Stored
+//! vertices never move, so every node stays on the coast. An edge's detail depends only on its two
+//! end points and the seed, so moving one node changes only its two edges.
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+use crate::extra::Extra;
+use crate::geometry::{MultiPolygon, Point, Polygon};
+use crate::id::Id;
+use crate::map::Map;
+
+/// The finest detail is `scale / 2^MAX_LEVELS`.
+const MAX_LEVELS: u32 = 5;
+
+/// No displacement moves a midpoint further than this fraction of its piece's length, which keeps
+/// pieces from folding back over themselves.
+const MAX_BEND: f64 = 0.35;
+
+/// Edges are cut into at most this many pieces, whatever the scale, to bound the output size.
+const MAX_PIECES: f64 = 4096.0;
+
+/// How rough a coastline is.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct Roughness {
+    /// The largest displacement, in Canvas units. Zero leaves the outline smooth.
+    pub amount: f64,
+    /// The size of the largest features, in Canvas units.
+    pub scale: f64,
+    /// Picks one of many equally rough coastlines.
+    pub seed: u32,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+impl Roughness {
+    pub fn new(amount: f64, scale: f64, seed: u32) -> Self {
+        Self {
+            amount,
+            scale,
+            seed,
+            extra: Extra::new(),
+        }
+    }
+
+    /// Whether these settings leave an outline unchanged.
+    pub fn is_smooth(&self) -> bool {
+        !(self.amount > 0.0
+            && self.scale > 0.0
+            && self.amount.is_finite()
+            && self.scale.is_finite())
+    }
+}
+
+impl Default for Roughness {
+    fn default() -> Self {
+        Self::new(0.0, 32.0, 0)
+    }
+}
+
+/// The roughened copy of `outline`. Rings keep their order and orientation; holes stay holes.
+pub fn roughen(outline: &MultiPolygon, roughness: &Roughness) -> MultiPolygon {
+    if roughness.is_smooth() {
+        return outline.clone();
+    }
+    MultiPolygon(
+        outline
+            .0
+            .iter()
+            .map(|polygon| Polygon {
+                exterior: roughen_ring(&polygon.exterior, roughness),
+                holes: polygon
+                    .holes
+                    .iter()
+                    .map(|hole| roughen_ring(hole, roughness))
+                    .collect(),
+            })
+            .collect(),
+    )
+}
+
+fn roughen_ring(ring: &[Point], roughness: &Roughness) -> Vec<Point> {
+    if ring.len() < 3 {
+        return ring.to_vec();
+    }
+    let mut out = Vec::with_capacity(ring.len() * 8);
+    for (i, &a) in ring.iter().enumerate() {
+        let b = ring[(i + 1) % ring.len()];
+        out.push(a);
+        roughen_edge(a, b, roughness, &mut out);
+    }
+    out
+}
+
+/// Pushes the new points strictly between `a` and `b`.
+fn roughen_edge(a: Point, b: Point, roughness: &Roughness, out: &mut Vec<Point>) {
+    let (a, b) = (canonical(a), canonical(b));
+    // Work in one direction per edge, whichever way the ring runs, so an edge shared by two rings
+    // gets the same detail in both.
+    let reversed = key(b) < key(a);
+    let (from, to) = if reversed { (b, a) } else { (a, b) };
+    let (dx, dy) = (to[0] - from[0], to[1] - from[1]);
+    let length = (dx * dx + dy * dy).sqrt();
+    if !length.is_finite() || length <= 0.0 {
+        return;
+    }
+    let normal = [-dy / length, dx / length];
+
+    let pieces = (length / roughness.scale).ceil().clamp(1.0, MAX_PIECES);
+    let piece_length = length / pieces;
+    let amplitude = roughness.amount * (piece_length / roughness.scale).min(1.0);
+
+    // Offsets along the normal at evenly spaced positions, from `from` to `to` inclusive.
+    let levels = levels_for(piece_length, roughness.scale);
+    let per_piece = 1usize << levels;
+    let pieces = pieces as usize;
+    let mut offsets = vec![0.0; pieces * per_piece + 1];
+    let mut hash = mix(mix(u64::from(roughness.seed), key_bits(from)), key_bits(to));
+    for piece in 0..pieces {
+        let base = piece * per_piece;
+        let mut step = per_piece;
+        let mut level_amplitude = amplitude;
+        let mut level_length = piece_length;
+        while step > 1 {
+            let half = step / 2;
+            let limit = level_length * MAX_BEND;
+            let mut start = base;
+            while start < base + per_piece {
+                hash = mix(hash, (start + half) as u64);
+                let shift = (unit(hash) - 0.5) * 2.0 * level_amplitude;
+                let mid = (offsets[start] + offsets[start + step]) * 0.5;
+                offsets[start + half] = mid + shift.clamp(-limit, limit);
+                start += step;
+            }
+            step = half;
+            level_amplitude *= 0.5;
+            level_length *= 0.5;
+        }
+    }
+
+    let total = offsets.len() - 1;
+    let point = |k: usize| {
+        let t = k as f64 / total as f64;
+        let offset = offsets[k];
+        [
+            from[0] + dx * t + normal[0] * offset,
+            from[1] + dy * t + normal[1] * offset,
+        ]
+    };
+    if reversed {
+        out.extend((1..total).rev().map(point));
+    } else {
+        out.extend((1..total).map(point));
+    }
+}
+
+/// How many times a piece is halved: until its parts are no longer than `scale / 2^MAX_LEVELS`.
+fn levels_for(piece_length: f64, scale: f64) -> u32 {
+    let finest = scale / f64::from(1u32 << MAX_LEVELS);
+    let mut levels = 0;
+    let mut length = piece_length;
+    while levels < MAX_LEVELS && length > finest {
+        length *= 0.5;
+        levels += 1;
+    }
+    levels
+}
+
+/// Turns `-0.0` into `0.0` so that equal points hash equally.
+fn canonical(p: Point) -> Point {
+    [p[0] + 0.0, p[1] + 0.0]
+}
+
+fn key(p: Point) -> (u64, u64) {
+    (p[0].to_bits(), p[1].to_bits())
+}
+
+fn key_bits(p: Point) -> u64 {
+    mix(p[0].to_bits(), p[1].to_bits())
+}
+
+/// SplitMix64's finaliser over the combined state.
+fn mix(state: u64, value: u64) -> u64 {
+    let mut z = state
+        .wrapping_add(value.wrapping_mul(0x9E37_79B9_7F4A_7C15))
+        .wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
+/// A value in `[0, 1)`, exact in `f64`.
+fn unit(hash: u64) -> f64 {
+    (hash >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
+}
+
+/// Roughened outlines of a Map's Landmasses and Lakes, recomputed only for Objects whose version
+/// or settings changed since they were last asked for.
+#[derive(Default, Debug)]
+pub struct RoughnessCache {
+    entries: HashMap<Id, CacheEntry>,
+    computed: u64,
+}
+
+#[derive(Debug)]
+struct CacheEntry {
+    version: u64,
+    roughness: Roughness,
+    outline: Arc<MultiPolygon>,
+}
+
+impl RoughnessCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The roughened outline of Landmass or Lake `id`, with its own Roughness or the Map-wide
+    /// default, or `None` when `id` is not in the Map or has no outline.
+    pub fn outline(&mut self, map: &Map, id: Id) -> Option<Arc<MultiPolygon>> {
+        let version = map.version(id)?;
+        let roughness = map.roughness(id)?;
+        let crate::Node::Object(object) = map.node(id)? else {
+            return None;
+        };
+        let geometry = object.kind.geometry()?;
+        if let Some(entry) = self.entries.get(&id)
+            && entry.version == version
+            && entry.roughness == *roughness
+        {
+            return Some(entry.outline.clone());
+        }
+        let outline = Arc::new(roughen(geometry, roughness));
+        self.computed += 1;
+        self.entries.insert(
+            id,
+            CacheEntry {
+                version,
+                roughness: roughness.clone(),
+                outline: outline.clone(),
+            },
+        );
+        Some(outline)
+    }
+
+    /// Forgets Objects that are no longer in `map`.
+    pub fn retain(&mut self, map: &Map) {
+        self.entries.retain(|&id, _| map.contains(id));
+    }
+
+    /// Empties the cache, as when another Map is opened.
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    /// How many outlines this cache has computed, for tests and profiling.
+    pub fn computed(&self) -> u64 {
+        self.computed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn square(size: f64) -> Vec<Point> {
+        vec![[0.0, 0.0], [size, 0.0], [size, size], [0.0, size]]
+    }
+
+    fn island() -> MultiPolygon {
+        MultiPolygon(vec![Polygon {
+            exterior: square(400.0),
+            holes: vec![vec![
+                [100.0, 100.0],
+                [100.0, 200.0],
+                [200.0, 200.0],
+                [200.0, 100.0],
+            ]],
+        }])
+    }
+
+    #[test]
+    fn smooth_settings_leave_the_outline_unchanged() {
+        let outline = island();
+        assert_eq!(roughen(&outline, &Roughness::new(0.0, 32.0, 7)), outline);
+        assert_eq!(roughen(&outline, &Roughness::new(5.0, 0.0, 7)), outline);
+        assert_eq!(
+            roughen(&outline, &Roughness::new(f64::NAN, 32.0, 7)),
+            outline
+        );
+    }
+
+    #[test]
+    fn stored_vertices_stay_in_order() {
+        let outline = island();
+        let rough = roughen(&outline, &Roughness::new(8.0, 32.0, 1));
+        let ring = &rough.0[0].exterior;
+        assert!(ring.len() > 4 * 8);
+        let positions: Vec<usize> = square(400.0)
+            .iter()
+            .map(|v| {
+                ring.iter()
+                    .position(|p| p == v)
+                    .expect("stored vertex kept")
+            })
+            .collect();
+        assert!(positions.windows(2).all(|w| w[0] < w[1]));
+        assert_eq!(rough.0[0].holes.len(), 1);
+    }
+
+    #[test]
+    fn displacement_stays_within_the_amount() {
+        let amount = 6.0;
+        let rough = roughen(
+            &MultiPolygon(vec![Polygon {
+                exterior: square(1000.0),
+                holes: vec![],
+            }]),
+            &Roughness::new(amount, 50.0, 3),
+        );
+        // Each level adds at most its amplitude, which halves, so the total stays under 2x.
+        for p in &rough.0[0].exterior {
+            let distance = p[0]
+                .abs()
+                .min((p[0] - 1000.0).abs())
+                .min(p[1].abs())
+                .min((p[1] - 1000.0).abs());
+            assert!(
+                distance <= 2.0 * amount,
+                "{p:?} is {distance} from the square"
+            );
+        }
+    }
+
+    #[test]
+    fn seeds_give_different_coastlines() {
+        let outline = island();
+        let a = roughen(&outline, &Roughness::new(8.0, 32.0, 1));
+        let b = roughen(&outline, &Roughness::new(8.0, 32.0, 2));
+        assert_ne!(a, b);
+        assert_eq!(a, roughen(&outline, &Roughness::new(8.0, 32.0, 1)));
+    }
+
+    #[test]
+    fn moving_a_node_changes_only_its_edges() {
+        let settings = Roughness::new(8.0, 32.0, 9);
+        let ring = vec![
+            [0.0, 0.0],
+            [300.0, 0.0],
+            [300.0, 300.0],
+            [150.0, 400.0],
+            [0.0, 300.0],
+        ];
+        let mut moved = ring.clone();
+        moved[3] = [150.0, 450.0];
+        let before = roughen_ring(&ring, &settings);
+        let after = roughen_ring(&moved, &settings);
+        // Up to and including [300, 300], the edges before the moved node are untouched.
+        let end = before.iter().position(|p| *p == [300.0, 300.0]).unwrap();
+        assert_eq!(before[..=end], after[..=end]);
+    }
+
+    #[test]
+    fn an_edge_gets_the_same_detail_in_either_direction() {
+        let settings = Roughness::new(8.0, 32.0, 4);
+        let (a, b) = ([10.0, 20.0], [310.0, 95.0]);
+        let mut forward = Vec::new();
+        roughen_edge(a, b, &settings, &mut forward);
+        let mut backward = Vec::new();
+        roughen_edge(b, a, &settings, &mut backward);
+        backward.reverse();
+        assert_eq!(forward, backward);
+    }
+}

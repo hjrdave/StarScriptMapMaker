@@ -78,6 +78,13 @@ input_file: crates/core/tests/scripts/transactions.json
             },
             "width": 1000
           },
+          "defaults": {
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            }
+          },
           "layers": [
             {
               "id": "00000000-0000-7000-8000-000000000001",
@@ -156,6 +163,13 @@ input_file: crates/core/tests/scripts/transactions.json
             },
             "width": 1000
           },
+          "defaults": {
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            }
+          },
           "layers": [
             {
               "id": "00000000-0000-7000-8000-000000000001",
@@ -202,6 +216,13 @@ input_file: crates/core/tests/scripts/transactions.json
               "unit": "miles"
             },
             "width": 1000
+          },
+          "defaults": {
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            }
           },
           "layers": [
             {
@@ -281,6 +302,13 @@ input_file: crates/core/tests/scripts/transactions.json
         "unit": "miles"
       },
       "width": 1000
+    },
+    "defaults": {
+      "roughness": {
+        "amount": 0.0,
+        "scale": 32.0,
+        "seed": 0
+      }
     },
     "layers": [
       {

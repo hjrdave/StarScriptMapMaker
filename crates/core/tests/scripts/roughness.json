@@ -1,0 +1,24 @@
+{
+  "setup": [
+    {"op": "insert", "parent": null, "index": 0, "subtree": {"id": "00000000-0000-7000-8000-000000000001", "type": "layer", "name": "Land", "visible": true, "locked": false, "opacity": 1.0}},
+    {"op": "insert", "parent": "00000000-0000-7000-8000-000000000001", "index": 0, "subtree": {"id": "00000000-0000-7000-8000-000000000002", "type": "object", "locked": false, "kind": {"kind": "landmass", "geometry": [{"exterior": [[0, 0], [100, 0], [100, 100]]}]}}},
+    {"op": "insert", "parent": "00000000-0000-7000-8000-000000000001", "index": 1, "subtree": {"id": "00000000-0000-7000-8000-000000000003", "type": "object", "locked": false, "kind": {"kind": "lake", "geometry": [{"exterior": [[10, 10], [20, 10], [20, 20]]}]}}},
+    {"op": "insert", "parent": "00000000-0000-7000-8000-000000000001", "index": 2, "subtree": {"id": "00000000-0000-7000-8000-000000000004", "type": "object", "locked": true, "kind": {"kind": "landmass", "geometry": [{"exterior": [[200, 0], [300, 0], [300, 100]]}]}}},
+    {"op": "insert", "parent": "00000000-0000-7000-8000-000000000001", "index": 3, "subtree": {"id": "00000000-0000-7000-8000-000000000005", "type": "object", "locked": false, "kind": {"kind": "stamp"}}}
+  ],
+  "steps": [
+    {"step": {"command": "set_default_roughness", "roughness": {"amount": 4, "scale": 40, "seed": 7}}},
+    {"step": {"command": "set_roughness", "ids": ["00000000-0000-7000-8000-000000000002", "00000000-0000-7000-8000-000000000003"], "roughness": {"amount": 2.5, "scale": 16, "seed": 1}}},
+    "snapshot",
+    {"step": {"command": "set_roughness", "ids": ["00000000-0000-7000-8000-000000000002"], "roughness": null}},
+    {"step": {"command": "set_roughness", "ids": ["00000000-0000-7000-8000-000000000002", "00000000-0000-7000-8000-000000000004"], "roughness": {"amount": 1, "scale": 8, "seed": 2}}},
+    {"step": {"command": "set_roughness", "ids": ["00000000-0000-7000-8000-000000000005"], "roughness": {"amount": 1, "scale": 8, "seed": 2}}},
+    {"step": {"command": "set_roughness", "ids": ["00000000-0000-7000-8000-000000000001"], "roughness": null}},
+    {"step": {"command": "set_roughness", "ids": ["00000000-0000-7000-8000-000000000002"], "roughness": {"amount": -1, "scale": 8, "seed": 2}}},
+    {"step": {"command": "set_default_roughness", "roughness": {"amount": 1, "scale": 0, "seed": 2}}},
+    "snapshot",
+    "undo",
+    "undo",
+    "undo"
+  ]
+}
