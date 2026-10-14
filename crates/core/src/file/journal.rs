@@ -32,7 +32,7 @@ pub enum JournalBase {
     /// The Map file beside the journal, as of the save that stamped `generation`.
     File { generation: Uuid },
     /// A Map never saved, as it was when the editor opened it.
-    Unsaved { map: MapView },
+    Unsaved { map: Box<MapView> },
 }
 
 #[derive(Serialize, Deserialize)]

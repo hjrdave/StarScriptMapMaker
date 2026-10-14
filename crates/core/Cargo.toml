@@ -8,6 +8,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+geo.workspace = true
 rstar.workspace = true
 directories.workspace = true
 rusqlite.workspace = true

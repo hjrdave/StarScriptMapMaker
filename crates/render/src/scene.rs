@@ -2,17 +2,21 @@
 //! edits so only what changed is rebuilt. Roughened outlines come from the caller's
 //! [`RoughnessCache`], which picking shares.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use lyon::math::point;
 use lyon::path::Path;
-use ssmap_core::{Id, Label, Map, Node, ObjectKind, Polygon, RoughnessCache};
+use ssmap_core::land;
+use ssmap_core::{
+    Id, Label, Map, MultiPolygon, Node, ObjectKind, Polygon, RoughnessCache, ShoreStyle,
+};
 
 use crate::canvas::Content;
+use crate::color::Color;
 use crate::color::ColorExt as _;
 use crate::text::{Fonts, LabelLayout, LayoutKey};
-use crate::vector::{FillRule, VectorGroup};
+use crate::vector::{FillRule, Paint, VectorGroup, VectorShape};
 
 /// The Map's drawn Objects and the derived data behind them. The editor keeps one per open
 /// Map; export builds its own.
@@ -48,7 +52,26 @@ impl MapScene {
         }
         let mut groups = Vec::new();
         let mut seen = Vec::new();
-        for id in map.draw_order() {
+        let order = map.draw_order();
+        // Each Layer's ripples draw beneath every fill of that Layer, so they never cover
+        // land of that Layer.
+        let mut rippled = HashSet::new();
+        for &id in &order {
+            if let Some(layer) = map.parent(id)
+                && map.shore(id).is_some()
+                && rippled.insert(layer)
+            {
+                for &sibling in order
+                    .iter()
+                    .filter(|&&other| map.parent(other) == Some(layer))
+                {
+                    if let (Some(shore), Some(outline)) =
+                        (map.shore(sibling), roughness.outline(map, sibling))
+                    {
+                        ripple_groups(&outline, shore, layer_opacity(map, sibling), &mut groups);
+                    }
+                }
+            }
             self.draw(map, roughness, id, &mut groups, &mut seen);
         }
         self.layouts.retain(|id, _| seen.contains(id));
@@ -100,6 +123,17 @@ impl MapScene {
                 groups.extend(outline.0.iter().map(|polygon| {
                     VectorGroup::fill(polygon_path(polygon), color, FillRule::EvenOdd)
                 }));
+                if let Some(shore) = map.shore(id) {
+                    shading_groups(&outline, shore, opacity, groups);
+                    if shore.outline.width > 0.0 {
+                        groups.push(stroke(
+                            region_path(&outline),
+                            shore.outline.color,
+                            shore.outline.width as f32,
+                            opacity,
+                        ));
+                    }
+                }
             }
         }
     }
@@ -113,6 +147,96 @@ fn layer_opacity(map: &Map, id: Id) -> f32 {
             _ => None,
         })
         .product()
+}
+
+fn stroke(path: Path, color: Color, width: f32, opacity: f32) -> VectorGroup {
+    VectorGroup {
+        shapes: vec![VectorShape {
+            path,
+            color: color.faded(opacity),
+            paint: Paint::Stroke { width },
+        }],
+    }
+}
+
+/// A colour with its alpha scaled by `factor`.
+fn faded(mut color: Color, factor: f64) -> Color {
+    color.a = (f64::from(color.a) * factor.clamp(0.0, 1.0)).round() as u8;
+    color
+}
+
+/// Lines stepping outward from the coast, each fainter than the last.
+fn ripple_groups(
+    outline: &MultiPolygon,
+    shore: &ShoreStyle,
+    opacity: f32,
+    groups: &mut Vec<VectorGroup>,
+) {
+    let ripples = &shore.ripples;
+    if ripples.count == 0 || ripples.width <= 0.0 {
+        return;
+    }
+    for k in 1..=ripples.count {
+        let along = if ripples.count > 1 {
+            f64::from(k - 1) / f64::from(ripples.count - 1)
+        } else {
+            0.0
+        };
+        let ring = land::offset(outline, ripples.spacing * f64::from(k));
+        groups.push(stroke(
+            region_path(&ring),
+            faded(ripples.color, 1.0 - ripples.fade * along),
+            ripples.width as f32,
+            opacity,
+        ));
+    }
+}
+
+/// How many bands approximate the inward glow.
+const SHADING_BANDS: u32 = 6;
+
+/// A glow inward from the coast: bands along rings inset from it, each fainter than the last.
+fn shading_groups(
+    outline: &MultiPolygon,
+    shore: &ShoreStyle,
+    opacity: f32,
+    groups: &mut Vec<VectorGroup>,
+) {
+    let shading = &shore.shading;
+    if shading.width <= 0.0 || shading.color.a == 0 {
+        return;
+    }
+    let band = shading.width / f64::from(SHADING_BANDS);
+    for i in 0..SHADING_BANDS {
+        let middle = (f64::from(i) + 0.5) / f64::from(SHADING_BANDS);
+        let ring = land::offset(outline, -middle * shading.width);
+        if ring.is_empty() {
+            break;
+        }
+        groups.push(stroke(
+            region_path(&ring),
+            faded(shading.color, 1.0 - middle),
+            band as f32,
+            opacity,
+        ));
+    }
+}
+
+/// Every ring of a region as closed subpaths of one path.
+fn region_path(region: &MultiPolygon) -> Path {
+    let mut builder = Path::builder();
+    for ring in region.0.iter().flat_map(Polygon::rings) {
+        let mut points = ring.iter().map(|&[x, y]| point(x as f32, y as f32));
+        let Some(first) = points.next() else {
+            continue;
+        };
+        builder.begin(first);
+        for p in points {
+            builder.line_to(p);
+        }
+        builder.close();
+    }
+    builder.build()
 }
 
 fn polygon_path(polygon: &Polygon) -> Path {

@@ -22,6 +22,7 @@ ssmap-fonts.workspace = true
 eframe.workspace = true
 egui-file-dialog.workspace = true
 image.workspace = true
+lyon.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
 

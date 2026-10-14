@@ -10,12 +10,14 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::color::Color;
-use crate::geometry::{Affine, MultiPolygon};
+use crate::geometry::{Affine, MultiPolygon, NodeRef, Point};
 use crate::id::Id;
+use crate::land;
 use crate::map::{Map, MapDefaults, Subtree};
 use crate::node::{Label, Lake, Landmass, Layer, Node, Object, ObjectKind};
 use crate::op::{Op, OpError, Property};
 use crate::roughness::Roughness;
+use crate::shore::{ShoreKind, ShoreStyle};
 
 /// One edit to a Map. Commands name every id they touch or create, so replaying one gives
 /// the same Map every time.
@@ -93,6 +95,54 @@ pub enum Command {
         ids: Vec<Id>,
         transform: Affine,
     },
+    /// Adds `region` to the outline of a Landmass or Lake, as a land brush or lasso stroke
+    /// does. Parts it joins become one part; a hole it covers fills in.
+    AddRegion {
+        id: Id,
+        region: MultiPolygon,
+    },
+    /// Cuts `region` out of the outlines of Landmasses and Lakes. One it splits keeps every
+    /// part, one it leaves with nothing is deleted (clearing Clips to it), and one it misses
+    /// is left alone.
+    SubtractRegion {
+        ids: Vec<Id>,
+        region: MultiPolygon,
+    },
+    /// Moves nodes of a Landmass or Lake by `offset` Canvas units. If that makes the outline
+    /// cross itself, it is repaired.
+    MoveNodes {
+        id: Id,
+        nodes: Vec<NodeRef>,
+        offset: [f64; 2],
+    },
+    /// Adds a node at `point` on the edge that runs from `edge` to the next point of its ring.
+    InsertNode {
+        id: Id,
+        edge: NodeRef,
+        point: Point,
+    },
+    /// Deletes nodes. A ring cannot be left with fewer than three points.
+    DeleteNodes {
+        id: Id,
+        nodes: Vec<NodeRef>,
+    },
+    /// Merges Landmasses into one outline. The result keeps the topmost one's id, place and
+    /// properties; the others are removed, and Layers clipped to them clip to the result.
+    Union {
+        ids: Vec<Id>,
+    },
+    /// Cuts the topmost of the Landmasses out of the others and removes it. A Landmass left
+    /// with nothing is deleted, clearing Clips to it.
+    Subtract {
+        ids: Vec<Id>,
+    },
+    /// Turns each part of a Landmass into a Landmass of its own, in the same Layer. The first
+    /// part keeps `id`; `new_ids` name the rest, in order, so there must be one fewer than
+    /// there are parts.
+    SplitApart {
+        id: Id,
+        new_ids: Vec<Id>,
+    },
     /// Sets the fill colour of Landmasses and Lakes.
     SetFill {
         ids: Vec<Id>,
@@ -107,6 +157,17 @@ pub enum Command {
     /// Sets the Roughness of every Landmass and Lake without its own.
     SetDefaultRoughness {
         roughness: Roughness,
+    },
+    /// Sets the Shore style of Landmasses and Lakes, or with `None` returns them to the
+    /// Map-wide default for their kind.
+    SetShore {
+        ids: Vec<Id>,
+        shore: Option<ShoreStyle>,
+    },
+    /// Sets the Map-wide Shore style of every Landmass, or every Lake, without its own.
+    SetDefaultShore {
+        kind: ShoreKind,
+        shore: ShoreStyle,
     },
     /// Places a Label with the given id inside Layer `parent`. `index` counts from the bottom
     /// of the Stacking order; omitted, the Label goes on top.
@@ -144,6 +205,18 @@ pub enum CommandError {
     NoOutline(Id),
     #[error("the outline of {id} is invalid: {problem}")]
     InvalidGeometry { id: Id, problem: String },
+    #[error("cannot edit the nodes of {id}: {problem}")]
+    NodeEdit { id: Id, problem: String },
+    #[error("{0} is not a Landmass")]
+    NotALandmass(Id),
+    #[error("{command} needs at least two Landmasses")]
+    NeedsTwoLandmasses { command: &'static str },
+    #[error("{id} has {parts} parts, so Split Apart needs {} new ids, not {got}", .parts - 1)]
+    SplitIds { id: Id, parts: usize, got: usize },
+    #[error("{0} is already one part")]
+    NothingToSplit(Id),
+    #[error("the Shore style is invalid: {0}")]
+    InvalidShore(String),
     #[error("the transform {0:?} is not finite or collapses shapes")]
     InvalidTransform([f64; 6]),
     #[error("Roughness needs an amount of 0 or more and a scale above 0, not {amount} and {scale}")]
@@ -171,9 +244,19 @@ impl Command {
             Command::CreateLake { .. } => "Create Lake",
             Command::Translate { .. } => "Move",
             Command::Transform { .. } => "Transform",
+            Command::AddRegion { .. } => "Add Region",
+            Command::SubtractRegion { .. } => "Subtract Region",
+            Command::MoveNodes { .. } => "Move Nodes",
+            Command::InsertNode { .. } => "Add Node",
+            Command::DeleteNodes { .. } => "Delete Nodes",
+            Command::Union { .. } => "Union",
+            Command::Subtract { .. } => "Subtract",
+            Command::SplitApart { .. } => "Split Apart",
             Command::SetFill { .. } => "Change Fill",
             Command::SetRoughness { .. } => "Change Roughness",
             Command::SetDefaultRoughness { .. } => "Change Default Roughness",
+            Command::SetShore { .. } => "Change Shore Style",
+            Command::SetDefaultShore { .. } => "Change Default Shore Style",
             Command::CreateLabel { .. } => "Add Label",
             Command::SetLabel { .. } => "Edit Label",
         }
@@ -272,6 +355,53 @@ impl Command {
             }
             Command::Translate { ids, offset } => transform(map, ids, &Affine::translate(*offset)),
             Command::Transform { ids, transform: t } => transform(map, ids, t),
+            Command::AddRegion { id, region } => {
+                let [id] = outlined(map, &[*id])?[..] else {
+                    unreachable!("one id in, one id out")
+                };
+                valid_region(id, region)?;
+                let geometry = land::union(outline(map, id), region);
+                if let Some(problem) = geometry.problem() {
+                    return Err(CommandError::InvalidGeometry { id, problem });
+                }
+                Ok(vec![Op::ReplaceGeometry { id, geometry }])
+            }
+            Command::SubtractRegion { ids, region } => {
+                let ids = outlined(map, ids)?;
+                if let Some(&first) = ids.first() {
+                    valid_region(first, region)?;
+                }
+                let mut ops = Vec::new();
+                let mut emptied = Vec::new();
+                for id in ids {
+                    let current = outline(map, id);
+                    if !land::intersects(current, region) {
+                        continue;
+                    }
+                    let geometry = land::difference(current, region);
+                    if geometry.is_empty() {
+                        emptied.push(id);
+                    } else {
+                        ops.push(Op::ReplaceGeometry { id, geometry });
+                    }
+                }
+                if !emptied.is_empty() {
+                    ops.extend(delete(map, &emptied)?);
+                }
+                Ok(ops)
+            }
+            Command::MoveNodes { id, nodes, offset } => node_edit(map, *id, |outline| {
+                land::move_nodes(outline, nodes, *offset)
+            }),
+            Command::InsertNode { id, edge, point } => node_edit(map, *id, |outline| {
+                land::insert_node(outline, *edge, *point)
+            }),
+            Command::DeleteNodes { id, nodes } => {
+                node_edit(map, *id, |outline| land::delete_nodes(outline, nodes))
+            }
+            Command::Union { ids } => union_landmasses(map, ids),
+            Command::Subtract { ids } => subtract_landmasses(map, ids),
+            Command::SplitApart { id, new_ids } => split_apart(map, *id, new_ids),
             Command::SetFill { ids, fill } => {
                 let ids = outlined(map, ids)?;
                 Ok(ids
@@ -288,6 +418,27 @@ impl Command {
                     .into_iter()
                     .map(|id| set(id, Property::Roughness(roughness.clone())))
                     .collect())
+            }
+            Command::SetShore { ids, shore } => {
+                if let Some(problem) = shore.as_ref().and_then(ShoreStyle::problem) {
+                    return Err(CommandError::InvalidShore(problem));
+                }
+                let ids = outlined(map, ids)?;
+                Ok(ids
+                    .into_iter()
+                    .map(|id| set(id, Property::Shore(shore.clone())))
+                    .collect())
+            }
+            Command::SetDefaultShore { kind, shore } => {
+                if let Some(problem) = shore.problem() {
+                    return Err(CommandError::InvalidShore(problem));
+                }
+                let mut defaults = map.defaults().clone();
+                match kind {
+                    ShoreKind::Landmass => defaults.shore = shore.clone(),
+                    ShoreKind::Lake => defaults.lake_shore = shore.clone(),
+                }
+                Ok(vec![Op::SetDefaults { defaults }])
             }
             Command::SetDefaultRoughness { roughness } => {
                 valid_roughness(roughness)?;
@@ -461,6 +612,154 @@ fn transform(map: &Map, ids: &[Id], transform: &Affine) -> Result<Vec<Op>, Comma
     Ok(ops)
 }
 
+/// The distinct, unlocked Landmasses among `ids`, topmost first.
+fn landmasses_topmost_first(
+    map: &Map,
+    ids: &[Id],
+    command: &'static str,
+) -> Result<Vec<Id>, CommandError> {
+    let ids = outlined(map, ids)?;
+    for &id in &ids {
+        if !matches!(map.node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Landmass(_)))
+        {
+            return Err(CommandError::NotALandmass(id));
+        }
+    }
+    if ids.len() < 2 {
+        return Err(CommandError::NeedsTwoLandmasses { command });
+    }
+    let order = map.draw_order();
+    let rank = |id: Id| order.iter().position(|&o| o == id);
+    let mut ids = ids;
+    ids.sort_by_key(|&id| std::cmp::Reverse(rank(id)));
+    Ok(ids)
+}
+
+fn union_landmasses(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
+    let ids = landmasses_topmost_first(map, ids, "Union")?;
+    let (&keeper, others) = ids.split_first().expect("two or more");
+    let mut geometry = outline(map, keeper).clone();
+    for &other in others {
+        geometry = land::union(&geometry, outline(map, other));
+    }
+    if let Some(problem) = geometry.problem() {
+        return Err(CommandError::InvalidGeometry {
+            id: keeper,
+            problem,
+        });
+    }
+    let mut ops = vec![Op::ReplaceGeometry {
+        id: keeper,
+        geometry,
+    }];
+    let mut clipped: Vec<Id> = map
+        .ids()
+        .filter(|&id| matches!(map.node(id), Some(Node::Layer(l)) if l.clip.is_some_and(|c| others.contains(&c))))
+        .collect();
+    clipped.sort();
+    for id in clipped {
+        unlocked(map, id)?;
+        ops.push(set(id, Property::Clip(Some(keeper))));
+    }
+    ops.extend(others.iter().map(|&id| Op::Remove { id }));
+    Ok(ops)
+}
+
+fn subtract_landmasses(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
+    let ids = landmasses_topmost_first(map, ids, "Subtract")?;
+    let (&cutter, targets) = ids.split_first().expect("two or more");
+    let region = outline(map, cutter).clone();
+    let mut ops = Vec::new();
+    let mut gone = vec![cutter];
+    for &id in targets {
+        let current = outline(map, id);
+        if !land::intersects(current, &region) {
+            continue;
+        }
+        let geometry = land::difference(current, &region);
+        if geometry.is_empty() {
+            gone.push(id);
+        } else {
+            ops.push(Op::ReplaceGeometry { id, geometry });
+        }
+    }
+    ops.extend(delete(map, &gone)?);
+    Ok(ops)
+}
+
+fn split_apart(map: &Map, id: Id, new_ids: &[Id]) -> Result<Vec<Op>, CommandError> {
+    let [id] = outlined(map, &[id])?[..] else {
+        unreachable!("one id in, one id out")
+    };
+    let Some(Node::Object(object)) = map.node(id) else {
+        unreachable!("checked")
+    };
+    let ObjectKind::Landmass(landmass) = &object.kind else {
+        return Err(CommandError::NotALandmass(id));
+    };
+    let parts = &landmass.geometry.0;
+    if parts.len() < 2 {
+        return Err(CommandError::NothingToSplit(id));
+    }
+    if new_ids.len() != parts.len() - 1 {
+        return Err(CommandError::SplitIds {
+            id,
+            parts: parts.len(),
+            got: new_ids.len(),
+        });
+    }
+    for (i, &new) in new_ids.iter().enumerate() {
+        if map.contains(new) || new == id || new_ids[..i].contains(&new) {
+            return Err(CommandError::IdInUse(new));
+        }
+    }
+    let parent = map.parent(id).expect("Objects live in Layers");
+    let position = map
+        .children(Some(parent))
+        .iter()
+        .position(|&c| c == id)
+        .expect("a node is listed by its parent");
+    let mut ops = vec![Op::ReplaceGeometry {
+        id,
+        geometry: MultiPolygon(vec![parts[0].clone()]),
+    }];
+    for (k, (&new, part)) in new_ids.iter().zip(&parts[1..]).enumerate() {
+        let mut copy = object.clone();
+        if let ObjectKind::Landmass(l) = &mut copy.kind {
+            l.geometry = MultiPolygon(vec![part.clone()]);
+        }
+        ops.push(Op::Insert {
+            parent: Some(parent),
+            index: position + 1 + k,
+            subtree: Subtree {
+                id: new,
+                node: Node::Object(copy),
+                children: Vec::new(),
+            },
+        });
+    }
+    Ok(ops)
+}
+
+/// Replaces the outline of one Landmass or Lake with the result of a node edit.
+fn node_edit(
+    map: &Map,
+    id: Id,
+    edit: impl FnOnce(&MultiPolygon) -> Result<MultiPolygon, land::NodeEditError>,
+) -> Result<Vec<Op>, CommandError> {
+    let [id] = outlined(map, &[id])?[..] else {
+        unreachable!("one id in, one id out")
+    };
+    let geometry = edit(outline(map, id)).map_err(|e| CommandError::NodeEdit {
+        id,
+        problem: e.to_string(),
+    })?;
+    if let Some(problem) = geometry.problem() {
+        return Err(CommandError::InvalidGeometry { id, problem });
+    }
+    Ok(vec![Op::ReplaceGeometry { id, geometry }])
+}
+
 /// Checks that every id is an unlocked Landmass or Lake, and drops repeats.
 fn outlined(map: &Map, ids: &[Id]) -> Result<Vec<Id>, CommandError> {
     let mut seen = HashSet::new();
@@ -483,6 +782,18 @@ fn outline(map: &Map, id: Id) -> &MultiPolygon {
     match map.node(id) {
         Some(Node::Object(object)) => object.kind.geometry().expect("checked"),
         _ => unreachable!("checked"),
+    }
+}
+
+/// A region to add or subtract must itself be a valid outline. Errors name `id`, the Object
+/// being edited.
+fn valid_region(id: Id, region: &MultiPolygon) -> Result<(), CommandError> {
+    match region.problem() {
+        Some(problem) => Err(CommandError::InvalidGeometry {
+            id,
+            problem: format!("the region: {problem}"),
+        }),
+        None => Ok(()),
     }
 }
 

@@ -1,0 +1,1937 @@
+---
+source: crates/core/tests/scripts.rs
+expression: run(script)
+input_file: crates/core/tests/scripts/boolean_commands.json
+---
+{
+  "log": [
+    {
+      "outcome": {
+        "error": "Union needs at least two Landmasses"
+      },
+      "step": {
+        "step": {
+          "command": "union",
+          "ids": [
+            "00000000-0000-7000-8000-000000000011"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000014 is not a Landmass"
+      },
+      "step": {
+        "step": {
+          "command": "union",
+          "ids": [
+            "00000000-0000-7000-8000-000000000011",
+            "00000000-0000-7000-8000-000000000014"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "union",
+          "ids": [
+            "00000000-0000-7000-8000-000000000011",
+            "00000000-0000-7000-8000-000000000012"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "defaults": {
+            "lake_shore": {
+              "outline": {
+                "color": "#3a6a8a",
+                "width": 1.0
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 0,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#2a5a7a60",
+                "width": 8.0
+              }
+            },
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            },
+            "shore": {
+              "outline": {
+                "color": "#5a4628",
+                "width": 1.5
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 3,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#8a6a3870",
+                "width": 18.0
+              }
+            }
+          },
+          "layers": [
+            {
+              "children": [
+                {
+                  "id": "00000000-0000-7000-8000-000000000012",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            0.0,
+                            100.0
+                          ],
+                          [
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            100.0,
+                            0.0
+                          ],
+                          [
+                            100.0,
+                            20.0
+                          ],
+                          [
+                            180.0,
+                            20.0
+                          ],
+                          [
+                            180.0,
+                            80.0
+                          ],
+                          [
+                            100.0,
+                            80.0
+                          ],
+                          [
+                            100.0,
+                            100.0
+                          ]
+                        ],
+                        "holes": [
+                          [
+                            [
+                              40.0,
+                              40.0
+                            ],
+                            [
+                              40.0,
+                              60.0
+                            ],
+                            [
+                              60.0,
+                              60.0
+                            ],
+                            [
+                              60.0,
+                              40.0
+                            ]
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000013",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            300.0,
+                            0.0
+                          ],
+                          [
+                            400.0,
+                            0.0
+                          ],
+                          [
+                            400.0,
+                            100.0
+                          ],
+                          [
+                            300.0,
+                            100.0
+                          ]
+                        ]
+                      },
+                      {
+                        "exterior": [
+                          [
+                            500.0,
+                            0.0
+                          ],
+                          [
+                            600.0,
+                            0.0
+                          ],
+                          [
+                            600.0,
+                            100.0
+                          ],
+                          [
+                            500.0,
+                            100.0
+                          ]
+                        ]
+                      },
+                      {
+                        "exterior": [
+                          [
+                            700.0,
+                            0.0
+                          ],
+                          [
+                            800.0,
+                            0.0
+                          ],
+                          [
+                            800.0,
+                            100.0
+                          ],
+                          [
+                            700.0,
+                            100.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000014",
+                  "kind": {
+                    "fill": "#6fa8c8",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            10.0,
+                            10.0
+                          ],
+                          [
+                            20.0,
+                            10.0
+                          ],
+                          [
+                            20.0,
+                            20.0
+                          ],
+                          [
+                            10.0,
+                            20.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "lake"
+                  },
+                  "locked": false,
+                  "type": "object"
+                }
+              ],
+              "id": "00000000-0000-7000-8000-000000000010",
+              "locked": false,
+              "name": "Land",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            },
+            {
+              "clip": "00000000-0000-7000-8000-000000000012",
+              "id": "00000000-0000-7000-8000-000000000020",
+              "locked": false,
+              "name": "Forest",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "union",
+          "ids": [
+            "00000000-0000-7000-8000-000000000012",
+            "00000000-0000-7000-8000-000000000011"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "defaults": {
+            "lake_shore": {
+              "outline": {
+                "color": "#3a6a8a",
+                "width": 1.0
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 0,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#2a5a7a60",
+                "width": 8.0
+              }
+            },
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            },
+            "shore": {
+              "outline": {
+                "color": "#5a4628",
+                "width": 1.5
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 3,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#8a6a3870",
+                "width": 18.0
+              }
+            }
+          },
+          "layers": [
+            {
+              "children": [
+                {
+                  "id": "00000000-0000-7000-8000-000000000012",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            0.0,
+                            100.0
+                          ],
+                          [
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            100.0,
+                            0.0
+                          ],
+                          [
+                            100.0,
+                            20.0
+                          ],
+                          [
+                            180.0,
+                            20.0
+                          ],
+                          [
+                            180.0,
+                            80.0
+                          ],
+                          [
+                            100.0,
+                            80.0
+                          ],
+                          [
+                            100.0,
+                            100.0
+                          ]
+                        ],
+                        "holes": [
+                          [
+                            [
+                              40.0,
+                              40.0
+                            ],
+                            [
+                              40.0,
+                              60.0
+                            ],
+                            [
+                              60.0,
+                              60.0
+                            ],
+                            [
+                              60.0,
+                              40.0
+                            ]
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000013",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            300.0,
+                            0.0
+                          ],
+                          [
+                            400.0,
+                            0.0
+                          ],
+                          [
+                            400.0,
+                            100.0
+                          ],
+                          [
+                            300.0,
+                            100.0
+                          ]
+                        ]
+                      },
+                      {
+                        "exterior": [
+                          [
+                            500.0,
+                            0.0
+                          ],
+                          [
+                            600.0,
+                            0.0
+                          ],
+                          [
+                            600.0,
+                            100.0
+                          ],
+                          [
+                            500.0,
+                            100.0
+                          ]
+                        ]
+                      },
+                      {
+                        "exterior": [
+                          [
+                            700.0,
+                            0.0
+                          ],
+                          [
+                            800.0,
+                            0.0
+                          ],
+                          [
+                            800.0,
+                            100.0
+                          ],
+                          [
+                            700.0,
+                            100.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000014",
+                  "kind": {
+                    "fill": "#6fa8c8",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            10.0,
+                            10.0
+                          ],
+                          [
+                            20.0,
+                            10.0
+                          ],
+                          [
+                            20.0,
+                            20.0
+                          ],
+                          [
+                            10.0,
+                            20.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "lake"
+                  },
+                  "locked": false,
+                  "type": "object"
+                }
+              ],
+              "id": "00000000-0000-7000-8000-000000000010",
+              "locked": false,
+              "name": "Land",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            },
+            {
+              "clip": "00000000-0000-7000-8000-000000000012",
+              "id": "00000000-0000-7000-8000-000000000020",
+              "locked": false,
+              "name": "Forest",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "subtract",
+          "ids": [
+            "00000000-0000-7000-8000-000000000011",
+            "00000000-0000-7000-8000-000000000012"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "defaults": {
+            "lake_shore": {
+              "outline": {
+                "color": "#3a6a8a",
+                "width": 1.0
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 0,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#2a5a7a60",
+                "width": 8.0
+              }
+            },
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            },
+            "shore": {
+              "outline": {
+                "color": "#5a4628",
+                "width": 1.5
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 3,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#8a6a3870",
+                "width": 18.0
+              }
+            }
+          },
+          "layers": [
+            {
+              "children": [
+                {
+                  "id": "00000000-0000-7000-8000-000000000011",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            0.0,
+                            100.0
+                          ],
+                          [
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            100.0,
+                            0.0
+                          ],
+                          [
+                            100.0,
+                            20.0
+                          ],
+                          [
+                            80.0,
+                            20.0
+                          ],
+                          [
+                            80.0,
+                            80.0
+                          ],
+                          [
+                            100.0,
+                            80.0
+                          ],
+                          [
+                            100.0,
+                            100.0
+                          ]
+                        ],
+                        "holes": [
+                          [
+                            [
+                              40.0,
+                              40.0
+                            ],
+                            [
+                              40.0,
+                              60.0
+                            ],
+                            [
+                              60.0,
+                              60.0
+                            ],
+                            [
+                              60.0,
+                              40.0
+                            ]
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000013",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            300.0,
+                            0.0
+                          ],
+                          [
+                            400.0,
+                            0.0
+                          ],
+                          [
+                            400.0,
+                            100.0
+                          ],
+                          [
+                            300.0,
+                            100.0
+                          ]
+                        ]
+                      },
+                      {
+                        "exterior": [
+                          [
+                            500.0,
+                            0.0
+                          ],
+                          [
+                            600.0,
+                            0.0
+                          ],
+                          [
+                            600.0,
+                            100.0
+                          ],
+                          [
+                            500.0,
+                            100.0
+                          ]
+                        ]
+                      },
+                      {
+                        "exterior": [
+                          [
+                            700.0,
+                            0.0
+                          ],
+                          [
+                            800.0,
+                            0.0
+                          ],
+                          [
+                            800.0,
+                            100.0
+                          ],
+                          [
+                            700.0,
+                            100.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000014",
+                  "kind": {
+                    "fill": "#6fa8c8",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            10.0,
+                            10.0
+                          ],
+                          [
+                            20.0,
+                            10.0
+                          ],
+                          [
+                            20.0,
+                            20.0
+                          ],
+                          [
+                            10.0,
+                            20.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "lake"
+                  },
+                  "locked": false,
+                  "type": "object"
+                }
+              ],
+              "id": "00000000-0000-7000-8000-000000000010",
+              "locked": false,
+              "name": "Land",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            },
+            {
+              "clip": "00000000-0000-7000-8000-000000000011",
+              "id": "00000000-0000-7000-8000-000000000020",
+              "locked": false,
+              "name": "Forest",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_locked",
+          "id": "00000000-0000-7000-8000-000000000012",
+          "locked": true
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000012 is locked"
+      },
+      "step": {
+        "step": {
+          "command": "subtract",
+          "ids": [
+            "00000000-0000-7000-8000-000000000011",
+            "00000000-0000-7000-8000-000000000012"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_locked",
+          "id": "00000000-0000-7000-8000-000000000012",
+          "locked": false
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000013 has 3 parts, so Split Apart needs 2 new ids, not 1"
+      },
+      "step": {
+        "step": {
+          "command": "split_apart",
+          "id": "00000000-0000-7000-8000-000000000013",
+          "new_ids": [
+            "00000000-0000-7000-8000-000000000031"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "split_apart",
+          "id": "00000000-0000-7000-8000-000000000013",
+          "new_ids": [
+            "00000000-0000-7000-8000-000000000031",
+            "00000000-0000-7000-8000-000000000032"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000011 is already one part"
+      },
+      "step": {
+        "step": {
+          "command": "split_apart",
+          "id": "00000000-0000-7000-8000-000000000011",
+          "new_ids": []
+        }
+      }
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "defaults": {
+            "lake_shore": {
+              "outline": {
+                "color": "#3a6a8a",
+                "width": 1.0
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 0,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#2a5a7a60",
+                "width": 8.0
+              }
+            },
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            },
+            "shore": {
+              "outline": {
+                "color": "#5a4628",
+                "width": 1.5
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 3,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#8a6a3870",
+                "width": 18.0
+              }
+            }
+          },
+          "layers": [
+            {
+              "children": [
+                {
+                  "id": "00000000-0000-7000-8000-000000000011",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            100.0,
+                            0.0
+                          ],
+                          [
+                            100.0,
+                            100.0
+                          ],
+                          [
+                            0.0,
+                            100.0
+                          ]
+                        ],
+                        "holes": [
+                          [
+                            [
+                              40.0,
+                              40.0
+                            ],
+                            [
+                              40.0,
+                              60.0
+                            ],
+                            [
+                              60.0,
+                              60.0
+                            ],
+                            [
+                              60.0,
+                              40.0
+                            ]
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000012",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            80.0,
+                            20.0
+                          ],
+                          [
+                            180.0,
+                            20.0
+                          ],
+                          [
+                            180.0,
+                            80.0
+                          ],
+                          [
+                            80.0,
+                            80.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000013",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            300.0,
+                            0.0
+                          ],
+                          [
+                            400.0,
+                            0.0
+                          ],
+                          [
+                            400.0,
+                            100.0
+                          ],
+                          [
+                            300.0,
+                            100.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000031",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            500.0,
+                            0.0
+                          ],
+                          [
+                            600.0,
+                            0.0
+                          ],
+                          [
+                            600.0,
+                            100.0
+                          ],
+                          [
+                            500.0,
+                            100.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000032",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            700.0,
+                            0.0
+                          ],
+                          [
+                            800.0,
+                            0.0
+                          ],
+                          [
+                            800.0,
+                            100.0
+                          ],
+                          [
+                            700.0,
+                            100.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000014",
+                  "kind": {
+                    "fill": "#6fa8c8",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            10.0,
+                            10.0
+                          ],
+                          [
+                            20.0,
+                            10.0
+                          ],
+                          [
+                            20.0,
+                            20.0
+                          ],
+                          [
+                            10.0,
+                            20.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "lake"
+                  },
+                  "locked": false,
+                  "type": "object"
+                }
+              ],
+              "id": "00000000-0000-7000-8000-000000000010",
+              "locked": false,
+              "name": "Land",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            },
+            {
+              "clip": "00000000-0000-7000-8000-000000000011",
+              "id": "00000000-0000-7000-8000-000000000020",
+              "locked": false,
+              "name": "Forest",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_landmass",
+          "geometry": [
+            {
+              "exterior": [
+                [
+                  1000,
+                  0
+                ],
+                [
+                  1200,
+                  0
+                ],
+                [
+                  1200,
+                  200
+                ],
+                [
+                  1000,
+                  200
+                ]
+              ]
+            }
+          ],
+          "id": "00000000-0000-7000-8000-000000000015",
+          "parent": "00000000-0000-7000-8000-000000000010"
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_landmass",
+          "geometry": [
+            {
+              "exterior": [
+                [
+                  1050,
+                  50
+                ],
+                [
+                  1150,
+                  50
+                ],
+                [
+                  1150,
+                  150
+                ],
+                [
+                  1050,
+                  150
+                ]
+              ]
+            }
+          ],
+          "id": "00000000-0000-7000-8000-000000000016",
+          "parent": "00000000-0000-7000-8000-000000000010"
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "subtract",
+          "ids": [
+            "00000000-0000-7000-8000-000000000015",
+            "00000000-0000-7000-8000-000000000016"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "defaults": {
+            "lake_shore": {
+              "outline": {
+                "color": "#3a6a8a",
+                "width": 1.0
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 0,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#2a5a7a60",
+                "width": 8.0
+              }
+            },
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            },
+            "shore": {
+              "outline": {
+                "color": "#5a4628",
+                "width": 1.5
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 3,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#8a6a3870",
+                "width": 18.0
+              }
+            }
+          },
+          "layers": [
+            {
+              "children": [
+                {
+                  "id": "00000000-0000-7000-8000-000000000011",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            0.0,
+                            0.0
+                          ],
+                          [
+                            100.0,
+                            0.0
+                          ],
+                          [
+                            100.0,
+                            100.0
+                          ],
+                          [
+                            0.0,
+                            100.0
+                          ]
+                        ],
+                        "holes": [
+                          [
+                            [
+                              40.0,
+                              40.0
+                            ],
+                            [
+                              40.0,
+                              60.0
+                            ],
+                            [
+                              60.0,
+                              60.0
+                            ],
+                            [
+                              60.0,
+                              40.0
+                            ]
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000012",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            80.0,
+                            20.0
+                          ],
+                          [
+                            180.0,
+                            20.0
+                          ],
+                          [
+                            180.0,
+                            80.0
+                          ],
+                          [
+                            80.0,
+                            80.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000013",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            300.0,
+                            0.0
+                          ],
+                          [
+                            400.0,
+                            0.0
+                          ],
+                          [
+                            400.0,
+                            100.0
+                          ],
+                          [
+                            300.0,
+                            100.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000031",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            500.0,
+                            0.0
+                          ],
+                          [
+                            600.0,
+                            0.0
+                          ],
+                          [
+                            600.0,
+                            100.0
+                          ],
+                          [
+                            500.0,
+                            100.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000032",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            700.0,
+                            0.0
+                          ],
+                          [
+                            800.0,
+                            0.0
+                          ],
+                          [
+                            800.0,
+                            100.0
+                          ],
+                          [
+                            700.0,
+                            100.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000014",
+                  "kind": {
+                    "fill": "#6fa8c8",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            10.0,
+                            10.0
+                          ],
+                          [
+                            20.0,
+                            10.0
+                          ],
+                          [
+                            20.0,
+                            20.0
+                          ],
+                          [
+                            10.0,
+                            20.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "lake"
+                  },
+                  "locked": false,
+                  "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000015",
+                  "kind": {
+                    "fill": "#d8c49a",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            1000.0,
+                            200.0
+                          ],
+                          [
+                            1000.0,
+                            0.0
+                          ],
+                          [
+                            1200.0,
+                            0.0
+                          ],
+                          [
+                            1200.0,
+                            200.0
+                          ]
+                        ],
+                        "holes": [
+                          [
+                            [
+                              1050.0,
+                              50.0
+                            ],
+                            [
+                              1050.0,
+                              150.0
+                            ],
+                            [
+                              1150.0,
+                              150.0
+                            ],
+                            [
+                              1150.0,
+                              50.0
+                            ]
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "landmass"
+                  },
+                  "locked": false,
+                  "type": "object"
+                }
+              ],
+              "id": "00000000-0000-7000-8000-000000000010",
+              "locked": false,
+              "name": "Land",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            },
+            {
+              "clip": "00000000-0000-7000-8000-000000000011",
+              "id": "00000000-0000-7000-8000-000000000020",
+              "locked": false,
+              "name": "Forest",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "redo"
+    }
+  ],
+  "redo_steps": 0,
+  "undo_steps": 6,
+  "view": {
+    "canvas": {
+      "height": 1000,
+      "scale": {
+        "distance_per_unit": 1.0,
+        "unit": "miles"
+      },
+      "width": 1000
+    },
+    "defaults": {
+      "lake_shore": {
+        "outline": {
+          "color": "#3a6a8a",
+          "width": 1.0
+        },
+        "ripples": {
+          "color": "#ffffff90",
+          "count": 0,
+          "fade": 0.6,
+          "spacing": 12.0,
+          "width": 1.5
+        },
+        "shading": {
+          "color": "#2a5a7a60",
+          "width": 8.0
+        }
+      },
+      "roughness": {
+        "amount": 0.0,
+        "scale": 32.0,
+        "seed": 0
+      },
+      "shore": {
+        "outline": {
+          "color": "#5a4628",
+          "width": 1.5
+        },
+        "ripples": {
+          "color": "#ffffff90",
+          "count": 3,
+          "fade": 0.6,
+          "spacing": 12.0,
+          "width": 1.5
+        },
+        "shading": {
+          "color": "#8a6a3870",
+          "width": 18.0
+        }
+      }
+    },
+    "layers": [
+      {
+        "children": [
+          {
+            "id": "00000000-0000-7000-8000-000000000011",
+            "kind": {
+              "fill": "#d8c49a",
+              "geometry": [
+                {
+                  "exterior": [
+                    [
+                      0.0,
+                      0.0
+                    ],
+                    [
+                      100.0,
+                      0.0
+                    ],
+                    [
+                      100.0,
+                      100.0
+                    ],
+                    [
+                      0.0,
+                      100.0
+                    ]
+                  ],
+                  "holes": [
+                    [
+                      [
+                        40.0,
+                        40.0
+                      ],
+                      [
+                        40.0,
+                        60.0
+                      ],
+                      [
+                        60.0,
+                        60.0
+                      ],
+                      [
+                        60.0,
+                        40.0
+                      ]
+                    ]
+                  ]
+                }
+              ],
+              "kind": "landmass"
+            },
+            "locked": false,
+            "type": "object"
+          },
+          {
+            "id": "00000000-0000-7000-8000-000000000012",
+            "kind": {
+              "fill": "#d8c49a",
+              "geometry": [
+                {
+                  "exterior": [
+                    [
+                      80.0,
+                      20.0
+                    ],
+                    [
+                      180.0,
+                      20.0
+                    ],
+                    [
+                      180.0,
+                      80.0
+                    ],
+                    [
+                      80.0,
+                      80.0
+                    ]
+                  ]
+                }
+              ],
+              "kind": "landmass"
+            },
+            "locked": false,
+            "type": "object"
+          },
+          {
+            "id": "00000000-0000-7000-8000-000000000013",
+            "kind": {
+              "fill": "#d8c49a",
+              "geometry": [
+                {
+                  "exterior": [
+                    [
+                      300.0,
+                      0.0
+                    ],
+                    [
+                      400.0,
+                      0.0
+                    ],
+                    [
+                      400.0,
+                      100.0
+                    ],
+                    [
+                      300.0,
+                      100.0
+                    ]
+                  ]
+                }
+              ],
+              "kind": "landmass"
+            },
+            "locked": false,
+            "type": "object"
+          },
+          {
+            "id": "00000000-0000-7000-8000-000000000031",
+            "kind": {
+              "fill": "#d8c49a",
+              "geometry": [
+                {
+                  "exterior": [
+                    [
+                      500.0,
+                      0.0
+                    ],
+                    [
+                      600.0,
+                      0.0
+                    ],
+                    [
+                      600.0,
+                      100.0
+                    ],
+                    [
+                      500.0,
+                      100.0
+                    ]
+                  ]
+                }
+              ],
+              "kind": "landmass"
+            },
+            "locked": false,
+            "type": "object"
+          },
+          {
+            "id": "00000000-0000-7000-8000-000000000032",
+            "kind": {
+              "fill": "#d8c49a",
+              "geometry": [
+                {
+                  "exterior": [
+                    [
+                      700.0,
+                      0.0
+                    ],
+                    [
+                      800.0,
+                      0.0
+                    ],
+                    [
+                      800.0,
+                      100.0
+                    ],
+                    [
+                      700.0,
+                      100.0
+                    ]
+                  ]
+                }
+              ],
+              "kind": "landmass"
+            },
+            "locked": false,
+            "type": "object"
+          },
+          {
+            "id": "00000000-0000-7000-8000-000000000014",
+            "kind": {
+              "fill": "#6fa8c8",
+              "geometry": [
+                {
+                  "exterior": [
+                    [
+                      10.0,
+                      10.0
+                    ],
+                    [
+                      20.0,
+                      10.0
+                    ],
+                    [
+                      20.0,
+                      20.0
+                    ],
+                    [
+                      10.0,
+                      20.0
+                    ]
+                  ]
+                }
+              ],
+              "kind": "lake"
+            },
+            "locked": false,
+            "type": "object"
+          },
+          {
+            "id": "00000000-0000-7000-8000-000000000015",
+            "kind": {
+              "fill": "#d8c49a",
+              "geometry": [
+                {
+                  "exterior": [
+                    [
+                      1000.0,
+                      200.0
+                    ],
+                    [
+                      1000.0,
+                      0.0
+                    ],
+                    [
+                      1200.0,
+                      0.0
+                    ],
+                    [
+                      1200.0,
+                      200.0
+                    ]
+                  ],
+                  "holes": [
+                    [
+                      [
+                        1050.0,
+                        50.0
+                      ],
+                      [
+                        1050.0,
+                        150.0
+                      ],
+                      [
+                        1150.0,
+                        150.0
+                      ],
+                      [
+                        1150.0,
+                        50.0
+                      ]
+                    ]
+                  ]
+                }
+              ],
+              "kind": "landmass"
+            },
+            "locked": false,
+            "type": "object"
+          }
+        ],
+        "id": "00000000-0000-7000-8000-000000000010",
+        "locked": false,
+        "name": "Land",
+        "opacity": 1.0,
+        "type": "layer",
+        "visible": true
+      },
+      {
+        "clip": "00000000-0000-7000-8000-000000000011",
+        "id": "00000000-0000-7000-8000-000000000020",
+        "locked": false,
+        "name": "Forest",
+        "opacity": 1.0,
+        "type": "layer",
+        "visible": true
+      }
+    ]
+  }
+}

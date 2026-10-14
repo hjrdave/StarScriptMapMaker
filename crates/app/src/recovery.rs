@@ -121,7 +121,9 @@ impl Recovery {
                 if let Some(dir) = path.parent() {
                     std::fs::create_dir_all(dir)?;
                 }
-                let base = JournalBase::Unsaved { map: map.view() };
+                let base = JournalBase::Unsaved {
+                    map: Box::new(map.view()),
+                };
                 Journal::create(&path, &base, &[])?
             }
         };

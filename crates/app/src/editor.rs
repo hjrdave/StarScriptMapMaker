@@ -4,14 +4,18 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use ssmap_core::land::{self, BrushStroke};
 use ssmap_core::{
-    Command, CommandError, ExecuteError, History, Id, Label, Map, Node, ObjectKind, Op, PickIndex,
-    RoughnessCache, Selection,
+    Command, CommandError, ExecuteError, History, Id, Label, Map, MultiPolygon, Node, NodeRef,
+    ObjectKind, Op, PickIndex, Point, RoughnessCache, Selection,
 };
 use ssmap_render::{Content, Fonts, LabelLayout, MapScene};
 
 use crate::layer_tree::node_name;
 use crate::tools::ToolId;
+
+/// The land brush's starting diameter, in Canvas units.
+pub const DEFAULT_BRUSH_SIZE: f64 = 48.0;
 
 /// How long a message stays in the status bar.
 pub const NOTICE_DURATION: Duration = Duration::from_secs(5);
@@ -26,6 +30,13 @@ pub struct Editor {
     /// The Layer new Objects go into.
     active_layer: Option<Id>,
     pub active_tool: ToolId,
+    /// The land brush's diameter, in Canvas units.
+    pub brush_size: f64,
+    node_edit: Option<NodeEdit>,
+    /// Set by a tool while it holds something Escape should drop (a lasso half drawn).
+    pub tool_busy: bool,
+    /// Set by Escape for the busy tool to act on.
+    pub cancel_tool: bool,
     notice: Option<Notice>,
     /// Set while a gesture's transaction is open.
     gesture_open: bool,
@@ -35,6 +46,14 @@ pub struct Editor {
     pick_index: Option<PickIndex>,
     /// Roughened outlines, shared by the screen and picking so they agree.
     roughness: RoughnessCache,
+}
+
+/// Node-edit mode: one Landmass or Lake whose stored vertices show as nodes, and the nodes
+/// selected among them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NodeEdit {
+    pub id: Id,
+    pub nodes: Vec<NodeRef>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -55,6 +74,10 @@ impl Editor {
             selection: Vec::new(),
             active_layer: None,
             active_tool: ToolId::Select,
+            brush_size: DEFAULT_BRUSH_SIZE,
+            node_edit: None,
+            tool_busy: false,
+            cancel_tool: false,
             notice: None,
             gesture_open: false,
             gesture_selection: Vec::new(),
@@ -74,12 +97,105 @@ impl Editor {
     /// Replaces the Selection. The active Layer follows it: a selected Layer, or the Layer
     /// holding a selected Object.
     pub fn select(&mut self, ids: Vec<Id>) {
+        if self.node_edit.as_ref().is_some_and(|edit| ids != [edit.id]) {
+            self.node_edit = None;
+        }
         self.selection = ids;
         if let Some(&last) = self.selection.last() {
             self.active_layer = match self.map.node(last) {
                 Some(Node::Layer(_)) => Some(last),
                 _ => self.map.parent(last),
             };
+        }
+    }
+
+    pub fn node_edit(&self) -> Option<&NodeEdit> {
+        self.node_edit.as_ref()
+    }
+
+    /// The stored outline (not the roughened one) of the Object in node-edit mode.
+    pub fn edited_outline(&self) -> Option<&MultiPolygon> {
+        match self.map.node(self.node_edit.as_ref()?.id)? {
+            Node::Object(object) => object.kind.geometry(),
+            Node::Layer(_) => None,
+        }
+    }
+
+    /// Enters node-edit mode on a Landmass or Lake, selecting it.
+    pub fn enter_node_edit(&mut self, id: Id) {
+        self.node_edit = None;
+        self.select(vec![id]);
+        self.node_edit = Some(NodeEdit {
+            id,
+            nodes: Vec::new(),
+        });
+    }
+
+    pub fn leave_node_edit(&mut self) {
+        self.node_edit = None;
+    }
+
+    /// Selects nodes of the Object being edited.
+    pub fn select_nodes(&mut self, nodes: Vec<NodeRef>) {
+        if let Some(edit) = &mut self.node_edit {
+            edit.nodes = nodes;
+        }
+    }
+
+    /// The shape of the outline being edited: how many points each ring has. Node numbers
+    /// stay meaningful while it does not change.
+    pub fn edited_shape(&self) -> Vec<usize> {
+        self.edited_outline()
+            .map(|outline| {
+                outline
+                    .0
+                    .iter()
+                    .flat_map(|polygon| polygon.rings().map(<[Point]>::len))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Forgets the node selection unless the outline still has `shape`: a repair may have
+    /// renumbered its nodes.
+    pub fn keep_nodes_if_shape(&mut self, shape: &[usize]) {
+        if self.edited_shape() != shape {
+            self.select_nodes(Vec::new());
+        }
+    }
+
+    /// Adds a node on an edge and selects it. One Undo step.
+    pub fn insert_node(&mut self, edge: NodeRef, point: Point) {
+        let Some(id) = self.node_edit.as_ref().map(|edit| edit.id) else {
+            return;
+        };
+        if self.run(Command::InsertNode { id, edge, point }) {
+            let added = NodeRef {
+                index: edge.index + 1,
+                ..edge
+            };
+            let landed = self
+                .edited_outline()
+                .is_some_and(|outline| outline.node(added) == Some(point));
+            self.select_nodes(if landed { vec![added] } else { Vec::new() });
+        }
+    }
+
+    /// Deletes the selected nodes. One Undo step; refused if a ring would be left with fewer
+    /// than three points.
+    pub fn delete_selected_nodes(&mut self) {
+        let Some(edit) = self.node_edit.clone() else {
+            return;
+        };
+        if edit.nodes.is_empty() {
+            return;
+        }
+        let command = Command::DeleteNodes {
+            id: edit.id,
+            nodes: edit.nodes,
+        };
+        if self.run(command) {
+            self.select_nodes(Vec::new());
         }
     }
 
@@ -176,6 +292,133 @@ impl Editor {
                 .commit(self.selection.clone())
                 .expect("the gesture's transaction is open");
         }
+    }
+
+    /// What a land brush stroke started now would be called in the undo history: it paints or
+    /// erases a selected Lake, and otherwise land.
+    pub fn brush_label(&self, erase: bool) -> &'static str {
+        let lake = self.selection.iter().any(|&id| {
+            matches!(self.map.node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Lake(_)))
+        });
+        match (erase, lake) {
+            (false, false) => "Paint Land",
+            (false, true) => "Paint Lake",
+            (true, false) => "Erase Land",
+            (true, true) => "Erase Lake",
+        }
+    }
+
+    /// Finishes the land brush stroke whose gesture is open: runs the one Command the brush
+    /// rules choose ([`land::brush_command`]) and commits it as the gesture's Undo step. A new
+    /// Landmass becomes the Selection, so the next stroke merges into it. A stroke that changes
+    /// nothing, or is refused, leaves no Undo step.
+    pub fn finish_brush_stroke(&mut self, stroke: BrushStroke) {
+        let new_id = Id::new();
+        let planned = land::brush_command(
+            &self.map,
+            &mut self.roughness,
+            &self.selection,
+            self.active_layer,
+            stroke,
+            new_id,
+        );
+        match planned {
+            Ok(Some(command)) => {
+                let creates = matches!(command, Command::CreateLandmass { .. });
+                if self.gesture(command) {
+                    if creates {
+                        self.select(vec![new_id]);
+                    }
+                    self.end_gesture();
+                } else {
+                    self.cancel_gesture();
+                }
+            }
+            Ok(None) => self.cancel_gesture(),
+            Err(err) => {
+                self.cancel_gesture();
+                let text = err.to_string();
+                let mut chars = text.chars();
+                let first = chars.next().map(|c| c.to_uppercase().to_string());
+                self.error(first.unwrap_or_default() + chars.as_str());
+            }
+        }
+    }
+
+    /// The selected Landmasses, topmost first.
+    fn selected_landmasses(&self) -> Vec<Id> {
+        let order = self.map.draw_order();
+        let mut ids: Vec<Id> = self
+            .selection
+            .iter()
+            .copied()
+            .filter(|&id| {
+                matches!(self.map.node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Landmass(_)))
+            })
+            .collect();
+        ids.sort_by_key(|&id| std::cmp::Reverse(order.iter().position(|&o| o == id)));
+        ids
+    }
+
+    /// Whether Union and Subtract have enough to work on: two or more selected Landmasses.
+    pub fn can_combine(&self) -> bool {
+        self.selected_landmasses().len() >= 2
+    }
+
+    /// Whether a selected Landmass has more than one part.
+    pub fn can_split(&self) -> bool {
+        self.selected_landmasses()
+            .iter()
+            .any(|&id| self.part_count(id) > 1)
+    }
+
+    fn part_count(&self, id: Id) -> usize {
+        match self.map.node(id) {
+            Some(Node::Object(o)) => o.kind.geometry().map_or(0, |g| g.0.len()),
+            _ => 0,
+        }
+    }
+
+    /// Merges the selected Landmasses into the topmost one, which stays selected.
+    pub fn union_selection(&mut self) {
+        let ids = self.selected_landmasses();
+        if let Some(&keeper) = ids.first() {
+            self.run_selecting(Command::Union { ids }, vec![keeper]);
+        }
+    }
+
+    /// Cuts the topmost selected Landmass out of the others.
+    pub fn subtract_selection(&mut self) {
+        let ids = self.selected_landmasses();
+        let rest: Vec<Id> = ids.iter().skip(1).copied().collect();
+        if !ids.is_empty() {
+            self.run_selecting(Command::Subtract { ids }, rest);
+        }
+    }
+
+    /// Makes each part of every selected Landmass a Landmass of its own, as one Undo step.
+    pub fn split_selection(&mut self) {
+        let targets: Vec<Id> = self
+            .selected_landmasses()
+            .into_iter()
+            .filter(|&id| self.part_count(id) > 1)
+            .collect();
+        if targets.is_empty() {
+            return;
+        }
+        let mut selection = Vec::new();
+        self.begin_gesture("Split Apart");
+        for id in targets {
+            let new_ids: Vec<Id> = (1..self.part_count(id)).map(|_| Id::new()).collect();
+            selection.push(id);
+            selection.extend(&new_ids);
+            if !self.gesture(Command::SplitApart { id, new_ids }) {
+                self.cancel_gesture();
+                return;
+            }
+        }
+        self.select(selection);
+        self.end_gesture();
     }
 
     /// Escape: undoes everything the open gesture did, Selection included.
@@ -407,6 +650,8 @@ impl Editor {
 
     /// Restores a recorded Selection, dropping anything that no longer exists.
     fn restore(&mut self, mut selection: Selection) {
+        // Undo and redo can renumber nodes.
+        self.select_nodes(Vec::new());
         selection.retain(|&id| self.map.contains(id));
         self.select(selection);
         if self.active_layer.is_some_and(|id| !self.map.contains(id)) {
@@ -550,5 +795,121 @@ mod tests {
             Some(Node::Layer(layer)) => layer.opacity,
             _ => panic!("a Layer"),
         }
+    }
+
+    fn editor_with_square() -> (Editor, Id) {
+        let mut editor = editor();
+        let layer = editor.new_layer().unwrap();
+        let id = Id::new();
+        editor.run(Command::CreateLandmass {
+            id,
+            parent: layer,
+            index: None,
+            geometry: MultiPolygon(vec![ssmap_core::Polygon {
+                exterior: vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+                holes: Vec::new(),
+            }]),
+            fill: None,
+        });
+        (editor, id)
+    }
+
+    fn node(index: usize) -> NodeRef {
+        NodeRef {
+            part: 0,
+            ring: 0,
+            index,
+        }
+    }
+
+    #[test]
+    fn node_edit_mode_follows_the_selection_and_edits_undo_cleanly() {
+        let (mut editor, id) = editor_with_square();
+        editor.enter_node_edit(id);
+        assert_eq!(editor.selection(), &[id]);
+
+        // A drag is one gesture and one Undo step, however many frames it takes.
+        editor.select_nodes(vec![node(2)]);
+        editor.begin_gesture("Move Nodes");
+        for step in 1..=5 {
+            editor.gesture_replace(Command::MoveNodes {
+                id,
+                nodes: vec![node(2)],
+                offset: [f64::from(step), 0.0],
+            });
+        }
+        editor.end_gesture();
+        assert_eq!(
+            editor.edited_outline().unwrap().node(node(2)),
+            Some([15.0, 10.0])
+        );
+        editor.undo();
+        assert_eq!(
+            editor.edited_outline().unwrap().node(node(2)),
+            Some([10.0, 10.0])
+        );
+        assert!(editor.node_edit().is_some_and(|edit| edit.nodes.is_empty()));
+
+        editor.insert_node(node(0), [5.0, -2.0]);
+        assert_eq!(editor.node_edit().unwrap().nodes, vec![node(1)]);
+        assert_eq!(editor.edited_shape(), vec![5]);
+        editor.delete_selected_nodes();
+        assert_eq!(editor.edited_shape(), vec![4]);
+
+        // Leaving, or selecting something else, ends the mode.
+        editor.select(Vec::new());
+        assert!(editor.node_edit().is_none());
+    }
+
+    #[test]
+    fn deleting_nodes_that_would_leave_fewer_than_three_is_refused() {
+        let (mut editor, id) = editor_with_square();
+        editor.enter_node_edit(id);
+        editor.select_nodes(vec![node(0), node(1)]);
+        editor.delete_selected_nodes();
+        assert_eq!(editor.edited_shape(), vec![4]);
+        assert!(editor.notice().is_some_and(|notice| notice.is_error));
+    }
+
+    #[test]
+    fn union_and_split_apart_work_on_the_selection_in_one_undo_step() {
+        let (mut editor, a) = editor_with_square();
+        let layer = editor.map.parent(a).unwrap();
+        let b = Id::new();
+        editor.run(Command::CreateLandmass {
+            id: b,
+            parent: layer,
+            index: None,
+            geometry: MultiPolygon(vec![ssmap_core::Polygon {
+                exterior: vec![[5.0, 5.0], [20.0, 5.0], [20.0, 20.0], [5.0, 20.0]],
+                holes: Vec::new(),
+            }]),
+            fill: None,
+        });
+        editor.select(vec![a, b]);
+        assert!(editor.can_combine() && !editor.can_split());
+        editor.union_selection();
+        assert_eq!(editor.selection(), &[b]);
+        assert!(!editor.map.contains(a));
+
+        editor.undo();
+        assert!(editor.map.contains(a) && editor.map.contains(b));
+
+        // Two islands split into two Landmasses with one Undo step.
+        editor.select(vec![a]);
+        editor.run(Command::AddRegion {
+            id: a,
+            region: MultiPolygon(vec![ssmap_core::Polygon {
+                exterior: vec![[50.0, 50.0], [60.0, 50.0], [60.0, 60.0], [50.0, 60.0]],
+                holes: Vec::new(),
+            }]),
+        });
+        assert!(editor.can_split());
+        let before = editor.map.children(Some(layer)).len();
+        editor.split_selection();
+        assert_eq!(editor.map.children(Some(layer)).len(), before + 1);
+        assert_eq!(editor.selection().len(), 2);
+        editor.undo();
+        assert_eq!(editor.map.children(Some(layer)).len(), before);
     }
 }

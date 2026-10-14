@@ -156,10 +156,21 @@ impl CanvasView {
         } else {
             paint_placeholder(&painter, rect, &scene, &view, ppp);
         }
-        if let Some(bounds) = Bounds::of_selection(editor) {
+        if editor.node_edit().is_none()
+            && let Some(bounds) = Bounds::of_selection(editor)
+        {
             let rotatable = tools::selection_has_label(editor);
             handles::paint(&painter, &bounds, &view, rect.min, ppp, rotatable);
         }
+        tools::paint_overlay(
+            &painter,
+            editor,
+            &view,
+            &mut self.tools,
+            rect.min,
+            response.hover_pos(),
+            ppp,
+        );
         self.text_box(ui, editor, &view, rect.min, ppp);
     }
 

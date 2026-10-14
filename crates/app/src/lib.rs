@@ -28,6 +28,9 @@ use crate::recent::RecentFiles;
 use crate::recovery::{Found, Recovery};
 use crate::tools::ToolId;
 
+/// How much `[` and `]` shrink or grow the land brush.
+const BRUSH_SIZE_STEP: f64 = 1.25;
+
 /// The Map file to open at launch, from the command-line arguments after the program name.
 ///
 /// Windows (the installer's file association) and Linux (the `.desktop` file's `%F`) pass a
@@ -294,7 +297,7 @@ impl MapMakerApp {
         let JournalBase::Unsaved { map: view } = found.recovered.base.clone() else {
             return;
         };
-        let mut map = match Map::from_view(view) {
+        let mut map = match Map::from_view(*view) {
             Ok(map) => map,
             Err(err) => {
                 self.editor
@@ -648,11 +651,19 @@ impl MapMakerApp {
             if input.consume_key(Modifiers::NONE, Key::Delete)
                 || input.consume_key(Modifiers::NONE, Key::Backspace)
             {
-                editor.delete_selection();
+                if editor.node_edit().is_some() {
+                    editor.delete_selected_nodes();
+                } else {
+                    editor.delete_selection();
+                }
             }
             if input.consume_key(Modifiers::NONE, Key::Escape) {
                 if editor.gesture_open() {
                     editor.cancel_gesture();
+                } else if editor.node_edit().is_some() {
+                    editor.leave_node_edit();
+                } else if editor.tool_busy {
+                    editor.cancel_tool = true;
                 } else {
                     editor.select(Vec::new());
                 }
@@ -661,6 +672,17 @@ impl MapMakerApp {
                 if input.consume_key(Modifiers::NONE, tool.shortcut()) {
                     editor.active_tool = tool;
                 }
+            }
+            if editor.active_tool == ToolId::LandBrush {
+                let step = if input.consume_key(Modifiers::NONE, Key::OpenBracket) {
+                    1.0 / BRUSH_SIZE_STEP
+                } else if input.consume_key(Modifiers::NONE, Key::CloseBracket) {
+                    BRUSH_SIZE_STEP
+                } else {
+                    1.0
+                };
+                editor.brush_size = (editor.brush_size * step)
+                    .clamp(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end());
             }
         });
     }
@@ -679,6 +701,18 @@ impl MapMakerApp {
                 {
                     editor.active_tool = tool;
                 }
+            }
+            if editor.active_tool == ToolId::LandBrush {
+                ui.add(
+                    egui::Slider::new(&mut editor.brush_size, tools::BRUSH_SIZES)
+                        .logarithmic(true)
+                        .max_decimals(0)
+                        .text("Size"),
+                )
+                .on_hover_text(format!(
+                    "Brush diameter in Canvas units ([ and ]). Hold {} to erase.",
+                    tools::ERASE_MODIFIER
+                ));
             }
             ui.separator();
             let undo_hint = editor.undo_label().map(|l| format!("Undo {l}"));
@@ -701,6 +735,28 @@ impl MapMakerApp {
                 .clicked()
             {
                 editor.delete_selection();
+            }
+            ui.separator();
+            if ui
+                .add_enabled(editor.can_combine(), egui::Button::new("Union"))
+                .on_hover_text("Merge the selected Landmasses into the topmost one")
+                .clicked()
+            {
+                editor.union_selection();
+            }
+            if ui
+                .add_enabled(editor.can_combine(), egui::Button::new("Subtract"))
+                .on_hover_text("Cut the topmost selected Landmass out of the others")
+                .clicked()
+            {
+                editor.subtract_selection();
+            }
+            if ui
+                .add_enabled(editor.can_split(), egui::Button::new("Split Apart"))
+                .on_hover_text("Make each part of the selected Landmasses a Landmass of its own")
+                .clicked()
+            {
+                editor.split_selection();
             }
         });
     }

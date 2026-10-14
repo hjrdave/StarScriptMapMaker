@@ -1,7 +1,10 @@
 //! The properties panel: shows and edits what is selected, through Commands.
 
 use eframe::egui;
-use ssmap_core::{Align, Color, Command, DistanceUnit, Id, Label, Node, ObjectKind, Roughness};
+use ssmap_core::{
+    Align, Color, Command, DistanceUnit, Id, Label, MAX_RIPPLES, Node, ObjectKind, Roughness,
+    ShoreKind, ShoreStyle,
+};
 use ssmap_fonts::LABEL_FAMILIES;
 
 use crate::editor::Editor;
@@ -59,6 +62,9 @@ impl PropertiesPanel {
                             if object.kind.geometry().is_some() {
                                 object_roughness(ui, editor, id, object.kind.roughness());
                             }
+                            if let Some(kind) = object.kind.shore_kind() {
+                                self.object_shore(ui, editor, id, kind);
+                            }
                         });
                     }
                     None => {}
@@ -88,8 +94,14 @@ impl PropertiesPanel {
             ids: vec![id],
             fill: Color::rgba(r, g, b, a),
         };
+        self.live_edit(editor, "Change Fill", command);
+    }
+
+    /// Applies a colour pick as it happens. Everything picked until the pointer is released is
+    /// one Undo step.
+    fn live_edit(&mut self, editor: &mut Editor, label: &str, command: Command) {
         if !self.fill_gesture && !editor.gesture_open() {
-            editor.begin_gesture("Change Fill");
+            editor.begin_gesture(label);
             self.fill_gesture = true;
         }
         if self.fill_gesture {
@@ -97,6 +109,103 @@ impl PropertiesPanel {
         } else {
             // Another gesture is open; join it rather than rewinding its work.
             editor.gesture(command);
+        }
+    }
+
+    /// The Shore style rows of a Landmass or Lake: its own settings, or the Map-wide default.
+    fn object_shore(&mut self, ui: &mut egui::Ui, editor: &mut Editor, id: Id, kind: ShoreKind) {
+        let own = match editor.map.node(id) {
+            Some(Node::Object(object)) => object.kind.shore().cloned(),
+            _ => None,
+        };
+        ui.label("Shore style");
+        let mut use_default = own.is_none();
+        if ui.checkbox(&mut use_default, "Use the Map style").changed() {
+            let shore = (!use_default).then(|| editor.map.defaults().shore_for(kind).clone());
+            editor.run(Command::SetShore {
+                ids: vec![id],
+                shore,
+            });
+        }
+        ui.end_row();
+        if let Some(own) = own {
+            self.shore_rows(ui, editor, &own, "Change Shore Style", |shore| {
+                Command::SetShore {
+                    ids: vec![id],
+                    shore: Some(shore),
+                }
+            });
+        }
+    }
+
+    /// Outline, ripples and inner shading. Dragging a value or picking a colour is one gesture:
+    /// live updates, one Undo step.
+    fn shore_rows(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        current: &ShoreStyle,
+        label: &str,
+        command: impl Fn(ShoreStyle) -> Command,
+    ) {
+        let mut style = current.clone();
+        let mut drags: Vec<egui::Response> = Vec::new();
+        let mut picked = false;
+        let mut drag = |ui: &mut egui::Ui, name: &str, value: egui::DragValue<'_>| {
+            ui.label(name);
+            drags.push(ui.add(value));
+            ui.end_row();
+        };
+        drag(ui, "Outline width", units(&mut style.outline.width, 100.0));
+        let mut color = |ui: &mut egui::Ui, name: &str, color: &mut Color| {
+            ui.label(name);
+            let mut rgba =
+                egui::Color32::from_rgba_unmultiplied(color.r, color.g, color.b, color.a);
+            let response = egui::color_picker::color_edit_button_srgba(
+                ui,
+                &mut rgba,
+                egui::color_picker::Alpha::OnlyBlend,
+            );
+            if response.changed() {
+                let [r, g, b, a] = rgba.to_srgba_unmultiplied();
+                *color = Color::rgba(r, g, b, a);
+                picked = true;
+            }
+            ui.end_row();
+        };
+        color(ui, "Outline colour", &mut style.outline.color);
+        drag(
+            ui,
+            "Ripples",
+            egui::DragValue::new(&mut style.ripples.count).range(0..=MAX_RIPPLES),
+        );
+        drag(
+            ui,
+            "Ripple spacing",
+            units(&mut style.ripples.spacing, 500.0),
+        );
+        drag(ui, "Ripple width", units(&mut style.ripples.width, 50.0));
+        color(ui, "Ripple colour", &mut style.ripples.color);
+        drag(
+            ui,
+            "Ripple fade",
+            egui::DragValue::new(&mut style.ripples.fade)
+                .range(0.0..=1.0)
+                .speed(0.01),
+        );
+        drag(ui, "Shading width", units(&mut style.shading.width, 500.0));
+        color(ui, "Shading colour", &mut style.shading.color);
+
+        if drags.iter().any(egui::Response::drag_started) {
+            editor.begin_gesture(label);
+        }
+        if drags.iter().any(egui::Response::changed) {
+            editor.gesture(command(style.clone()));
+        } else if picked {
+            self.live_edit(editor, label, command(style));
+        }
+        if drags.iter().any(egui::Response::drag_stopped) {
+            editor.end_gesture();
         }
     }
 
@@ -124,6 +233,25 @@ impl PropertiesPanel {
                 "Change Default Roughness",
                 |roughness| Command::SetDefaultRoughness { roughness },
             );
+            for (kind, title, label) in [
+                (
+                    ShoreKind::Landmass,
+                    "Landmass shore",
+                    "Change Default Shore Style",
+                ),
+                (
+                    ShoreKind::Lake,
+                    "Lake shore",
+                    "Change Default Lake Shore Style",
+                ),
+            ] {
+                ui.label(title);
+                ui.end_row();
+                let current = editor.map.defaults().shore_for(kind).clone();
+                self.shore_rows(ui, editor, &current, label, |shore| {
+                    Command::SetDefaultShore { kind, shore }
+                });
+            }
         });
     }
 
@@ -408,6 +536,14 @@ fn colour_button(ui: &mut egui::Ui, color: &mut Color) -> bool {
         *color = Color::rgba(r, g, b, a);
     }
     changed
+}
+
+/// A drag value for a length in Canvas units.
+fn units(value: &mut f64, max: f64) -> egui::DragValue<'_> {
+    egui::DragValue::new(value)
+        .range(0.0..=max)
+        .speed(0.1)
+        .suffix(" u")
 }
 
 /// The Roughness rows of a Landmass or Lake: its own settings, or the Map-wide default.
