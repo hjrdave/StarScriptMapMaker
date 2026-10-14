@@ -5,7 +5,8 @@ use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use ssmap_core::Command;
 use ssmap_render::{
-    CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, RgbaImage, View, render_to_image,
+    CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, RgbaImage, SpriteStore, View,
+    render_to_image,
 };
 
 use crate::editor::Editor;
@@ -23,10 +24,12 @@ struct CanvasResources {
     presenter: Presenter,
 }
 
-/// Creates the Canvas renderer on egui's device and hands it to egui's callback resources.
-pub fn install(render_state: &egui_wgpu::RenderState) {
+/// Creates the Canvas renderer on egui's device, drawing Stamps from `sprites`, and hands it to
+/// egui's callback resources.
+pub fn install(render_state: &egui_wgpu::RenderState, sprites: SpriteStore) {
     let capabilities = GpuCapabilities::query(&render_state.adapter);
-    let renderer = CanvasRenderer::new(&render_state.device, capabilities);
+    let mut renderer = CanvasRenderer::new(&render_state.device, capabilities);
+    renderer.set_sprites(sprites);
     // eframe draws egui without MSAA; the Canvas does its own multisampling offscreen.
     let presenter = Presenter::new(&render_state.device, render_state.target_format, 1);
     render_state

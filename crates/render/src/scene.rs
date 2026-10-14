@@ -9,12 +9,13 @@ use lyon::math::point;
 use lyon::path::Path;
 use ssmap_core::land;
 use ssmap_core::{
-    Id, Label, Map, MultiPolygon, Node, ObjectKind, Polygon, RoughnessCache, ShoreStyle,
+    Id, Label, Landmass, Map, MultiPolygon, Node, ObjectKind, Polygon, RoughnessCache, ShoreStyle,
 };
 
 use crate::canvas::Content;
 use crate::color::Color;
 use crate::color::ColorExt as _;
+use crate::stamp::{PlacedStamp, StampDraw};
 use crate::text::{Fonts, LabelLayout, LayoutKey};
 use crate::vector::{FillRule, Paint, VectorGroup, VectorShape};
 
@@ -51,6 +52,7 @@ impl MapScene {
             return content.clone();
         }
         let mut groups = Vec::new();
+        let mut stamps = Vec::new();
         let mut seen = Vec::new();
         let order = map.draw_order();
         // Each Layer's ripples draw beneath every fill of that Layer, so they never cover
@@ -72,10 +74,10 @@ impl MapScene {
                     }
                 }
             }
-            self.draw(map, roughness, id, &mut groups, &mut seen);
+            self.draw(map, roughness, id, &mut groups, &mut stamps, &mut seen);
         }
         self.layouts.retain(|id, _| seen.contains(id));
-        let content = Content::new(groups);
+        let content = Content::with_stamps(groups, stamps);
         self.built = Some((map.revision(), content.clone()));
         content
     }
@@ -100,6 +102,7 @@ impl MapScene {
         roughness: &mut RoughnessCache,
         id: Id,
         groups: &mut Vec<VectorGroup>,
+        stamps: &mut Vec<PlacedStamp>,
         seen: &mut Vec<Id>,
     ) {
         let Some(Node::Object(object)) = map.node(id) else {
@@ -112,6 +115,19 @@ impl MapScene {
                 let layout = self.label_layout(id, label);
                 groups.push(layout.group(label, opacity));
             }
+            ObjectKind::Stamp(stamp) => stamps.push(PlacedStamp {
+                after: groups.len(),
+                draw: StampDraw {
+                    asset: stamp.asset.clone(),
+                    position: stamp.position,
+                    scale: stamp.scale,
+                    rotation: stamp.rotation,
+                    flip: stamp.flip,
+                    tint: stamp.tint,
+                    fill: stamp.fill.unwrap_or(Landmass::DEFAULT_FILL),
+                    opacity: stamp.opacity * opacity,
+                },
+            }),
             kind => {
                 let (Some(fill), Some(outline)) = (kind.fill(), roughness.outline(map, id)) else {
                     return;

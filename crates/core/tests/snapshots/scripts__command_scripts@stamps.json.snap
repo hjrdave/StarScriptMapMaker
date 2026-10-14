@@ -1,0 +1,473 @@
+---
+source: crates/core/tests/scripts.rs
+expression: run(script)
+input_file: crates/core/tests/scripts/stamps.json
+---
+{
+  "log": [
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_layer",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "name": "Assets",
+          "parent": null
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_stamp",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "parent": "00000000-0000-7000-8000-000000000001",
+          "stamp": {
+            "asset": "default/mountain-1",
+            "fill": "#d8c49a",
+            "flip": true,
+            "opacity": 0.9,
+            "position": [
+              500,
+              300
+            ],
+            "rotation": 12,
+            "scale": 1.5,
+            "tint": "#40302080"
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "defaults": {
+            "lake_shore": {
+              "outline": {
+                "color": "#3a6a8a",
+                "width": 1.0
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 0,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#2a5a7a60",
+                "width": 8.0
+              }
+            },
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            },
+            "shore": {
+              "outline": {
+                "color": "#5a4628",
+                "width": 1.5
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 3,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#8a6a3870",
+                "width": 18.0
+              }
+            }
+          },
+          "layers": [
+            {
+              "children": [
+                {
+                  "id": "00000000-0000-7000-8000-000000000002",
+                  "kind": {
+                    "asset": "default/mountain-1",
+                    "fill": "#d8c49a",
+                    "flip": true,
+                    "kind": "stamp",
+                    "opacity": 0.8999999761581421,
+                    "position": [
+                      500.0,
+                      300.0
+                    ],
+                    "rotation": 12.0,
+                    "scale": 1.5,
+                    "tint": "#40302080"
+                  },
+                  "locked": false,
+                  "type": "object"
+                }
+              ],
+              "id": "00000000-0000-7000-8000-000000000001",
+              "locked": false,
+              "name": "Assets",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "begin": {
+          "label": "Move",
+          "selection": [
+            "00000000-0000-7000-8000-000000000002"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "execute": {
+          "command": "set_stamp",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "stamp": {
+            "asset": "default/mountain-1",
+            "position": [
+              510,
+              300
+            ]
+          }
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "execute": {
+          "command": "set_stamp",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "stamp": {
+            "asset": "default/mountain-1",
+            "position": [
+              540,
+              310
+            ]
+          }
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "commit": {
+          "selection": [
+            "00000000-0000-7000-8000-000000000002"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_stamp",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "stamp": {
+            "asset": "default/mountain-2",
+            "position": [
+              540,
+              310
+            ]
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "invalid Stamp: the scale must be greater than 0"
+      },
+      "step": {
+        "step": {
+          "command": "set_stamp",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "stamp": {
+            "asset": "default/mountain-1",
+            "scale": 0
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "opacity must be from 0 to 1, not 1.5"
+      },
+      "step": {
+        "step": {
+          "command": "set_stamp",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "stamp": {
+            "asset": "default/mountain-1",
+            "opacity": 1.5
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000001 is not a Stamp"
+      },
+      "step": {
+        "step": {
+          "command": "set_stamp",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "stamp": {
+            "asset": "default/mountain-1"
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000002 is not a Layer"
+      },
+      "step": {
+        "step": {
+          "command": "create_stamp",
+          "id": "00000000-0000-7000-8000-000000000003",
+          "parent": "00000000-0000-7000-8000-000000000002",
+          "stamp": {
+            "asset": "default/tree-1"
+          }
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_locked",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "locked": true
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000002 is locked"
+      },
+      "step": {
+        "step": {
+          "command": "set_stamp",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "stamp": {
+            "asset": "default/mountain-1"
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "view": {
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "defaults": {
+            "lake_shore": {
+              "outline": {
+                "color": "#3a6a8a",
+                "width": 1.0
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 0,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#2a5a7a60",
+                "width": 8.0
+              }
+            },
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            },
+            "shore": {
+              "outline": {
+                "color": "#5a4628",
+                "width": 1.5
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 3,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#8a6a3870",
+                "width": 18.0
+              }
+            }
+          },
+          "layers": [
+            {
+              "children": [
+                {
+                  "id": "00000000-0000-7000-8000-000000000002",
+                  "kind": {
+                    "asset": "default/mountain-1",
+                    "fill": null,
+                    "flip": false,
+                    "kind": "stamp",
+                    "opacity": 1.0,
+                    "position": [
+                      540.0,
+                      310.0
+                    ],
+                    "rotation": 0.0,
+                    "scale": 1.0,
+                    "tint": null
+                  },
+                  "locked": false,
+                  "type": "object"
+                }
+              ],
+              "id": "00000000-0000-7000-8000-000000000001",
+              "locked": false,
+              "name": "Assets",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ]
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": {
+        "selection": [
+          "00000000-0000-7000-8000-000000000002"
+        ]
+      },
+      "step": "undo"
+    }
+  ],
+  "redo_steps": 3,
+  "undo_steps": 2,
+  "view": {
+    "canvas": {
+      "height": 1000,
+      "scale": {
+        "distance_per_unit": 1.0,
+        "unit": "miles"
+      },
+      "width": 1000
+    },
+    "defaults": {
+      "lake_shore": {
+        "outline": {
+          "color": "#3a6a8a",
+          "width": 1.0
+        },
+        "ripples": {
+          "color": "#ffffff90",
+          "count": 0,
+          "fade": 0.6,
+          "spacing": 12.0,
+          "width": 1.5
+        },
+        "shading": {
+          "color": "#2a5a7a60",
+          "width": 8.0
+        }
+      },
+      "roughness": {
+        "amount": 0.0,
+        "scale": 32.0,
+        "seed": 0
+      },
+      "shore": {
+        "outline": {
+          "color": "#5a4628",
+          "width": 1.5
+        },
+        "ripples": {
+          "color": "#ffffff90",
+          "count": 3,
+          "fade": 0.6,
+          "spacing": 12.0,
+          "width": 1.5
+        },
+        "shading": {
+          "color": "#8a6a3870",
+          "width": 18.0
+        }
+      }
+    },
+    "layers": [
+      {
+        "children": [
+          {
+            "id": "00000000-0000-7000-8000-000000000002",
+            "kind": {
+              "asset": "default/mountain-1",
+              "fill": "#d8c49a",
+              "flip": true,
+              "kind": "stamp",
+              "opacity": 0.8999999761581421,
+              "position": [
+                500.0,
+                300.0
+              ],
+              "rotation": 12.0,
+              "scale": 1.5,
+              "tint": "#40302080"
+            },
+            "locked": false,
+            "type": "object"
+          }
+        ],
+        "id": "00000000-0000-7000-8000-000000000001",
+        "locked": false,
+        "name": "Assets",
+        "opacity": 1.0,
+        "type": "layer",
+        "visible": true
+      }
+    ]
+  }
+}

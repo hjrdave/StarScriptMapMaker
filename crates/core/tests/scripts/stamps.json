@@ -1,0 +1,25 @@
+{
+  "steps": [
+    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000001", "parent": null, "name": "Assets"}},
+    {"step": {"command": "create_stamp", "id": "00000000-0000-7000-8000-000000000002", "parent": "00000000-0000-7000-8000-000000000001", "stamp": {
+      "asset": "default/mountain-1", "position": [500, 300], "scale": 1.5, "rotation": 12, "flip": true,
+      "tint": "#40302080", "fill": "#d8c49a", "opacity": 0.9
+    }}},
+    "snapshot",
+    {"begin": {"label": "Move", "selection": ["00000000-0000-7000-8000-000000000002"]}},
+    {"execute": {"command": "set_stamp", "id": "00000000-0000-7000-8000-000000000002", "stamp": {"asset": "default/mountain-1", "position": [510, 300]}}},
+    {"execute": {"command": "set_stamp", "id": "00000000-0000-7000-8000-000000000002", "stamp": {"asset": "default/mountain-1", "position": [540, 310]}}},
+    {"commit": {"selection": ["00000000-0000-7000-8000-000000000002"]}},
+    {"step": {"command": "set_stamp", "id": "00000000-0000-7000-8000-000000000002", "stamp": {"asset": "default/mountain-2", "position": [540, 310]}}},
+    {"step": {"command": "set_stamp", "id": "00000000-0000-7000-8000-000000000002", "stamp": {"asset": "default/mountain-1", "scale": 0}}},
+    {"step": {"command": "set_stamp", "id": "00000000-0000-7000-8000-000000000002", "stamp": {"asset": "default/mountain-1", "opacity": 1.5}}},
+    {"step": {"command": "set_stamp", "id": "00000000-0000-7000-8000-000000000001", "stamp": {"asset": "default/mountain-1"}}},
+    {"step": {"command": "create_stamp", "id": "00000000-0000-7000-8000-000000000003", "parent": "00000000-0000-7000-8000-000000000002", "stamp": {"asset": "default/tree-1"}}},
+    {"step": {"command": "set_locked", "id": "00000000-0000-7000-8000-000000000002", "locked": true}},
+    {"step": {"command": "set_stamp", "id": "00000000-0000-7000-8000-000000000002", "stamp": {"asset": "default/mountain-1"}}},
+    "undo",
+    "undo",
+    "snapshot",
+    "undo"
+  ]
+}

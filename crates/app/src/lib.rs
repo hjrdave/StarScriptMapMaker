@@ -1,6 +1,7 @@
 //! StarScript Map Maker's editor. The binary in `main.rs` only opens a window around
 //! [`MapMakerApp`], so UI tests can drive the same app headlessly.
 
+mod asset_browser;
 mod canvas_view;
 pub mod document;
 pub mod editor;
@@ -13,12 +14,16 @@ pub mod tools;
 
 use eframe::{egui, egui_wgpu};
 use egui_file_dialog::{DialogState, FileDialog, Filter};
+use ssmap_core::asset::{PackLibrary, PackRoots};
 use ssmap_core::file::{JournalBase, MapFile, PREVIEW_SIZE, remove_journal};
 use ssmap_core::{Canvas, DistanceUnit, Map, Scale};
+use ssmap_render::SpriteStore;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::asset_browser::AssetBrowser;
 use crate::canvas_view::CanvasView;
 use crate::document::Document;
 use crate::editor::Editor;
@@ -50,6 +55,9 @@ pub struct MapMakerApp {
     document: Document,
     layer_tree: LayerTree,
     properties: PropertiesPanel,
+    asset_browser: AssetBrowser,
+    /// The installed Asset packs' art, shared with the Canvas renderer and picking.
+    sprites: SpriteStore,
     canvas_view: CanvasView,
     recent: RecentFiles,
     open_dialog: FileDialog,
@@ -95,9 +103,14 @@ impl MapMakerApp {
         map: Map,
         recovery_dir: Option<PathBuf>,
     ) -> Self {
+        let (library, problems) = PackLibrary::load(&PackRoots::installed());
+        for problem in &problems {
+            eprintln!("Asset pack problem: {problem}");
+        }
+        let sprites = SpriteStore::new(Arc::new(library));
         let gpu = match cc.wgpu_render_state.as_ref() {
             Some(render_state) => {
-                canvas_view::install(render_state);
+                canvas_view::install(render_state, sprites.clone());
                 true
             }
             None => false,
@@ -118,11 +131,15 @@ impl MapMakerApp {
         let recovery = Recovery::new(recovery_dir);
         let mut unsaved_found = recovery.find_unsaved();
         unsaved_found.reverse();
+        let mut editor = Editor::new(map);
+        editor.set_sprites(sprites.clone());
         Self {
-            editor: Editor::new(map),
+            editor,
             document: Document::default(),
             layer_tree: LayerTree::default(),
             properties: PropertiesPanel::default(),
+            asset_browser: AssetBrowser::default(),
+            sprites,
             canvas_view: CanvasView::new(gpu),
             recent: RecentFiles::load(cc.storage),
             open_dialog: map_files().title("Open Map"),
@@ -198,7 +215,10 @@ impl MapMakerApp {
 
     fn replace(&mut self, document: Document, map: Map) {
         self.document = document;
+        let selected_asset = self.editor.selected_asset.take();
         self.editor = Editor::new(map);
+        self.editor.set_sprites(self.sprites.clone());
+        self.editor.selected_asset = selected_asset;
         self.layer_tree = LayerTree::default();
         self.properties = PropertiesPanel::default();
         self.canvas_view.refit();
@@ -834,6 +854,10 @@ impl eframe::App for MapMakerApp {
         self.update_title(&ctx);
         egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));
+        egui::Panel::bottom("assets")
+            .resizable(true)
+            .default_size(150.0)
+            .show(ui, |ui| self.asset_browser.show(ui, &mut self.editor));
         egui::Panel::left("layers")
             .resizable(true)
             .default_size(240.0)

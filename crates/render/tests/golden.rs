@@ -581,3 +581,91 @@ fn halos_never_show_through_translucent_fill() {
     let beside = |image: &RgbaImage| (60..100).map(|x| pixel(image, x, 100)[0]).max().unwrap();
     assert!(beside(&with_halo) > beside(&plain) + 40);
 }
+
+/// A store over the core crate's test pack.
+fn test_sprites() -> ssmap_render::SpriteStore {
+    use ssmap_core::asset::{PackLibrary, PackRoots};
+    let roots = PackRoots {
+        built_in: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../core/tests/packs"),
+        user: None,
+    };
+    let (library, problems) = PackLibrary::load(&roots);
+    assert!(problems.is_empty(), "{problems:?}");
+    ssmap_render::SpriteStore::new(std::sync::Arc::new(library))
+}
+
+fn stamp(asset: &str, position: [f64; 2]) -> ssmap_core::Stamp {
+    ssmap_core::Stamp::new(asset.parse().expect("a valid reference"), position)
+}
+
+fn render_stamps(headless: &Headless, stamps: Vec<ssmap_core::Stamp>) -> RgbaImage {
+    let mut map = Map::new(Canvas::new(480, 320, Scale::new(1.0, DistanceUnit::Miles)));
+    let layer = Id::new();
+    map.execute(&Command::CreateLayer {
+        id: layer,
+        parent: None,
+        index: None,
+        name: "Assets".into(),
+    })
+    .unwrap();
+    for stamp in stamps {
+        map.execute(&Command::CreateStamp {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            stamp: Box::new(stamp),
+        })
+        .unwrap();
+    }
+    let canvas = scene_of(&map);
+    let view = View::whole_canvas(canvas.canvas_size, 960);
+    let capabilities = GpuCapabilities::query(&headless.adapter);
+    let mut renderer = CanvasRenderer::new(&headless.device, capabilities);
+    renderer.set_sprites(test_sprites());
+    render_to_image(
+        &headless.device,
+        &headless.queue,
+        &mut renderer,
+        &canvas,
+        &view,
+    )
+}
+
+#[test]
+fn stamps() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let mut tinted = stamp("test-pack/mountain-2", [380.0, 150.0]);
+    tinted.tint = Some(Color::rgb(0xa0, 0x30, 0x20));
+    tinted.fill = Some(Color::rgb(0xe8, 0xd8, 0xa8));
+    let mut flipped = stamp("test-pack/castle", [90.0, 270.0]);
+    flipped.flip = true;
+    flipped.scale = 1.5;
+    let mut turned = stamp("test-pack/tree", [220.0, 280.0]);
+    turned.rotation = 30.0;
+    turned.scale = 2.0;
+    turned.opacity = 0.6;
+    let stamps = vec![
+        // The nearer mountain hides the lines of the one behind it.
+        stamp("test-pack/mountain-1", [110.0, 120.0]),
+        stamp("test-pack/mountain-1", [150.0, 150.0]),
+        stamp("test-pack/mountain-2", [250.0, 150.0]),
+        tinted,
+        flipped,
+        turned,
+    ];
+    let image = render_stamps(headless, stamps);
+    if let Gpu::Software(_) = gpu {
+        assert_matches_golden("stamps", &image);
+    }
+}
+
+/// Stamps of an Asset no pack has draw nothing, and the rest of the Map still draws.
+#[test]
+fn missing_art_draws_nothing() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let empty = render_stamps(headless, Vec::new());
+    let ghost = render_stamps(headless, vec![stamp("no-such/asset", [240.0, 160.0])]);
+    assert_eq!(empty.pixels, ghost.pixels);
+}

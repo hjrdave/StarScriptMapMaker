@@ -1,0 +1,313 @@
+//! Drawing Stamps: instanced quads sampling atlas pages (ADR 0003). The Silhouette is filled
+//! under the line art, so overlapping Stamps hide each other's lines.
+
+use std::collections::HashMap;
+use std::ops::Range;
+
+use ssmap_core::asset::AssetRef;
+use ssmap_core::{Color, Point};
+use wgpu::util::DeviceExt;
+
+use crate::atlas::{Atlas, AtlasEntry};
+use crate::canvas::StencilUse;
+use crate::color::ColorExt as _;
+use crate::sprite::SpriteStore;
+
+/// One Stamp as the Canvas draws it.
+#[derive(Clone, PartialEq, Debug)]
+pub struct StampDraw {
+    pub asset: AssetRef,
+    pub position: Point,
+    pub scale: f64,
+    /// Degrees clockwise about the Anchor.
+    pub rotation: f64,
+    pub flip: bool,
+    pub tint: Option<Color>,
+    /// The Silhouette's fill.
+    pub fill: Color,
+    /// Already faded by the Layers holding the Stamp.
+    pub opacity: f32,
+}
+
+/// A Stamp and where it sits in the draw order: it draws over the first `after` vector groups
+/// of the content, and under the rest.
+#[derive(Clone, PartialEq, Debug)]
+pub struct PlacedStamp {
+    pub after: usize,
+    pub draw: StampDraw,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct Instance {
+    anchor: [f32; 2],
+    column_x: [f32; 2],
+    column_y: [f32; 2],
+    rect_min: [f32; 2],
+    rect_size: [f32; 2],
+    art_uv: [f32; 4],
+    silhouette_uv: [f32; 4],
+    tint: [f32; 4],
+    fill: [f32; 4],
+    opacity: f32,
+    _pad: [f32; 3],
+}
+
+/// An Asset's art on atlas pages.
+#[derive(Clone, Copy)]
+struct Uploaded {
+    art: AtlasEntry,
+    silhouette: AtlasEntry,
+    size: [f64; 2],
+    anchor: [f64; 2],
+}
+
+/// Instances drawn with the same pair of atlas pages.
+struct Batch {
+    pages: (u32, u32),
+    instances: Range<u32>,
+}
+
+/// The Stamps drawn after the first `after` vector groups.
+struct Run {
+    after: usize,
+    batches: Vec<Batch>,
+}
+
+pub(crate) struct StampRenderer {
+    pipeline: wgpu::RenderPipeline,
+    texture_layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+    atlas: Atlas,
+    store: Option<SpriteStore>,
+    /// `None` records an Asset that has no usable art.
+    uploaded: HashMap<AssetRef, Option<Uploaded>>,
+    bind_groups: HashMap<(u32, u32), wgpu::BindGroup>,
+    instances: Option<wgpu::Buffer>,
+    runs: Vec<Run>,
+}
+
+impl StampRenderer {
+    pub(crate) fn new(
+        device: &wgpu::Device,
+        view_layout: &wgpu::BindGroupLayout,
+        samples: u32,
+        page_size: u32,
+    ) -> Self {
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("stamp"),
+            source: wgpu::ShaderSource::Wgsl(
+                concat!(
+                    include_str!("shaders/view.wgsl"),
+                    include_str!("shaders/stamp.wgsl")
+                )
+                .into(),
+            ),
+        });
+        let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
+        let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("stamp textures"),
+            entries: &[
+                texture_entry(0),
+                texture_entry(1),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("stamp"),
+            bind_group_layouts: &[Some(view_layout), Some(&texture_layout)],
+            immediate_size: 0,
+        });
+        let pipeline = crate::canvas::canvas_pipeline(
+            device,
+            "stamp",
+            &layout,
+            &shader,
+            &[Some(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<Instance>() as u64,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &wgpu::vertex_attr_array![
+                    0 => Float32x2, 1 => Float32x2, 2 => Float32x2, 3 => Float32x2,
+                    4 => Float32x2, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4,
+                    8 => Float32x4, 9 => Float32
+                ],
+            })],
+            samples,
+            StencilUse::Ignore,
+        );
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("stamp atlas"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+        Self {
+            pipeline,
+            texture_layout,
+            sampler,
+            atlas: Atlas::new(page_size),
+            store: None,
+            uploaded: HashMap::new(),
+            bind_groups: HashMap::new(),
+            instances: None,
+            runs: Vec::new(),
+        }
+    }
+
+    /// Where Asset art comes from. Replacing the store forgets everything uploaded.
+    pub(crate) fn set_store(&mut self, store: SpriteStore) {
+        self.atlas = Atlas::new(self.atlas.page_size());
+        self.uploaded.clear();
+        self.bind_groups.clear();
+        self.store = Some(store);
+    }
+
+    /// Uploads any art `stamps` need and builds their instances. Stamps whose Asset has no
+    /// usable art draw nothing.
+    pub(crate) fn prepare(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        stamps: &[PlacedStamp],
+    ) {
+        let page_size = self.atlas.page_size();
+        let mut instances: Vec<Instance> = Vec::with_capacity(stamps.len());
+        let mut runs: Vec<Run> = Vec::new();
+        for placed in stamps {
+            let Some(uploaded) = self.upload(device, queue, &placed.draw.asset) else {
+                continue;
+            };
+            let draw = &placed.draw;
+            let (sin, cos) = draw.rotation.to_radians().sin_cos();
+            let flip = if draw.flip { -1.0 } else { 1.0 };
+            let [width, height] = uploaded.size;
+            instances.push(Instance {
+                anchor: draw.position.map(|v| v as f32),
+                column_x: [
+                    (draw.scale * flip * cos) as f32,
+                    (draw.scale * flip * sin) as f32,
+                ],
+                column_y: [(-draw.scale * sin) as f32, (draw.scale * cos) as f32],
+                rect_min: [
+                    (-uploaded.anchor[0] * width) as f32,
+                    (-uploaded.anchor[1] * height) as f32,
+                ],
+                rect_size: [width as f32, height as f32],
+                art_uv: uploaded.art.uv(page_size),
+                silhouette_uv: uploaded.silhouette.uv(page_size),
+                tint: draw
+                    .tint
+                    .map_or([1.0; 4], |tint| tint.to_linear_premultiplied()),
+                fill: draw.fill.to_linear_premultiplied(),
+                opacity: draw.opacity,
+                _pad: [0.0; 3],
+            });
+            let index = instances.len() as u32 - 1;
+            let pages = (uploaded.art.page, uploaded.silhouette.page);
+            if runs.last().is_none_or(|run| run.after != placed.after) {
+                runs.push(Run {
+                    after: placed.after,
+                    batches: Vec::new(),
+                });
+            }
+            let run = runs.last_mut().expect("pushed above");
+            match run.batches.last_mut() {
+                Some(batch) if batch.pages == pages => batch.instances.end = index + 1,
+                _ => run.batches.push(Batch {
+                    pages,
+                    instances: index..index + 1,
+                }),
+            }
+            self.bind_group(device, pages);
+        }
+        self.instances = (!instances.is_empty()).then(|| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("stamp instances"),
+                contents: bytemuck::cast_slice(&instances),
+                usage: wgpu::BufferUsages::VERTEX,
+            })
+        });
+        self.runs = runs;
+    }
+
+    /// The vector-group counts that Stamps draw after, in order.
+    pub(crate) fn cuts(&self) -> impl Iterator<Item = usize> + '_ {
+        self.runs.iter().map(|run| run.after)
+    }
+
+    /// Draws the Stamps placed after `after` vector groups.
+    pub(crate) fn draw(&self, pass: &mut wgpu::RenderPass<'_>, after: usize) {
+        let (Some(instances), Some(run)) = (
+            &self.instances,
+            self.runs.iter().find(|run| run.after == after),
+        ) else {
+            return;
+        };
+        pass.set_pipeline(&self.pipeline);
+        pass.set_vertex_buffer(0, instances.slice(..));
+        for batch in &run.batches {
+            pass.set_bind_group(1, &self.bind_groups[&batch.pages], &[]);
+            pass.draw(0..6, batch.instances.clone());
+        }
+    }
+
+    fn upload(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        asset: &AssetRef,
+    ) -> Option<Uploaded> {
+        if let Some(uploaded) = self.uploaded.get(asset) {
+            return *uploaded;
+        }
+        let uploaded = self.store.as_ref().and_then(|store| {
+            let sprite = store.get(asset)?;
+            Some(Uploaded {
+                art: self.atlas.insert(device, queue, &sprite.art).ok()?,
+                silhouette: self.atlas.insert(device, queue, &sprite.silhouette).ok()?,
+                size: sprite.shape.size,
+                anchor: sprite.shape.anchor,
+            })
+        });
+        self.uploaded.insert(asset.clone(), uploaded);
+        uploaded
+    }
+
+    fn bind_group(&mut self, device: &wgpu::Device, pages: (u32, u32)) {
+        let (atlas, layout, sampler) = (&self.atlas, &self.texture_layout, &self.sampler);
+        self.bind_groups.entry(pages).or_insert_with(|| {
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("stamp textures"),
+                layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(atlas.page_view(pages.0)),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(atlas.page_view(pages.1)),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(sampler),
+                    },
+                ],
+            })
+        });
+    }
+}

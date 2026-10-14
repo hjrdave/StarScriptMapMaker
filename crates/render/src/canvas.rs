@@ -10,6 +10,8 @@ use wgpu::util::DeviceExt;
 use crate::color::{Color, ColorExt as _};
 use crate::gpu::GpuCapabilities;
 use crate::ocean::{OceanPass, OceanUniform};
+use crate::sprite::SpriteStore;
+use crate::stamp::{PlacedStamp, StampRenderer};
 use crate::vector::{FillRule, LyonRenderer, VectorGroup, VectorRenderer};
 use crate::view::View;
 
@@ -37,25 +39,48 @@ impl Default for Backdrop {
     }
 }
 
-/// The Map's Objects as vector groups, first drawn lowest, as [`MapScene`](crate::MapScene)
-/// builds them. Two are equal only if they are the same build (or both empty), so comparing
-/// scenes every frame stays cheap.
+/// The Map's Objects: vector groups, first drawn lowest, with Stamps placed among them, as
+/// [`MapScene`](crate::MapScene) builds them. Two are equal only if they are the same build
+/// (or both empty), so comparing scenes every frame stays cheap.
 #[derive(Clone, Debug, Default)]
-pub struct Content(Arc<[VectorGroup]>);
+pub struct Content {
+    groups: Arc<[VectorGroup]>,
+    stamps: Arc<[PlacedStamp]>,
+}
 
 impl Content {
     pub fn new(groups: Vec<VectorGroup>) -> Self {
-        Self(groups.into())
+        Self::with_stamps(groups, Vec::new())
+    }
+
+    /// `stamps` must be in draw order: their `after` values never decrease, and none exceeds
+    /// the number of groups.
+    pub fn with_stamps(groups: Vec<VectorGroup>, stamps: Vec<PlacedStamp>) -> Self {
+        debug_assert!(stamps.windows(2).all(|pair| pair[0].after <= pair[1].after));
+        debug_assert!(stamps.iter().all(|stamp| stamp.after <= groups.len()));
+        Self {
+            groups: groups.into(),
+            stamps: stamps.into(),
+        }
     }
 
     pub fn groups(&self) -> &[VectorGroup] {
-        &self.0
+        &self.groups
+    }
+
+    pub fn stamps(&self) -> &[PlacedStamp] {
+        &self.stamps
+    }
+
+    fn is_empty(&self) -> bool {
+        self.groups.is_empty() && self.stamps.is_empty()
     }
 }
 
 impl PartialEq for Content {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0) || (self.0.is_empty() && other.0.is_empty())
+        (Arc::ptr_eq(&self.groups, &other.groups) && Arc::ptr_eq(&self.stamps, &other.stamps))
+            || (self.is_empty() && other.is_empty())
     }
 }
 
@@ -103,8 +128,11 @@ pub struct CanvasRenderer {
     ocean: OceanPass,
     /// The Map's Objects, over the ocean.
     content: LyonRenderer,
+    stamps: StampRenderer,
     drawn_backdrop: Option<BackdropKey>,
     drawn_content: Option<Content>,
+    /// Where the content's vector groups are split to draw Stamps between them.
+    content_cuts: Vec<usize>,
     target: Option<Target>,
 }
 
@@ -139,17 +167,31 @@ impl CanvasRenderer {
             backdrop: LyonRenderer::new(device, &view_layout, samples),
             ocean: OceanPass::new(device, &view_layout, samples),
             content: LyonRenderer::new(device, &view_layout, samples),
+            stamps: StampRenderer::new(
+                device,
+                &view_layout,
+                samples,
+                crate::atlas::page_size_for(&capabilities.limits),
+            ),
             capabilities,
             view_uniform,
             view_bind_group,
             drawn_backdrop: None,
             drawn_content: None,
+            content_cuts: Vec::new(),
             target: None,
         }
     }
 
     pub fn capabilities(&self) -> &GpuCapabilities {
         &self.capabilities
+    }
+
+    /// Where Stamp art comes from. Without it, Stamps draw nothing.
+    pub fn set_sprites(&mut self, sprites: SpriteStore) {
+        self.stamps.set_store(sprites);
+        // Force the content to be prepared again with the new art.
+        self.drawn_content = None;
     }
 
     /// Records the Canvas render into `encoder` and returns the resolved target, which holds
@@ -170,7 +212,14 @@ impl CanvasRenderer {
             self.set_backdrop(device, queue, backdrop);
         }
         if self.drawn_content.as_ref() != Some(&scene.content) {
-            self.content.set_groups(device, scene.content.groups());
+            self.stamps.prepare(device, queue, scene.content.stamps());
+            let cuts: Vec<usize> = {
+                let mut cuts: Vec<usize> = self.stamps.cuts().collect();
+                cuts.dedup();
+                cuts
+            };
+            self.content.set_runs(device, scene.content.groups(), &cuts);
+            self.content_cuts = cuts;
             self.drawn_content = Some(scene.content.clone());
         }
         self.ensure_target(device, view.size);
@@ -205,7 +254,11 @@ impl CanvasRenderer {
         pass.set_bind_group(0, &self.view_bind_group, &[]);
         self.backdrop.draw(&mut pass);
         self.ocean.draw(&mut pass);
-        self.content.draw(&mut pass);
+        for (run, &cut) in self.content_cuts.iter().enumerate() {
+            self.content.draw_run(&mut pass, run);
+            self.stamps.draw(&mut pass, cut);
+        }
+        self.content.draw_run(&mut pass, self.content_cuts.len());
         drop(pass);
         &target.resolved
     }

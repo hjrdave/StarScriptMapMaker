@@ -3,7 +3,7 @@
 //! the handles, and scales Labels.
 
 use eframe::egui;
-use ssmap_core::{Label, Node, Rect};
+use ssmap_core::{Label, Node, Rect, Stamp};
 use ssmap_render::View;
 
 use crate::editor::Editor;
@@ -98,6 +98,10 @@ impl Bounds {
         for id in editor.selection().to_vec() {
             if let Some((label, layout)) = editor.label_layout(id) {
                 points.extend(layout.corners(&label));
+                continue;
+            }
+            if let Some(bounds) = editor.stamp_bounds(id) {
+                points.extend([bounds.min, bounds.max]);
                 continue;
             }
             let Some(Node::Object(object)) = editor.map.node(id) else {
@@ -227,6 +231,40 @@ pub fn rotated(label: &Label, degrees: f64, centre: [f64; 2]) -> Label {
     ];
     out.rotation = (label.rotation + degrees).rem_euclid(360.0);
     out
+}
+
+/// `stamp` moved by `delta` Canvas units.
+pub fn moved_stamp(stamp: &Stamp, delta: [f64; 2]) -> Stamp {
+    Stamp {
+        position: [stamp.position[0] + delta[0], stamp.position[1] + delta[1]],
+        ..stamp.clone()
+    }
+}
+
+/// `stamp` scaled by `scale` about the Canvas point `fixed`.
+pub fn scaled_stamp(stamp: &Stamp, scale: f64, fixed: [f64; 2]) -> Stamp {
+    Stamp {
+        position: [
+            fixed[0] + (stamp.position[0] - fixed[0]) * scale,
+            fixed[1] + (stamp.position[1] - fixed[1]) * scale,
+        ],
+        scale: stamp.scale * scale,
+        ..stamp.clone()
+    }
+}
+
+/// `stamp` rotated clockwise by `degrees` about the Canvas point `centre`.
+pub fn rotated_stamp(stamp: &Stamp, degrees: f64, centre: [f64; 2]) -> Stamp {
+    let (sin, cos) = degrees.to_radians().sin_cos();
+    let [dx, dy] = [stamp.position[0] - centre[0], stamp.position[1] - centre[1]];
+    Stamp {
+        position: [
+            centre[0] + dx * cos - dy * sin,
+            centre[1] + dx * sin + dy * cos,
+        ],
+        rotation: (stamp.rotation + degrees).rem_euclid(360.0),
+        ..stamp.clone()
+    }
 }
 
 /// Converts a Canvas point to a screen position inside the Canvas panel at `origin`.
