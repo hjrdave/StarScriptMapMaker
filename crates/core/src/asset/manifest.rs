@@ -151,6 +151,7 @@ pub fn parse_manifest(file: &Path, text: &str, source: PackSource) -> Result<Pac
     }
     let name = section.required(&mut errors, "name", Section::string);
     let licence = section.required(&mut errors, "licence", Section::string);
+    let licence_url = section.optional(&mut errors, "licence_url", Section::url);
     let credits = section.required(&mut errors, "credits", Section::string);
     let attribution_required = section
         .optional(&mut errors, "attribution_required", Section::boolean)
@@ -210,6 +211,7 @@ pub fn parse_manifest(file: &Path, text: &str, source: PackSource) -> Result<Pac
         name: name.expect("no errors"),
         dir: file.parent().map(Path::to_path_buf).unwrap_or_default(),
         licence: licence.expect("no errors"),
+        licence_url,
         credits: credits.expect("no errors"),
         attribution_required,
         source,
@@ -221,6 +223,7 @@ const PACK_FIELDS: &[&str] = &[
     "id",
     "name",
     "licence",
+    "licence_url",
     "credits",
     "attribution_required",
     "author",

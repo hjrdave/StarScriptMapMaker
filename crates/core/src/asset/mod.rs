@@ -9,6 +9,7 @@
 //! id = "kenney-cartography"          # lowercase letters, digits, `-` and `_`
 //! name = "Kenney Cartography"
 //! licence = "CC0-1.0"                # the default for every Asset
+//! licence_url = "https://creativecommons.org/publicdomain/zero/1.0/"  # optional
 //! credits = "Art by Kenney (kenney.nl)."
 //! attribution_required = false       # optional; true means exports must credit it
 //! author = "Kenney"                  # optional default for every Asset
@@ -33,6 +34,7 @@
 //!
 //! Assets are referenced as `pack-id/asset-id` ([`AssetRef`]).
 
+mod credits;
 mod install;
 mod library;
 mod manifest;
@@ -43,6 +45,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+pub use credits::{AttributedAsset, PackCredit};
 pub use install::{ASSETS_DIR_ENV, PACK_MANIFEST, assets_dir, built_in_packs_dir, user_packs_dir};
 pub use library::{LoadProblem, PackLibrary, PackRoots};
 pub use manifest::{ManifestError, ManifestErrors, parse_manifest, read_pack};
@@ -55,6 +58,8 @@ pub struct Pack {
     /// The folder holding `pack.toml`. Asset files are relative to it.
     pub dir: PathBuf,
     pub licence: String,
+    /// Where the licence text can be read.
+    pub licence_url: Option<String>,
     /// Free-form credits text shown wherever the pack is credited.
     pub credits: String,
     /// Whether a Map using this pack's Assets must credit it on export.
