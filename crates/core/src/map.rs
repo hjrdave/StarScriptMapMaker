@@ -10,6 +10,7 @@ use crate::extra::Extra;
 use crate::id::Id;
 use crate::node::{Node, Object, ObjectKind};
 use crate::roughness::Roughness;
+use crate::shore::{ShoreKind, ShoreStyle};
 
 /// The bounded drawing area of a Map.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
@@ -61,13 +62,40 @@ pub enum DistanceUnit {
 }
 
 /// Map-wide defaults for Objects that don't override them.
-#[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct MapDefaults {
     /// The Roughness of every Landmass and Lake without its own.
     #[serde(default)]
     pub roughness: Roughness,
+    /// The Shore style of every Landmass without its own.
+    #[serde(default = "ShoreStyle::landmass_default")]
+    pub shore: ShoreStyle,
+    /// The Shore style of every Lake without its own.
+    #[serde(default = "ShoreStyle::lake_default")]
+    pub lake_shore: ShoreStyle,
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+impl Default for MapDefaults {
+    fn default() -> Self {
+        Self {
+            roughness: Roughness::default(),
+            shore: ShoreStyle::landmass_default(),
+            lake_shore: ShoreStyle::lake_default(),
+            extra: Extra::new(),
+        }
+    }
+}
+
+impl MapDefaults {
+    /// The Shore style default for a kind of Object.
+    pub fn shore_for(&self, kind: ShoreKind) -> &ShoreStyle {
+        match kind {
+            ShoreKind::Landmass => &self.shore,
+            ShoreKind::Lake => &self.lake_shore,
+        }
+    }
 }
 
 /// A node and all its descendants, in Stacking order (first child draws lowest).
@@ -158,6 +186,16 @@ impl Map {
         };
         kind.geometry()?;
         Some(kind.roughness().unwrap_or(&self.defaults.roughness))
+    }
+
+    /// The Shore style a Landmass or Lake is drawn with: its own, or the Map-wide default for
+    /// its kind. `None` for anything without an outline.
+    pub fn shore(&self, id: Id) -> Option<&ShoreStyle> {
+        let Node::Object(Object { kind, .. }) = self.node(id)? else {
+            return None;
+        };
+        let default = self.defaults.shore_for(kind.shore_kind()?);
+        Some(kind.shore().unwrap_or(default))
     }
 
     pub fn contains(&self, id: Id) -> bool {

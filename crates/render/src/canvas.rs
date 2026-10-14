@@ -184,6 +184,7 @@ impl CanvasRenderer {
             &[FillPath {
                 path: builder.build(),
                 color: scene.backdrop.water,
+                stroke_width: None,
             }],
         );
         self.ocean.set(

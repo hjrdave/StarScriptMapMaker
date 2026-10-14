@@ -73,7 +73,7 @@ fn a_torn_last_line_is_dropped() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("torn.recovery");
     let base = JournalBase::Unsaved {
-        map: empty_map().view(),
+        map: Box::new(empty_map().view()),
     };
     let layer = Id::new();
     drop(Journal::create(&path, &base, &[insert_layer(layer, "Land")]).unwrap());

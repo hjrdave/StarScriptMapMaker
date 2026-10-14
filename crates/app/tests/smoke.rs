@@ -472,3 +472,41 @@ fn the_land_brush_paints_merges_and_erases_one_undo_step_per_stroke() {
     assert_eq!(harness.state().editor().map.view(), before);
     assert_eq!(harness.state().editor().undo_label(), Some("Paint Land"));
 }
+
+#[test]
+fn a_landmass_gets_its_own_shore_style_in_one_undo_step() {
+    let (map, island, _) = island_map();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1280.0, 800.0))
+        .build_eframe(|cc| MapMakerApp::with_map(cc, map, None));
+    harness.run();
+    let shore = |harness: &Harness<'_, MapMakerApp>| match harness.state().editor().map.node(island)
+    {
+        Some(ssmap_core::Node::Object(object)) => object.kind.shore().cloned(),
+        _ => panic!("an Object"),
+    };
+
+    let at = harness.state().canvas_to_screen([50.0, 300.0]).unwrap();
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.drop_at(at);
+    harness.run();
+    assert_eq!(harness.state().editor().selection(), [island]);
+    assert_eq!(shore(&harness), None);
+
+    harness.get_by_label("Use the Map style").click();
+    harness.run();
+    assert_eq!(
+        shore(&harness).as_ref(),
+        Some(&harness.state().editor().map.defaults().shore)
+    );
+    assert_eq!(
+        harness.state().editor().undo_label(),
+        Some("Change Shore Style")
+    );
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    harness.run();
+    assert_eq!(shore(&harness), None);
+}

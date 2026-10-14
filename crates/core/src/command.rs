@@ -17,6 +17,7 @@ use crate::map::{Map, MapDefaults, Subtree};
 use crate::node::{Lake, Landmass, Layer, Node, Object, ObjectKind};
 use crate::op::{Op, OpError, Property};
 use crate::roughness::Roughness;
+use crate::shore::{ShoreKind, ShoreStyle};
 
 /// One edit to a Map. Commands name every id they touch or create, so replaying one gives
 /// the same Map every time.
@@ -157,6 +158,17 @@ pub enum Command {
     SetDefaultRoughness {
         roughness: Roughness,
     },
+    /// Sets the Shore style of Landmasses and Lakes, or with `None` returns them to the
+    /// Map-wide default for their kind.
+    SetShore {
+        ids: Vec<Id>,
+        shore: Option<ShoreStyle>,
+    },
+    /// Sets the Map-wide Shore style of every Landmass, or every Lake, without its own.
+    SetDefaultShore {
+        kind: ShoreKind,
+        shore: ShoreStyle,
+    },
 }
 
 #[derive(Clone, PartialEq, Debug, Error)]
@@ -189,6 +201,8 @@ pub enum CommandError {
     SplitIds { id: Id, parts: usize, got: usize },
     #[error("{0} is already one part")]
     NothingToSplit(Id),
+    #[error("the Shore style is invalid: {0}")]
+    InvalidShore(String),
     #[error("the transform {0:?} is not finite or collapses shapes")]
     InvalidTransform([f64; 6]),
     #[error("Roughness needs an amount of 0 or more and a scale above 0, not {amount} and {scale}")]
@@ -223,6 +237,8 @@ impl Command {
             Command::SetFill { .. } => "Change Fill",
             Command::SetRoughness { .. } => "Change Roughness",
             Command::SetDefaultRoughness { .. } => "Change Default Roughness",
+            Command::SetShore { .. } => "Change Shore Style",
+            Command::SetDefaultShore { .. } => "Change Default Shore Style",
         }
     }
 
@@ -382,6 +398,27 @@ impl Command {
                     .into_iter()
                     .map(|id| set(id, Property::Roughness(roughness.clone())))
                     .collect())
+            }
+            Command::SetShore { ids, shore } => {
+                if let Some(problem) = shore.as_ref().and_then(ShoreStyle::problem) {
+                    return Err(CommandError::InvalidShore(problem));
+                }
+                let ids = outlined(map, ids)?;
+                Ok(ids
+                    .into_iter()
+                    .map(|id| set(id, Property::Shore(shore.clone())))
+                    .collect())
+            }
+            Command::SetDefaultShore { kind, shore } => {
+                if let Some(problem) = shore.problem() {
+                    return Err(CommandError::InvalidShore(problem));
+                }
+                let mut defaults = map.defaults().clone();
+                match kind {
+                    ShoreKind::Landmass => defaults.shore = shore.clone(),
+                    ShoreKind::Lake => defaults.lake_shore = shore.clone(),
+                }
+                Ok(vec![Op::SetDefaults { defaults }])
             }
             Command::SetDefaultRoughness { roughness } => {
                 valid_roughness(roughness)?;
