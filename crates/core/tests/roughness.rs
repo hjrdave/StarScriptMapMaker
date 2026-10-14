@@ -1,8 +1,10 @@
 //! Coastline Roughness (ADR 0002).
 
+use std::sync::Arc;
+
 use ssmap_core::{
-    Canvas, DistanceUnit, Id, Landmass, Layer, Map, MultiPolygon, Node, Object, ObjectKind, Op,
-    Polygon, Roughness, RoughnessCache, Scale, Subtree, roughen,
+    Canvas, DistanceUnit, Id, Landmass, Layer, Map, MapDefaults, MultiPolygon, Node, Object,
+    ObjectKind, Op, Polygon, Property, Roughness, RoughnessCache, Scale, Subtree, roughen,
 };
 
 fn insert(map: &mut Map, parent: Option<Id>, node: Node) -> Id {
@@ -89,20 +91,27 @@ fn the_cache_recomputes_only_changed_objects() {
         2048,
         Scale::new(1.0, DistanceUnit::Miles),
     ));
+    let default = Roughness::new(6.0, 40.0, 1);
+    map.apply(Op::SetDefaults {
+        defaults: MapDefaults {
+            roughness: default.clone(),
+            ..Default::default()
+        },
+    })
+    .unwrap();
     let layer = insert(&mut map, None, Node::Layer(Layer::new("Land")));
     let west = insert(&mut map, Some(layer), landmass(island(0.0)));
     let east = insert(&mut map, Some(layer), landmass(island(1000.0)));
-    let roughness = Roughness::new(6.0, 40.0, 1);
     let mut cache = RoughnessCache::new();
 
-    let west_first = cache.outline(&map, west, &roughness).unwrap();
-    let east_first = cache.outline(&map, east, &roughness).unwrap();
+    let west_first = cache.outline(&map, west).unwrap();
+    let east_first = cache.outline(&map, east).unwrap();
     assert_eq!(cache.computed(), 2);
-    assert_eq!(*west_first, roughen(&island(0.0), &roughness));
+    assert_eq!(*west_first, roughen(&island(0.0), &default));
 
     // Asking again computes nothing.
-    cache.outline(&map, west, &roughness).unwrap();
-    cache.outline(&map, east, &roughness).unwrap();
+    cache.outline(&map, west).unwrap();
+    cache.outline(&map, east).unwrap();
     assert_eq!(cache.computed(), 2);
 
     // Editing one island recomputes only that island.
@@ -111,21 +120,41 @@ fn the_cache_recomputes_only_changed_objects() {
         geometry: island(1100.0),
     })
     .unwrap();
-    let west_again = cache.outline(&map, west, &roughness).unwrap();
-    let east_again = cache.outline(&map, east, &roughness).unwrap();
+    let west_again = cache.outline(&map, west).unwrap();
+    let east_again = cache.outline(&map, east).unwrap();
     assert_eq!(cache.computed(), 3);
-    assert!(std::sync::Arc::ptr_eq(&west_first, &west_again));
+    assert!(Arc::ptr_eq(&west_first, &west_again));
     assert_ne!(east_first, east_again);
 
-    // New settings recompute.
-    cache
-        .outline(&map, west, &Roughness::new(6.0, 40.0, 2))
-        .unwrap();
+    // An override recomputes only its island.
+    let own = Roughness::new(3.0, 20.0, 5);
+    map.apply(Op::SetProperty {
+        id: west,
+        property: Property::Roughness(Some(own.clone())),
+    })
+    .unwrap();
+    assert_eq!(
+        *cache.outline(&map, west).unwrap(),
+        roughen(&island(0.0), &own)
+    );
+    cache.outline(&map, east).unwrap();
     assert_eq!(cache.computed(), 4);
 
+    // A new default recomputes the islands that use it, and only those.
+    map.apply(Op::SetDefaults {
+        defaults: MapDefaults {
+            roughness: Roughness::new(6.0, 40.0, 2),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    cache.outline(&map, west).unwrap();
+    cache.outline(&map, east).unwrap();
+    assert_eq!(cache.computed(), 5);
+
     // Layers have no outline; removed Objects are forgotten.
-    assert!(cache.outline(&map, layer, &roughness).is_none());
+    assert!(cache.outline(&map, layer).is_none());
     map.apply(Op::Remove { id: east }).unwrap();
-    assert!(cache.outline(&map, east, &roughness).is_none());
+    assert!(cache.outline(&map, east).is_none());
     cache.retain(&map);
 }

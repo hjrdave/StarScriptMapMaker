@@ -272,7 +272,10 @@ fn op_bytes(op: &Op) -> usize {
                 ..
             } => name.len(),
             Op::ReplaceGeometry { geometry, .. } => geometry_bytes(geometry),
-            Op::Remove { .. } | Op::SetProperty { .. } | Op::Move { .. } => 0,
+            Op::Remove { .. }
+            | Op::SetProperty { .. }
+            | Op::Move { .. }
+            | Op::SetDefaults { .. } => 0,
         }
 }
 

@@ -225,15 +225,11 @@ impl RoughnessCache {
         Self::default()
     }
 
-    /// The roughened outline of Object `id` under `roughness`, or `None` when `id` is not in the
-    /// Map or has no outline.
-    pub fn outline(
-        &mut self,
-        map: &Map,
-        id: Id,
-        roughness: &Roughness,
-    ) -> Option<Arc<MultiPolygon>> {
+    /// The roughened outline of Landmass or Lake `id`, with its own Roughness or the Map-wide
+    /// default, or `None` when `id` is not in the Map or has no outline.
+    pub fn outline(&mut self, map: &Map, id: Id) -> Option<Arc<MultiPolygon>> {
         let version = map.version(id)?;
+        let roughness = map.roughness(id)?;
         let crate::Node::Object(object) = map.node(id)? else {
             return None;
         };

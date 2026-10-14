@@ -18,7 +18,7 @@ pub use extra::Extra;
 pub use geometry::{MultiPolygon, Point, Polygon};
 pub use history::{DEFAULT_BUDGET_BYTES, ExecuteError, History, HistoryError, Selection, UndoStep};
 pub use id::Id;
-pub use map::{Canvas, DistanceUnit, InvariantError, Map, MapView, Scale, Subtree};
+pub use map::{Canvas, DistanceUnit, InvariantError, Map, MapDefaults, MapView, Scale, Subtree};
 pub use node::{Label, Lake, Landmass, Layer, Node, Object, ObjectKind, Stamp};
 pub use op::{Op, OpError, Property};
 pub use roughness::{Roughness, RoughnessCache, roughen};
