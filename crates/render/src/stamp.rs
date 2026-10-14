@@ -9,7 +9,7 @@ use ssmap_core::{Color, Point};
 use wgpu::util::DeviceExt;
 
 use crate::atlas::{Atlas, AtlasEntry};
-use crate::canvas::StencilUse;
+use crate::canvas::{CLIP_INSIDE, StencilUse};
 use crate::color::ColorExt as _;
 use crate::sprite::SpriteStore;
 
@@ -34,6 +34,8 @@ pub struct StampDraw {
 #[derive(Clone, PartialEq, Debug)]
 pub struct PlacedStamp {
     pub after: usize,
+    /// The index of the content's Clip scope it shows inside, if any.
+    pub clip: Option<usize>,
     pub draw: StampDraw,
 }
 
@@ -63,19 +65,21 @@ struct Uploaded {
 }
 
 /// Instances drawn with the same pair of atlas pages.
-struct Batch {
+pub(crate) struct Batch {
     pages: (u32, u32),
     instances: Range<u32>,
 }
 
-/// The Stamps drawn after the first `after` vector groups.
+/// The Stamps of one Clip scope drawn after the first `after` vector groups.
 struct Run {
     after: usize,
+    clip: Option<usize>,
     batches: Vec<Batch>,
 }
 
 pub(crate) struct StampRenderer {
     pipeline: wgpu::RenderPipeline,
+    clipped: wgpu::RenderPipeline,
     texture_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     atlas: Atlas,
@@ -132,23 +136,25 @@ impl StampRenderer {
             bind_group_layouts: &[Some(view_layout), Some(&texture_layout)],
             immediate_size: 0,
         });
-        let pipeline = crate::canvas::canvas_pipeline(
-            device,
-            "stamp",
-            &layout,
-            &shader,
-            &[Some(wgpu::VertexBufferLayout {
-                array_stride: std::mem::size_of::<Instance>() as u64,
-                step_mode: wgpu::VertexStepMode::Instance,
-                attributes: &wgpu::vertex_attr_array![
-                    0 => Float32x2, 1 => Float32x2, 2 => Float32x2, 3 => Float32x2,
-                    4 => Float32x2, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4,
-                    8 => Float32x4, 9 => Float32
-                ],
-            })],
-            samples,
-            StencilUse::Ignore,
-        );
+        let pipeline = |label, stencil| {
+            crate::canvas::canvas_pipeline(
+                device,
+                label,
+                &layout,
+                &shader,
+                &[Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Instance>() as u64,
+                    step_mode: wgpu::VertexStepMode::Instance,
+                    attributes: &wgpu::vertex_attr_array![
+                        0 => Float32x2, 1 => Float32x2, 2 => Float32x2, 3 => Float32x2,
+                        4 => Float32x2, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4,
+                        8 => Float32x4, 9 => Float32
+                    ],
+                })],
+                samples,
+                stencil,
+            )
+        };
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("stamp atlas"),
             mag_filter: wgpu::FilterMode::Linear,
@@ -156,7 +162,8 @@ impl StampRenderer {
             ..Default::default()
         });
         Self {
-            pipeline,
+            pipeline: pipeline("stamp", StencilUse::Ignore),
+            clipped: pipeline("stamp clipped", StencilUse::Clipped),
             texture_layout,
             sampler,
             atlas: Atlas::new(page_size),
@@ -218,9 +225,13 @@ impl StampRenderer {
             });
             let index = instances.len() as u32 - 1;
             let pages = (uploaded.art.page, uploaded.silhouette.page);
-            if runs.last().is_none_or(|run| run.after != placed.after) {
+            if runs
+                .last()
+                .is_none_or(|run| (run.after, run.clip) != (placed.after, placed.clip))
+            {
                 runs.push(Run {
                     after: placed.after,
+                    clip: placed.clip,
                     batches: Vec::new(),
                 });
             }
@@ -249,17 +260,32 @@ impl StampRenderer {
         self.runs.iter().map(|run| run.after)
     }
 
-    /// Draws the Stamps placed after `after` vector groups.
-    pub(crate) fn draw(&self, pass: &mut wgpu::RenderPass<'_>, after: usize) {
-        let (Some(instances), Some(run)) = (
-            &self.instances,
-            self.runs.iter().find(|run| run.after == after),
-        ) else {
+    /// The Stamps placed after `after` vector groups, in draw order: for each Clip scope
+    /// they show inside, its batches.
+    pub(crate) fn runs_after(
+        &self,
+        after: usize,
+    ) -> impl Iterator<Item = (Option<usize>, &[Batch])> + '_ {
+        self.runs
+            .iter()
+            .filter(move |run| run.after == after)
+            .map(|run| (run.clip, run.batches.as_slice()))
+    }
+
+    /// Draws batches from [`StampRenderer::runs_after`], only inside the active Clip if
+    /// `clipped`.
+    pub(crate) fn draw(&self, pass: &mut wgpu::RenderPass<'_>, batches: &[Batch], clipped: bool) {
+        let Some(instances) = &self.instances else {
             return;
         };
-        pass.set_pipeline(&self.pipeline);
+        pass.set_pipeline(if clipped {
+            &self.clipped
+        } else {
+            &self.pipeline
+        });
+        pass.set_stencil_reference(if clipped { CLIP_INSIDE } else { 0 });
         pass.set_vertex_buffer(0, instances.slice(..));
-        for batch in &run.batches {
+        for batch in batches {
             pass.set_bind_group(1, &self.bind_groups[&batch.pages], &[]);
             pass.draw(0..6, batch.instances.clone());
         }

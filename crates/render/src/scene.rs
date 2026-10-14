@@ -12,7 +12,7 @@ use ssmap_core::{
     Id, Label, Landmass, Map, MultiPolygon, Node, ObjectKind, Polygon, RoughnessCache, ShoreStyle,
 };
 
-use crate::canvas::Content;
+use crate::canvas::{ClipScope, Content};
 use crate::color::Color;
 use crate::color::ColorExt as _;
 use crate::stamp::{PlacedStamp, StampDraw};
@@ -54,11 +54,23 @@ impl MapScene {
         let mut groups = Vec::new();
         let mut stamps = Vec::new();
         let mut seen = Vec::new();
+        let mut clips: Vec<ClipScope> = Vec::new();
+        // The Landmass the last scope is clipped to, while that scope is still growing.
+        let mut open: Option<Id> = None;
         let order = map.draw_order();
         // Each Layer's ripples draw beneath every fill of that Layer, so they never cover
         // land of that Layer.
         let mut rippled = HashSet::new();
         for &id in &order {
+            // Consecutive Objects clipped to the same Landmass share a scope.
+            let target = clip_target(map, id);
+            if target != open {
+                open = target;
+                if let Some(target) = target {
+                    clips.push(clip_scope(map, roughness, target, &order, groups.len()));
+                }
+            }
+            let clip = open.map(|_| clips.len() - 1);
             if let Some(layer) = map.parent(id)
                 && map.shore(id).is_some()
                 && rippled.insert(layer)
@@ -74,10 +86,17 @@ impl MapScene {
                     }
                 }
             }
+            let first_stamp = stamps.len();
             self.draw(map, roughness, id, &mut groups, &mut stamps, &mut seen);
+            for placed in &mut stamps[first_stamp..] {
+                placed.clip = clip;
+            }
+            if let Some(scope) = clips.last_mut().filter(|_| open.is_some()) {
+                scope.groups.end = groups.len();
+            }
         }
         self.layouts.retain(|id, _| seen.contains(id));
-        let content = Content::with_stamps(groups, stamps);
+        let content = Content::with_clips(groups, stamps, clips);
         self.built = Some((map.revision(), content.clone()));
         content
     }
@@ -117,6 +136,7 @@ impl MapScene {
             }
             ObjectKind::Stamp(stamp) => stamps.push(PlacedStamp {
                 after: groups.len(),
+                clip: None,
                 draw: StampDraw {
                     asset: stamp.asset.clone(),
                     position: stamp.position,
@@ -152,6 +172,63 @@ impl MapScene {
                 }
             }
         }
+    }
+}
+
+/// The Landmass `id` is clipped to: that of the nearest Layer above it that has a Clip. A
+/// Layer's own Clip replaces any Clip of the Layers around it.
+fn clip_target(map: &Map, id: Id) -> Option<Id> {
+    std::iter::successors(map.parent(id), |&layer| map.parent(layer)).find_map(|layer| {
+        match map.node(layer) {
+            Some(Node::Layer(layer)) => layer.clip,
+            _ => None,
+        }
+    })
+}
+
+/// A scope starting at group `start`, clipped to the Landmass `target`'s roughened outline
+/// minus every Lake that draws after it.
+fn clip_scope(
+    map: &Map,
+    roughness: &mut RoughnessCache,
+    target: Id,
+    order: &[Id],
+    start: usize,
+) -> ClipScope {
+    let fills = |outline: &MultiPolygon| -> Vec<VectorGroup> {
+        outline
+            .0
+            .iter()
+            .map(|polygon| {
+                VectorGroup::fill(
+                    polygon_path(polygon),
+                    Color::rgb(0, 0, 0),
+                    FillRule::EvenOdd,
+                )
+            })
+            .collect()
+    };
+    let land = roughness
+        .outline(map, target)
+        .map(|outline| fills(&outline))
+        .unwrap_or_default();
+    let after = order
+        .iter()
+        .position(|&id| id == target)
+        .map_or(0, |at| at + 1);
+    let mut holes = Vec::new();
+    for &id in &order[after..] {
+        if let Some(Node::Object(object)) = map.node(id)
+            && matches!(object.kind, ObjectKind::Lake(_))
+            && let Some(outline) = roughness.outline(map, id)
+        {
+            holes.extend(fills(&outline));
+        }
+    }
+    ClipScope {
+        groups: start..start,
+        land,
+        holes,
     }
 }
 
