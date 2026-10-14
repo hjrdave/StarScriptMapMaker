@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::color::Color;
+use crate::embedded::{Blob, ContentHash, EmbedAsset, EmbedFont, EmbeddedFont};
 use crate::geometry::{Affine, MultiPolygon, NodeRef, Point};
 use crate::id::Id;
 use crate::land;
@@ -214,6 +215,13 @@ pub enum Command {
         parent: Id,
         stamps: Vec<PlacedStamp>,
     },
+    /// Embeds Assets and font files in the Map (ADR 0005), as saving does for everything the
+    /// Map uses. Files are stored once per content hash. An Asset or font file already
+    /// embedded is left as it is: the embedded copy wins.
+    EmbedAssets {
+        assets: Vec<EmbedAsset>,
+        fonts: Vec<EmbedFont>,
+    },
 }
 
 /// One Stamp of a [`Command::PlaceStamps`], with the id it gets.
@@ -267,6 +275,8 @@ pub enum CommandError {
     InvalidLabel(&'static str),
     #[error("{0} is not a Stamp")]
     NotAStamp(Id),
+    #[error("cannot embed: {0}")]
+    InvalidEmbed(String),
     #[error("invalid Stamp: {0}")]
     InvalidStamp(&'static str),
     #[error(transparent)]
@@ -311,6 +321,7 @@ impl Command {
             Command::CreateStamp { .. } => "Add Stamp",
             Command::SetStamp { .. } => "Edit Stamp",
             Command::PlaceStamps { .. } => "Place Stamps",
+            Command::EmbedAssets { .. } => "Embed Assets",
         }
     }
 
@@ -622,6 +633,69 @@ impl Command {
                             ))),
                             children: Vec::new(),
                         },
+                    });
+                }
+                Ok(ops)
+            }
+            Command::EmbedAssets { assets, fonts } => {
+                let mut ops = Vec::new();
+                let mut stored = HashSet::new();
+                let mut put_blob = |ops: &mut Vec<Op>, blob: &Blob, expected: ContentHash| {
+                    let hash = blob.hash();
+                    if hash != expected {
+                        return Err(CommandError::InvalidEmbed(format!(
+                            "a file does not match its recorded hash {expected}"
+                        )));
+                    }
+                    if !map.embedded().blobs.contains_key(&hash) && stored.insert(hash) {
+                        ops.push(Op::SetBlob {
+                            hash,
+                            data: Some(blob.clone()),
+                        });
+                    }
+                    Ok(())
+                };
+                let mut seen_assets = HashSet::new();
+                for embed in assets {
+                    // The embedded copy wins until the user updates it from the pack.
+                    if map.embedded().assets.contains_key(&embed.reference)
+                        || !seen_assets.insert(&embed.reference)
+                    {
+                        continue;
+                    }
+                    put_blob(&mut ops, &embed.art, embed.record.art)?;
+                    match (&embed.silhouette, embed.record.silhouette) {
+                        (Some(blob), Some(hash)) => put_blob(&mut ops, blob, hash)?,
+                        (None, None) => {}
+                        _ => {
+                            return Err(CommandError::InvalidEmbed(format!(
+                                "{}: the Silhouette file and its record disagree",
+                                embed.reference
+                            )));
+                        }
+                    }
+                    ops.push(Op::SetEmbeddedAsset {
+                        asset: embed.reference.clone(),
+                        record: Some(Box::new(embed.record.clone())),
+                    });
+                }
+                let mut seen_fonts = HashSet::new();
+                for font in fonts {
+                    if map.embedded().fonts.contains_key(&font.file)
+                        || !seen_fonts.insert(&font.file)
+                    {
+                        continue;
+                    }
+                    put_blob(&mut ops, &font.data, font.data.hash())?;
+                    ops.push(Op::SetEmbeddedFont {
+                        file: font.file.clone(),
+                        record: Some(Box::new(EmbeddedFont {
+                            family: font.family.clone(),
+                            file: font.file.clone(),
+                            data: font.data.hash(),
+                            licence: font.licence.clone(),
+                            extra: Default::default(),
+                        })),
                     });
                 }
                 Ok(ops)

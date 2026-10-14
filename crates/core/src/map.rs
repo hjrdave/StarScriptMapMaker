@@ -6,6 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::embedded::Embedded;
 use crate::extra::Extra;
 use crate::id::Id;
 use crate::node::{Node, Object, ObjectKind};
@@ -119,6 +120,9 @@ pub struct MapView {
     pub defaults: MapDefaults,
     /// The top-level Layers, first drawn lowest.
     pub layers: Vec<Subtree>,
+    /// The Assets and fonts embedded in the Map.
+    #[serde(default, skip_serializing_if = "Embedded::is_empty")]
+    pub embedded: Embedded,
 }
 
 #[derive(Clone, Debug)]
@@ -135,6 +139,8 @@ pub struct Map {
     pub canvas: Canvas,
     /// Changed only by [`Op::SetDefaults`](crate::Op::SetDefaults).
     pub(crate) defaults: MapDefaults,
+    /// Changed only by the embed Ops.
+    pub(crate) embedded: Embedded,
     pub(crate) root: Vec<Id>,
     pub(crate) entries: HashMap<Id, Entry>,
     /// Increases with every applied Op; touched nodes take its new value as their version.
@@ -146,6 +152,7 @@ impl Map {
         Self {
             canvas,
             defaults: MapDefaults::default(),
+            embedded: Embedded::default(),
             root: Vec::new(),
             entries: HashMap::new(),
             revision: 0,
@@ -156,6 +163,7 @@ impl Map {
     pub fn from_view(view: MapView) -> Result<Self, InvariantError> {
         let mut map = Self::new(view.canvas);
         map.defaults = view.defaults;
+        map.embedded = view.embedded;
         for subtree in view.layers {
             if !subtree.node.is_layer() {
                 return Err(InvariantError::ObjectAtRoot(subtree.id));
@@ -171,7 +179,13 @@ impl Map {
             canvas: self.canvas.clone(),
             defaults: self.defaults.clone(),
             layers: self.root.iter().map(|&id| self.subtree(id)).collect(),
+            embedded: self.embedded.clone(),
         }
+    }
+
+    /// The Assets and fonts embedded in the Map.
+    pub fn embedded(&self) -> &Embedded {
+        &self.embedded
     }
 
     pub fn defaults(&self) -> &MapDefaults {

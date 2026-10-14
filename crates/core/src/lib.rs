@@ -5,6 +5,7 @@
 pub mod asset;
 mod color;
 mod command;
+mod embedded;
 mod extra;
 pub mod file;
 mod geometry;
@@ -23,6 +24,9 @@ mod stamp_pick;
 pub use asset::AssetRef;
 pub use color::{Color, ParseColorError};
 pub use command::{Command, CommandError, PlacedStamp};
+pub use embedded::{
+    Blob, ContentHash, EmbedAsset, EmbedFont, Embedded, EmbeddedAsset, EmbeddedFont,
+};
 pub use extra::Extra;
 pub use geometry::{Affine, MultiPolygon, NodeRef, Point, Polygon, Rect};
 pub use history::{DEFAULT_BUDGET_BYTES, ExecuteError, History, HistoryError, Selection, UndoStep};

@@ -10,6 +10,9 @@
 //!   the node as JSON without its outline, and `geometry` is the outline of a Landmass or Lake
 //!   as a binary blob (see `blob.rs`).
 //!
+//! - `blobs (hash, data)` and `embedded (kind, key, props)`: the Assets and fonts the Map
+//!   embeds (see `embed.rs`). Added in format 1.1; a 1.0 file gains them on its next save.
+//!
 //! Saves are incremental: only rows whose node changed are written, inside one SQLite
 //! transaction, so a crash mid-save leaves the previous save intact. Save As and new files
 //! are written beside the destination and renamed over it, for the same reason.
@@ -22,6 +25,7 @@
 //! minor format version round-trips without loss.
 
 mod blob;
+mod embed;
 mod journal;
 mod migrate;
 
@@ -44,7 +48,7 @@ use crate::node::{Node, Object};
 
 /// The format this version writes. A minor bump only adds optional fields; a major bump is
 /// anything else, and needs a migration.
-pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 0 };
+pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 1 };
 
 /// The longer side of the preview image stored in every save, in pixels.
 pub const PREVIEW_SIZE: u32 = 512;
@@ -165,6 +169,7 @@ pub struct MapFile {
     saved: HashMap<Id, SavedRow>,
     saved_canvas: Option<Canvas>,
     saved_defaults: Option<MapDefaults>,
+    saved_embedded: embed::SavedEmbedded,
     saved_revision: u64,
 }
 
@@ -189,6 +194,7 @@ impl MapFile {
                 saved: HashMap::new(),
                 saved_canvas: None,
                 saved_defaults: None,
+                saved_embedded: Default::default(),
                 saved_revision: 0,
             })
         })
@@ -231,10 +237,12 @@ impl MapFile {
             .and_then(|text| Uuid::parse_str(&text).ok())
             .unwrap_or_else(Uuid::nil);
         let (layers, saved) = read_nodes(&conn)?;
+        let (embedded, saved_embedded) = embed::read(&conn)?;
         let map = Map::from_view(MapView {
             canvas: canvas.clone(),
             defaults: defaults.clone(),
             layers,
+            embedded,
         })
         .map_err(|err| FileError::Damaged(err.to_string()))?;
         let file = Self {
@@ -245,6 +253,7 @@ impl MapFile {
             saved,
             saved_canvas: Some(canvas),
             saved_defaults: Some(defaults),
+            saved_embedded,
             saved_revision: map.revision(),
         };
         Ok((file, map))
@@ -267,6 +276,7 @@ impl MapFile {
             let defaults = serde_json::to_string(map.defaults()).expect("defaults serialise");
             write_meta(&tx, "defaults", &defaults)?;
         }
+        let saved_embedded = embed::write(&tx, map.embedded(), &self.saved_embedded)?;
         write_meta(&tx, "format_version", self.version.to_string())?;
         write_meta(&tx, "save_generation", generation.to_string())?;
         match preview {
@@ -280,6 +290,7 @@ impl MapFile {
         self.saved = saved;
         self.saved_canvas = Some(map.canvas.clone());
         self.saved_defaults = Some(map.defaults().clone());
+        self.saved_embedded = saved_embedded;
         self.generation = generation;
         self.saved_revision = map.revision();
         Ok(stats)
@@ -311,6 +322,7 @@ impl MapFile {
                 saved: self.saved.clone(),
                 saved_canvas: self.saved_canvas.clone(),
                 saved_defaults: self.saved_defaults.clone(),
+                saved_embedded: self.saved_embedded.clone(),
                 saved_revision: self.saved_revision,
             })
         })?;
@@ -380,6 +392,7 @@ fn save_via_temp(
         saved,
         saved_canvas,
         saved_defaults,
+        saved_embedded,
         saved_revision,
         ..
     } = file;
@@ -396,6 +409,7 @@ fn save_via_temp(
         saved,
         saved_canvas,
         saved_defaults,
+        saved_embedded,
         saved_revision,
     };
     Ok((file, stats))
