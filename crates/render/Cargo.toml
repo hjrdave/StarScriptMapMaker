@@ -14,6 +14,7 @@ etagere.workspace = true
 image.workspace = true
 lyon.workspace = true
 pollster.workspace = true
+png.workspace = true
 resvg.workspace = true
 ssmap-core.workspace = true
 ssmap-fonts.workspace = true
