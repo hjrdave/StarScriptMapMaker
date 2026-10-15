@@ -6,6 +6,7 @@ pub mod asset;
 mod color;
 mod command;
 mod embedded;
+mod export;
 mod extra;
 pub mod file;
 mod geometry;
@@ -27,6 +28,10 @@ pub use color::{Color, ParseColorError};
 pub use command::{Command, CommandError, PlacedStamp};
 pub use embedded::{
     Blob, ContentHash, EmbedAsset, EmbedFont, Embedded, EmbeddedAsset, EmbeddedFont,
+};
+pub use export::{
+    CreditsOptions, ExportRegion, ExportSettings, ExportSize, ExportSizeError, MAX_EXPORT_SIDE,
+    SizeMode, WARN_EXPORT_SIDE,
 };
 pub use extra::Extra;
 pub use geometry::{Affine, MultiPolygon, NodeRef, Point, Polygon, Rect};

@@ -219,6 +219,7 @@ fn from_view_rejects_duplicate_ids() {
         defaults: Default::default(),
         layers: vec![layer.clone(), layer],
         embedded: Default::default(),
+        export_settings: Default::default(),
     };
     assert!(Map::from_view(view).is_err());
 }
