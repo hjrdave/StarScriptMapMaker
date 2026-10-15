@@ -8,6 +8,7 @@ pub mod document;
 pub mod editor;
 pub mod frame_time;
 pub mod handles;
+mod label_styles;
 mod layer_tree;
 mod properties;
 mod recent;
@@ -31,6 +32,7 @@ use crate::canvas_view::CanvasView;
 use crate::credits::Credits;
 use crate::document::Document;
 use crate::editor::Editor;
+use crate::label_styles::LabelStylesPanel;
 use crate::layer_tree::LayerTree;
 use crate::properties::PropertiesPanel;
 use crate::recent::RecentFiles;
@@ -60,6 +62,7 @@ pub struct MapMakerApp {
     document: Document,
     layer_tree: LayerTree,
     properties: PropertiesPanel,
+    label_styles: LabelStylesPanel,
     asset_browser: AssetBrowser,
     /// The installed Asset packs' art, shared with the Canvas renderer and picking.
     sprites: SpriteStore,
@@ -144,6 +147,7 @@ impl MapMakerApp {
             document: Document::default(),
             layer_tree: LayerTree::default(),
             properties: PropertiesPanel::default(),
+            label_styles: LabelStylesPanel::default(),
             asset_browser: AssetBrowser::default(),
             sprites,
             canvas_view: CanvasView::new(gpu),
@@ -777,6 +781,7 @@ impl MapMakerApp {
             {
                 editor.shuffle_variants();
             }
+            ui.toggle_value(&mut self.label_styles.open, "Label styles");
             ui.separator();
             let undo_hint = editor.undo_label().map(|l| format!("Undo {l}"));
             let undo = ui.add_enabled(editor.can_undo(), egui::Button::new("Undo"));
@@ -897,6 +902,7 @@ impl eframe::App for MapMakerApp {
         self.dialogs(&ctx);
         self.update_title(&ctx);
         self.credits.show(&ctx);
+        self.label_styles.show(&ctx, &mut self.editor);
         self.updates.show(&ctx);
         egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));
