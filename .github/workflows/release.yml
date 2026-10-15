@@ -25,13 +25,7 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          # The oldest supported runner, so the .deb and AppImage need only glibc 2.35.
-          - name: Linux x86_64
-            os: ubuntu-22.04
-            formats: deb,appimage
-          - name: Windows x86_64
-            os: windows-2025
-            formats: nsis
+          # macOS only for now (ADR 0008); Linux and Windows return when we go cross-platform.
           - name: macOS arm64
             os: macos-15
             formats: dmg

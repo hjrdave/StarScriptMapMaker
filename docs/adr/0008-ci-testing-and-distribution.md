@@ -2,6 +2,8 @@
 
 Status: accepted
 
+> **Amendment (macOS-first):** the app is still intended to be cross-platform, but for now development, CI, nightly and release builds cover **macOS arm64 only**. Linux and Windows checks, packages and GPU measurements are paused, not dropped. The sections below describe the full three-platform plan to restore later.
+
 **Targets:** v1 builds for Linux x86_64, Windows x86_64 and macOS arm64 only. Intel Macs and Windows ARM64 wait until users ask.
 
 **GPU testing:** hosted CI runners have no real GPU, so rendering is checked with **golden-image tests on software adapters**:

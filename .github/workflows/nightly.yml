@@ -22,13 +22,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The oldest supported runner, so the .deb and AppImage need only glibc 2.35.
-          - name: Linux x86_64
-            os: ubuntu-22.04
-            formats: deb,appimage
-          - name: Windows x86_64
-            os: windows-2025
-            formats: nsis
+          # macOS only for now (ADR 0008); Linux and Windows return when we go cross-platform.
           - name: macOS arm64
             os: macos-15
             formats: dmg
@@ -48,40 +42,6 @@ jobs:
         run: cargo packager --release --formats ${{ matrix.formats }}
       - name: Write a Map file to open
         run: cargo run --release --locked -p ssmap-core --example new_map -- target/Smoke.ssmap
-
-      - name: Smoke test (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb xdotool xdg-utils libfile-mimeinfo-perl desktop-file-utils mesa-vulkan-drivers
-          sudo apt-get install -y ./target/packages/*.deb
-          desktop-file-validate /usr/share/applications/starscript-map-maker.desktop
-          xvfb-run -a scripts/smoke-linux-package.sh target/Smoke.ssmap deb
-          xvfb-run -a scripts/smoke-linux-package.sh target/Smoke.ssmap appimage target/packages/*.AppImage
-
-      - name: Smoke test (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $installer = Get-ChildItem target/packages/*-setup.exe
-          Start-Process $installer.FullName -ArgumentList '/S' -Wait
-          # Per-user install: %LOCALAPPDATA%, with the association under HKCU.
-          $dir = Join-Path $env:LOCALAPPDATA 'StarScript Map Maker'
-          if (-not (Test-Path "$dir/starscript-map-maker.exe")) { throw "no exe in $dir" }
-          if (-not (Test-Path "$dir/assets/README.md")) { throw "no assets in $dir" }
-          $progId = (Get-ItemProperty 'HKCU:\Software\Classes\.ssmap').'(default)'
-          if ($progId -ne 'StarScriptMapMaker.Map') { throw ".ssmap is $progId" }
-          # Open the file the way Explorer does on a double-click: through its association.
-          $map = Resolve-Path target/Smoke.ssmap
-          Start-Process $map
-          foreach ($i in 1..60) {
-            $app = Get-Process starscript-map-maker -ErrorAction SilentlyContinue |
-              Where-Object { $_.MainWindowTitle -like '*Smoke.ssmap*' }
-            if ($app) { Write-Host "opened: $($app.MainWindowTitle)"; $app | Stop-Process; exit 0 }
-            Start-Sleep 1
-          }
-          throw 'no window titled Smoke.ssmap'
 
       - name: Smoke test (macOS)
         if: runner.os == 'macOS'
