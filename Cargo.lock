@@ -4114,6 +4114,7 @@ dependencies = [
  "etagere",
  "image",
  "lyon",
+ "png",
  "pollster",
  "resvg",
  "serde_json",

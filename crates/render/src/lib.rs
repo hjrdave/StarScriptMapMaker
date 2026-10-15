@@ -13,6 +13,7 @@ mod color;
 mod gpu;
 mod ocean;
 mod offscreen;
+mod png_writer;
 mod present;
 pub mod raster;
 mod scene;
@@ -29,6 +30,7 @@ pub use canvas::{
 pub use color::Color;
 pub use gpu::{GpuCapabilities, Headless, HeadlessError, Suitability};
 pub use offscreen::{RgbaImage, read_texture, render_to_image};
+pub use png_writer::{PngMeta, PngWriteError, PngWriter};
 pub use present::Presenter;
 pub use scene::MapScene;
 pub use sprite::{Sprite, SpriteStore};
