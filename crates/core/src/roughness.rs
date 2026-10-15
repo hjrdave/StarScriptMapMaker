@@ -11,7 +11,8 @@
 //! end points and the seed, so moving one node changes only its two edges.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -207,10 +208,23 @@ fn unit(hash: u64) -> f64 {
 
 /// Roughened outlines of a Map's Landmasses and Lakes, recomputed only for Objects whose version
 /// or settings changed since they were last asked for.
-#[derive(Default, Debug)]
+///
+/// Clones share one store, so a background thread can fill it (see [`RoughnessCache::rebuild`])
+/// while the editor keeps drawing. While a rebuild is running, an Object whose outline is not
+/// ready yet answers with its stored, un-roughened outline instead of computing it.
+#[derive(Default, Debug, Clone)]
 pub struct RoughnessCache {
-    entries: HashMap<Id, CacheEntry>,
-    computed: u64,
+    shared: Arc<Shared>,
+}
+
+#[derive(Default, Debug)]
+struct Shared {
+    entries: Mutex<HashMap<Id, CacheEntry>>,
+    computed: AtomicU64,
+    /// Bumped whenever an outline lands, so callers know what they drew is out of date.
+    generation: AtomicU64,
+    /// How many rebuilds are still running.
+    rebuilding: AtomicUsize,
 }
 
 #[derive(Debug)]
@@ -220,13 +234,38 @@ struct CacheEntry {
     outline: Arc<MultiPolygon>,
 }
 
+impl Shared {
+    fn entries(&self) -> MutexGuard<'_, HashMap<Id, CacheEntry>> {
+        self.entries.lock().expect("roughness cache lock")
+    }
+
+    fn store(&self, id: Id, version: u64, roughness: Roughness, outline: Arc<MultiPolygon>) {
+        self.entries().insert(
+            id,
+            CacheEntry {
+                version,
+                roughness,
+                outline,
+            },
+        );
+        self.computed.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
 impl RoughnessCache {
     pub fn new() -> Self {
         Self::default()
     }
 
+    fn lookup(&self, id: Id, version: u64, roughness: &Roughness) -> Option<Arc<MultiPolygon>> {
+        let entries = self.shared.entries();
+        let entry = entries.get(&id)?;
+        (entry.version == version && entry.roughness == *roughness).then(|| entry.outline.clone())
+    }
+
     /// The roughened outline of Landmass or Lake `id`, with its own Roughness or the Map-wide
-    /// default, or `None` when `id` is not in the Map or has no outline.
+    /// default, or `None` when `id` is not in the Map or has no outline. During a rebuild, an
+    /// outline that is not ready yet is the stored one.
     pub fn outline(&mut self, map: &Map, id: Id) -> Option<Arc<MultiPolygon>> {
         let version = map.version(id)?;
         let roughness = map.roughness(id)?;
@@ -234,38 +273,130 @@ impl RoughnessCache {
             return None;
         };
         let geometry = object.kind.geometry()?;
-        if let Some(entry) = self.entries.get(&id)
-            && entry.version == version
-            && entry.roughness == *roughness
-        {
-            return Some(entry.outline.clone());
+        if let Some(outline) = self.lookup(id, version, roughness) {
+            return Some(outline);
+        }
+        if self.is_rebuilding() {
+            return Some(Arc::new(geometry.clone()));
         }
         let outline = Arc::new(roughen(geometry, roughness));
-        self.computed += 1;
-        self.entries.insert(
-            id,
-            CacheEntry {
-                version,
-                roughness: roughness.clone(),
-                outline: outline.clone(),
-            },
-        );
+        self.shared
+            .store(id, version, roughness.clone(), outline.clone());
         Some(outline)
+    }
+
+    /// Whether the roughened outline of `id` is computed for its current version and settings.
+    pub fn is_ready(&self, map: &Map, id: Id) -> bool {
+        let (Some(version), Some(roughness)) = (map.version(id), map.roughness(id)) else {
+            return false;
+        };
+        self.lookup(id, version, roughness).is_some()
+    }
+
+    /// Whether a [`Rebuild`] is still running.
+    pub fn is_rebuilding(&self) -> bool {
+        self.shared.rebuilding.load(Ordering::SeqCst) > 0
+    }
+
+    /// Changes whenever a [`Rebuild`] lands an outline or ends, which is when what was drawn from
+    /// placeholders is out of date. Outlines computed on demand do not change it.
+    pub fn generation(&self) -> u64 {
+        self.shared.generation.load(Ordering::SeqCst)
+    }
+
+    /// Starts rebuilding every outline of `map` that is not ready. Until the returned
+    /// [`Rebuild`] is run or dropped, [`RoughnessCache::outline`] answers not-ready Objects with
+    /// their stored outlines. It can be sent to another thread.
+    pub fn rebuild(&self, map: &Map) -> Rebuild {
+        let mut jobs = Vec::new();
+        for id in map.ids() {
+            let (Some(version), Some(roughness)) = (map.version(id), map.roughness(id)) else {
+                continue;
+            };
+            let Some(crate::Node::Object(object)) = map.node(id) else {
+                continue;
+            };
+            let Some(geometry) = object.kind.geometry() else {
+                continue;
+            };
+            if self.lookup(id, version, roughness).is_none() {
+                jobs.push(Job {
+                    id,
+                    version,
+                    roughness: roughness.clone(),
+                    geometry: geometry.clone(),
+                });
+            }
+        }
+        self.shared.rebuilding.fetch_add(1, Ordering::SeqCst);
+        Rebuild {
+            shared: self.shared.clone(),
+            jobs,
+        }
     }
 
     /// Forgets Objects that are no longer in `map`.
     pub fn retain(&mut self, map: &Map) {
-        self.entries.retain(|&id, _| map.contains(id));
+        self.shared.entries().retain(|&id, _| map.contains(id));
     }
 
     /// Empties the cache, as when another Map is opened.
     pub fn clear(&mut self) {
-        self.entries.clear();
+        self.shared.entries().clear();
     }
 
     /// How many outlines this cache has computed, for tests and profiling.
     pub fn computed(&self) -> u64 {
-        self.computed
+        self.shared.computed.load(Ordering::SeqCst)
+    }
+}
+
+#[derive(Debug)]
+struct Job {
+    id: Id,
+    version: u64,
+    roughness: Roughness,
+    geometry: MultiPolygon,
+}
+
+/// Outlines still to compute, from [`RoughnessCache::rebuild`]. Owns its inputs, so it can run
+/// on a thread of its own. Dropping it unrun ends the rebuild.
+#[derive(Debug)]
+pub struct Rebuild {
+    shared: Arc<Shared>,
+    jobs: Vec<Job>,
+}
+
+impl Rebuild {
+    /// How many outlines this will compute.
+    pub fn len(&self) -> usize {
+        self.jobs.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.jobs.is_empty()
+    }
+
+    /// Computes each outline, calling `ready` after each lands in the cache and once more when
+    /// the rebuild is over. Computing holds no lock, so drawing is never blocked by it.
+    pub fn run(mut self, mut ready: impl FnMut()) {
+        for job in std::mem::take(&mut self.jobs) {
+            let outline = Arc::new(roughen(&job.geometry, &job.roughness));
+            self.shared
+                .store(job.id, job.version, job.roughness, outline);
+            self.shared.generation.fetch_add(1, Ordering::SeqCst);
+            ready();
+        }
+        // Ends the rebuild first, so the last repaint sees it over.
+        drop(self);
+        ready();
+    }
+}
+
+impl Drop for Rebuild {
+    fn drop(&mut self) {
+        self.shared.rebuilding.fetch_sub(1, Ordering::SeqCst);
+        self.shared.generation.fetch_add(1, Ordering::SeqCst);
     }
 }
 

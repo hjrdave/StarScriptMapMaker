@@ -52,6 +52,8 @@ pub struct Editor {
     pick_index: Option<PickIndex>,
     /// Roughened outlines, shared by the screen and picking so they agree.
     roughness: RoughnessCache,
+    /// The cache's generation when the Canvas content and picking were last built.
+    outlines_seen: u64,
     /// Stamp art, shared with the Canvas renderer. Absent in headless tests.
     sprites: Option<SpriteStore>,
     stamp_index: Option<StampIndex>,
@@ -138,6 +140,7 @@ impl Editor {
             gesture_selection: Vec::new(),
             pick_index: None,
             roughness: RoughnessCache::new(),
+            outlines_seen: 0,
             sprites: None,
             stamp_index: None,
             selected_asset: None,
@@ -280,6 +283,7 @@ impl Editor {
 
     /// The topmost unlocked Landmass or Lake drawn at `point`, in Canvas units.
     fn pick_outline(&mut self, point: [f64; 2]) -> Option<Id> {
+        self.sync_background_outlines();
         let map = &self.map;
         let index = match &mut self.pick_index {
             Some(index) if index.is_current(map) => index,
@@ -317,10 +321,31 @@ impl Editor {
         Some(stamp.bounds(&self.sprites.as_ref()?.shape(&stamp.asset)?))
     }
 
+    /// Computes every roughened outline on a thread of its own, so a Map that has just opened
+    /// shows at once with its stored outlines. `repaint` is called as each outline completes.
+    pub fn start_background_roughness(&mut self, repaint: impl Fn() + Send + 'static) {
+        let rebuild = self.roughness.rebuild(&self.map);
+        if rebuild.is_empty() {
+            return;
+        }
+        std::thread::spawn(move || rebuild.run(repaint));
+    }
+
+    /// Drops what was built from placeholder outlines once the background ones have landed.
+    fn sync_background_outlines(&mut self) {
+        let generation = self.roughness.generation();
+        if generation != self.outlines_seen {
+            self.outlines_seen = generation;
+            self.scene.invalidate();
+            self.pick_index = None;
+        }
+    }
+
     /// What the Canvas draws for the Map, rebuilt only once it has changed. Drops roughened
     /// outlines of Objects that are gone.
     pub fn scene_content(&mut self) -> Content {
         self.sync_embedded();
+        self.sync_background_outlines();
         self.roughness.retain(&self.map);
         self.scene.content(&self.map, &mut self.roughness)
     }

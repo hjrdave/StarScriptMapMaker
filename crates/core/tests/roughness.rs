@@ -158,3 +158,70 @@ fn the_cache_recomputes_only_changed_objects() {
     assert!(cache.outline(&map, east).is_none());
     cache.retain(&map);
 }
+
+fn two_islands() -> (Map, Id, Id, Roughness) {
+    let mut map = Map::new(Canvas::new(
+        2048,
+        2048,
+        Scale::new(1.0, DistanceUnit::Miles),
+    ));
+    let default = Roughness::new(6.0, 40.0, 1);
+    map.apply(Op::SetDefaults {
+        defaults: MapDefaults {
+            roughness: default.clone(),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    let layer = insert(&mut map, None, Node::Layer(Layer::new("Land")));
+    let west = insert(&mut map, Some(layer), landmass(island(0.0)));
+    let east = insert(&mut map, Some(layer), landmass(island(1000.0)));
+    (map, west, east, default)
+}
+
+#[test]
+fn a_rebuild_shows_stored_outlines_until_ready_and_matches_a_synchronous_build() {
+    let (map, west, east, default) = two_islands();
+    let mut cache = RoughnessCache::new();
+    let rebuild = cache.rebuild(&map);
+    assert_eq!(rebuild.len(), 2);
+    assert!(cache.is_rebuilding());
+
+    // Nothing is computed yet: the stored outlines stand in.
+    assert!(!cache.is_ready(&map, west));
+    assert_eq!(*cache.outline(&map, west).unwrap(), island(0.0));
+    assert_eq!(cache.computed(), 0);
+
+    let before = cache.generation();
+    std::thread::spawn(move || rebuild.run(|| {}))
+        .join()
+        .unwrap();
+    assert!(!cache.is_rebuilding());
+    assert!(cache.generation() > before);
+    assert!(cache.is_ready(&map, west) && cache.is_ready(&map, east));
+
+    let mut sync = RoughnessCache::new();
+    for (id, geometry) in [(west, island(0.0)), (east, island(1000.0))] {
+        let built = cache.outline(&map, id).unwrap();
+        assert_eq!(built, sync.outline(&map, id).unwrap());
+        assert_eq!(*built, roughen(&geometry, &default));
+    }
+    assert_eq!(cache.computed(), 2);
+}
+
+#[test]
+fn a_rebuild_skips_outlines_that_are_ready() {
+    let (mut map, west, east, _) = two_islands();
+    let mut cache = RoughnessCache::new();
+    cache.outline(&map, west).unwrap();
+    cache.outline(&map, east).unwrap();
+    map.apply(Op::ReplaceGeometry {
+        id: east,
+        geometry: island(1100.0),
+    })
+    .unwrap();
+    let rebuild = cache.rebuild(&map);
+    assert_eq!(rebuild.len(), 1);
+    rebuild.run(|| {});
+    assert_eq!(cache.computed(), 3);
+}

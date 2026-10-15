@@ -87,6 +87,8 @@ pub struct MapMakerApp {
     close_allowed: bool,
     /// `None` without a GPU, as in UI tests; saves then store no preview.
     render_state: Option<egui_wgpu::RenderState>,
+    /// Asked for a repaint as background work finishes.
+    egui_ctx: egui::Context,
     /// The window title last sent, so it is only sent when it changes.
     title: String,
 }
@@ -167,6 +169,7 @@ impl MapMakerApp {
             unsaved_found,
             close_allowed: false,
             render_state: cc.wgpu_render_state.clone(),
+            egui_ctx: cc.egui_ctx.clone(),
             title: String::new(),
         }
     }
@@ -216,6 +219,9 @@ impl MapMakerApp {
                 self.recovery.reset();
                 self.recovery_prompt = None;
                 self.replace(document, map);
+                let ctx = self.egui_ctx.clone();
+                self.editor
+                    .start_background_roughness(move || ctx.request_repaint());
                 self.recent.add(path);
                 self.editor
                     .info(format!("Opened “{}”", self.document.name()));
