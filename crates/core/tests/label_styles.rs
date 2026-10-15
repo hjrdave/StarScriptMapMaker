@@ -236,6 +236,17 @@ fn the_default_style_stays_and_names_stay_unique() {
 }
 
 #[test]
+fn starter_styles_are_valid_and_survive_a_save() {
+    let styles = ssmap_core::LabelStyles::starter();
+    let names: Vec<_> = styles.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(names, ["Default", "Realm", "City", "Sea", "Range"]);
+    assert!(styles.iter().all(|s| s.problem().is_none()));
+    let json = serde_json::to_string(&styles).unwrap();
+    let back: ssmap_core::LabelStyles = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, styles);
+}
+
+#[test]
 fn a_label_must_name_a_known_style() {
     let (mut map, layer) = map_with_layer();
     let result = map.execute(&Command::CreateLabel {

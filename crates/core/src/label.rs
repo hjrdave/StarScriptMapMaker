@@ -332,6 +332,41 @@ impl LabelStyles {
             .expect("the default style is always present")
     }
 
+    /// The styles a new Map starts with: the default, then Realm, City, Sea and Range (ADR 0006).
+    /// Their ids are fixed, so every new Map names them alike.
+    pub fn starter() -> Self {
+        let style =
+            |n: u128, name: &str, family: &str, size: f64, spacing: f64, caps: bool| LabelStyle {
+                id: Id::from_uuid(uuid::Uuid::from_u128(n)),
+                name: name.into(),
+                font: FontFace {
+                    family: family.into(),
+                    ..FontFace::default()
+                },
+                size,
+                letter_spacing: spacing,
+                all_caps: caps,
+                ..LabelStyle::default()
+            };
+        let sea = LabelStyle {
+            fill: Color::rgb(0x3a, 0x5a, 0x72),
+            ..style(4, "Sea", "IM Fell Double Pica", 56.0, 0.15, false)
+        };
+        Self::new(vec![
+            LabelStyle::default(),
+            LabelStyle {
+                halo: Halo {
+                    width: 6.0,
+                    ..Halo::default()
+                },
+                ..style(2, "Realm", "Cinzel", 120.0, 0.2, true)
+            },
+            style(3, "City", "Almendra", 40.0, 0.02, false),
+            sea,
+            style(5, "Range", "Uncial Antiqua", 64.0, 0.3, true),
+        ])
+    }
+
     pub(crate) fn to_vec(&self) -> Vec<LabelStyle> {
         self.0.clone()
     }

@@ -101,7 +101,8 @@ impl MapMakerApp {
             4096,
             3072,
             Scale::new(0.25, DistanceUnit::Miles),
-        ));
+        ))
+        .with_label_styles(ssmap_core::LabelStyles::starter());
         Self::with_map(cc, map, recovery_dir)
     }
 
