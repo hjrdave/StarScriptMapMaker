@@ -641,9 +641,23 @@ impl<P> Chunked<P> {
         groups: &[VectorGroup],
         cache: &TessellationCache,
         budget: Option<Duration>,
+        upload: impl FnMut(Built) -> P,
+    ) -> bool {
+        let origin = Instant::now();
+        self.apply_timed(groups, cache, budget, || origin.elapsed(), upload)
+    }
+
+    /// Like [`Chunked::apply`], reading the time spent so far from `elapsed` (a test gives
+    /// it a clock it controls, so the budget is checked without depending on the machine).
+    fn apply_timed(
+        &mut self,
+        groups: &[VectorGroup],
+        cache: &TessellationCache,
+        budget: Option<Duration>,
+        elapsed: impl Fn() -> Duration,
         mut upload: impl FnMut(Built) -> P,
     ) -> bool {
-        let start = Instant::now();
+        let start = elapsed();
         let mut tessellators = Tessellators::default();
         let building = cache.is_building();
         let mut slowest = Duration::ZERO;
@@ -660,11 +674,11 @@ impl<P> Chunked<P> {
             }
             if let Some(budget) = budget
                 && built
-                && start.elapsed() + slowest > budget
+                && elapsed() - start + slowest > budget
             {
                 return false;
             }
-            let began = Instant::now();
+            let began = elapsed();
             let (meshes, missing) = resolve_chunk(
                 groups,
                 &self.objects,
@@ -676,7 +690,7 @@ impl<P> Chunked<P> {
             chunk.part = Some(upload(merge(&meshes, &[])));
             chunk.stale = false;
             chunk.missing = missing;
-            slowest = slowest.max(began.elapsed());
+            slowest = slowest.max(elapsed() - began);
             built = true;
         }
         true
@@ -1278,33 +1292,36 @@ mod tests {
         let rebuild = cache.rebuild(&groups);
         let mut chunks = chunked(&groups, &[], &cache);
         let budget = APPLY_BUDGET;
-        // What one chunk costs at most, since a chunk is never left half built.
-        let mut one_chunk = Duration::ZERO;
+        // A fake clock: every chunk uploaded costs a millisecond, whatever the machine.
+        let clock = std::cell::Cell::new(Duration::ZERO);
+        let tick = Duration::from_millis(1);
+        let allowed = (budget.as_millis() as usize).max(1);
         let mut frames = Vec::new();
-        rebuild.run(|| {
-            let start = Instant::now();
-            chunks.apply(&groups, &cache, Some(budget), |built| built);
-            frames.push(start.elapsed());
-        });
-        while {
-            let start = Instant::now();
+        let mut frame = |chunks: &mut Chunked<Built>| {
             let mut uploads = 0;
-            let done = chunks.apply(&groups, &cache, Some(budget), |built| {
-                uploads += 1;
-                built
-            });
-            let took = start.elapsed();
-            if uploads == 1 {
-                one_chunk = one_chunk.max(took);
-            }
-            frames.push(took);
-            !done
-        } {}
-        let worst = frames.iter().max().copied().unwrap();
+            let done = chunks.apply_timed(
+                &groups,
+                &cache,
+                Some(budget),
+                || clock.get(),
+                |built| {
+                    uploads += 1;
+                    clock.set(clock.get() + tick);
+                    built
+                },
+            );
+            frames.push(uploads);
+            done
+        };
+        rebuild.run(|| {
+            frame(&mut chunks);
+        });
+        while !frame(&mut chunks) {}
         assert!(
-            worst <= budget + one_chunk.max(Duration::from_millis(2)) * 3,
-            "a frame spent {worst:?} applying results, over {budget:?}"
+            frames.iter().all(|&uploads| uploads <= allowed),
+            "a frame built more chunks than the {budget:?} budget allows: {frames:?}"
         );
+        assert!(frames.contains(&allowed), "{frames:?}");
         assert!(chunks.chunks.iter().all(|chunk| chunk.part.is_some()));
     }
 
