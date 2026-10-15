@@ -46,7 +46,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-pub use credits::{AttributedAsset, PackCredit};
+pub use credits::{AttributedAsset, PackCredit, credit_lines};
 pub use install::{ASSETS_DIR_ENV, PACK_MANIFEST, assets_dir, built_in_packs_dir, user_packs_dir};
 pub use library::{LoadProblem, PackLibrary, PackRoots};
 pub use manifest::{ManifestError, ManifestErrors, parse_manifest, read_pack};

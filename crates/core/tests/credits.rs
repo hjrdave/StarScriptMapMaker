@@ -113,6 +113,65 @@ fn the_query_returns_the_attributed_assets_a_map_uses() {
 }
 
 #[test]
+fn credit_lines_and_export_output_follow_the_options() {
+    use ssmap_core::asset::credit_lines;
+    use ssmap_core::{CreditsOptions, credits_file_path};
+
+    let library = library_of(&[credit_pack(
+        "icons",
+        true,
+        &[("sword", "Lorc"), ("shield", "Delapouite")],
+    )]);
+    let mut map = Map::new(Canvas::new(64, 64, Scale::new(1.0, DistanceUnit::Miles)));
+    let layer = Id::new();
+    map.apply(Op::Insert {
+        parent: None,
+        index: 0,
+        subtree: Subtree {
+            id: layer,
+            node: Node::Layer(Layer::new("Stamps")),
+            children: Vec::new(),
+        },
+    })
+    .unwrap();
+    let options = CreditsOptions::default();
+
+    // Nothing to credit: neither output.
+    let none = options.output(&credit_lines(&library.attribution_required_assets(&map)));
+    assert_eq!((none.file, none.chunk), (None, None));
+
+    place(&mut map, layer, "icons/sword");
+    place(&mut map, layer, "icons/shield");
+    let lines = credit_lines(&library.attribution_required_assets(&map));
+    assert_eq!(
+        lines,
+        [
+            "Asset shield by Delapouite, Pack icons (CC-BY-3.0) https://example.com/shield",
+            "Asset sword by Lorc, Pack icons (CC-BY-3.0) https://example.com/sword",
+            "Credit line for icons.",
+        ]
+    );
+    let both = options.output(&lines);
+    assert_eq!(both.file, both.chunk);
+    assert_eq!(
+        both.file.as_deref(),
+        Some(format!("{}\n", lines.join("\n")).as_str())
+    );
+
+    let chunk_only = CreditsOptions {
+        text_file: false,
+        png_chunk: true,
+    };
+    let out = chunk_only.output(&lines);
+    assert_eq!((out.file, out.chunk.is_some()), (None, true));
+
+    assert_eq!(
+        credits_file_path(Path::new("/maps/world.png")),
+        Path::new("/maps/world.credits.txt")
+    );
+}
+
+#[test]
 fn pack_credits_list_every_distinct_author() {
     let library = library_of(&[credit_pack(
         "icons",

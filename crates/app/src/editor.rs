@@ -4,13 +4,13 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ssmap_core::asset::AssetRef;
+use ssmap_core::asset::{AssetRef, credit_lines};
 use ssmap_core::land::{self, BrushStroke};
 use ssmap_core::scatter::{self, ScatterBrush, ScatterStroke, Terrain};
 use ssmap_core::{
-    Blob, Command, CommandError, DefaultLayers, EmbedAsset, EmbedFont, ExecuteError, History, Id,
-    Label, Map, MultiPolygon, Node, NodeRef, ObjectKind, Op, PickIndex, Point, Rect, ResolvedLabel,
-    RoughnessCache, Selection, Stamp, StampIndex,
+    Align, Blob, Command, CommandError, DefaultLayers, EmbedAsset, EmbedFont, ExecuteError,
+    History, Id, Label, Map, MultiPolygon, Node, NodeRef, ObjectKind, Op, PickIndex, Point, Rect,
+    ResolvedLabel, RoughnessCache, Selection, Stamp, StampIndex,
 };
 use ssmap_fonts::FALLBACK_FAMILY;
 use ssmap_render::{Content, Fonts, LabelLayout, MapScene, SpriteStore};
@@ -840,6 +840,61 @@ impl Editor {
         Some(id)
     }
 
+    /// The credit lines for the attribution-required Assets the Map uses; empty when none, or
+    /// when no packs are loaded.
+    pub fn credit_lines(&self) -> Vec<String> {
+        let Some(sprites) = self.sprites.as_ref() else {
+            return Vec::new();
+        };
+        let assets = sprites.library().attribution_required_assets(&self.map);
+        credit_lines(&assets)
+    }
+
+    /// Adds the credit lines to the Map as one left-aligned Label near the bottom-left corner
+    /// of the Canvas, as one Undo step ("Add Credits Label"), and selects it. Returns `None`
+    /// when the Map has nothing to credit.
+    pub fn add_credits_label(&mut self) -> Option<Id> {
+        let lines = self.credit_lines();
+        if lines.is_empty() {
+            return None;
+        }
+        self.end_gesture();
+        self.begin_gesture("Add Credits Label");
+        let Some(parent) = self.placement_layer(Placing::Label) else {
+            self.cancel_gesture();
+            return None;
+        };
+        let (width, height) = (
+            f64::from(self.map.canvas.width),
+            f64::from(self.map.canvas.height),
+        );
+        let size = (width.min(height) / 80.0).max(8.0);
+        let line_height = 1.3;
+        let margin = size * 2.0;
+        let block = size * line_height * lines.len() as f64;
+        let id = Id::new();
+        let label = Label {
+            text: lines.join("\n"),
+            position: [margin, (height - margin - block / 2.0).max(block / 2.0)],
+            align: Align::Left,
+            size: Some(size),
+            line_height: Some(line_height),
+            ..Label::default()
+        };
+        if !self.gesture(Command::CreateLabel {
+            id,
+            parent,
+            index: None,
+            label: Box::new(label),
+        }) {
+            self.cancel_gesture();
+            return None;
+        }
+        self.select(vec![id]);
+        self.end_gesture();
+        Some(id)
+    }
+
     /// Places the selected Asset (or a random member of its Variant group) as a Stamp at
     /// `position` in the active Layer, as one Undo step, and selects it. Does nothing when no
     /// Asset is selected.
@@ -1323,6 +1378,54 @@ mod tests {
 
     fn asset(reference: &str) -> AssetRef {
         reference.parse().unwrap()
+    }
+
+    /// An Editor whose only pack asks for attribution, with one Stamp of it placed.
+    fn editor_using_credited_asset() -> Editor {
+        use ssmap_core::asset::{PackLibrary, PackSource, parse_manifest};
+        let manifest = "[pack]\nid = \"icons\"\nname = \"Icons\"\nlicence = \"CC-BY-3.0\"\n\
+                        credits = \"Icons made by Lorc.\"\nattribution_required = true\n\
+                        modified = \"2026-01-01\"\n\n[[asset]]\nid = \"sword\"\nname = \"Sword\"\n\
+                        category = \"c\"\nfile = \"sword.svg\"\nanchor = [0.5, 0.5]\nwidth = 8\n\
+                        author = \"Lorc\"\n";
+        let pack = parse_manifest(
+            std::path::Path::new("icons/pack.toml"),
+            manifest,
+            PackSource::BuiltIn,
+        )
+        .unwrap();
+        let mut library = PackLibrary::default();
+        library.add(pack, &mut Vec::new());
+        let mut editor = editor();
+        editor.set_sprites(SpriteStore::new(Arc::new(library)));
+        editor.selected_asset = Some(asset("icons/sword"));
+        editor.place_stamp([40.0, 50.0]).unwrap();
+        editor
+    }
+
+    #[test]
+    fn a_map_without_credited_assets_has_no_credit_lines() {
+        let mut editor = editor_with_assets();
+        editor.selected_asset = Some(asset("test-pack/castle"));
+        editor.place_stamp([40.0, 50.0]).unwrap();
+        assert!(editor.credit_lines().is_empty());
+        assert_eq!(editor.add_credits_label(), None);
+    }
+
+    #[test]
+    fn adding_the_credits_as_a_label_is_one_undo_step() {
+        let mut editor = editor_using_credited_asset();
+        let lines = editor.credit_lines();
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(lines[0].starts_with("Sword by Lorc, Icons (CC-BY-3.0)"));
+
+        let id = editor.add_credits_label().unwrap();
+        assert_eq!(editor.label(id).unwrap().text, lines.join("\n"));
+        assert_eq!(editor.undo_label(), Some("Add Credits Label"));
+        editor.undo();
+        assert!(!editor.map.contains(id));
+        editor.redo();
+        assert!(editor.map.contains(id));
     }
 
     #[test]
