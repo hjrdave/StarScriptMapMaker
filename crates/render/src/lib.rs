@@ -33,7 +33,7 @@ pub use offscreen::{RgbaImage, read_texture, render_to_image};
 pub use png_writer::{PngMeta, PngWriteError, PngWriter};
 pub use present::Presenter;
 pub use scene::MapScene;
-pub use sprite::{Sprite, SpriteStore};
+pub use sprite::{Sprite, SpriteState, SpriteStore};
 pub use stamp::{PlacedStamp, StampDraw};
 pub use text::{Fonts, LabelLayout};
 pub use vector::{FillRule, LyonRenderer, Paint, VectorGroup, VectorRenderer, VectorShape};

@@ -695,7 +695,7 @@ fn test_sprites() -> ssmap_render::SpriteStore {
     };
     let (library, problems) = PackLibrary::load(&roots);
     assert!(problems.is_empty(), "{problems:?}");
-    ssmap_render::SpriteStore::new(std::sync::Arc::new(library))
+    ssmap_render::SpriteStore::synchronous(std::sync::Arc::new(library))
 }
 
 fn stamp(asset: &str, position: [f64; 2]) -> ssmap_core::Stamp {

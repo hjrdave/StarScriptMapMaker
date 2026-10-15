@@ -11,7 +11,7 @@ use wgpu::util::DeviceExt;
 use crate::atlas::{Atlas, AtlasEntry};
 use crate::canvas::{CLIP_INSIDE, StencilUse};
 use crate::color::ColorExt as _;
-use crate::sprite::SpriteStore;
+use crate::sprite::{SpriteState, SpriteStore};
 use crate::vector::overlaps;
 
 /// One Stamp as the Canvas draws it.
@@ -112,8 +112,13 @@ pub(crate) struct StampRenderer {
     store: Option<SpriteStore>,
     /// The store's generation the uploaded art came from.
     generation: u64,
-    /// `None` records an Asset that has no usable art.
+    /// `None` records an Asset that has no usable art. An Asset whose art is still being
+    /// rasterised is not recorded.
     uploaded: HashMap<AssetRef, Option<Uploaded>>,
+    /// The store's finished-raster count when the Stamps were last prepared.
+    completed: u64,
+    /// Whether the last prepare skipped a Stamp for art that was not ready.
+    skipped_pending: bool,
     bind_groups: HashMap<(u32, u32), wgpu::BindGroup>,
     instances: Option<wgpu::Buffer>,
     /// The Canvas area each instance covers, as `[min_x, min_y, max_x, max_y]`, so a frame
@@ -201,6 +206,8 @@ impl StampRenderer {
             store: None,
             generation: 0,
             uploaded: HashMap::new(),
+            completed: 0,
+            skipped_pending: false,
             bind_groups: HashMap::new(),
             instances: None,
             bounds: Vec::new(),
@@ -216,17 +223,19 @@ impl StampRenderer {
     }
 
     /// Forgets everything uploaded if the store's embedded Assets changed since. Returns
-    /// whether it did, in which case Stamps must be prepared again.
+    /// whether Stamps must be prepared again: they did, or art that a Stamp was skipped for
+    /// has been rasterised since.
     pub(crate) fn refresh_store(&mut self) -> bool {
-        let Some(generation) = self.store.as_ref().map(SpriteStore::generation) else {
+        let Some(store) = &self.store else {
             return false;
         };
-        if generation == self.generation {
-            return false;
+        let generation = store.generation();
+        if generation != self.generation {
+            self.generation = generation;
+            self.forget_uploads();
+            return true;
         }
-        self.generation = generation;
-        self.forget_uploads();
-        true
+        self.skipped_pending && store.completed() != self.completed
     }
 
     fn forget_uploads(&mut self) {
@@ -236,13 +245,17 @@ impl StampRenderer {
     }
 
     /// Uploads any art `stamps` need and builds their instances. Stamps whose Asset has no
-    /// usable art draw nothing.
+    /// usable art draw nothing, and neither do those whose art is still being rasterised: they
+    /// appear when [`StampRenderer::refresh_store`] next asks for them to be prepared again.
     pub(crate) fn prepare(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         stamps: &[PlacedStamp],
     ) {
+        // Read before polling: a raster that lands during the loop is then seen as new.
+        self.completed = self.store.as_ref().map_or(0, SpriteStore::completed);
+        self.skipped_pending = false;
         let page_size = self.atlas.page_size();
         let mut instances: Vec<Instance> = Vec::with_capacity(stamps.len());
         let mut bounds: Vec<[f32; 4]> = Vec::with_capacity(stamps.len());
@@ -387,15 +400,22 @@ impl StampRenderer {
         if let Some(uploaded) = self.uploaded.get(asset) {
             return *uploaded;
         }
-        let uploaded = self.store.as_ref().and_then(|store| {
-            let sprite = store.get(asset)?;
-            Some(Uploaded {
-                art: self.atlas.insert(device, queue, &sprite.art).ok()?,
-                silhouette: self.atlas.insert(device, queue, &sprite.silhouette).ok()?,
-                size: sprite.shape.size,
-                anchor: sprite.shape.anchor,
-            })
-        });
+        let uploaded = match self.store.as_ref().map(|store| store.poll(asset)) {
+            Some(SpriteState::Ready(sprite)) => (|| {
+                Some(Uploaded {
+                    art: self.atlas.insert(device, queue, &sprite.art).ok()?,
+                    silhouette: self.atlas.insert(device, queue, &sprite.silhouette).ok()?,
+                    size: sprite.shape.size,
+                    anchor: sprite.shape.anchor,
+                })
+            })(),
+            Some(SpriteState::Pending) => {
+                // Not cached: ask again once the raster lands.
+                self.skipped_pending = true;
+                return None;
+            }
+            Some(SpriteState::Missing) | None => None,
+        };
         self.uploaded.insert(asset.clone(), uploaded);
         uploaded
     }

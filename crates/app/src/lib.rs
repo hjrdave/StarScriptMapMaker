@@ -126,6 +126,8 @@ impl MapMakerApp {
         }
         let credits = Credits::new(&library);
         let sprites = SpriteStore::new(Arc::new(library));
+        let ctx = cc.egui_ctx.clone();
+        sprites.set_repaint(move || ctx.request_repaint());
         let gpu = match cc.wgpu_render_state.as_ref() {
             Some(render_state) => canvas_view::install(render_state, sprites.clone()),
             None => false,

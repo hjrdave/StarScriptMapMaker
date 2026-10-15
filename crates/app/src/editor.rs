@@ -152,6 +152,28 @@ impl Editor {
         self.sprites = Some(sprites);
         self.stamp_index = None;
         self.sync_embedded();
+        self.prefetch_sprites();
+    }
+
+    /// Starts rasterising the art of the Map's Stamps in the background, so a Map that has
+    /// just opened shows them as they finish rather than waiting on each at first draw.
+    fn prefetch_sprites(&self) {
+        let Some(sprites) = &self.sprites else {
+            return;
+        };
+        let map = &self.map;
+        let assets: Vec<AssetRef> = map
+            .draw_order()
+            .into_iter()
+            .filter_map(|id| match map.node(id) {
+                Some(Node::Object(object)) => match &object.kind {
+                    ObjectKind::Stamp(stamp) => Some(stamp.asset.clone()),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        sprites.prefetch(&assets);
     }
 
     /// Points the sprite store at the Assets the Map embeds, which win over the installed

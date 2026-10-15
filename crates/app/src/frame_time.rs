@@ -102,7 +102,7 @@ pub fn run(args: &[OsString]) -> i32 {
     let map = large_map(options.scale, asset);
 
     let mut renderer = CanvasRenderer::new(&gpu.device, capabilities);
-    renderer.set_sprites(SpriteStore::new(Arc::new(library)));
+    renderer.set_sprites(SpriteStore::synchronous(Arc::new(library)));
     let mut scene = MapScene::new(Fonts::bundled());
     let content = scene.content(&map, &mut RoughnessCache::new());
     let canvas = CanvasScene::new(&map.canvas).with_content(content);
