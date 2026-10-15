@@ -13,7 +13,10 @@ use crate::gpu::GpuCapabilities;
 use crate::ocean::{OceanPass, OceanUniform};
 use crate::sprite::SpriteStore;
 use crate::stamp::{PlacedStamp, StampRenderer};
-use crate::vector::{DrawFilter, FillRule, LyonRenderer, VectorGroup, VectorRenderer};
+use crate::vector::{
+    DrawFilter, FillRule, LyonRenderer, TessellationCache, TessellationRebuild, VectorGroup,
+    VectorRenderer,
+};
 use crate::view::View;
 
 /// The resolved Canvas target's format. Blending happens in linear space, and readback bytes
@@ -193,6 +196,8 @@ pub struct CanvasRenderer {
     masks: LyonRenderer,
     drawn_backdrop: Option<BackdropKey>,
     drawn_content: Option<Content>,
+    /// The generation of the content's tessellation cache when it was last drawn from.
+    drawn_tessellation: u64,
     /// Where the content's vector groups are split to draw Stamps between them.
     content_cuts: Vec<usize>,
     target: Option<Target>,
@@ -241,9 +246,24 @@ impl CanvasRenderer {
             view_bind_group,
             drawn_backdrop: None,
             drawn_content: None,
+            drawn_tessellation: 0,
             content_cuts: Vec::new(),
             target: None,
         }
+    }
+
+    /// The per-Object tessellation cache behind the content. A background thread can fill it
+    /// (see [`CanvasRenderer::start_tessellation`]); each frame draws what is ready.
+    pub fn tessellation_cache(&self) -> TessellationCache {
+        self.content.cache().clone()
+    }
+
+    /// Starts tessellating the Objects of `content` that are not ready, so a Map that has just
+    /// opened can show Objects as they complete. Run the result on a thread of its own, with a
+    /// `ready` that requests a repaint; frames drawn meanwhile leave out Objects that are not
+    /// ready yet, and the next frame after each completion draws it.
+    pub fn start_tessellation(&self, content: &Content) -> TessellationRebuild {
+        self.content.cache().rebuild(content.groups())
     }
 
     pub fn capabilities(&self) -> &GpuCapabilities {
@@ -277,7 +297,13 @@ impl CanvasRenderer {
         // Art embedded in the Map changed (Update from pack, Undo, another Map): redraw even
         // if the Stamps are the same.
         let new_art = self.stamps.refresh_store();
-        if new_art || self.drawn_content.as_ref() != Some(&scene.content) {
+        // Read first, so an Object that lands during the build draws in the next frame.
+        let tessellation = self.content.cache().generation();
+        if new_art
+            || tessellation != self.drawn_tessellation
+            || self.drawn_content.as_ref() != Some(&scene.content)
+        {
+            self.drawn_tessellation = tessellation;
             self.stamps.prepare(device, queue, scene.content.stamps());
             let clips = scene.content.clips();
             let cuts: Vec<usize> = {

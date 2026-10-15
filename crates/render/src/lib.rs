@@ -36,7 +36,10 @@ pub use scene::MapScene;
 pub use sprite::{Sprite, SpriteState, SpriteStore};
 pub use stamp::{PlacedStamp, StampDraw};
 pub use text::{Fonts, LabelLayout};
-pub use vector::{FillRule, LyonRenderer, Paint, VectorGroup, VectorRenderer, VectorShape};
+pub use vector::{
+    FillRule, LyonRenderer, ObjectRef, Paint, TessellationCache, TessellationRebuild, VectorGroup,
+    VectorRenderer, VectorShape,
+};
 pub use view::View;
 
 /// The wgpu version this crate is built against, for callers that share a device with it.
