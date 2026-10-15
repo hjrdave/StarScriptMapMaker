@@ -116,7 +116,7 @@ impl MapMakerApp {
         let credits = Credits::new(&library);
         let sprites = SpriteStore::new(Arc::new(library));
         let gpu = match cc.wgpu_render_state.as_ref() {
-            Some(render_state) => canvas_view::install(render_state, sprites.clone()),
+            Some(render_state) => canvas_view::install(render_state, sprites.clone(), &cc.egui_ctx),
             None => false,
         };
         let map_files = || -> FileDialog {

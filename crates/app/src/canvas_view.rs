@@ -31,7 +31,11 @@ struct CanvasResources {
 /// egui's callback resources. Returns false, leaving the Canvas as a placeholder, when the
 /// adapter is below the hardware floor. Called once per run, so a software-adapter warning
 /// shows once.
-pub fn install(render_state: &egui_wgpu::RenderState, sprites: SpriteStore) -> bool {
+pub fn install(
+    render_state: &egui_wgpu::RenderState,
+    sprites: SpriteStore,
+    ctx: &egui::Context,
+) -> bool {
     let capabilities = GpuCapabilities::query(&render_state.adapter);
     match capabilities.suitability() {
         Suitability::Ok => {}
@@ -43,6 +47,9 @@ pub fn install(render_state: &egui_wgpu::RenderState, sprites: SpriteStore) -> b
     }
     let mut renderer = CanvasRenderer::new(&render_state.device, capabilities);
     renderer.set_sprites(sprites);
+    // Meshes and Stamp art build in the background after a Map opens; each piece repaints.
+    let ctx = ctx.clone();
+    renderer.set_progressive(std::sync::Arc::new(move || ctx.request_repaint()));
     // eframe draws egui without MSAA; the Canvas does its own multisampling offscreen.
     let presenter = Presenter::new(&render_state.device, render_state.target_format, 1);
     render_state
@@ -70,13 +77,17 @@ pub fn render_whole_canvas(
     editor.finish_rebuild();
     let scene = CanvasScene::new(&editor.map.canvas).with_content(editor.scene_content());
     let view = View::whole_canvas(scene.canvas_size, longest_side);
-    Some(render_to_image(
+    // The export waits for everything to be built (ADR 0007).
+    resources.renderer.suspend_progressive();
+    let image = render_to_image(
         &render_state.device,
         &render_state.queue,
         &mut resources.renderer,
         &scene,
         &view,
-    ))
+    );
+    resources.renderer.resume_progressive();
+    Some(image)
 }
 
 pub struct CanvasView {

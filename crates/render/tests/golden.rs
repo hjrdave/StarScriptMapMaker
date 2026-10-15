@@ -985,3 +985,76 @@ fn ten_thousand_stamps() {
     }
     eprintln!("10k Stamps: {:?} per pick", started.elapsed() / picks);
 }
+
+/// Meshes and Stamp art built in the background fill in frame by frame, and once everything is
+/// ready the frame is the one a fully built Map draws.
+#[test]
+fn progressive_build_converges_on_the_full_render() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{Duration, Instant};
+
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let mut map = land_and_water();
+    let layer = Id::new();
+    map.execute(&Command::CreateLayer {
+        id: layer,
+        parent: None,
+        index: None,
+        name: "Assets".into(),
+    })
+    .unwrap();
+    for (asset, position) in [
+        ("test-pack/mountain-1", [300.0, 300.0]),
+        ("test-pack/castle", [500.0, 500.0]),
+        ("test-pack/tree", [700.0, 600.0]),
+    ] {
+        map.execute(&Command::CreateStamp {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            stamp: Box::new(stamp(asset, position)),
+        })
+        .unwrap();
+    }
+    let scene = scene_of(&map);
+    let view = land_and_water_view();
+    let capabilities = || GpuCapabilities::query(&headless.adapter);
+    let draw = |renderer: &mut CanvasRenderer| {
+        render_to_image(&headless.device, &headless.queue, renderer, &scene, &view)
+    };
+
+    let mut full = CanvasRenderer::new(&headless.device, capabilities());
+    full.set_sprites(test_sprites());
+    let expected = draw(&mut full);
+
+    let wakes = Arc::new(AtomicUsize::new(0));
+    let mut renderer = CanvasRenderer::new(&headless.device, capabilities());
+    renderer.set_sprites(test_sprites());
+    let counter = wakes.clone();
+    renderer.set_progressive(Arc::new(move || {
+        counter.fetch_add(1, Ordering::SeqCst);
+    }));
+    let first = draw(&mut renderer);
+    assert_ne!(
+        first.pixels, expected.pixels,
+        "the first frame shows before the meshes and art are built"
+    );
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        let frame = draw(&mut renderer);
+        if frame.pixels == expected.pixels {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "never converged on the full render"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        wakes.load(Ordering::SeqCst) > 0,
+        "each finished piece wakes the host"
+    );
+}

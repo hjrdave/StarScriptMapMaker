@@ -193,6 +193,8 @@ pub struct CanvasRenderer {
     masks: LyonRenderer,
     drawn_backdrop: Option<BackdropKey>,
     drawn_content: Option<Content>,
+    /// Set once the renderer builds in the background.
+    wake: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
     /// Where the content's vector groups are split to draw Stamps between them.
     content_cuts: Vec<usize>,
     target: Option<Target>,
@@ -241,6 +243,7 @@ impl CanvasRenderer {
             view_bind_group,
             drawn_backdrop: None,
             drawn_content: None,
+            wake: None,
             content_cuts: Vec::new(),
             target: None,
         }
@@ -248,6 +251,31 @@ impl CanvasRenderer {
 
     pub fn capabilities(&self) -> &GpuCapabilities {
         &self.capabilities
+    }
+
+    /// Builds meshes and loads Stamp art on background threads, calling `wake` as each piece
+    /// finishes. What isn't ready is left out of a frame until it is. Call after
+    /// [`set_sprites`](Self::set_sprites).
+    pub fn set_progressive(&mut self, wake: std::sync::Arc<dyn Fn() + Send + Sync>) {
+        self.stamps.set_progressive(wake.clone());
+        self.content.set_progressive(wake.clone());
+        self.wake = Some(wake);
+        self.drawn_content = None;
+    }
+
+    /// Builds everything on the spot from now on, so a render shows the complete Map, as
+    /// export needs. [`resume_progressive`](Self::resume_progressive) undoes it.
+    pub fn suspend_progressive(&mut self) {
+        self.stamps.progressive = false;
+        self.content.background = None;
+        self.drawn_content = None;
+    }
+
+    /// Goes back to building in the background after [`suspend_progressive`](Self::suspend_progressive).
+    pub fn resume_progressive(&mut self) {
+        if let Some(wake) = self.wake.clone() {
+            self.set_progressive(wake);
+        }
     }
 
     /// Where Stamp art comes from. Without it, Stamps draw nothing.
@@ -277,7 +305,8 @@ impl CanvasRenderer {
         // Art embedded in the Map changed (Update from pack, Undo, another Map): redraw even
         // if the Stamps are the same.
         let new_art = self.stamps.refresh_store();
-        if new_art || self.drawn_content.as_ref() != Some(&scene.content) {
+        let meshed = self.content.poll();
+        if new_art || meshed || self.drawn_content.as_ref() != Some(&scene.content) {
             self.stamps.prepare(device, queue, scene.content.stamps());
             let clips = scene.content.clips();
             let cuts: Vec<usize> = {

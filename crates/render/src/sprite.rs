@@ -5,8 +5,9 @@
 //! renders the same with its packs missing, removed or updated. Only an Asset the Map does
 //! not embed comes from the installed packs.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+use std::thread;
 
 use ssmap_core::asset::{AssetRef, PackLibrary};
 use ssmap_core::{Embedded, SpriteShape};
@@ -58,12 +59,20 @@ type Cache = HashMap<AssetRef, Option<Arc<Sprite>>>;
 
 struct State {
     /// The open Map's embedded Assets, which win over the library.
-    embedded: Embedded,
+    embedded: Arc<Embedded>,
     /// Counts changes to `embedded`, so what was uploaded from older art can be dropped.
     generation: u64,
     embedded_sprites: Cache,
     installed_sprites: Cache,
+    /// Assets a background thread is loading, or has queued.
+    loading: HashSet<AssetRef>,
+    /// Counts background loads that finished, so the renderer knows to look again.
+    loaded: u64,
+    /// Called after each background load, to ask the host for a repaint.
+    wake: Option<Wake>,
 }
+
+type Wake = Arc<dyn Fn() + Send + Sync>;
 
 impl SpriteStore {
     pub fn new(library: Arc<PackLibrary>) -> Self {
@@ -71,10 +80,13 @@ impl SpriteStore {
             inner: Arc::new(Inner {
                 library,
                 state: Mutex::new(State {
-                    embedded: Embedded::default(),
+                    embedded: Arc::new(Embedded::default()),
                     generation: 0,
                     embedded_sprites: HashMap::new(),
                     installed_sprites: HashMap::new(),
+                    loading: HashSet::new(),
+                    loaded: 0,
+                    wake: None,
                 }),
             }),
         }
@@ -94,7 +106,7 @@ impl SpriteStore {
         if same {
             return false;
         }
-        state.embedded = embedded.clone();
+        state.embedded = Arc::new(embedded.clone());
         state.embedded_sprites.clear();
         state.generation += 1;
         true
@@ -103,6 +115,92 @@ impl SpriteStore {
     /// Changes whenever the embedded Assets do.
     pub fn generation(&self) -> u64 {
         self.state().generation
+    }
+
+    /// Called after each background load (see [`load_in_background`](Self::load_in_background)).
+    pub fn set_wake(&self, wake: Arc<dyn Fn() + Send + Sync>) {
+        self.state().wake = Some(wake);
+    }
+
+    /// Counts finished background loads.
+    pub fn loaded(&self) -> u64 {
+        self.state().loaded
+    }
+
+    /// The sprite of `asset` if it has been loaded already; never loads it.
+    pub fn get_if_ready(&self, asset: &AssetRef) -> Option<Arc<Sprite>> {
+        let state = self.state();
+        let cache = if state.embedded.assets.contains_key(asset) {
+            &state.embedded_sprites
+        } else {
+            &state.installed_sprites
+        };
+        cache.get(asset).cloned().flatten()
+    }
+
+    /// Loads and rasterises the sprites of `assets` that are not loaded yet on background
+    /// threads, off the cache lock, and calls the wake function as each finishes.
+    pub fn load_in_background(&self, assets: Vec<AssetRef>) {
+        let queue: Vec<AssetRef> = {
+            let mut state = self.state();
+            assets
+                .into_iter()
+                .filter(|asset| {
+                    let cached = if state.embedded.assets.contains_key(asset) {
+                        state.embedded_sprites.contains_key(asset)
+                    } else {
+                        state.installed_sprites.contains_key(asset)
+                    };
+                    !cached && state.loading.insert(asset.clone())
+                })
+                .collect()
+        };
+        if queue.is_empty() {
+            return;
+        }
+        let workers = thread::available_parallelism()
+            .map_or(1, |n| n.get().saturating_sub(1).max(1))
+            .min(queue.len());
+        let queue = Arc::new(Mutex::new(queue));
+        for _ in 0..workers {
+            let (store, queue) = (self.clone(), queue.clone());
+            thread::spawn(move || {
+                while let Some(asset) = queue.lock().ok().and_then(|mut q| q.pop()) {
+                    store.load_one(&asset);
+                }
+            });
+        }
+    }
+
+    fn load_one(&self, asset: &AssetRef) {
+        let (embedded, generation) = {
+            let state = self.state();
+            (state.embedded.clone(), state.generation)
+        };
+        let is_embedded = embedded.assets.contains_key(asset);
+        let sprite = if is_embedded {
+            load_embedded(&embedded, asset)
+        } else {
+            self.load(asset)
+        }
+        .map(Arc::new);
+        let mut state = self.state();
+        state.loading.remove(asset);
+        // Art embedded since this load began belongs to a Map that is no longer open.
+        if state.generation == generation {
+            let cache = if is_embedded {
+                &mut state.embedded_sprites
+            } else {
+                &mut state.installed_sprites
+            };
+            cache.entry(asset.clone()).or_insert(sprite);
+        }
+        state.loaded += 1;
+        let wake = state.wake.clone();
+        drop(state);
+        if let Some(wake) = wake {
+            wake();
+        }
     }
 
     /// The sprite of `asset` as the open Map draws it: its embedded copy if it has one,

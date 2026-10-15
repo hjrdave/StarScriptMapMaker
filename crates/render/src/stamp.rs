@@ -112,6 +112,13 @@ pub(crate) struct StampRenderer {
     store: Option<SpriteStore>,
     /// The store's generation the uploaded art came from.
     generation: u64,
+    /// The store's count of finished background loads when Stamps were last prepared.
+    loaded: u64,
+    /// Whether art missing from the store loads in the background (Stamps draw once it has)
+    /// rather than on the spot.
+    pub(crate) progressive: bool,
+    /// Assets this `prepare` found not loaded yet.
+    missing: Vec<AssetRef>,
     /// `None` records an Asset that has no usable art.
     uploaded: HashMap<AssetRef, Option<Uploaded>>,
     bind_groups: HashMap<(u32, u32), wgpu::BindGroup>,
@@ -200,6 +207,9 @@ impl StampRenderer {
             atlas: Atlas::new(page_size),
             store: None,
             generation: 0,
+            loaded: 0,
+            progressive: false,
+            missing: Vec::new(),
             uploaded: HashMap::new(),
             bind_groups: HashMap::new(),
             instances: None,
@@ -218,15 +228,27 @@ impl StampRenderer {
     /// Forgets everything uploaded if the store's embedded Assets changed since. Returns
     /// whether it did, in which case Stamps must be prepared again.
     pub(crate) fn refresh_store(&mut self) -> bool {
-        let Some(generation) = self.store.as_ref().map(SpriteStore::generation) else {
+        let Some(store) = &self.store else {
             return false;
         };
+        let (generation, loaded) = (store.generation(), store.loaded());
+        // Background loads finishing means Stamps can be prepared again; uploads stay.
+        let finished = loaded != self.loaded;
+        self.loaded = loaded;
         if generation == self.generation {
-            return false;
+            return finished;
         }
         self.generation = generation;
         self.forget_uploads();
         true
+    }
+
+    /// Loads art in the background instead of on the first frame that needs it.
+    pub(crate) fn set_progressive(&mut self, wake: std::sync::Arc<dyn Fn() + Send + Sync>) {
+        self.progressive = true;
+        if let Some(store) = &self.store {
+            store.set_wake(wake);
+        }
     }
 
     fn forget_uploads(&mut self) {
@@ -247,6 +269,7 @@ impl StampRenderer {
         let mut instances: Vec<Instance> = Vec::with_capacity(stamps.len());
         let mut bounds: Vec<[f32; 4]> = Vec::with_capacity(stamps.len());
         let mut runs: Vec<Run> = Vec::new();
+        self.missing.clear();
         for placed in stamps {
             let Some(uploaded) = self.upload(device, queue, &placed.draw.asset) else {
                 continue;
@@ -313,6 +336,11 @@ impl StampRenderer {
         });
         self.bounds = bounds;
         self.runs = runs;
+        if !self.missing.is_empty()
+            && let Some(store) = &self.store
+        {
+            store.load_in_background(std::mem::take(&mut self.missing));
+        }
     }
 
     /// The vector-group counts that Stamps draw after, in order.
@@ -387,8 +415,17 @@ impl StampRenderer {
         if let Some(uploaded) = self.uploaded.get(asset) {
             return *uploaded;
         }
+        let progressive = self.progressive;
+        let mut pending = false;
         let uploaded = self.store.as_ref().and_then(|store| {
-            let sprite = store.get(asset)?;
+            let sprite = if progressive {
+                let ready = store.get_if_ready(asset);
+                // Not loaded yet, or failed to load: only the former is worth another look.
+                pending = ready.is_none();
+                ready?
+            } else {
+                store.get(asset)?
+            };
             Some(Uploaded {
                 art: self.atlas.insert(device, queue, &sprite.art).ok()?,
                 silhouette: self.atlas.insert(device, queue, &sprite.silhouette).ok()?,
@@ -396,7 +433,12 @@ impl StampRenderer {
                 anchor: sprite.shape.anchor,
             })
         });
-        self.uploaded.insert(asset.clone(), uploaded);
+        if pending {
+            // Loading in the background; prepare again once it finishes.
+            self.missing.push(asset.clone());
+        } else {
+            self.uploaded.insert(asset.clone(), uploaded);
+        }
         uploaded
     }
 
