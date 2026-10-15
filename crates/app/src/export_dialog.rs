@@ -80,6 +80,15 @@ fn region_switch(custom: bool, settings: &ExportSettings, canvas: &Canvas) -> Ex
     }
 }
 
+/// What the user chose in the dialog.
+#[derive(Clone, PartialEq, Debug)]
+pub enum DialogAction {
+    /// Store the settings in the Map.
+    Save(ExportSettings),
+    /// Store the settings, then export with them.
+    Export(ExportSettings),
+}
+
 #[derive(Default)]
 pub struct ExportDialog {
     pub open: bool,
@@ -104,12 +113,13 @@ impl ExportDialog {
         &self.draft
     }
 
-    /// Shows the dialog while it is open. Returns the settings once the user presses Save.
-    pub fn show(&mut self, ctx: &egui::Context, canvas: &Canvas) -> Option<ExportSettings> {
+    /// Shows the dialog while it is open. Returns what the user chose once they press Save
+    /// or Export.
+    pub fn show(&mut self, ctx: &egui::Context, canvas: &Canvas) -> Option<DialogAction> {
         if !self.open {
             return None;
         }
-        let mut saved = None;
+        let mut action = None;
         let mut cancelled = false;
         let modal = egui::Modal::new(egui::Id::new("export_png")).show(ctx, |ui| {
             ui.heading("Export PNG");
@@ -154,17 +164,20 @@ impl ExportDialog {
             let valid = !matches!(message, SizeMessage::Error(_));
             ui.horizontal(|ui| {
                 if ui.add_enabled(valid, egui::Button::new("Save")).clicked() {
-                    saved = Some(self.draft.clone());
+                    action = Some(DialogAction::Save(self.draft.clone()));
+                }
+                if ui.add_enabled(valid, egui::Button::new("Export")).clicked() {
+                    action = Some(DialogAction::Export(self.draft.clone()));
                 }
                 if ui.button("Cancel").clicked() {
                     cancelled = true;
                 }
             });
         });
-        if saved.is_some() || cancelled || modal.should_close() {
+        if action.is_some() || cancelled || modal.should_close() {
             self.open = false;
         }
-        saved
+        action
     }
 
     fn size_ui(&mut self, ui: &mut egui::Ui, canvas: &Canvas) {

@@ -8,6 +8,7 @@ pub mod document;
 pub mod editor;
 pub mod export_dialog;
 pub mod export_region;
+pub mod export_run;
 pub mod frame_time;
 pub mod handles;
 mod label_styles;
@@ -24,8 +25,8 @@ use eframe::{egui, egui_wgpu};
 use egui_file_dialog::{DialogState, FileDialog, Filter};
 use ssmap_core::asset::{PackLibrary, PackRoots};
 use ssmap_core::file::{JournalBase, MapFile, PREVIEW_SIZE, remove_journal};
-use ssmap_core::{Canvas, DistanceUnit, Map, Scale};
-use ssmap_render::SpriteStore;
+use ssmap_core::{CREDITS_CHUNK_KEYWORD, Canvas, DistanceUnit, Map, Scale};
+use ssmap_render::{ExportJob, PngMeta, SpriteStore};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -36,7 +37,8 @@ use crate::canvas_view::CanvasView;
 use crate::credits::Credits;
 use crate::document::Document;
 use crate::editor::Editor;
-use crate::export_dialog::ExportDialog;
+use crate::export_dialog::{DialogAction, ExportDialog};
+use crate::export_run::{ExportRun, Outcome};
 use crate::label_styles::LabelStylesPanel;
 use crate::layer_tree::LayerTree;
 use crate::new_map::NewMapDialog;
@@ -78,6 +80,10 @@ pub struct MapMakerApp {
     updates: UpdateCheck,
     new_map_dialog: NewMapDialog,
     export_dialog: ExportDialog,
+    /// The PNG export in progress, stepped once per frame behind a modal dialog.
+    export_run: Option<ExportRun>,
+    /// The folder of the last export, for Re-export when the Map has no file yet.
+    export_directory: Option<PathBuf>,
     open_dialog: FileDialog,
     save_dialog: FileDialog,
     /// What to do once the user decides what to do with unsaved changes.
@@ -169,6 +175,8 @@ impl MapMakerApp {
             updates: UpdateCheck::load(cc.storage),
             new_map_dialog: NewMapDialog::default(),
             export_dialog: ExportDialog::default(),
+            export_run: None,
+            export_directory: None,
             open_dialog: map_files().title("Open Map"),
             save_dialog: map_files().title("Save Map As"),
             pending: None,
@@ -554,6 +562,14 @@ impl MapMakerApp {
                 );
                 ui.close();
             }
+            let again = self.re_export_target().is_some() && self.export_run.is_none();
+            if ui
+                .add_enabled(again, egui::Button::new("Re-export"))
+                .clicked()
+            {
+                self.re_export();
+                ui.close();
+            }
         });
         ui.menu_button("Help", |ui| {
             if ui.button("Credits…").clicked() {
@@ -593,11 +609,131 @@ impl MapMakerApp {
         if let Some(canvas) = self.new_map_dialog.show(ctx) {
             self.request_new(canvas);
         }
-        if let Some(settings) = self.export_dialog.show(ctx, &self.editor.map.canvas) {
-            self.editor.map.export_settings = settings;
+        match self.export_dialog.show(ctx, &self.editor.map.canvas) {
+            Some(DialogAction::Save(settings)) => self.editor.map.export_settings = settings,
+            Some(DialogAction::Export(settings)) => {
+                self.editor.map.export_settings = settings;
+                self.export_from_dialog();
+            }
+            None => {}
         }
+        self.export_progress(ctx);
         self.recovery_dialog(ctx);
         self.unsaved_dialog(ctx);
+    }
+
+    /// The folder the dialog's Export button writes into: the one typed in the dialog.
+    fn export_from_dialog(&mut self) {
+        let directory = PathBuf::from(self.export_dialog.directory.trim());
+        let directory = if directory.as_os_str().is_empty() {
+            self.document_directory().unwrap_or_default()
+        } else {
+            directory
+        };
+        let settings = &mut self.editor.map.export_settings;
+        if settings.file_name.as_deref().is_none_or(str::is_empty) {
+            settings.file_name = Some(format!("{}.png", self.document.name()));
+        }
+        self.export_directory = Some(directory);
+        self.start_export();
+    }
+
+    fn document_directory(&self) -> Option<PathBuf> {
+        self.document
+            .path()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+    }
+
+    /// Where Re-export would write, from the stored settings; `None` before a first export.
+    fn re_export_target(&self) -> Option<PathBuf> {
+        let directory = self
+            .export_directory
+            .clone()
+            .or_else(|| self.document_directory())?;
+        export_run::export_path(&self.editor.map.export_settings, &directory)
+    }
+
+    /// Runs an export from the stored settings without opening the dialog.
+    fn re_export(&mut self) {
+        if self.re_export_target().is_none() {
+            self.editor
+                .error("Export the Map once with Export PNG… first");
+            return;
+        }
+        if self.export_directory.is_none() {
+            self.export_directory = self.document_directory();
+        }
+        self.start_export();
+    }
+
+    /// Starts exporting to the stored file name in `export_directory`.
+    fn start_export(&mut self) {
+        if self.export_run.is_some() {
+            return;
+        }
+        if self.render_state.is_none() {
+            self.editor.error("Export needs a graphics adapter");
+            return;
+        }
+        let Some(dest) = self.re_export_target() else {
+            self.editor.error("The export has no file name");
+            return;
+        };
+        let settings = self.editor.map.export_settings.clone();
+        let output = settings.credits.output(&self.editor.credit_lines());
+        let mut meta =
+            PngMeta::default().with_software("StarScript Map Maker", env!("CARGO_PKG_VERSION"));
+        if let Some(chunk) = &output.chunk {
+            meta = meta.with_credits(CREDITS_CHUNK_KEYWORD, chunk);
+        }
+        match ExportJob::new(&self.editor.map, &settings, meta, &dest) {
+            Ok(job) => self.export_run = Some(ExportRun::new(job, dest, output.file)),
+            Err(err) => self.editor.error(format!("Export failed: {err}")),
+        }
+    }
+
+    /// Steps the running export once and shows its progress dialog.
+    fn export_progress(&mut self, ctx: &egui::Context) {
+        let Some(run) = self.export_run.as_mut() else {
+            return;
+        };
+        let Some(render_state) = self.render_state.as_ref() else {
+            return;
+        };
+        let editor = &mut self.editor;
+        let outcome = run.frame(
+            |job| match canvas_view::step_export(render_state, editor, job) {
+                Some(step) => step.map_err(|err| err.to_string()),
+                None => Err("no graphics adapter".to_owned()),
+            },
+        );
+        let dest = run.dest().to_path_buf();
+        match outcome {
+            Outcome::Running(progress) => {
+                if export_run::show_progress(ctx, &dest, progress) {
+                    run.cancel();
+                    self.export_run = None;
+                    self.editor.info("Export cancelled");
+                } else {
+                    // Keep stepping even when no input arrives.
+                    ctx.request_repaint();
+                }
+            }
+            Outcome::Finished(size) => {
+                self.export_run = None;
+                self.editor.info(format!(
+                    "Exported {} × {} px to {}",
+                    size.width,
+                    size.height,
+                    dest.display()
+                ));
+            }
+            Outcome::Failed(message) => {
+                self.export_run = None;
+                self.editor.error(format!("Export failed: {message}"));
+            }
+        }
     }
 
     /// Asks what to do with unsaved changes before opening another Map or closing.
@@ -960,6 +1096,7 @@ impl eframe::App for MapMakerApp {
         let dialog_open = self.pending.is_some()
             || self.new_map_dialog.open
             || self.export_dialog.open
+            || self.export_run.is_some()
             || self.recovery_prompt.is_some()
             || *self.open_dialog.state() == DialogState::Open
             || *self.save_dialog.state() == DialogState::Open;

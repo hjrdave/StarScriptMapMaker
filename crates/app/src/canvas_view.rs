@@ -5,8 +5,8 @@ use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use ssmap_core::Command;
 use ssmap_render::{
-    CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, Quality, RgbaImage, SpriteStore,
-    Suitability, TessellationCache, View, render_to_image,
+    CanvasRenderer, CanvasScene, ExportError, ExportJob, ExportStep, GpuCapabilities, Presenter,
+    Quality, RgbaImage, SpriteStore, Suitability, TessellationCache, View, render_to_image,
 };
 
 use crate::editor::Editor;
@@ -81,6 +81,24 @@ pub fn render_whole_canvas(
         &mut resources.renderer,
         &scene,
         &view,
+    ))
+}
+
+/// Advances `job` by one step on the same renderer as the screen. `None` without a GPU.
+pub fn step_export(
+    render_state: &egui_wgpu::RenderState,
+    editor: &mut Editor,
+    job: &mut ExportJob,
+) -> Option<Result<ExportStep, ExportError>> {
+    let mut egui_renderer = render_state.renderer.write();
+    let resources = egui_renderer
+        .callback_resources
+        .get_mut::<CanvasResources>()?;
+    Some(editor.step_export(
+        job,
+        &render_state.device,
+        &render_state.queue,
+        &mut resources.renderer,
     ))
 }
 
