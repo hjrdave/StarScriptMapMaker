@@ -193,8 +193,13 @@ fn tiles_leave_no_seams() {
             }
         }
     }
+    // Tiles are rendered at a different origin than the whole image, so on some GPUs (Metal)
+    // an antialiased coast pixel can round differently. A real seam would differ along a whole
+    // tile edge (hundreds of pixels), so a handful of isolated pixels is tolerated. CI saw one
+    // such pixel, well away from any tile boundary.
+    const ROUNDING_PIXELS: usize = 8;
     assert!(
-        differing.is_empty(),
+        differing.len() <= ROUNDING_PIXELS,
         "{} pixels differ, first at {:?}",
         differing.len(),
         differing.first()
