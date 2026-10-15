@@ -39,6 +39,8 @@ pub struct VectorShape {
 #[derive(Clone, Debug, Default)]
 pub struct VectorGroup {
     pub shapes: Vec<VectorShape>,
+    /// A Shore effect (ripples or inner shading), which a frame drawn mid-gesture skips.
+    pub effect: bool,
 }
 
 impl VectorGroup {
@@ -49,7 +51,14 @@ impl VectorGroup {
                 color,
                 paint: Paint::Fill(rule),
             }],
+            effect: false,
         }
+    }
+
+    /// Marks the group as a Shore effect.
+    pub fn into_effect(mut self) -> Self {
+        self.effect = true;
+        self
     }
 
     /// Whether drawing the group's triangles plainly could cover a sample twice. Fill
@@ -61,6 +70,29 @@ impl VectorGroup {
             _ => true,
         }
     }
+}
+
+/// What a frame draws of the groups: those that reach `bounds`, and Shore effects only if
+/// `effects`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DrawFilter {
+    /// The visible Canvas area as `[min_x, min_y, max_x, max_y]`.
+    pub bounds: [f32; 4],
+    pub effects: bool,
+}
+
+impl DrawFilter {
+    pub(crate) fn everything() -> Self {
+        Self {
+            bounds: [f32::MIN, f32::MIN, f32::MAX, f32::MAX],
+            effects: true,
+        }
+    }
+}
+
+/// Whether two `[min_x, min_y, max_x, max_y]` boxes overlap.
+pub(crate) fn overlaps(a: [f32; 4], b: [f32; 4]) -> bool {
+    a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3]
 }
 
 /// Draws vector groups into a Canvas render pass whose group 0 is the view uniform and which
@@ -107,6 +139,30 @@ struct Mesh {
 struct Draw {
     indices: Range<u32>,
     once: bool,
+    effect: bool,
+    /// The Canvas area its triangles cover, as `[min_x, min_y, max_x, max_y]`.
+    bounds: [f32; 4],
+}
+
+/// Merged groups stop growing here, so one draw's bounds stay small enough to cull by.
+const MERGE_LIMIT: u32 = 30_000;
+
+const EMPTY_BOUNDS: [f32; 4] = [f32::MAX, f32::MAX, f32::MIN, f32::MIN];
+
+fn union(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    [
+        a[0].min(b[0]),
+        a[1].min(b[1]),
+        a[2].max(b[2]),
+        a[3].max(b[3]),
+    ]
+}
+
+fn bounds_of(vertices: &[Vertex]) -> [f32; 4] {
+    vertices.iter().fold(EMPTY_BOUNDS, |bounds, v| {
+        let [x, y] = v.position;
+        union(bounds, [x, y, x, y])
+    })
 }
 
 /// Curve flattening tolerance in Canvas units.
@@ -186,6 +242,7 @@ impl LyonRenderer {
                 split = true;
             }
             let start = geometry.indices.len() as u32;
+            let first_vertex = geometry.vertices.len();
             for shape in &group.shapes {
                 tessellate(shape, &mut geometry, &mut fill, &mut stroke);
             }
@@ -194,11 +251,23 @@ impl LyonRenderer {
                 continue;
             }
             let once = group.may_overlap();
+            let bounds = bounds_of(&geometry.vertices[first_vertex..]);
             match draws.last_mut() {
-                Some(last) if !split && !once && !last.once => last.indices.end = end,
+                Some(last)
+                    if !split
+                        && !once
+                        && !last.once
+                        && last.effect == group.effect
+                        && end - last.indices.start <= MERGE_LIMIT =>
+                {
+                    last.indices.end = end;
+                    last.bounds = union(last.bounds, bounds);
+                }
                 _ => draws.push(Draw {
                     indices: start..end,
                     once,
+                    effect: group.effect,
+                    bounds,
                 }),
             }
             split = false;
@@ -225,8 +294,14 @@ impl LyonRenderer {
     }
 
     /// Draws run `run` of the groups last given to [`LyonRenderer::set_runs`], only inside the
-    /// active Clip if `clipped`.
-    pub(crate) fn draw_run(&self, pass: &mut wgpu::RenderPass<'_>, run: usize, clipped: bool) {
+    /// active Clip if `clipped`, and only what `filter` lets through.
+    pub(crate) fn draw_run(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        run: usize,
+        clipped: bool,
+        filter: &DrawFilter,
+    ) {
         let Some(mesh) = &self.mesh else { return };
         let Some(range) = mesh.runs.get(run) else {
             return;
@@ -235,7 +310,9 @@ impl LyonRenderer {
         pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
         pass.set_stencil_reference(if clipped { CLIP_INSIDE } else { 0 });
         let plain = if clipped { &self.clipped } else { &self.plain };
-        for draw in &mesh.draws[range.clone()] {
+        let visible =
+            |draw: &&Draw| (filter.effects || !draw.effect) && overlaps(draw.bounds, filter.bounds);
+        for draw in mesh.draws[range.clone()].iter().filter(visible) {
             if draw.once {
                 pass.set_pipeline(&self.once);
                 pass.draw_indexed(draw.indices.clone(), 0, 0..1);
@@ -271,7 +348,7 @@ impl VectorRenderer for LyonRenderer {
     }
 
     fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
-        self.draw_run(pass, 0, false);
+        self.draw_run(pass, 0, false, &DrawFilter::everything());
     }
 }
 

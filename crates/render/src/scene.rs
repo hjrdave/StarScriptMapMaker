@@ -279,6 +279,7 @@ fn stroke(path: Path, color: Color, width: f32, opacity: f32) -> VectorGroup {
             color: color.faded(opacity),
             paint: Paint::Stroke { width },
         }],
+        effect: false,
     }
 }
 
@@ -306,12 +307,15 @@ fn ripple_groups(
             0.0
         };
         let ring = land::offset(outline, ripples.spacing * f64::from(k));
-        groups.push(stroke(
-            region_path(&ring),
-            faded(ripples.color, 1.0 - ripples.fade * along),
-            ripples.width as f32,
-            opacity,
-        ));
+        groups.push(
+            stroke(
+                region_path(&ring),
+                faded(ripples.color, 1.0 - ripples.fade * along),
+                ripples.width as f32,
+                opacity,
+            )
+            .into_effect(),
+        );
     }
 }
 
@@ -336,12 +340,15 @@ fn shading_groups(
         if ring.is_empty() {
             break;
         }
-        groups.push(stroke(
-            region_path(&ring),
-            faded(shading.color, 1.0 - middle),
-            band as f32,
-            opacity,
-        ));
+        groups.push(
+            stroke(
+                region_path(&ring),
+                faded(shading.color, 1.0 - middle),
+                band as f32,
+                opacity,
+            )
+            .into_effect(),
+        );
     }
 }
 

@@ -44,6 +44,19 @@ impl View {
         ]
     }
 
+    /// The Canvas area in view as `[min_x, min_y, max_x, max_y]`, padded by a couple of pixels
+    /// so antialiased edges at the border are never culled.
+    pub(crate) fn visible(&self) -> [f32; 4] {
+        let pad = 2.0 / self.zoom;
+        let max = self.to_canvas([f64::from(self.size[0]), f64::from(self.size[1])]);
+        [
+            (self.origin[0] - pad) as f32,
+            (self.origin[1] - pad) as f32,
+            (max[0] + pad) as f32,
+            (max[1] + pad) as f32,
+        ]
+    }
+
     /// Zooms by `factor`, keeping the Canvas point under `pixel` fixed.
     pub fn zoom_at(&mut self, pixel: [f64; 2], factor: f64) {
         let anchor = self.to_canvas(pixel);

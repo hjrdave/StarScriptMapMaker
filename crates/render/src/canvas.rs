@@ -13,7 +13,7 @@ use crate::gpu::GpuCapabilities;
 use crate::ocean::{OceanPass, OceanUniform};
 use crate::sprite::SpriteStore;
 use crate::stamp::{PlacedStamp, StampRenderer};
-use crate::vector::{FillRule, LyonRenderer, VectorGroup, VectorRenderer};
+use crate::vector::{DrawFilter, FillRule, LyonRenderer, VectorGroup, VectorRenderer};
 use crate::view::View;
 
 /// The resolved Canvas target's format. Blending happens in linear space, and readback bytes
@@ -126,6 +126,17 @@ impl PartialEq for Content {
     }
 }
 
+/// How much of the Map a frame draws.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Quality {
+    /// Everything. Export always uses this.
+    #[default]
+    Full,
+    /// Without Shore effects (ripples and inner shading), for frames drawn while the view is
+    /// panning or zooming. The editor redraws at [`Quality::Full`] when the gesture stops.
+    Interactive,
+}
+
 /// Everything the Canvas renderer draws.
 #[derive(Clone, PartialEq, Debug)]
 pub struct CanvasScene {
@@ -136,6 +147,7 @@ pub struct CanvasScene {
     pub pasteboard: Color,
     /// Drawn over the backdrop.
     pub content: Content,
+    pub quality: Quality,
 }
 
 impl CanvasScene {
@@ -145,7 +157,13 @@ impl CanvasScene {
             backdrop: Backdrop::default(),
             pasteboard: Color::rgb(0x1c, 0x1c, 0x1f),
             content: Content::default(),
+            quality: Quality::Full,
         }
+    }
+
+    pub fn with_quality(mut self, quality: Quality) -> Self {
+        self.quality = quality;
+        self
     }
 
     pub fn with_content(mut self, content: Content) -> Self {
@@ -319,19 +337,25 @@ impl CanvasRenderer {
         self.backdrop.draw(&mut pass);
         self.ocean.draw(&mut pass);
         let clips = scene.content.clips();
+        let filter = DrawFilter {
+            bounds: view.visible(),
+            effects: scene.quality == Quality::Full,
+        };
         let mut active = None;
         let mut start = 0;
         for run in 0..=self.content_cuts.len() {
             // A run lies inside one Clip scope or outside them all, as scope edges are cuts.
             let scope = clips.iter().position(|clip| clip.groups.contains(&start));
             self.enter(&mut pass, &mut active, scope);
-            self.content.draw_run(&mut pass, run, scope.is_some());
+            self.content
+                .draw_run(&mut pass, run, scope.is_some(), &filter);
             let Some(&cut) = self.content_cuts.get(run) else {
                 break;
             };
             for (clip, batches) in self.stamps.runs_after(cut) {
                 self.enter(&mut pass, &mut active, clip);
-                self.stamps.draw(&mut pass, batches, clip.is_some());
+                self.stamps
+                    .draw(&mut pass, batches, clip.is_some(), filter.bounds);
             }
             start = cut;
         }

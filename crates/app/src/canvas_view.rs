@@ -5,8 +5,8 @@ use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use ssmap_core::Command;
 use ssmap_render::{
-    CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, RgbaImage, SpriteStore, Suitability,
-    View, render_to_image,
+    CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, Quality, RgbaImage, SpriteStore,
+    Suitability, View, render_to_image,
 };
 
 use crate::editor::Editor;
@@ -15,6 +15,9 @@ use crate::tools::{self, CanvasInput, ToolState};
 
 /// Space left around the Canvas when it is first fitted, in points.
 const FIT_MARGIN: f64 = 32.0;
+/// How long the view must hold still, in seconds, before a pan or zoom counts as finished and
+/// the Canvas redraws at full quality.
+const GESTURE_SETTLE: f64 = 0.15;
 const MIN_ZOOM: f64 = 0.01;
 const MAX_ZOOM: f64 = 64.0;
 
@@ -83,6 +86,10 @@ pub struct CanvasView {
     tools: ToolState,
     /// Where the panel was last drawn, in points, and the pixels per point then.
     panel: Option<(egui::Rect, f64)>,
+    /// The origin and zoom of the last frame, to tell when the view moves.
+    last_view: Option<([f64; 2], f64)>,
+    /// Until this time (egui's clock, in seconds) a pan or zoom is still in progress.
+    gesture_until: f64,
 }
 
 impl CanvasView {
@@ -92,6 +99,8 @@ impl CanvasView {
             gpu,
             tools: ToolState::default(),
             panel: None,
+            last_view: None,
+            gesture_until: 0.0,
         }
     }
 
@@ -115,6 +124,8 @@ impl CanvasView {
     /// what was drawn and dragged.
     pub fn refit(&mut self) {
         self.view = None;
+        self.last_view = None;
+        self.gesture_until = 0.0;
         self.tools = ToolState::default();
     }
 
@@ -159,8 +170,29 @@ impl CanvasView {
 
         let view = *view;
         self.panel = Some((rect, ppp));
+        // While the view is moving, draw without Shore effects; once it has held still, ask
+        // for one more frame, which draws everything.
+        let now = ui.input(|i| i.time);
+        if self
+            .last_view
+            .is_some_and(|last| last != (view.origin, view.zoom))
+        {
+            self.gesture_until = now + GESTURE_SETTLE;
+        }
+        self.last_view = Some((view.origin, view.zoom));
+        let quality = if now < self.gesture_until {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_secs_f64(
+                    self.gesture_until - now,
+                ));
+            Quality::Interactive
+        } else {
+            Quality::Full
+        };
         // After input, so this frame shows this frame's edits.
-        let scene = CanvasScene::new(&editor.map.canvas).with_content(editor.scene_content());
+        let scene = CanvasScene::new(&editor.map.canvas)
+            .with_content(editor.scene_content())
+            .with_quality(quality);
         let painter = ui.painter_at(rect);
         if self.gpu {
             painter.add(egui_wgpu::Callback::new_paint_callback(

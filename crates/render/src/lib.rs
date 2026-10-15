@@ -23,7 +23,9 @@ pub mod text;
 mod vector;
 mod view;
 
-pub use canvas::{Backdrop, CANVAS_FORMAT, CanvasRenderer, CanvasScene, ClipScope, Content};
+pub use canvas::{
+    Backdrop, CANVAS_FORMAT, CanvasRenderer, CanvasScene, ClipScope, Content, Quality,
+};
 pub use color::Color;
 pub use gpu::{GpuCapabilities, Headless, HeadlessError, Suitability};
 pub use offscreen::{RgbaImage, read_texture, render_to_image};

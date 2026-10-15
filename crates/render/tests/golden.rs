@@ -256,6 +256,57 @@ fn island_with_a_hole_and_a_lake() {
     }
 }
 
+/// A frame drawn mid-gesture skips ripples and inner shading; the redraw once the gesture
+/// stops, on the same renderer, is the fully rendered frame.
+#[test]
+fn redraw_after_a_gesture_is_fully_rendered() {
+    use ssmap_render::Quality;
+
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let mut map = land_and_water();
+    for (kind, shore) in [
+        (ShoreKind::Landmass, ShoreStyle::landmass_default()),
+        (ShoreKind::Lake, ShoreStyle::lake_default()),
+    ] {
+        map.execute(&Command::SetDefaultShore { kind, shore })
+            .expect("a valid Shore style");
+    }
+    let full = scene_of(&map);
+    let gesture = full.clone().with_quality(Quality::Interactive);
+    let mut view = land_and_water_view();
+
+    let capabilities = GpuCapabilities::query(&headless.adapter);
+    let mut renderer = CanvasRenderer::new(&headless.device, capabilities);
+    let mut draw = |scene: &CanvasScene, view: &View| {
+        render_to_image(
+            &headless.device,
+            &headless.queue,
+            &mut renderer,
+            scene,
+            view,
+        )
+    };
+    let before = draw(&full, &view);
+    // Pan and zoom, drawing at gesture quality, then come back to where the view started.
+    for step in 0..4 {
+        view.pan([7.0, -3.0]);
+        view.zoom_at([200.0, 200.0], if step % 2 == 0 { 1.2 } else { 1.0 / 1.2 });
+        draw(&gesture, &view);
+    }
+    let start = land_and_water_view();
+    let during = draw(&gesture, &start);
+    let after = draw(&full, &start);
+    assert_ne!(
+        during.pixels, after.pixels,
+        "the gesture frame has no effects"
+    );
+    assert_eq!(before.pixels, after.pixels, "the redraw is the full frame");
+    if let Gpu::Software(_) = gpu {
+        assert_matches_golden("shore_effects", &after);
+    }
+}
+
 #[test]
 fn rough_coastlines() {
     let Some(gpu) = gpu() else { return };

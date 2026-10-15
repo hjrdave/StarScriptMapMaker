@@ -363,7 +363,10 @@ impl LabelLayout {
                 },
             });
         }
-        VectorGroup { shapes }
+        VectorGroup {
+            shapes,
+            effect: false,
+        }
     }
 }
 
