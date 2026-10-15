@@ -6,12 +6,13 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::color::Color;
 use crate::embedded::Embedded;
 use crate::export::ExportSettings;
 use crate::extra::Extra;
 use crate::id::Id;
 use crate::label::{LabelStyles, ResolvedLabel};
-use crate::node::{Node, Object, ObjectKind};
+use crate::node::{Landmass, Node, Object, ObjectKind};
 use crate::roughness::Roughness;
 use crate::shore::{ShoreKind, ShoreStyle};
 
@@ -67,6 +68,12 @@ pub enum DistanceUnit {
 /// Map-wide defaults for Objects that don't override them.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct MapDefaults {
+    /// The fill of a Landmass created without one of its own.
+    #[serde(
+        default = "default_land_fill",
+        skip_serializing_if = "is_default_land_fill"
+    )]
+    pub land_fill: Color,
     /// The Roughness of every Landmass and Lake without its own.
     #[serde(default)]
     pub roughness: Roughness,
@@ -83,9 +90,18 @@ pub struct MapDefaults {
     pub extra: Extra,
 }
 
+fn default_land_fill() -> Color {
+    Landmass::DEFAULT_FILL
+}
+
+fn is_default_land_fill(fill: &Color) -> bool {
+    *fill == Landmass::DEFAULT_FILL
+}
+
 impl Default for MapDefaults {
     fn default() -> Self {
         Self {
+            land_fill: default_land_fill(),
             roughness: Roughness::default(),
             shore: ShoreStyle::landmass_default(),
             lake_shore: ShoreStyle::lake_default(),

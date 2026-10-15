@@ -470,7 +470,7 @@ impl Command {
                 fill,
             } => {
                 let landmass = Landmass {
-                    fill: fill.unwrap_or(Landmass::DEFAULT_FILL),
+                    fill: fill.unwrap_or(map.defaults.land_fill),
                     ..Landmass::new(geometry.clone())
                 };
                 create_object(map, *id, *parent, *index, ObjectKind::Landmass(landmass))

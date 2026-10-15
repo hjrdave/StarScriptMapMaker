@@ -8,8 +8,8 @@ use ssmap_core::asset::AssetRef;
 use ssmap_core::land::{self, BrushStroke};
 use ssmap_core::scatter::{self, ScatterBrush, ScatterStroke, Terrain};
 use ssmap_core::{
-    Blob, Command, CommandError, EmbedAsset, EmbedFont, ExecuteError, History, Id, Label, Map,
-    MultiPolygon, Node, NodeRef, ObjectKind, Op, PickIndex, Point, Rect, ResolvedLabel,
+    Blob, Command, CommandError, DefaultLayers, EmbedAsset, EmbedFont, ExecuteError, History, Id,
+    Label, Map, MultiPolygon, Node, NodeRef, ObjectKind, Op, PickIndex, Point, Rect, ResolvedLabel,
     RoughnessCache, Selection, Stamp, StampIndex,
 };
 use ssmap_fonts::FALLBACK_FAMILY;
@@ -33,6 +33,8 @@ pub struct Editor {
     selection: Selection,
     /// The Layer new Objects go into.
     active_layer: Option<Id>,
+    /// Where new Objects go while no Layer is active, as the Map's template names them.
+    pub default_layers: DefaultLayers,
     pub active_tool: ToolId,
     /// The land brush's diameter, in Canvas units.
     pub brush_size: f64,
@@ -57,6 +59,14 @@ pub struct Editor {
     pub selected_asset: Option<AssetRef>,
     /// The scatter brush's settings. Its radius is half the shared `brush_size`.
     pub scatter: ScatterBrush,
+}
+
+/// What a new Object is, for choosing the Layer it goes into.
+#[derive(Clone, Copy)]
+enum Placing {
+    Land,
+    Stamp,
+    Label,
 }
 
 /// A pseudo-random number below `n` (which must be above 0), unseeded: Stamp variants are
@@ -116,6 +126,7 @@ impl Editor {
             history,
             selection: Vec::new(),
             active_layer: None,
+            default_layers: DefaultLayers::default(),
             active_tool: ToolId::Select,
             scatter: ScatterBrush::default(),
             brush_size: DEFAULT_BRUSH_SIZE,
@@ -412,11 +423,12 @@ impl Editor {
     /// nothing, or is refused, leaves no Undo step.
     pub fn finish_brush_stroke(&mut self, stroke: BrushStroke) {
         let new_id = Id::new();
+        let layer = self.target_layer(Placing::Land);
         let planned = land::brush_command(
             &self.map,
             &mut self.roughness,
             &self.selection,
-            self.active_layer,
+            layer,
             stroke,
             new_id,
         );
@@ -780,7 +792,7 @@ impl Editor {
     pub fn place_label(&mut self, position: [f64; 2]) -> Option<Id> {
         self.end_gesture();
         self.begin_gesture("Add Label");
-        let Some(parent) = self.placement_layer() else {
+        let Some(parent) = self.placement_layer(Placing::Label) else {
             self.cancel_gesture();
             return None;
         };
@@ -810,7 +822,7 @@ impl Editor {
         let asset = self.placement_asset()?;
         self.end_gesture();
         self.begin_gesture("Add Stamp");
-        let Some(parent) = self.placement_layer() else {
+        let Some(parent) = self.placement_layer(Placing::Stamp) else {
             self.cancel_gesture();
             return None;
         };
@@ -845,7 +857,7 @@ impl Editor {
         let terrain = Terrain::of(&self.map, &mut self.roughness);
         self.end_gesture();
         self.begin_gesture("Scatter Stamps");
-        let Some(parent) = self.placement_layer() else {
+        let Some(parent) = self.placement_layer(Placing::Stamp) else {
             self.cancel_gesture();
             return false;
         };
@@ -945,10 +957,41 @@ impl Editor {
         AssetRef::new(pack.id.clone(), pick).ok()
     }
 
-    /// The Layer new Objects go into: the active one, else the top Layer, creating a Layer if
-    /// the Map has none. Runs inside the open gesture.
-    fn placement_layer(&mut self) -> Option<Id> {
-        match self.active_layer.filter(|&id| self.map.contains(id)) {
+    /// The template's Layer for what is being placed, if the Map still has it.
+    fn default_layer(&self, placing: Placing) -> Option<Id> {
+        let layers = &self.default_layers;
+        let layer = match placing {
+            Placing::Land => layers.land,
+            Placing::Stamp => layers.assets,
+            Placing::Label => layers.labels,
+        };
+        layer.filter(|&id| matches!(self.map.node(id), Some(Node::Layer(_))))
+    }
+
+    /// The template's Layer for `placing` if no Layer is active, or if the active one is the
+    /// template's Layer for something else (placing a Stamp makes its Layer active, and the next
+    /// Label should still go to the Labels Layer); else the active Layer.
+    fn target_layer(&self, placing: Placing) -> Option<Id> {
+        let active = self.active_layer.filter(|&id| self.map.contains(id));
+        let layers = &self.default_layers;
+        let taken_by_other = |id: Id| {
+            let others = match placing {
+                Placing::Land => [layers.assets, layers.labels],
+                Placing::Stamp => [layers.land, layers.labels],
+                Placing::Label => [layers.land, layers.assets],
+            };
+            others.contains(&Some(id))
+        };
+        match active {
+            Some(id) if !taken_by_other(id) => Some(id),
+            _ => self.default_layer(placing).or(active),
+        }
+    }
+
+    /// The Layer new Objects go into: see [`Self::target_layer`], else the top Layer, creating
+    /// a Layer if the Map has none. Runs inside the open gesture.
+    fn placement_layer(&mut self, placing: Placing) -> Option<Id> {
+        match self.target_layer(placing) {
             Some(layer) => Some(layer),
             None => match self.map.children(None).last() {
                 Some(&top) => Some(top),
@@ -1255,6 +1298,26 @@ mod tests {
 
     fn asset(reference: &str) -> AssetRef {
         reference.parse().unwrap()
+    }
+
+    #[test]
+    fn a_new_map_places_stamps_and_labels_in_the_template_layers_without_setup() {
+        use ssmap_core::{Canvas, DistanceUnit, Scale};
+        let canvas = Canvas::new(1000, 800, Scale::new(1.0, DistanceUnit::Miles));
+        let (map, layers, problem) = crate::new_map::start_map(canvas);
+        assert_eq!(problem, None);
+        let mut editor = editor_with_assets();
+        editor.map = map;
+        editor.default_layers = layers;
+        assert_eq!(editor.active_layer(), None);
+
+        editor.selected_asset = Some(asset("test-pack/castle"));
+        let stamp = editor.place_stamp([40.0, 50.0]).unwrap();
+        assert_eq!(editor.map.parent(stamp), layers.assets);
+        let label = editor.place_label([60.0, 50.0]).unwrap();
+        assert_eq!(editor.map.parent(label), layers.labels);
+        assert_eq!(editor.default_layer(Placing::Land), layers.land);
+        assert_eq!(editor.map.children(layers.assets), [stamp]);
     }
 
     #[test]

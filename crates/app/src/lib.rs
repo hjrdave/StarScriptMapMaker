@@ -10,6 +10,7 @@ pub mod frame_time;
 pub mod handles;
 mod label_styles;
 mod layer_tree;
+pub mod new_map;
 mod properties;
 mod recent;
 pub mod recovery;
@@ -34,6 +35,7 @@ use crate::document::Document;
 use crate::editor::Editor;
 use crate::label_styles::LabelStylesPanel;
 use crate::layer_tree::LayerTree;
+use crate::new_map::NewMapDialog;
 use crate::properties::PropertiesPanel;
 use crate::recent::RecentFiles;
 use crate::recovery::{Found, Recovery};
@@ -70,6 +72,7 @@ pub struct MapMakerApp {
     credits: Credits,
     recent: RecentFiles,
     updates: UpdateCheck,
+    new_map_dialog: NewMapDialog,
     open_dialog: FileDialog,
     save_dialog: FileDialog,
     /// What to do once the user decides what to do with unsaved changes.
@@ -99,14 +102,15 @@ impl MapMakerApp {
         cc: &eframe::CreationContext<'_>,
         recovery_dir: Option<PathBuf>,
     ) -> Self {
-        // Until the New Map dialog exists, every session starts with a blank 4096x3072 Map.
-        let map = Map::new(Canvas::new(
-            4096,
-            3072,
-            Scale::new(0.25, DistanceUnit::Miles),
-        ))
-        .with_label_styles(ssmap_core::LabelStyles::starter());
-        Self::with_map(cc, map, recovery_dir)
+        // Every session starts with a Map from the starter template at the default size.
+        let canvas = Canvas::new(4096, 3072, Scale::new(0.25, DistanceUnit::Miles));
+        let (map, layers, problem) = new_map::start_map(canvas);
+        let mut app = Self::with_map(cc, map, recovery_dir);
+        app.editor.default_layers = layers;
+        if let Some(problem) = problem {
+            app.editor.error(problem);
+        }
+        app
     }
 
     pub fn with_map(
@@ -154,6 +158,7 @@ impl MapMakerApp {
             credits,
             recent: RecentFiles::load(cc.storage),
             updates: UpdateCheck::load(cc.storage),
+            new_map_dialog: NewMapDialog::default(),
             open_dialog: map_files().title("Open Map"),
             save_dialog: map_files().title("Save Map As"),
             pending: None,
@@ -234,6 +239,29 @@ impl MapMakerApp {
         self.layer_tree = LayerTree::default();
         self.properties = PropertiesPanel::default();
         self.canvas_view.refit();
+    }
+
+    /// Replaces the open Map with a new one from the starter template, without asking about
+    /// unsaved changes.
+    pub fn new_map(&mut self, canvas: Canvas) {
+        let (map, layers, problem) = new_map::start_map(canvas);
+        self.recovery.reset();
+        self.recovery_prompt = None;
+        self.replace(Document::default(), map);
+        self.editor.default_layers = layers;
+        match problem {
+            Some(problem) => self.editor.error(problem),
+            None => self.editor.info("Created a new Map"),
+        }
+    }
+
+    /// Starts a new Map, first asking whether to discard unsaved changes.
+    fn request_new(&mut self, canvas: Canvas) {
+        if self.document.has_unsaved_changes(&self.editor.map) {
+            self.pending = Some(Pending::New(canvas));
+        } else {
+            self.new_map(canvas);
+        }
     }
 
     /// Opens a Map file, first asking whether to discard unsaved changes.
@@ -477,6 +505,10 @@ impl MapMakerApp {
 
     fn file_menu(&mut self, ui: &mut egui::Ui) {
         ui.menu_button("File", |ui| {
+            if ui.button("New Map…").clicked() {
+                self.new_map_dialog.open = true;
+                ui.close();
+            }
             if ui.button("Open…").clicked() {
                 self.show_open_dialog();
             }
@@ -535,6 +567,9 @@ impl MapMakerApp {
             self.save_as_path(&path);
         }
 
+        if let Some(canvas) = self.new_map_dialog.show(ctx) {
+            self.request_new(canvas);
+        }
         self.recovery_dialog(ctx);
         self.unsaved_dialog(ctx);
     }
@@ -547,7 +582,9 @@ impl MapMakerApp {
         let has_file = self.document.path().is_some();
         let name = self.document.name();
         let question = match pending {
-            Pending::Open(_) => format!("Discard the unsaved changes to “{name}”?"),
+            Pending::Open(_) | Pending::New(_) => {
+                format!("Discard the unsaved changes to “{name}”?")
+            }
             Pending::Close => format!("Save the changes to “{name}” before closing?"),
         };
         let mut choice = None;
@@ -580,6 +617,7 @@ impl MapMakerApp {
                 Pending::Open(path) => {
                     self.open_path(&path);
                 }
+                Pending::New(canvas) => self.new_map(canvas),
                 Pending::Close => self.close(ctx),
             }
         }
@@ -864,6 +902,7 @@ const CHANGED_SINCE: &str = "The file was replaced or saved elsewhere since they
 #[derive(Clone)]
 enum Pending {
     Open(PathBuf),
+    New(Canvas),
     Close,
 }
 
@@ -893,6 +932,7 @@ impl eframe::App for MapMakerApp {
         // Dialogs take the keyboard while they are open.
         self.handle_close(&ctx);
         let dialog_open = self.pending.is_some()
+            || self.new_map_dialog.open
             || self.recovery_prompt.is_some()
             || *self.open_dialog.state() == DialogState::Open
             || *self.save_dialog.state() == DialogState::Open;

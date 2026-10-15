@@ -12,6 +12,7 @@
 //! licence_url = "https://creativecommons.org/publicdomain/zero/1.0/"  # optional
 //! credits = "Art by Kenney (kenney.nl)."
 //! attribution_required = false       # optional; true means exports must credit it
+//! default = false                    # optional; true makes the Asset browser select this pack
 //! author = "Kenney"                  # optional default for every Asset
 //! source_url = "https://kenney.nl/"  # optional default for every Asset
 //! modified = "2024-05-01"            # optional default for every Asset
@@ -64,6 +65,8 @@ pub struct Pack {
     pub credits: String,
     /// Whether a Map using this pack's Assets must credit it on export.
     pub attribution_required: bool,
+    /// Whether the Asset browser selects this pack. At most one pack should be flagged.
+    pub default: bool,
     pub source: PackSource,
     /// In manifest order.
     pub assets: Vec<Asset>,

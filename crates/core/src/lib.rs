@@ -22,6 +22,7 @@ mod roughness;
 pub mod scatter;
 mod shore;
 mod stamp_pick;
+mod template;
 
 pub use asset::AssetRef;
 pub use color::{Color, ParseColorError};
@@ -45,3 +46,4 @@ pub use pick::PickIndex;
 pub use roughness::{Roughness, RoughnessCache, roughen};
 pub use shore::{MAX_RIPPLES, ShoreKind, ShoreOutline, ShoreRipples, ShoreShading, ShoreStyle};
 pub use stamp_pick::{SpriteShape, StampIndex};
+pub use template::{DefaultLayers, MapTemplate, STARTER_TEMPLATE, TemplateError};
