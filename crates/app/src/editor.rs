@@ -322,6 +322,9 @@ impl Editor {
         // Done only once nothing landed since this build began; else the next call builds again.
         if !rebuild.running() && rebuild.completed() == self.rebuild_seen {
             self.rebuild = None;
+            // Objects edited mid-rebuild were not queued, so the content still holds their
+            // placeholders; build it again with the placeholders off.
+            self.scene.invalidate();
         }
         content
     }
@@ -1132,6 +1135,28 @@ mod tests {
             fill: None,
         });
         (editor, id)
+    }
+
+    #[test]
+    fn an_island_edited_mid_rebuild_is_roughened_once_the_rebuild_ends() {
+        let (mut editor, id) = editor_with_square();
+        editor.rebuild_outlines(|| {});
+        let start = std::time::Instant::now();
+        while editor.rebuilding() {
+            assert!(start.elapsed() < std::time::Duration::from_secs(30), "hung");
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        // The rebuild is over but the Canvas has not seen it; the island is edited now.
+        editor.run(Command::Translate {
+            ids: vec![id],
+            offset: [5.0, 5.0],
+        });
+        assert!(!editor.roughness.lock().is_ready(&editor.map, id));
+        let placeholder = editor.scene_content();
+        assert!(editor.rebuild.is_none());
+        let roughened = editor.scene_content();
+        assert!(editor.roughness.lock().is_ready(&editor.map, id));
+        assert!(placeholder != roughened, "content was rebuilt");
     }
 
     fn node(index: usize) -> NodeRef {

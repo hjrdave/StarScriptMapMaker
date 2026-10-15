@@ -44,6 +44,8 @@ impl OutlineRebuild {
         if !jobs.is_empty() {
             let cache = cache.clone();
             thread::spawn(move || {
+                // Whatever ends the thread, the rebuild stops counting as running.
+                let _finish = Finish(remaining);
                 for job in jobs {
                     if cancel.load(Ordering::Relaxed) {
                         return;
@@ -51,7 +53,6 @@ impl OutlineRebuild {
                     let done = job.run();
                     cache.lock().accept(done);
                     completed.fetch_add(1, Ordering::Release);
-                    remaining.fetch_sub(1, Ordering::Release);
                     repaint();
                 }
             });
@@ -67,6 +68,15 @@ impl OutlineRebuild {
     /// How many outlines have completed so far; changes whenever the Canvas should redraw.
     pub fn completed(&self) -> usize {
         self.completed.load(Ordering::Acquire)
+    }
+}
+
+/// Zeroes the count of outlines left when the thread ends, normally or by panic or cancel.
+struct Finish(Arc<AtomicUsize>);
+
+impl Drop for Finish {
+    fn drop(&mut self) {
+        self.0.store(0, Ordering::Release);
     }
 }
 
