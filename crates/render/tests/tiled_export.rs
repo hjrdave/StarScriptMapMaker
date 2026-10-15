@@ -14,8 +14,8 @@ use ssmap_core::{
     Roughness, RoughnessCache, Scale, SizeMode, Stamp,
 };
 use ssmap_render::{
-    CanvasRenderer, ExportStatus, Fonts, GpuCapabilities, Headless, MapScene, RgbaImage,
-    SpriteStore, TiledExport,
+    CanvasRenderer, ExportContext, ExportJob, ExportStatus, ExportStep, Fonts, GpuCapabilities,
+    Headless, MapScene, PngMeta, RgbaImage, SpriteStore, TiledExport,
 };
 
 fn gpu() -> Option<Headless> {
@@ -312,4 +312,92 @@ fn an_export_started_during_a_rebuild_matches_one_after_it() {
         actual == expected,
         "an export during a rebuild differs from one after it"
     );
+}
+
+fn step(job: &mut ExportJob, headless: &Headless, setup: &mut Setup, map: &Map) -> ExportStep {
+    job.step(&mut ExportContext {
+        device: &headless.device,
+        queue: &headless.queue,
+        renderer: &mut setup.renderer,
+        scene: &mut setup.scene,
+        map,
+        roughness: &mut setup.roughness,
+    })
+    .expect("the step works")
+}
+
+#[test]
+fn a_stepped_export_writes_the_same_pixels_as_a_streamed_one() {
+    let Some(headless) = gpu() else { return };
+    let map = coastal_map();
+    let settings = settings(300);
+    let mut setup = Setup::new(&headless, SpriteStore::synchronous(library()));
+    let expected = setup.export(&headless, &map, &settings, Some(256), |_| {});
+
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("map.png");
+    let mut job = ExportJob::new(&map, &settings, PngMeta::default(), &dest)
+        .unwrap()
+        .with_max_tile_side(256);
+    let mut steps = 0;
+    let size = loop {
+        steps += 1;
+        match step(&mut job, &headless, &mut setup, &map) {
+            ExportStep::Working(_) => assert!(!dest.exists(), "no file until the end"),
+            ExportStep::Finished(size) => break size,
+        }
+    };
+    assert!(steps > 2, "one tile per step");
+    assert_eq!((size.width, size.height), (expected.width, expected.height));
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    let file = std::fs::File::open(&dest).unwrap();
+    let mut reader = png::Decoder::new(std::io::BufReader::new(file))
+        .read_info()
+        .unwrap();
+    let mut pixels = vec![0; reader.output_buffer_size().unwrap()];
+    reader.next_frame(&mut pixels).unwrap();
+    assert!(pixels == expected.pixels);
+}
+
+#[test]
+fn cancelling_leaves_no_file() {
+    let Some(headless) = gpu() else { return };
+    let map = coastal_map();
+    let mut setup = Setup::new(&headless, SpriteStore::synchronous(library()));
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("map.png");
+    let mut job = ExportJob::new(&map, &settings(300), PngMeta::default(), &dest)
+        .unwrap()
+        .with_max_tile_side(256);
+    // Past the wait and into the tile rows, with the temporary file open.
+    while !matches!(
+        step(&mut job, &headless, &mut setup, &map),
+        ExportStep::Working(ExportStatus::Rendering { done: 2.., .. })
+    ) {}
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    job.cancel();
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[test]
+fn a_stepped_export_waits_while_a_rebuild_runs() {
+    let Some(headless) = gpu() else { return };
+    let map = coastal_map();
+    let mut setup = Setup::new(&headless, SpriteStore::synchronous(library()));
+    let rebuild = setup.roughness.rebuild(&map);
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("a.png");
+    let mut job = ExportJob::new(&map, &settings(300), PngMeta::default(), &dest).unwrap();
+    for _ in 0..3 {
+        assert_eq!(
+            step(&mut job, &headless, &mut setup, &map),
+            ExportStep::Working(ExportStatus::WaitingForDerivedData)
+        );
+    }
+    rebuild.run(|| {});
+    while !matches!(
+        step(&mut job, &headless, &mut setup, &map),
+        ExportStep::Finished(_)
+    ) {}
+    assert!(dest.exists());
 }
