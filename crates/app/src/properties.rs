@@ -414,8 +414,68 @@ impl PropertiesPanel {
             *text = label.text.clone();
         }
 
-        // Edits are made on the resolved settings; only what changed becomes an override.
         let styles = editor.map.label_styles().clone();
+        let mut restyled = None;
+        egui::Grid::new("label style")
+            .num_columns(2)
+            .show(ui, |ui| {
+                ui.label("Style");
+                ui.horizontal(|ui| {
+                    let current = styles
+                        .get(label.style)
+                        .unwrap_or_else(|| styles.default_style());
+                    egui::ComboBox::from_id_salt("style")
+                        .selected_text(&current.name)
+                        .show_ui(ui, |ui| {
+                            for style in styles.iter() {
+                                if ui
+                                    .selectable_label(style.id == current.id, &style.name)
+                                    .clicked()
+                                {
+                                    restyled = Some(Label {
+                                        style: style.id,
+                                        ..label.clone()
+                                    });
+                                }
+                            }
+                        });
+                    let overridden = label.font.is_some()
+                        || label.size.is_some()
+                        || label.letter_spacing.is_some()
+                        || label.line_height.is_some()
+                        || label.all_caps.is_some()
+                        || label.fill.is_some()
+                        || label.opacity.is_some()
+                        || label.halo.is_some();
+                    if ui
+                        .add_enabled(overridden, egui::Button::new("Reset overrides"))
+                        .on_hover_text("Follow the style again")
+                        .clicked()
+                    {
+                        restyled = Some(Label {
+                            font: None,
+                            size: None,
+                            letter_spacing: None,
+                            line_height: None,
+                            all_caps: None,
+                            fill: None,
+                            opacity: None,
+                            halo: None,
+                            ..label.clone()
+                        });
+                    }
+                });
+                ui.end_row();
+            });
+        if let Some(next) = restyled {
+            editor.run(Command::SetLabel {
+                id,
+                label: Box::new(next),
+            });
+            return;
+        }
+
+        // Edits are made on the resolved settings; only what changed becomes an override.
         let mut next = label.resolve(&styles);
         // What changed this frame: a drag (one gesture), a click (one step) or a colour.
         let mut dragged: Option<egui::Response> = None;
