@@ -22,8 +22,8 @@ use ssmap_core::{
     Subtree,
 };
 use ssmap_render::{
-    CanvasRenderer, CanvasScene, Fonts, GpuCapabilities, Headless, MapScene, SpriteStore, View,
-    read_texture, wgpu,
+    CanvasRenderer, CanvasScene, Fonts, GpuCapabilities, Headless, MapScene, Quality, SpriteStore,
+    View, read_texture, wgpu,
 };
 
 const STAMPS: usize = 100_000;
@@ -262,6 +262,8 @@ fn main() {
     run("overview", &gpu, &mut renderer, &scene, &[overview; 3]);
     let pan = run("pan", &gpu, &mut renderer, &scene, &pans);
     let zoom = run("zoom", &gpu, &mut renderer, &scene, &zooms);
+    let gesture = scene.clone().with_quality(Quality::Interactive);
+    run("pan mid-gesture", &gpu, &mut renderer, &gesture, &pans);
 
     let started = Instant::now();
     let mut encoder = gpu.device.create_command_encoder(&Default::default());

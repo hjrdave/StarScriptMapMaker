@@ -333,9 +333,13 @@ impl StampRenderer {
             let mut bound = false;
             // One draw per stretch of consecutive visible instances.
             let mut start = None;
-            for index in batch.instances.clone().chain(std::iter::once(batch.instances.end)) {
-                let shown = index < batch.instances.end
-                    && overlaps(self.bounds[index as usize], visible);
+            for index in batch
+                .instances
+                .clone()
+                .chain(std::iter::once(batch.instances.end))
+            {
+                let shown =
+                    index < batch.instances.end && overlaps(self.bounds[index as usize], visible);
                 match (shown, start) {
                     (true, None) => start = Some(index),
                     (false, Some(first)) => {
