@@ -164,6 +164,12 @@ impl Map {
         }
     }
 
+    /// The Map with `styles` as its Label styles, for a new Map that starts from a template.
+    pub fn with_label_styles(mut self, styles: LabelStyles) -> Self {
+        self.defaults.label_styles = styles;
+        self
+    }
+
     /// Builds a Map from a read view, as when loading.
     pub fn from_view(view: MapView) -> Result<Self, InvariantError> {
         let mut map = Self::new(view.canvas);

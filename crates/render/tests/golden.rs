@@ -12,8 +12,8 @@ use std::path::PathBuf;
 
 use ssmap_core::asset::{ArtFormat, PackSource, read_pack};
 use ssmap_core::{
-    Align, Canvas, Color, Command, DistanceUnit, FontFace, Id, Label, Lake, Landmass, Map,
-    Roughness, RoughnessCache, Scale, ShoreKind, ShoreRipples, ShoreStyle,
+    Align, Canvas, Color, Command, DistanceUnit, FontFace, Id, Label, LabelStyle, LabelStyles,
+    Lake, Landmass, Map, Roughness, RoughnessCache, Scale, ShoreKind, ShoreRipples, ShoreStyle,
 };
 use ssmap_render::atlas::{Atlas, AtlasEntry, MIN_PAGE_SIZE};
 use ssmap_render::raster::{Art, Raster};
@@ -631,6 +631,59 @@ fn halos_never_show_through_translucent_fill() {
     // Just outside the stem, the halo shows.
     let beside = |image: &RgbaImage| (60..100).map(|x| pixel(image, x, 100)[0]).max().unwrap();
     assert!(beside(&with_halo) > beside(&plain) + 40);
+}
+
+/// Deleting a Label style in use copies its values into the Labels as overrides, so the Map
+/// looks exactly the same afterwards.
+#[test]
+fn deleting_a_style_in_use_changes_nothing_visually() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let mut map = Map::new(Canvas::new(1200, 600, Scale::new(1.0, DistanceUnit::Miles)))
+        .with_label_styles(LabelStyles::starter());
+    let layer = Id::new();
+    map.execute(&Command::CreateLayer {
+        id: layer,
+        parent: None,
+        index: None,
+        name: "Labels".into(),
+    })
+    .unwrap();
+    let styles: Vec<Id> = map.label_styles().iter().map(|s| s.id).collect();
+    for (i, style) in styles.iter().enumerate() {
+        map.execute(&Command::CreateLabel {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            label: Box::new(Label {
+                text: "Thule".into(),
+                position: [600.0, 70.0 + 110.0 * i as f64],
+                style: *style,
+                ..Label::default()
+            }),
+        })
+        .unwrap();
+    }
+    let draw = |map: &Map| {
+        let mut scene = MapScene::new(Fonts::bundled());
+        let canvas = CanvasScene::new(&map.canvas)
+            .with_content(scene.content(map, &mut RoughnessCache::new()));
+        let view = View::whole_canvas(canvas.canvas_size, 600);
+        render(headless, &canvas, &view)
+    };
+    let before = draw(&map);
+    for style in styles
+        .into_iter()
+        .filter(|id| *id != LabelStyle::DEFAULT_ID)
+    {
+        map.execute(&Command::DeleteLabelStyle { id: style })
+            .unwrap();
+    }
+    let after = draw(&map);
+    assert_eq!(before.pixels, after.pixels);
+    if let Gpu::Software(_) = gpu {
+        assert_matches_golden("label_styles_deleted", &after);
+    }
 }
 
 /// A store over the core crate's test pack.
