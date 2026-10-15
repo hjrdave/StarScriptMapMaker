@@ -13,7 +13,11 @@ use ssmap_core::{
     ResolvedLabel, RoughnessCache, Selection, Stamp, StampIndex,
 };
 use ssmap_fonts::FALLBACK_FAMILY;
-use ssmap_render::{Content, Fonts, LabelLayout, MapScene, SpriteStore};
+use ssmap_render::wgpu;
+use ssmap_render::{
+    CanvasRenderer, Content, ExportContext, ExportError, ExportJob, ExportStep, Fonts, LabelLayout,
+    MapScene, SpriteStore,
+};
 
 use crate::layer_tree::node_name;
 use crate::tools::ToolId;
@@ -375,6 +379,27 @@ impl Editor {
         self.sync_background_outlines();
         self.roughness.retain(&self.map);
         self.scene.content(&self.map, &mut self.roughness)
+    }
+
+    /// Advances an export by one step, drawing from this Editor's Map and caches.
+    pub fn step_export(
+        &mut self,
+        job: &mut ExportJob,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        renderer: &mut CanvasRenderer,
+    ) -> Result<ExportStep, ExportError> {
+        self.sync_embedded();
+        self.sync_background_outlines();
+        self.roughness.retain(&self.map);
+        job.step(&mut ExportContext {
+            device,
+            queue,
+            renderer,
+            scene: &mut self.scene,
+            map: &self.map,
+            roughness: &mut self.roughness,
+        })
     }
 
     /// The selected Landmasses and Lakes, which move and resize with the handles.
