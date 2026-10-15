@@ -44,17 +44,22 @@ impl OutlineRebuild {
         if !jobs.is_empty() {
             let cache = cache.clone();
             thread::spawn(move || {
-                // Whatever ends the thread, the rebuild stops counting as running.
-                let _finish = Finish(remaining);
-                for job in jobs {
-                    if cancel.load(Ordering::Relaxed) {
-                        return;
+                {
+                    // Whatever ends the loop, the rebuild stops counting as running.
+                    let _finish = Finish(remaining);
+                    for job in jobs {
+                        if cancel.load(Ordering::Relaxed) {
+                            break;
+                        }
+                        let done = job.run();
+                        cache.lock().accept(done);
+                        completed.fetch_add(1, Ordering::Release);
+                        repaint();
                     }
-                    let done = job.run();
-                    cache.lock().accept(done);
-                    completed.fetch_add(1, Ordering::Release);
-                    repaint();
                 }
+                // The frame for the last outline may have run while the rebuild still counted as
+                // running; this one sees it finished.
+                repaint();
             });
         }
         rebuild

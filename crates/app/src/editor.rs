@@ -1159,6 +1159,24 @@ mod tests {
         assert!(placeholder != roughened, "content was rebuilt");
     }
 
+    #[test]
+    fn the_last_repaint_finds_the_rebuild_finished() {
+        let (mut editor, _) = editor_with_square();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        editor.rebuild_outlines(move || {
+            let _ = sender.send(());
+        });
+        // One outline to compute: a repaint when it lands, and a last one once the rebuild ended.
+        let wait = std::time::Duration::from_secs(30);
+        receiver
+            .recv_timeout(wait)
+            .expect("repaint for the outline");
+        receiver.recv_timeout(wait).expect("repaint after the end");
+        assert!(!editor.rebuilding());
+        editor.scene_content();
+        assert!(editor.rebuild.is_none());
+    }
+
     fn node(index: usize) -> NodeRef {
         NodeRef {
             part: 0,
