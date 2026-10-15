@@ -28,6 +28,7 @@ Pushing a `vX.Y.Z` tag builds, checksums and publishes a GitHub Release with the
 drafted in `docs/release/release.yml` (automated runs can't edit `.github/`, so the author
 copies it to `.github/workflows/release.yml`). The notes template, which explains the
 Gatekeeper and SmartScreen first-launch warnings, is `docs/release/release-notes-template.md`.
+To build and test the macOS app locally without a tag, see `docs/release/macos-local-build.md`.
 
 ## Install layout
 
