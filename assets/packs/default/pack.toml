@@ -1,0 +1,606 @@
+# The default Asset pack: Kenney's Cartography Pack (CC0), built from the 128px Retina PNGs
+# in assets/vendor/kenney-cartography/ (the untouched source). Crediting Kenney is optional,
+# so this pack does not ask for attribution; the fields below are metadata only.
+[pack]
+id = "default"
+name = "Default"
+licence = "CC0-1.0"
+licence_url = "https://creativecommons.org/publicdomain/zero/1.0/"
+credits = "Cartography Pack by Kenney (www.kenney.nl), CC0."
+attribution_required = false
+default = true
+author = "Kenney"
+source_url = "https://www.kenney.nl"
+modified = "2026-10-15"
+
+[[asset]]
+id = "banner"
+name = "Banner"
+category = "features"
+file = "art/banner.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/banner.png"
+
+[[asset]]
+id = "bridge"
+name = "Bridge"
+category = "features"
+file = "art/bridge.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "bridges"
+silhouette = "silhouettes/bridge.png"
+
+[[asset]]
+id = "bridge-rope"
+name = "Bridge Rope"
+category = "features"
+file = "art/bridge-rope.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "bridges"
+silhouette = "silhouettes/bridge-rope.png"
+
+[[asset]]
+id = "bush"
+name = "Bush"
+category = "forests"
+file = "art/bush.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/bush.png"
+
+[[asset]]
+id = "cactus"
+name = "Cactus"
+category = "forests"
+file = "art/cactus.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "cacti"
+silhouette = "silhouettes/cactus.png"
+
+[[asset]]
+id = "cactus-large"
+name = "Cactus Large"
+category = "forests"
+file = "art/cactus-large.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "cacti"
+silhouette = "silhouettes/cactus-large.png"
+
+[[asset]]
+id = "campfire"
+name = "Campfire"
+category = "settlements"
+file = "art/campfire.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/campfire.png"
+
+[[asset]]
+id = "castle"
+name = "Castle"
+category = "fortifications"
+file = "art/castle.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "castles"
+silhouette = "silhouettes/castle.png"
+
+[[asset]]
+id = "castle-tall"
+name = "Castle Tall"
+category = "fortifications"
+file = "art/castle-tall.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "castles"
+silhouette = "silhouettes/castle-tall.png"
+
+[[asset]]
+id = "castle-wide"
+name = "Castle Wide"
+category = "fortifications"
+file = "art/castle-wide.png"
+anchor = [0.5, 0.9]
+width = 128.0
+variant_group = "castles"
+silhouette = "silhouettes/castle-wide.png"
+
+[[asset]]
+id = "castle-wide-low"
+name = "Castle Wide Low"
+category = "fortifications"
+file = "art/castle-wide-low.png"
+anchor = [0.5, 0.9]
+width = 128.0
+variant_group = "castles"
+silhouette = "silhouettes/castle-wide-low.png"
+
+[[asset]]
+id = "chest"
+name = "Chest"
+category = "features"
+file = "art/chest.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/chest.png"
+
+[[asset]]
+id = "church"
+name = "Church"
+category = "settlements"
+file = "art/church.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "churches"
+silhouette = "silhouettes/church.png"
+
+[[asset]]
+id = "church-large"
+name = "Church Large"
+category = "settlements"
+file = "art/church-large.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "churches"
+silhouette = "silhouettes/church-large.png"
+
+[[asset]]
+id = "compass"
+name = "Compass"
+category = "features"
+file = "art/compass.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/compass.png"
+
+[[asset]]
+id = "dock"
+name = "Dock"
+category = "settlements"
+file = "art/dock.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/dock.png"
+
+[[asset]]
+id = "fence"
+name = "Fence"
+category = "fortifications"
+file = "art/fence.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/fence.png"
+
+[[asset]]
+id = "flag"
+name = "Flag"
+category = "features"
+file = "art/flag.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/flag.png"
+
+[[asset]]
+id = "gate"
+name = "Gate"
+category = "fortifications"
+file = "art/gate.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/gate.png"
+
+[[asset]]
+id = "graveyard"
+name = "Graveyard"
+category = "settlements"
+file = "art/graveyard.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/graveyard.png"
+
+[[asset]]
+id = "house"
+name = "House"
+category = "settlements"
+file = "art/house.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "houses"
+silhouette = "silhouettes/house.png"
+
+[[asset]]
+id = "house-chimney"
+name = "House Chimney"
+category = "settlements"
+file = "art/house-chimney.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "houses"
+silhouette = "silhouettes/house-chimney.png"
+
+[[asset]]
+id = "house-small"
+name = "House Small"
+category = "settlements"
+file = "art/house-small.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "houses"
+silhouette = "silhouettes/house-small.png"
+
+[[asset]]
+id = "house-tall"
+name = "House Tall"
+category = "settlements"
+file = "art/house-tall.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "houses"
+silhouette = "silhouettes/house-tall.png"
+
+[[asset]]
+id = "house-viking"
+name = "House Viking"
+category = "settlements"
+file = "art/house-viking.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "houses"
+silhouette = "silhouettes/house-viking.png"
+
+[[asset]]
+id = "houses"
+name = "Houses"
+category = "settlements"
+file = "art/houses.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/houses.png"
+
+[[asset]]
+id = "lake"
+name = "Lake"
+category = "terrain"
+file = "art/lake.png"
+anchor = [0.5, 0.9]
+width = 128.0
+variant_group = "lakes"
+silhouette = "silhouettes/lake.png"
+
+[[asset]]
+id = "lake-round"
+name = "Lake Round"
+category = "terrain"
+file = "art/lake-round.png"
+anchor = [0.5, 0.9]
+width = 128.0
+variant_group = "lakes"
+silhouette = "silhouettes/lake-round.png"
+
+[[asset]]
+id = "lighthouse"
+name = "Lighthouse"
+category = "settlements"
+file = "art/lighthouse.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/lighthouse.png"
+
+[[asset]]
+id = "mill"
+name = "Mill"
+category = "settlements"
+file = "art/mill.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/mill.png"
+
+[[asset]]
+id = "mine"
+name = "Mine"
+category = "settlements"
+file = "art/mine.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/mine.png"
+
+[[asset]]
+id = "palm"
+name = "Palm"
+category = "forests"
+file = "art/palm.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "palms"
+silhouette = "silhouettes/palm.png"
+
+[[asset]]
+id = "palm-large"
+name = "Palm Large"
+category = "forests"
+file = "art/palm-large.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "palms"
+silhouette = "silhouettes/palm-large.png"
+
+[[asset]]
+id = "pyramid"
+name = "Pyramid"
+category = "terrain"
+file = "art/pyramid.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/pyramid.png"
+
+[[asset]]
+id = "rocks"
+name = "Rocks"
+category = "terrain"
+file = "art/rocks.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "rocks"
+silhouette = "silhouettes/rocks.png"
+
+[[asset]]
+id = "rocks-a"
+name = "Rocks A"
+category = "terrain"
+file = "art/rocks-a.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "rocks"
+silhouette = "silhouettes/rocks-a.png"
+
+[[asset]]
+id = "rocks-b"
+name = "Rocks B"
+category = "terrain"
+file = "art/rocks-b.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "rocks"
+silhouette = "silhouettes/rocks-b.png"
+
+[[asset]]
+id = "rocks-mountain"
+name = "Rocks Mountain"
+category = "terrain"
+file = "art/rocks-mountain.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/rocks-mountain.png"
+
+[[asset]]
+id = "rocks-tall"
+name = "Rocks Tall"
+category = "terrain"
+file = "art/rocks-tall.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "rocks"
+silhouette = "silhouettes/rocks-tall.png"
+
+[[asset]]
+id = "ruins"
+name = "Ruins"
+category = "features"
+file = "art/ruins.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/ruins.png"
+
+[[asset]]
+id = "ship"
+name = "Ship"
+category = "features"
+file = "art/ship.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/ship.png"
+
+[[asset]]
+id = "skull"
+name = "Skull"
+category = "features"
+file = "art/skull.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/skull.png"
+
+[[asset]]
+id = "stable"
+name = "Stable"
+category = "settlements"
+file = "art/stable.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/stable.png"
+
+[[asset]]
+id = "tent"
+name = "Tent"
+category = "settlements"
+file = "art/tent.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/tent.png"
+
+[[asset]]
+id = "tipi"
+name = "Tipi"
+category = "settlements"
+file = "art/tipi.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/tipi.png"
+
+[[asset]]
+id = "tower"
+name = "Tower"
+category = "fortifications"
+file = "art/tower.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "towers"
+silhouette = "silhouettes/tower.png"
+
+[[asset]]
+id = "tower-low"
+name = "Tower Low"
+category = "fortifications"
+file = "art/tower-low.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "towers"
+silhouette = "silhouettes/tower-low.png"
+
+[[asset]]
+id = "tower-tall"
+name = "Tower Tall"
+category = "fortifications"
+file = "art/tower-tall.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "towers"
+silhouette = "silhouettes/tower-tall.png"
+
+[[asset]]
+id = "tower-watch"
+name = "Tower Watch"
+category = "fortifications"
+file = "art/tower-watch.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "towers"
+silhouette = "silhouettes/tower-watch.png"
+
+[[asset]]
+id = "tree-pine"
+name = "Tree Pine"
+category = "forests"
+file = "art/tree-pine.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "pine-trees"
+silhouette = "silhouettes/tree-pine.png"
+
+[[asset]]
+id = "tree-pine-large"
+name = "Tree Pine Large"
+category = "forests"
+file = "art/tree-pine-large.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "pine-trees"
+silhouette = "silhouettes/tree-pine-large.png"
+
+[[asset]]
+id = "tree-pine-tall"
+name = "Tree Pine Tall"
+category = "forests"
+file = "art/tree-pine-tall.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "pine-trees"
+silhouette = "silhouettes/tree-pine-tall.png"
+
+[[asset]]
+id = "tree-pine-tall-large"
+name = "Tree Pine Tall Large"
+category = "forests"
+file = "art/tree-pine-tall-large.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "pine-trees"
+silhouette = "silhouettes/tree-pine-tall-large.png"
+
+[[asset]]
+id = "tree-pine-tall-low"
+name = "Tree Pine Tall Low"
+category = "forests"
+file = "art/tree-pine-tall-low.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "pine-trees"
+silhouette = "silhouettes/tree-pine-tall-low.png"
+
+[[asset]]
+id = "tree-pines"
+name = "Tree Pines"
+category = "forests"
+file = "art/tree-pines.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "pine-trees"
+silhouette = "silhouettes/tree-pines.png"
+
+[[asset]]
+id = "tree-pines-small"
+name = "Tree Pines Small"
+category = "forests"
+file = "art/tree-pines-small.png"
+anchor = [0.5, 0.9]
+width = 64.0
+variant_group = "pine-trees"
+silhouette = "silhouettes/tree-pines-small.png"
+
+[[asset]]
+id = "tree-tall"
+name = "Tree Tall"
+category = "forests"
+file = "art/tree-tall.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/tree-tall.png"
+
+[[asset]]
+id = "vulcano"
+name = "Vulcano"
+category = "terrain"
+file = "art/vulcano.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/vulcano.png"
+
+[[asset]]
+id = "wall"
+name = "Wall"
+category = "fortifications"
+file = "art/wall.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/wall.png"
+
+[[asset]]
+id = "watchtower"
+name = "Watchtower"
+category = "fortifications"
+file = "art/watchtower.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/watchtower.png"
+
+[[asset]]
+id = "water-wheel"
+name = "Water Wheel"
+category = "settlements"
+file = "art/water-wheel.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/water-wheel.png"
+
+[[asset]]
+id = "well"
+name = "Well"
+category = "settlements"
+file = "art/well.png"
+anchor = [0.5, 0.9]
+width = 64.0
+silhouette = "silhouettes/well.png"

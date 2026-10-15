@@ -227,3 +227,44 @@ fn a_pack_without_assets_is_valid() {
     assert_eq!(pack.dir, Path::new("p"));
     assert!(pack.assets.is_empty());
 }
+
+/// The default pack that ships in `assets/packs/default` (Kenney's Cartography Pack, CC0).
+#[test]
+fn the_shipped_default_pack_loads_and_is_the_default() {
+    let built_in = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/packs");
+    let pack = read_pack(&built_in.join("default"), PackSource::BuiltIn).unwrap();
+    assert_eq!(pack.id, "default");
+    assert_eq!(pack.licence, "CC0-1.0");
+    assert!(
+        pack.default,
+        "the Asset browser selects the pack flagged default"
+    );
+    assert!(
+        !pack.attribution_required,
+        "Kenney's credit is optional, so the pack shows no credit"
+    );
+    assert!(!pack.assets.is_empty());
+
+    for asset in &pack.assets {
+        assert_eq!(asset.format, ArtFormat::Png, "{} is PNG art", asset.id);
+        assert!(pack.path(&asset.file).is_file(), "{} has its art", asset.id);
+        let silhouette = asset
+            .silhouette
+            .as_ref()
+            .unwrap_or_else(|| panic!("{} has a Silhouette; run the silhouettes tool", asset.id));
+        assert!(pack.path(silhouette).is_file(), "{} has its file", asset.id);
+        assert_eq!(asset.author, "Kenney");
+        assert_eq!(asset.licence, "CC0-1.0");
+    }
+
+    let roots = PackRoots {
+        built_in,
+        user: None,
+    };
+    let (library, problems) = PackLibrary::load(&roots);
+    assert_eq!(problems, []);
+    assert_eq!(
+        library.default_pack().map(|pack| pack.id.as_str()),
+        Some("default")
+    );
+}
