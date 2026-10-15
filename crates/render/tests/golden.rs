@@ -1038,3 +1038,173 @@ fn ten_thousand_stamps() {
     }
     eprintln!("10k Stamps: {:?} per pick", started.elapsed() / picks);
 }
+
+/// A Map with several rough islands and a few hundred Stamps, small enough to render a dozen
+/// times in CI but with enough Objects to see them arrive one by one.
+fn progressive_map() -> Map {
+    use ssmap_core::{MultiPolygon, Polygon};
+
+    let mut map = Map::new(Canvas::new(1200, 800, Scale::new(1.0, DistanceUnit::Miles)));
+    map.execute(&Command::SetDefaultRoughness {
+        roughness: Roughness::new(6.0, 30.0, 5),
+    })
+    .unwrap();
+    let layer = Id::new();
+    map.execute(&Command::CreateLayer {
+        id: layer,
+        parent: None,
+        index: None,
+        name: "Land".into(),
+    })
+    .unwrap();
+    for i in 0..8 {
+        let x = 150.0 + (i % 4) as f64 * 290.0;
+        let y = 200.0 + (i / 4) as f64 * 400.0;
+        map.execute(&Command::CreateLandmass {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            geometry: MultiPolygon(vec![Polygon {
+                exterior: vec![
+                    [x, y],
+                    [x + 220.0, y + 20.0],
+                    [x + 200.0, y + 240.0],
+                    [x, y + 200.0],
+                ],
+                holes: Vec::new(),
+            }]),
+            fill: None,
+        })
+        .unwrap();
+    }
+    let assets = ["test-pack/mountain-1", "test-pack/castle", "test-pack/tree"];
+    for i in 0..300usize {
+        map.execute(&Command::CreateStamp {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            stamp: Box::new(stamp(
+                assets[i % assets.len()],
+                [40.0 + (i % 30) as f64 * 38.0, 60.0 + (i / 30) as f64 * 70.0],
+            )),
+        })
+        .unwrap();
+    }
+    map
+}
+
+/// How many pixels differ by more than the golden tolerance.
+fn differing(a: &RgbaImage, b: &RgbaImage) -> usize {
+    assert_eq!((a.width, a.height), (b.width, b.height));
+    a.pixels
+        .chunks(4)
+        .zip(b.pixels.chunks(4))
+        .filter(|(a, b)| {
+            a.iter()
+                .zip(b.iter())
+                .any(|(a, b)| a.abs_diff(*b) > CHANNEL_TOLERANCE)
+        })
+        .count()
+}
+
+struct Progressive {
+    /// Drawn with nothing tessellated or rasterised yet.
+    first: RgbaImage,
+    /// Frames drawn as each Object landed, compared with the first frame.
+    changed: Vec<usize>,
+    /// Drawn once all the background work was ready.
+    last: RgbaImage,
+    /// Drawn by a renderer that built everything itself, with no background work.
+    built: RgbaImage,
+}
+
+/// Renders `map` as the editor does after a Map opens (a frame at once, more as tessellation
+/// completes) and as a renderer that was never in a hurry.
+fn progressive(headless: &Headless, map: &Map) -> Progressive {
+    use ssmap_core::asset::{PackLibrary, PackRoots};
+    use std::sync::Arc;
+
+    let scene = scene_of(map);
+    let view = View::whole_canvas(scene.canvas_size, 600);
+    let capabilities = || GpuCapabilities::query(&headless.adapter);
+    let draw = |renderer: &mut CanvasRenderer| {
+        render_to_image(&headless.device, &headless.queue, renderer, &scene, &view)
+    };
+
+    let mut renderer = CanvasRenderer::new(&headless.device, capabilities());
+    renderer.set_sprites(test_sprites());
+    let built = draw(&mut renderer);
+
+    let roots = PackRoots {
+        built_in: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../core/tests/packs"),
+        user: None,
+    };
+    let (library, problems) = PackLibrary::load(&roots);
+    assert!(problems.is_empty(), "{problems:?}");
+    let mut renderer = CanvasRenderer::new(&headless.device, capabilities());
+    renderer.set_sprites(ssmap_render::SpriteStore::new(Arc::new(library)));
+    let rebuild = renderer.start_tessellation(&scene.content);
+    let cache = renderer.tessellation_cache();
+    assert!(rebuild.len() >= 8, "every Object is still to do");
+    assert!(cache.is_building());
+    let first = draw(&mut renderer);
+
+    let mut changed = Vec::new();
+    rebuild.run(|| changed.push(differing(&first, &draw(&mut renderer))));
+    renderer.wait_until_ready(&scene.content);
+    assert!(!cache.is_building());
+    let last = draw(&mut renderer);
+    Progressive {
+        first,
+        changed,
+        last,
+        built,
+    }
+}
+
+#[test]
+fn the_first_frame_comes_before_the_rebuild_and_objects_appear_as_they_complete() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let run = progressive(headless, &progressive_map());
+
+    // The first frame is already a Canvas (ocean) but lacks the Objects and Stamps.
+    assert!(
+        differing(&run.first, &run.built) > 1000,
+        "the first frame leaves out work that is not done"
+    );
+    // One frame per Object landing, plus the one when the rebuild ends; each shows at least
+    // as much as the one before, and more than the first frame by the end.
+    assert!(run.changed.len() >= 9, "{:?}", run.changed);
+    assert!(
+        run.changed.windows(2).all(|pair| pair[0] <= pair[1] + 50),
+        "Objects only get added: {:?}",
+        run.changed
+    );
+    assert!(run.changed[0] > 0, "the first Object to land shows");
+    assert!(
+        run.changed.last() > run.changed.first(),
+        "more Objects appear as they complete: {:?}",
+        run.changed
+    );
+}
+
+#[test]
+fn the_canvas_after_a_rebuild_matches_a_fully_built_map() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let run = progressive(headless, &progressive_map());
+    let share =
+        differing(&run.last, &run.built) as f64 / f64::from(run.last.width * run.last.height);
+    assert!(share <= MAX_DIFFERING, "{share:.4} of pixels differ");
+}
+
+#[test]
+fn the_final_frame_matches_the_golden_image_of_a_fully_built_map() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let run = progressive(headless, &progressive_map());
+    if let Gpu::Software(_) = gpu {
+        assert_matches_golden("progressive_rebuild", &run.last);
+    }
+}
