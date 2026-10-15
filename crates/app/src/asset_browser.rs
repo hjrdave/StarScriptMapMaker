@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use eframe::egui;
-use ssmap_core::asset::{Asset, AssetRef, Pack};
+use ssmap_core::asset::{Asset, AssetRef, Pack, PackLibrary};
 
 use crate::editor::Editor;
 use crate::tools::ToolId;
@@ -16,6 +16,8 @@ const THUMBNAIL: f32 = 56.0;
 pub struct AssetBrowser {
     /// The pack shown, or every pack.
     pack: Option<String>,
+    /// Set once the pack flagged `default = true` has been selected, which happens once.
+    default_applied: bool,
     /// The category shown, or every category.
     category: Option<String>,
     search: String,
@@ -40,6 +42,11 @@ pub fn matches(asset: &Asset, category: Option<&str>, search: &str) -> bool {
         .all(|word| haystack.contains(&word.to_lowercase()))
 }
 
+/// The id of the pack the browser starts on: the one flagged `default = true`, or none.
+fn default_pack(library: &PackLibrary) -> Option<String> {
+    library.default_pack().map(|pack| pack.id.clone())
+}
+
 /// The distinct categories of `packs`, sorted.
 fn categories<'a>(packs: impl Iterator<Item = &'a Pack>) -> Vec<&'a str> {
     let mut categories: Vec<&str> = packs
@@ -57,6 +64,10 @@ impl AssetBrowser {
             ui.weak("No Asset packs are loaded.");
             return;
         };
+        if !self.default_applied {
+            self.default_applied = true;
+            self.pack = default_pack(&library);
+        }
         if self
             .pack
             .as_ref()
@@ -189,7 +200,29 @@ impl AssetBrowser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ssmap_core::asset::ArtFormat;
+    use ssmap_core::asset::{ArtFormat, PackSource, parse_manifest};
+
+    fn pack(id: &str, flags: &str) -> Pack {
+        let text = format!(
+            "[pack]\nid = \"{id}\"\nname = \"{id}\"\nlicence = \"CC0-1.0\"\ncredits = \"-\"\n{flags}"
+        );
+        parse_manifest(
+            std::path::Path::new("p/pack.toml"),
+            &text,
+            PackSource::BuiltIn,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn the_flagged_pack_is_selected_and_without_one_nothing_is() {
+        let mut library = PackLibrary::default();
+        let mut problems = Vec::new();
+        library.add(pack("first", ""), &mut problems);
+        assert_eq!(default_pack(&library), None);
+        library.add(pack("second", "default = true\n"), &mut problems);
+        assert_eq!(default_pack(&library).as_deref(), Some("second"));
+    }
 
     fn asset(name: &str, category: &str, tags: &[&str]) -> Asset {
         Asset {

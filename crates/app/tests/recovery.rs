@@ -268,7 +268,11 @@ fn a_map_never_saved_journals_under_the_data_dir_and_is_offered_at_startup() {
     harness.get_by_label("Recover").click();
     harness.run();
     let state = harness.state();
-    assert_eq!(layer_names(&state.editor().map), ["Layer 1", "Layer 2"]);
+    // The starter template's four Layers, then the two made above.
+    assert_eq!(
+        layer_names(&state.editor().map),
+        ["Backdrop", "Land", "Assets", "Labels", "Layer 5", "Layer 6"]
+    );
     assert!(state.document().path().is_none());
     assert!(state.document().has_unsaved_changes(&state.editor().map));
     assert_eq!(state.recovery_journal(), Some(journal.as_path()));

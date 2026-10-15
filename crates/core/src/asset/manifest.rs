@@ -156,6 +156,9 @@ pub fn parse_manifest(file: &Path, text: &str, source: PackSource) -> Result<Pac
     let attribution_required = section
         .optional(&mut errors, "attribution_required", Section::boolean)
         .unwrap_or(false);
+    let default = section
+        .optional(&mut errors, "default", Section::boolean)
+        .unwrap_or(false);
     let defaults = Defaults {
         author: section.optional(&mut errors, "author", Section::string),
         source_url: section.optional(&mut errors, "source_url", Section::url),
@@ -214,6 +217,7 @@ pub fn parse_manifest(file: &Path, text: &str, source: PackSource) -> Result<Pac
         licence_url,
         credits: credits.expect("no errors"),
         attribution_required,
+        default,
         source,
         assets,
     })
@@ -226,6 +230,7 @@ const PACK_FIELDS: &[&str] = &[
     "licence_url",
     "credits",
     "attribution_required",
+    "default",
     "author",
     "source_url",
     "modified",

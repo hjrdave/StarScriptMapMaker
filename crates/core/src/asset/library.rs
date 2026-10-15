@@ -106,6 +106,11 @@ impl PackLibrary {
         self.packs.iter().find(|pack| pack.id == id)
     }
 
+    /// The pack the Asset browser selects: the first one flagged `default = true`, if any.
+    pub fn default_pack(&self) -> Option<&Pack> {
+        self.packs.iter().find(|pack| pack.default)
+    }
+
     pub fn asset(&self, reference: &AssetRef) -> Option<(&Pack, &Asset)> {
         let pack = self.pack(&reference.pack)?;
         Some((pack, pack.asset(&reference.asset)?))

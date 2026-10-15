@@ -17,28 +17,45 @@ fn app() -> Harness<'static, MapMakerApp> {
 #[test]
 fn launches_and_creates_a_layer() {
     let mut harness = app();
-    assert!(harness.state().editor().map.children(None).is_empty());
+    // A new Map starts with the template's four Layers.
+    assert_eq!(harness.state().editor().map.children(None).len(), 4);
 
     harness.get_by_label("New Layer").click();
     harness.run();
     let map = &harness.state().editor().map;
-    assert_eq!(map.children(None).len(), 1);
+    assert_eq!(map.children(None).len(), 5);
     // The new Layer shows in the tree and is selected.
-    harness.get_by_label("Layer 1");
+    harness.get_by_label("Layer 5");
     assert_eq!(
         harness.state().editor().selection(),
-        harness.state().editor().map.children(None)
+        &map.children(None)[4..]
     );
 
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
     harness.run();
-    assert!(harness.state().editor().map.children(None).is_empty());
+    assert_eq!(harness.state().editor().map.children(None).len(), 4);
     harness.key_press_modifiers(
         egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
         egui::Key::Z,
     );
     harness.run();
-    assert_eq!(harness.state().editor().map.children(None).len(), 1);
+    assert_eq!(harness.state().editor().map.children(None).len(), 5);
+}
+
+#[test]
+fn a_new_map_opens_with_the_starter_layers_and_label_styles() {
+    let harness = app();
+    let map = &harness.state().editor().map;
+    let layers: Vec<String> = map
+        .children(None)
+        .iter()
+        .map(|&id| match map.node(id) {
+            Some(ssmap_core::Node::Layer(layer)) => layer.name.clone(),
+            _ => panic!("an Object at the top level"),
+        })
+        .collect();
+    assert_eq!(layers, ["Backdrop", "Land", "Assets", "Labels"]);
+    assert_eq!(map.label_styles().len(), 5);
 }
 
 #[test]
@@ -46,16 +63,17 @@ fn a_locked_layer_refuses_edits_with_a_visible_message() {
     let mut harness = app();
     harness.get_by_label("New Layer").click();
     harness.run();
-    harness.get_by_label("Lock").click();
+    // Every Layer has a Lock button; the Layers panel lists the new, topmost one first.
+    harness.query_all_by_label("Lock").next().unwrap().click();
     harness.run();
-    let layer = harness.state().editor().map.children(None)[0];
+    let layer = *harness.state().editor().map.children(None).last().unwrap();
     assert!(harness.state().editor().map.node(layer).unwrap().locked());
 
     // The hide toggle is refused, and the reason shows in the status bar.
-    harness.get_by_label("Hide").click();
+    harness.query_all_by_label("Hide").next().unwrap().click();
     harness.run();
     let editor = harness.state().editor();
-    let message = "“Layer 1” is locked";
+    let message = "“Layer 5” is locked";
     assert_eq!(editor.notice().map(|n| n.text.as_str()), Some(message));
     harness.get_by_label(message);
     assert!(matches!(
@@ -140,7 +158,7 @@ fn save_as_then_open_round_trips_the_map() {
     harness.run();
     assert_eq!(harness.state().editor().map.view(), saved_view);
     assert!(!harness.state().editor().can_undo());
-    harness.get_by_label("Layer 1");
+    harness.get_by_label("Layer 5");
     assert_eq!(harness.state().recent_files(), std::slice::from_ref(&saved));
 
     // Ctrl+S saves to the open file.
@@ -153,7 +171,7 @@ fn save_as_then_open_round_trips_the_map() {
         "world.ssmap — StarScript Map Maker"
     );
     let (_, reopened) = ssmap_core::file::MapFile::open(&saved).unwrap();
-    assert_eq!(reopened.children(None).len(), 2);
+    assert_eq!(reopened.children(None).len(), 6);
 }
 
 #[test]
@@ -220,6 +238,12 @@ fn the_label_tool_places_a_label_and_types_its_text_in_one_undo_step() {
     let id = *id;
     assert_eq!(editor.label(id).map(|l| l.text.as_str()), Some("Ærendál"));
     assert_eq!(editor.undo_label(), Some("Add Label"));
+    // With no Layer chosen, it went into the template's Labels Layer.
+    let parent = editor.map.parent(id).unwrap();
+    assert!(matches!(
+        editor.map.node(parent),
+        Some(ssmap_core::Node::Layer(layer)) if layer.name == "Labels"
+    ));
     // Its first line names it in the Layers panel.
     harness.get_by_label("Ærendál");
 
@@ -264,10 +288,7 @@ fn the_label_tool_places_a_label_and_types_its_text_in_one_undo_step() {
         harness.run();
     }
     let editor = harness.state().editor();
-    assert!(
-        editor.map.children(None).is_empty(),
-        "the Layer it made goes too"
-    );
+    assert!(editor.map.children(Some(parent)).is_empty());
 }
 
 /// One Layer holding an island with a hole (0..400) and a Lake (100..200) above it.
