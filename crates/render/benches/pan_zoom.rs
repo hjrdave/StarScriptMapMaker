@@ -158,7 +158,7 @@ fn sprites() -> SpriteStore {
     };
     let (library, problems) = PackLibrary::load(&roots);
     assert!(problems.is_empty(), "{problems:?}");
-    SpriteStore::new(Arc::new(library))
+    SpriteStore::synchronous(Arc::new(library))
 }
 
 /// Renders one frame and waits for the GPU, returning the encode and GPU times.
