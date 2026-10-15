@@ -6,6 +6,7 @@ mod canvas_view;
 pub mod credits;
 pub mod document;
 pub mod editor;
+pub mod export_region;
 pub mod frame_time;
 pub mod handles;
 mod label_styles;
