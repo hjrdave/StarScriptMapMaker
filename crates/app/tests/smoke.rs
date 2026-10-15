@@ -178,8 +178,7 @@ fn save_as_then_open_round_trips_the_map() {
 fn saving_an_untitled_map_asks_where() {
     let mut harness = app();
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::S);
-    // The file dialog keeps requesting repaints on some platforms, so `run` can hit max_steps.
-    harness.run_steps(4);
+    harness.run();
     assert!(harness.state().document().path().is_none());
     harness.get_by_label("Save Map As");
 }
