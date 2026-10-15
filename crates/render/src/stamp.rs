@@ -12,6 +12,7 @@ use crate::atlas::{Atlas, AtlasEntry};
 use crate::canvas::{CLIP_INSIDE, StencilUse};
 use crate::color::ColorExt as _;
 use crate::sprite::SpriteStore;
+use crate::vector::overlaps;
 
 /// One Stamp as the Canvas draws it.
 #[derive(Clone, PartialEq, Debug)]
@@ -55,6 +56,31 @@ struct Instance {
     _pad: [f32; 3],
 }
 
+/// The box around a Stamp's quad: the corners of its art rectangle, carried to the Canvas by
+/// the instance's columns.
+fn quad_bounds(
+    anchor: [f32; 2],
+    column_x: [f32; 2],
+    column_y: [f32; 2],
+    rect_min: [f32; 2],
+    rect_size: [f32; 2],
+) -> [f32; 4] {
+    let mut bounds = [f32::MAX, f32::MAX, f32::MIN, f32::MIN];
+    for corner in [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]] {
+        let x = rect_min[0] + corner[0] * rect_size[0];
+        let y = rect_min[1] + corner[1] * rect_size[1];
+        let cx = anchor[0] + column_x[0] * x + column_y[0] * y;
+        let cy = anchor[1] + column_x[1] * x + column_y[1] * y;
+        bounds = [
+            bounds[0].min(cx),
+            bounds[1].min(cy),
+            bounds[2].max(cx),
+            bounds[3].max(cy),
+        ];
+    }
+    bounds
+}
+
 /// An Asset's art on atlas pages.
 #[derive(Clone, Copy)]
 struct Uploaded {
@@ -88,6 +114,9 @@ pub(crate) struct StampRenderer {
     uploaded: HashMap<AssetRef, Option<Uploaded>>,
     bind_groups: HashMap<(u32, u32), wgpu::BindGroup>,
     instances: Option<wgpu::Buffer>,
+    /// The Canvas area each instance covers, as `[min_x, min_y, max_x, max_y]`, so a frame
+    /// draws only the Stamps in view.
+    bounds: Vec<[f32; 4]>,
     runs: Vec<Run>,
 }
 
@@ -171,6 +200,7 @@ impl StampRenderer {
             uploaded: HashMap::new(),
             bind_groups: HashMap::new(),
             instances: None,
+            bounds: Vec::new(),
             runs: Vec::new(),
         }
     }
@@ -193,6 +223,7 @@ impl StampRenderer {
     ) {
         let page_size = self.atlas.page_size();
         let mut instances: Vec<Instance> = Vec::with_capacity(stamps.len());
+        let mut bounds: Vec<[f32; 4]> = Vec::with_capacity(stamps.len());
         let mut runs: Vec<Run> = Vec::new();
         for placed in stamps {
             let Some(uploaded) = self.upload(device, queue, &placed.draw.asset) else {
@@ -202,18 +233,24 @@ impl StampRenderer {
             let (sin, cos) = draw.rotation.to_radians().sin_cos();
             let flip = if draw.flip { -1.0 } else { 1.0 };
             let [width, height] = uploaded.size;
+            let column_x = [
+                (draw.scale * flip * cos) as f32,
+                (draw.scale * flip * sin) as f32,
+            ];
+            let column_y = [(-draw.scale * sin) as f32, (draw.scale * cos) as f32];
+            let rect_min = [
+                (-uploaded.anchor[0] * width) as f32,
+                (-uploaded.anchor[1] * height) as f32,
+            ];
+            let rect_size = [width as f32, height as f32];
+            let anchor: [f32; 2] = draw.position.map(|v| v as f32);
+            bounds.push(quad_bounds(anchor, column_x, column_y, rect_min, rect_size));
             instances.push(Instance {
-                anchor: draw.position.map(|v| v as f32),
-                column_x: [
-                    (draw.scale * flip * cos) as f32,
-                    (draw.scale * flip * sin) as f32,
-                ],
-                column_y: [(-draw.scale * sin) as f32, (draw.scale * cos) as f32],
-                rect_min: [
-                    (-uploaded.anchor[0] * width) as f32,
-                    (-uploaded.anchor[1] * height) as f32,
-                ],
-                rect_size: [width as f32, height as f32],
+                anchor,
+                column_x,
+                column_y,
+                rect_min,
+                rect_size,
                 art_uv: uploaded.art.uv(page_size),
                 silhouette_uv: uploaded.silhouette.uv(page_size),
                 tint: draw
@@ -252,6 +289,7 @@ impl StampRenderer {
                 usage: wgpu::BufferUsages::VERTEX,
             })
         });
+        self.bounds = bounds;
         self.runs = runs;
     }
 
@@ -273,8 +311,14 @@ impl StampRenderer {
     }
 
     /// Draws batches from [`StampRenderer::runs_after`], only inside the active Clip if
-    /// `clipped`.
-    pub(crate) fn draw(&self, pass: &mut wgpu::RenderPass<'_>, batches: &[Batch], clipped: bool) {
+    /// `clipped`, and only the Stamps that reach `visible` (`[min_x, min_y, max_x, max_y]`).
+    pub(crate) fn draw(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        batches: &[Batch],
+        clipped: bool,
+        visible: [f32; 4],
+    ) {
         let Some(instances) = &self.instances else {
             return;
         };
@@ -286,8 +330,25 @@ impl StampRenderer {
         pass.set_stencil_reference(if clipped { CLIP_INSIDE } else { 0 });
         pass.set_vertex_buffer(0, instances.slice(..));
         for batch in batches {
-            pass.set_bind_group(1, &self.bind_groups[&batch.pages], &[]);
-            pass.draw(0..6, batch.instances.clone());
+            let mut bound = false;
+            // One draw per stretch of consecutive visible instances.
+            let mut start = None;
+            for index in batch.instances.clone().chain(std::iter::once(batch.instances.end)) {
+                let shown = index < batch.instances.end
+                    && overlaps(self.bounds[index as usize], visible);
+                match (shown, start) {
+                    (true, None) => start = Some(index),
+                    (false, Some(first)) => {
+                        if !bound {
+                            pass.set_bind_group(1, &self.bind_groups[&batch.pages], &[]);
+                            bound = true;
+                        }
+                        pass.draw(0..6, first..index);
+                        start = None;
+                    }
+                    _ => {}
+                }
+            }
         }
     }
 
