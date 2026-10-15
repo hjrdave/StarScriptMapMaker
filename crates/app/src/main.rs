@@ -6,6 +6,11 @@
 use eframe::egui;
 
 fn main() -> eframe::Result {
+    // Opt-in measurement mode: no window, prints frame-time statistics and exits.
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    if ssmap_app::frame_time::requested(&args) {
+        std::process::exit(ssmap_app::frame_time::run(&args));
+    }
     // A double-clicked Map file arrives as an argument on Windows and Linux. macOS sends an
     // open-documents event instead, which winit does not expose yet (see docs/packaging.md).
     let launch_file = ssmap_app::launch_file(std::env::args_os().skip(1));
