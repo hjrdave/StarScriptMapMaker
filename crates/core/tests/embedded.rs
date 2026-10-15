@@ -260,6 +260,54 @@ fn later_saves_write_only_new_files_and_drop_removed_ones() {
 }
 
 #[test]
+fn update_from_pack_swaps_the_art_and_can_be_undone() {
+    let dir = tempfile::tempdir().unwrap();
+    let pack_dir = install_pack(dir.path());
+    let mut map = map_with_stamps(&["tree", "well"]);
+    embed_used(&mut map, &pack_dir);
+    let before = map.embedded().clone();
+    let tree: AssetRef = "test-pack/tree".parse().unwrap();
+    let well: AssetRef = "test-pack/well".parse().unwrap();
+
+    std::fs::write(pack_dir.join("art/tree.svg"), "<svg id='new'/>").unwrap();
+    let mut history = History::default();
+    history
+        .execute_step(
+            &mut map,
+            &Command::UpdateFromPack {
+                assets: embeds(&pack_dir, &["tree"]),
+            },
+            vec![],
+        )
+        .unwrap();
+    assert_eq!(history.undo_len(), 1);
+    assert_eq!(&**map.embedded().art(&tree).unwrap(), b"<svg id='new'/>");
+    assert_eq!(map.embedded().assets[&well], before.assets[&well]);
+    // The replaced art is dropped, so nothing stale is saved.
+    assert!(!map.embedded().blobs.contains_key(&before.assets[&tree].art));
+    assert_eq!(map.embedded().first_missing_blob(), None);
+
+    history.undo(&mut map).unwrap();
+    assert_eq!(map.embedded(), &before);
+    history.redo(&mut map).unwrap();
+    assert_eq!(&**map.embedded().art(&tree).unwrap(), b"<svg id='new'/>");
+}
+
+#[test]
+fn update_from_pack_refuses_an_asset_that_is_not_embedded() {
+    let dir = tempfile::tempdir().unwrap();
+    let pack_dir = install_pack(dir.path());
+    let mut map = map_with_stamps(&["tree"]);
+    assert!(
+        map.execute(&Command::UpdateFromPack {
+            assets: embeds(&pack_dir, &["tree"]),
+        })
+        .is_err()
+    );
+    assert!(map.embedded().is_empty());
+}
+
+#[test]
 fn save_as_keeps_the_embedded_copies() {
     let dir = tempfile::tempdir().unwrap();
     let pack_dir = install_pack(dir.path());

@@ -222,6 +222,11 @@ pub enum Command {
         assets: Vec<EmbedAsset>,
         fonts: Vec<EmbedFont>,
     },
+    /// Replaces the embedded copies of Assets already embedded with fresh ones read from an
+    /// installed pack ("Update from pack"). Files nothing refers to afterwards are dropped.
+    UpdateFromPack {
+        assets: Vec<EmbedAsset>,
+    },
 }
 
 /// One Stamp of a [`Command::PlaceStamps`], with the id it gets.
@@ -322,6 +327,7 @@ impl Command {
             Command::SetStamp { .. } => "Edit Stamp",
             Command::PlaceStamps { .. } => "Place Stamps",
             Command::EmbedAssets { .. } => "Embed Assets",
+            Command::UpdateFromPack { .. } => "Update from Pack",
         }
     }
 
@@ -696,6 +702,72 @@ impl Command {
                             licence: font.licence.clone(),
                             extra: Default::default(),
                         })),
+                    });
+                }
+                Ok(ops)
+            }
+            Command::UpdateFromPack { assets } => {
+                let embedded = map.embedded();
+                let mut records = embedded.assets.clone();
+                let mut updated = Vec::new();
+                let mut new_blobs: Vec<(ContentHash, &Blob)> = Vec::new();
+                for embed in assets {
+                    if updated.contains(&&embed.reference) {
+                        continue;
+                    }
+                    if !embedded.assets.contains_key(&embed.reference) {
+                        return Err(CommandError::InvalidEmbed(format!(
+                            "{} is not embedded in the Map",
+                            embed.reference
+                        )));
+                    }
+                    if embed.silhouette.is_some() != embed.record.silhouette.is_some() {
+                        return Err(CommandError::InvalidEmbed(format!(
+                            "{}: the Silhouette file and its record disagree",
+                            embed.reference
+                        )));
+                    }
+                    let files = [
+                        Some((&embed.art, embed.record.art)),
+                        embed.silhouette.as_ref().zip(embed.record.silhouette),
+                    ];
+                    for (blob, expected) in files.into_iter().flatten() {
+                        if blob.hash() != expected {
+                            return Err(CommandError::InvalidEmbed(format!(
+                                "a file does not match its recorded hash {expected}"
+                            )));
+                        }
+                        if !embedded.blobs.contains_key(&expected)
+                            && !new_blobs.iter().any(|(hash, _)| *hash == expected)
+                        {
+                            new_blobs.push((expected, blob));
+                        }
+                    }
+                    records.insert(embed.reference.clone(), embed.record.clone());
+                    updated.push(&embed.reference);
+                }
+                let mut kept: HashSet<ContentHash> =
+                    embedded.fonts.values().map(|font| font.data).collect();
+                for record in records.values() {
+                    kept.extend(std::iter::once(record.art).chain(record.silhouette));
+                }
+                let mut ops = Vec::new();
+                for (hash, blob) in new_blobs {
+                    ops.push(Op::SetBlob {
+                        hash,
+                        data: Some(blob.clone()),
+                    });
+                }
+                for reference in updated {
+                    ops.push(Op::SetEmbeddedAsset {
+                        asset: reference.clone(),
+                        record: Some(Box::new(records[reference].clone())),
+                    });
+                }
+                for hash in embedded.blobs.keys().filter(|hash| !kept.contains(hash)) {
+                    ops.push(Op::SetBlob {
+                        hash: *hash,
+                        data: None,
                     });
                 }
                 Ok(ops)
