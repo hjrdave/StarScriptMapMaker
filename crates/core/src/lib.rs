@@ -43,7 +43,7 @@ pub use map::{Canvas, DistanceUnit, InvariantError, Map, MapDefaults, MapView, S
 pub use node::{Align, FontFace, Halo, Lake, Landmass, Layer, Node, Object, ObjectKind, Stamp};
 pub use op::{Op, OpError, Property};
 pub use pick::PickIndex;
-pub use roughness::{Roughness, RoughnessCache, roughen};
+pub use roughness::{Rebuild, Roughness, RoughnessCache, roughen};
 pub use shore::{MAX_RIPPLES, ShoreKind, ShoreOutline, ShoreRipples, ShoreShading, ShoreStyle};
 pub use stamp_pick::{SpriteShape, StampIndex};
 pub use template::{DefaultLayers, MapTemplate, STARTER_TEMPLATE, TemplateError};
