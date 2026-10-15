@@ -9,7 +9,8 @@ use lyon::math::point;
 use lyon::path::Path;
 use ssmap_core::land;
 use ssmap_core::{
-    Id, Label, Landmass, Map, MultiPolygon, Node, ObjectKind, Polygon, RoughnessCache, ShoreStyle,
+    ContentHash, Id, Label, Landmass, Map, MultiPolygon, Node, ObjectKind, Polygon, RoughnessCache,
+    ShoreStyle,
 };
 
 use crate::canvas::{ClipScope, Content};
@@ -23,15 +24,20 @@ use crate::vector::{FillRule, Paint, VectorGroup, VectorShape};
 /// Map; export builds its own.
 pub struct MapScene {
     fonts: Fonts,
+    /// The embedded font files `fonts` was built with in place of the bundled ones.
+    font_overrides: Vec<(String, ContentHash)>,
     layouts: HashMap<Id, (LayoutKey, Arc<LabelLayout>)>,
     /// The content last built, and the Map revision it was built from.
     built: Option<(u64, Content)>,
 }
 
 impl MapScene {
+    /// A scene shaping Labels with `fonts`, which should be [`Fonts::bundled`]. A Map that
+    /// embeds other font files gets those instead.
     pub fn new(fonts: Fonts) -> Self {
         Self {
             fonts,
+            font_overrides: Vec::new(),
             layouts: HashMap::new(),
             built: None,
         }
@@ -43,9 +49,33 @@ impl MapScene {
         self.built = None;
     }
 
+    /// Switches to the fonts the Map embeds, which win over the bundled ones, if they
+    /// differ from the ones in use. Labels are shaped again when they do.
+    fn use_embedded_fonts(&mut self, map: &Map) {
+        let overrides = Fonts::embedded_overrides(map.embedded());
+        if overrides == self.font_overrides {
+            return;
+        }
+        self.fonts = if overrides.is_empty() {
+            Fonts::bundled()
+        } else {
+            Fonts::with_embedded(map.embedded())
+        };
+        self.font_overrides = overrides;
+        self.layouts.clear();
+        self.built = None;
+    }
+
     /// What the Canvas draws for `map`, rebuilt only when the Map has changed since.
     /// Landmasses and Lakes use their roughened outlines from `roughness`.
     pub fn content(&mut self, map: &Map, roughness: &mut RoughnessCache) -> Content {
+        if self
+            .built
+            .as_ref()
+            .is_none_or(|(r, _)| *r != map.revision())
+        {
+            self.use_embedded_fonts(map);
+        }
         if let Some((revision, content)) = &self.built
             && *revision == map.revision()
         {

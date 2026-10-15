@@ -137,6 +137,17 @@ impl Editor {
     pub fn set_sprites(&mut self, sprites: SpriteStore) {
         self.sprites = Some(sprites);
         self.stamp_index = None;
+        self.sync_embedded();
+    }
+
+    /// Points the sprite store at the Assets the Map embeds, which win over the installed
+    /// packs'. Run before anything reads sprites, since an Op, Undo or Redo can change them.
+    fn sync_embedded(&mut self) {
+        if let Some(sprites) = &self.sprites
+            && sprites.set_embedded(self.map.embedded())
+        {
+            self.stamp_index = None;
+        }
     }
 
     pub fn sprites(&self) -> Option<&SpriteStore> {
@@ -268,6 +279,7 @@ impl Editor {
 
     /// The topmost unlocked Stamp whose Silhouette is under `point`, in Canvas units.
     fn pick_stamp(&mut self, point: [f64; 2]) -> Option<Id> {
+        self.sync_embedded();
         let sprites = self.sprites.as_ref()?;
         let map = &self.map;
         let index = match &mut self.stamp_index {
@@ -297,6 +309,7 @@ impl Editor {
     /// What the Canvas draws for the Map, rebuilt only once it has changed. Drops roughened
     /// outlines of Objects that are gone.
     pub fn scene_content(&mut self) -> Content {
+        self.sync_embedded();
         self.roughness.retain(&self.map);
         self.scene.content(&self.map, &mut self.roughness)
     }
