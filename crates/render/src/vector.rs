@@ -631,6 +631,25 @@ impl TessellationCache {
         self.lookup(ObjectRef { id, version }, &sources).is_some()
     }
 
+    /// How many Objects of `groups` are not tessellated yet, as a rebuild would find. Starts
+    /// nothing, so it is cheap to ask every frame.
+    pub fn pending(&self, groups: &[VectorGroup]) -> usize {
+        let mut by_object: HashMap<Id, (ObjectRef, Vec<&VectorGroup>)> = HashMap::new();
+        for group in groups {
+            if let Some(object) = group.object {
+                by_object
+                    .entry(object.id)
+                    .or_insert_with(|| (object, Vec::new()))
+                    .1
+                    .push(group);
+            }
+        }
+        by_object
+            .values()
+            .filter(|(object, list)| self.lookup(*object, list).is_none())
+            .count()
+    }
+
     /// How many Objects are tessellated.
     pub fn len(&self) -> usize {
         self.inner().entries.len()

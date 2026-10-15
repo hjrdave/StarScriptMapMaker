@@ -353,6 +353,11 @@ impl Editor {
         std::thread::spawn(move || rebuild.run(repaint));
     }
 
+    /// Whether roughened outlines are still being computed in the background.
+    pub fn outlines_rebuilding(&self) -> bool {
+        self.roughness.is_rebuilding()
+    }
+
     /// Drops what was built from placeholder outlines once the background ones have landed.
     fn sync_background_outlines(&mut self) {
         let generation = self.roughness.generation();
