@@ -25,7 +25,7 @@ mod view;
 
 pub use canvas::{Backdrop, CANVAS_FORMAT, CanvasRenderer, CanvasScene, ClipScope, Content};
 pub use color::Color;
-pub use gpu::{GpuCapabilities, Headless, HeadlessError};
+pub use gpu::{GpuCapabilities, Headless, HeadlessError, Suitability};
 pub use offscreen::{RgbaImage, read_texture, render_to_image};
 pub use present::Presenter;
 pub use scene::MapScene;

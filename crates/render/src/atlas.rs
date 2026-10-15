@@ -214,8 +214,18 @@ impl Atlas {
     ) -> Result<AtlasEntry, AtlasError> {
         let (entry, new_page) = self.packer.allocate(raster.width, raster.height)?;
         if new_page {
-            self.pages
-                .push(Page::new(device, self.packer.page_size, entry.page));
+            let size = self.packer.page_size;
+            let scope = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+            let page = Page::new(device, size, entry.page);
+            if let Some(err) = pollster::block_on(scope.pop()) {
+                eprintln!(
+                    "GPU allocation failed: atlas page {} ({size}x{size}, {:?}) on {}: {err}",
+                    entry.page,
+                    ATLAS_FORMAT,
+                    crate::gpu::describe_limits("the GPU", &device.limits()),
+                );
+            }
+            self.pages.push(page);
         }
         // Write the gutter too: a reused rectangle may hold an old entry's pixels.
         let padded_width = raster.width + 2 * GUTTER;
