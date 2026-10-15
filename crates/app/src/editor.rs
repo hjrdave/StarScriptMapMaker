@@ -626,6 +626,37 @@ impl Editor {
         self.run(Command::EmbedAssets { assets, fonts })
     }
 
+    /// Re-pulls the art of every embedded Asset that an installed pack now provides differently,
+    /// as one Undo step ("Update from pack"). Returns whether anything changed.
+    pub fn update_from_packs(&mut self) -> bool {
+        let Some(library) = self
+            .sprites
+            .as_ref()
+            .map(|sprites| sprites.library().clone())
+        else {
+            return false;
+        };
+        let mut assets = Vec::new();
+        let mut errors = Vec::new();
+        for (reference, current) in &self.map.embedded().assets {
+            let Some((pack, asset)) = library.asset(reference) else {
+                continue;
+            };
+            match EmbedAsset::read(pack, asset) {
+                Ok(embed) if embed.record != *current => assets.push(embed),
+                Ok(_) => {}
+                Err(err) => errors.push(format!("Couldn’t update {reference}: {err}")),
+            }
+        }
+        for message in errors {
+            self.error(message);
+        }
+        if assets.is_empty() {
+            return false;
+        }
+        self.run(Command::UpdateFromPack { assets })
+    }
+
     /// Takes the Ops that committed steps, undo and redo applied since the last call, for the
     /// Recovery journal.
     pub fn take_applied(&mut self) -> Vec<Op> {
