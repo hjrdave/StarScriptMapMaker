@@ -5,8 +5,8 @@ use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
 use ssmap_core::Command;
 use ssmap_render::{
-    CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, RgbaImage, SpriteStore, View,
-    render_to_image,
+    CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, RgbaImage, SpriteStore, Suitability,
+    View, render_to_image,
 };
 
 use crate::editor::Editor;
@@ -25,9 +25,19 @@ struct CanvasResources {
 }
 
 /// Creates the Canvas renderer on egui's device, drawing Stamps from `sprites`, and hands it to
-/// egui's callback resources.
-pub fn install(render_state: &egui_wgpu::RenderState, sprites: SpriteStore) {
+/// egui's callback resources. Returns false, leaving the Canvas as a placeholder, when the
+/// adapter is below the hardware floor. Called once per run, so a software-adapter warning
+/// shows once.
+pub fn install(render_state: &egui_wgpu::RenderState, sprites: SpriteStore) -> bool {
     let capabilities = GpuCapabilities::query(&render_state.adapter);
+    match capabilities.suitability() {
+        Suitability::Ok => {}
+        Suitability::SoftwareWarning(message) => eprintln!("Warning: {message}"),
+        Suitability::BelowFloor(message) => {
+            eprintln!("Error: {message}");
+            return false;
+        }
+    }
     let mut renderer = CanvasRenderer::new(&render_state.device, capabilities);
     renderer.set_sprites(sprites);
     // eframe draws egui without MSAA; the Canvas does its own multisampling offscreen.
@@ -40,6 +50,7 @@ pub fn install(render_state: &egui_wgpu::RenderState, sprites: SpriteStore) {
             renderer,
             presenter,
         });
+    true
 }
 
 /// Renders the whole Canvas, `longest_side` pixels on its longer side, as for the preview
