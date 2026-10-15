@@ -6,7 +6,7 @@ use ssmap_core::{ExportSettings, ExportSize, ExportSizeError, Map, RoughnessCach
 use thiserror::Error;
 
 use crate::canvas::{CanvasRenderer, CanvasScene};
-use crate::offscreen::render_to_image;
+use crate::offscreen::{RgbaImage, render_to_image};
 use crate::scene::MapScene;
 use crate::view::View;
 
@@ -148,15 +148,7 @@ impl TiledExport<'_> {
                     size: plan.render_size(),
                 };
                 let image = render_to_image(self.device, self.queue, self.renderer, &scene, &view);
-                // Crop the margin away, copying the tile's rows into the band.
-                let source_stride = image.width as usize * 4;
-                let margin = plan.margin as usize * 4;
-                let len = tile.width as usize * 4;
-                for line in 0..tile.height as usize {
-                    let from = (line + plan.margin as usize) * source_stride + margin;
-                    let to = line * stride + tile.x as usize * 4;
-                    band[to..to + len].copy_from_slice(&image.pixels[from..from + len]);
-                }
+                copy_tile(&image, &plan, tile, &mut band, stride);
                 done += 1;
                 status(ExportStatus::Rendering { done, total });
             }
@@ -165,6 +157,25 @@ impl TiledExport<'_> {
             }
         }
         Ok(output)
+    }
+}
+
+/// Crops the margin off a rendered `image` of `tile` and copies its rows into `band`, the
+/// output rows of the tile row, `stride` bytes apart.
+pub(crate) fn copy_tile(
+    image: &RgbaImage,
+    plan: &TilePlan,
+    tile: Tile,
+    band: &mut [u8],
+    stride: usize,
+) {
+    let source_stride = image.width as usize * 4;
+    let margin = plan.margin as usize * 4;
+    let len = tile.width as usize * 4;
+    for line in 0..tile.height as usize {
+        let from = (line + plan.margin as usize) * source_stride + margin;
+        let to = line * stride + tile.x as usize * 4;
+        band[to..to + len].copy_from_slice(&image.pixels[from..from + len]);
     }
 }
 

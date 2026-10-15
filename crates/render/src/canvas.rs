@@ -285,6 +285,19 @@ impl CanvasRenderer {
         self.content.cache().wait_until_ready();
     }
 
+    /// Whether [`CanvasRenderer::wait_until_ready`] would return at once: the Stamp art of
+    /// `content` is rasterised and no tessellation rebuild is running. Starts the Stamp art
+    /// loading, but never blocks, so it can be asked every frame.
+    pub fn is_ready(&self, content: &Content) -> bool {
+        if let Some(store) = self.stamps.store() {
+            store.prefetch(content.stamps().iter().map(|placed| &placed.draw.asset));
+            if store.pending() > 0 {
+                return false;
+            }
+        }
+        !self.content.cache().is_building()
+    }
+
     /// How long a frame may spend applying finished background results before carrying the
     /// rest to the next frame ([`APPLY_BUDGET`] by default); `None` applies them all.
     /// Returns the previous budget.

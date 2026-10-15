@@ -10,6 +10,7 @@
 pub mod atlas;
 mod canvas;
 mod color;
+mod export_job;
 mod gpu;
 mod ocean;
 mod offscreen;
@@ -29,6 +30,7 @@ pub use canvas::{
     Backdrop, CANVAS_FORMAT, CanvasRenderer, CanvasScene, ClipScope, Content, Quality,
 };
 pub use color::Color;
+pub use export_job::{ExportContext, ExportError, ExportJob, ExportStep};
 pub use gpu::{GpuCapabilities, Headless, HeadlessError, Suitability};
 pub use offscreen::{RgbaImage, read_texture, render_to_image};
 pub use png_writer::{PngMeta, PngWriteError, PngWriter};
