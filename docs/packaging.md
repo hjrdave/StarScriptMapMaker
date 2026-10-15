@@ -21,6 +21,14 @@ a Map file with it, and uploads the packages with SHA-256 checksums.
 Every package is unsigned (amended ADR 0008). The macOS binary carries only the linker's
 ad-hoc signature.
 
+## Releases
+
+Pushing a `vX.Y.Z` tag builds, checksums and publishes a GitHub Release with the packages,
+`SHA256SUMS.txt` and the `latest.json` feed the app's update check reads. The workflow is
+drafted in `docs/release/release.yml` (automated runs can't edit `.github/`, so the author
+copies it to `.github/workflows/release.yml`). The notes template, which explains the
+Gatekeeper and SmartScreen first-launch warnings, is `docs/release/release-notes-template.md`.
+
 ## Install layout
 
 The repo's `assets/` (the built-in Asset packs and fonts) is copied read-only into each

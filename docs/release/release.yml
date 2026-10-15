@@ -1,0 +1,111 @@
+name: Release
+
+# DRAFT for review. Automated runs may not edit .github/, so this sits in docs/release/.
+# To enable it, copy it to .github/workflows/release.yml.
+#
+# A pushed vX.Y.Z tag builds every package (ADR 0008), checksums them, and publishes a
+# GitHub Release with the packages, SHA256SUMS.txt and the latest.json update feed
+# (crates/app/src/update.rs). Nothing is signed. A tag with a suffix (v1.2.3-rc.1) is
+# published as a pre-release, which GitHub never serves as "latest", so it does not reach
+# the feed users read.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_PACKAGER_VERSION: 0.11.8
+
+jobs:
+  packages:
+    name: packages (${{ matrix.name }})
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          # The oldest supported runner, so the .deb and AppImage need only glibc 2.35.
+          - name: Linux x86_64
+            os: ubuntu-22.04
+            formats: deb,appimage
+          - name: Windows x86_64
+            os: windows-2025
+            formats: nsis
+          - name: macOS arm64
+            os: macos-15
+            formats: dmg
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the tag matches the workspace version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          crate=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          [ "${tag%%-*}" = "$crate" ] || { echo "tag $tag does not match Cargo.toml version $crate"; exit 1; }
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-packager
+        run: cargo install cargo-packager --version "$CARGO_PACKAGER_VERSION" --locked
+      - name: Build packages
+        working-directory: crates/app
+        run: cargo packager --release --formats ${{ matrix.formats }}
+      - name: Checksums
+        working-directory: target/packages
+        run: |
+          shopt -s nullglob
+          files=(*.deb *.AppImage *-setup.exe *.dmg)
+          if command -v sha256sum >/dev/null; then sha256sum "${files[@]}"; else shasum -a 256 "${files[@]}"; fi > SHA256SUMS-${{ runner.os }}.txt
+          cat SHA256SUMS-${{ runner.os }}.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ runner.os }}
+          path: |
+            target/packages/*.deb
+            target/packages/*.AppImage
+            target/packages/*-setup.exe
+            target/packages/*.dmg
+            target/packages/SHA256SUMS-*.txt
+          if-no-files-found: error
+
+  publish:
+    needs: packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: packages-*
+          merge-multiple: true
+      - name: Combine checksums, write the feed and the notes
+        run: |
+          set -euo pipefail
+          cat dist/SHA256SUMS-*.txt | sort -k2 > SHA256SUMS.txt
+          rm dist/SHA256SUMS-*.txt
+          mv SHA256SUMS.txt dist/
+          version="${GITHUB_REF_NAME#v}"
+          page="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}"
+          jq -n --arg v "$version" --arg url "$page" \
+            '{version: $v, url: $url, notes_url: $url}' > dist/latest.json
+          cat dist/latest.json
+          sed -e "s/__VERSION__/$version/" -e 's/__CHANGES__//' \
+            docs/release/release-notes-template.md > notes.md
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=()
+          case "$GITHUB_REF_NAME" in *-*) flags+=(--prerelease) ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "StarScript Map Maker ${GITHUB_REF_NAME#v}" \
+            --notes-file notes.md --generate-notes "${flags[@]}"
