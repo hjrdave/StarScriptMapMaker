@@ -256,7 +256,10 @@ impl CanvasRenderer {
         if self.drawn_backdrop.as_ref() != Some(&backdrop) {
             self.set_backdrop(device, queue, backdrop);
         }
-        if self.drawn_content.as_ref() != Some(&scene.content) {
+        // Art embedded in the Map changed (Update from pack, Undo, another Map): redraw even
+        // if the Stamps are the same.
+        let new_art = self.stamps.refresh_store();
+        if new_art || self.drawn_content.as_ref() != Some(&scene.content) {
             self.stamps.prepare(device, queue, scene.content.stamps());
             let clips = scene.content.clips();
             let cuts: Vec<usize> = {

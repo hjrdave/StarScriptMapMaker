@@ -78,6 +78,16 @@ impl Art {
         .map_err(error)
     }
 
+    /// Parses art held in memory, such as an embedded copy, telling a PNG from an SVG by its
+    /// signature.
+    pub fn from_bytes(data: &[u8]) -> Result<Self, String> {
+        if data.starts_with(b"\x89PNG") {
+            Self::from_png(data)
+        } else {
+            Self::from_svg(data)
+        }
+    }
+
     pub fn from_svg(data: &[u8]) -> Result<Self, String> {
         let tree = usvg::Tree::from_data(data, &usvg::Options::default())
             .map_err(|err| format!("is not a valid SVG: {err}"))?;

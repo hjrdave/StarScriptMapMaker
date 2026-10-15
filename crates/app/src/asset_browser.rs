@@ -155,7 +155,7 @@ impl AssetBrowser {
             .thumbnails
             .entry(reference.clone())
             .or_insert_with(|| {
-                let sprite = editor.sprites()?.get(reference)?;
+                let sprite = editor.sprites()?.get_installed(reference)?;
                 let art = &sprite.art;
                 let image = egui::ColorImage::from_rgba_unmultiplied(
                     [art.width as usize, art.height as usize],

@@ -6,6 +6,7 @@
 //! looks the same on every machine. Glyphs are drawn as vector outlines, not bitmaps, so a
 //! Label stays sharp at any zoom and in export.
 
+use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
 use cosmic_text::skrifa::instance::Size;
@@ -19,7 +20,7 @@ use lyon::math::{Angle, Box2D, Point, Transform, point};
 use lyon::path::Path;
 use lyon::path::builder::NoAttributes;
 use lyon::path::path::BuilderImpl;
-use ssmap_core::{Align, FontFace, Label};
+use ssmap_core::{Align, ContentHash, Embedded, FontFace, Label};
 use ssmap_fonts::{FALLBACK_FAMILY, FONTS};
 
 use crate::color::ColorExt as _;
@@ -65,9 +66,51 @@ impl Fallback for BundledFallback {
 impl Fonts {
     /// Loads every bundled font. This parses each font file, so do it once.
     pub fn bundled() -> Self {
+        Self::from_sources(
+            FONTS
+                .iter()
+                .map(|font| fontdb::Source::Binary(Arc::new(font.data))),
+        )
+    }
+
+    /// The fonts a Map renders with: every font file it embeds, and the bundled files it
+    /// doesn't. An embedded file wins over the bundled file of the same name (ADR 0005).
+    pub fn with_embedded(embedded: &Embedded) -> Self {
+        let bundled = FONTS
+            .iter()
+            .filter(|font| !embedded.fonts.contains_key(font.file))
+            .map(|font| fontdb::Source::Binary(Arc::new(font.data)));
+        let own = embedded
+            .fonts
+            .values()
+            .filter_map(|font| embedded.blob(&font.data))
+            .map(|blob| fontdb::Source::Binary(Arc::new(blob.to_vec())));
+        Self::from_sources(bundled.chain(own))
+    }
+
+    /// The embedded font files that differ from the bundled ones, by file name. Equal keys
+    /// give the same [`Fonts`], so a Map that embeds only unchanged bundled fonts (the usual
+    /// case) can share [`Fonts::bundled`].
+    pub fn embedded_overrides(embedded: &Embedded) -> Vec<(String, ContentHash)> {
+        static BUNDLED: OnceLock<HashMap<&'static str, ContentHash>> = OnceLock::new();
+        let bundled = BUNDLED.get_or_init(|| {
+            FONTS
+                .iter()
+                .map(|font| (font.file, ContentHash::of(font.data)))
+                .collect()
+        });
+        embedded
+            .fonts
+            .iter()
+            .filter(|(file, font)| bundled.get(file.as_str()) != Some(&font.data))
+            .map(|(file, font)| (file.clone(), font.data))
+            .collect()
+    }
+
+    fn from_sources(sources: impl Iterator<Item = fontdb::Source>) -> Self {
         let mut db = fontdb::Database::new();
-        for font in FONTS {
-            db.load_font_source(fontdb::Source::Binary(Arc::new(font.data)));
+        for source in sources {
+            db.load_font_source(source);
         }
         db.set_serif_family(FALLBACK_FAMILY);
         db.set_sans_serif_family(FALLBACK_FAMILY);

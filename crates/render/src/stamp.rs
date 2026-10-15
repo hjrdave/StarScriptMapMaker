@@ -84,6 +84,8 @@ pub(crate) struct StampRenderer {
     sampler: wgpu::Sampler,
     atlas: Atlas,
     store: Option<SpriteStore>,
+    /// The store's generation the uploaded art came from.
+    generation: u64,
     /// `None` records an Asset that has no usable art.
     uploaded: HashMap<AssetRef, Option<Uploaded>>,
     bind_groups: HashMap<(u32, u32), wgpu::BindGroup>,
@@ -168,6 +170,7 @@ impl StampRenderer {
             sampler,
             atlas: Atlas::new(page_size),
             store: None,
+            generation: 0,
             uploaded: HashMap::new(),
             bind_groups: HashMap::new(),
             instances: None,
@@ -177,10 +180,29 @@ impl StampRenderer {
 
     /// Where Asset art comes from. Replacing the store forgets everything uploaded.
     pub(crate) fn set_store(&mut self, store: SpriteStore) {
+        self.generation = store.generation();
+        self.store = Some(store);
+        self.forget_uploads();
+    }
+
+    /// Forgets everything uploaded if the store's embedded Assets changed since. Returns
+    /// whether it did, in which case Stamps must be prepared again.
+    pub(crate) fn refresh_store(&mut self) -> bool {
+        let Some(generation) = self.store.as_ref().map(SpriteStore::generation) else {
+            return false;
+        };
+        if generation == self.generation {
+            return false;
+        }
+        self.generation = generation;
+        self.forget_uploads();
+        true
+    }
+
+    fn forget_uploads(&mut self) {
         self.atlas = Atlas::new(self.atlas.page_size());
         self.uploaded.clear();
         self.bind_groups.clear();
-        self.store = Some(store);
     }
 
     /// Uploads any art `stamps` need and builds their instances. Stamps whose Asset has no
