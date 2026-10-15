@@ -9,6 +9,7 @@ pub mod editor;
 pub mod handles;
 mod layer_tree;
 mod properties;
+mod rebuild;
 mod recent;
 pub mod recovery;
 pub mod tools;
@@ -77,6 +78,8 @@ pub struct MapMakerApp {
     close_allowed: bool,
     /// `None` without a GPU, as in UI tests; saves then store no preview.
     render_state: Option<egui_wgpu::RenderState>,
+    /// Wakes the UI when background work finishes.
+    ctx: egui::Context,
     /// The window title last sent, so it is only sent when it changes.
     title: String,
 }
@@ -152,6 +155,7 @@ impl MapMakerApp {
             unsaved_found,
             close_allowed: false,
             render_state: cc.wgpu_render_state.clone(),
+            ctx: cc.egui_ctx.clone(),
             title: String::new(),
         }
     }
@@ -221,6 +225,8 @@ impl MapMakerApp {
         self.editor = Editor::new(map);
         self.editor.set_sprites(self.sprites.clone());
         self.editor.selected_asset = selected_asset;
+        let ctx = self.ctx.clone();
+        self.editor.rebuild_outlines(move || ctx.request_repaint());
         self.layer_tree = LayerTree::default();
         self.properties = PropertiesPanel::default();
         self.canvas_view.refit();

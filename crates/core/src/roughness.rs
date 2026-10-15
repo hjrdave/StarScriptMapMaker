@@ -211,6 +211,38 @@ fn unit(hash: u64) -> f64 {
 pub struct RoughnessCache {
     entries: HashMap<Id, CacheEntry>,
     computed: u64,
+    placeholders: bool,
+}
+
+/// One outline to roughen, copied out of the Map so that it can run on another thread.
+#[derive(Debug)]
+pub struct RoughnessJob {
+    id: Id,
+    version: u64,
+    roughness: Roughness,
+    geometry: MultiPolygon,
+}
+
+impl RoughnessJob {
+    /// Roughens the outline. Pure, and identical to what [`RoughnessCache::outline`] computes.
+    pub fn run(self) -> RoughnessDone {
+        let outline = Arc::new(roughen(&self.geometry, &self.roughness));
+        RoughnessDone {
+            id: self.id,
+            version: self.version,
+            roughness: self.roughness,
+            outline,
+        }
+    }
+}
+
+/// A finished [`RoughnessJob`], to hand to [`RoughnessCache::accept`].
+#[derive(Debug)]
+pub struct RoughnessDone {
+    id: Id,
+    version: u64,
+    roughness: Roughness,
+    outline: Arc<MultiPolygon>,
 }
 
 #[derive(Debug)]
@@ -240,6 +272,9 @@ impl RoughnessCache {
         {
             return Some(entry.outline.clone());
         }
+        if self.placeholders {
+            return Some(Arc::new(geometry.clone()));
+        }
         let outline = Arc::new(roughen(geometry, roughness));
         self.computed += 1;
         self.entries.insert(
@@ -251,6 +286,67 @@ impl RoughnessCache {
             },
         );
         Some(outline)
+    }
+
+    /// While on, [`outline`](Self::outline) answers an outline that is not ready yet with the
+    /// stored, un-roughened one instead of computing it, and does not keep that answer.
+    pub fn set_placeholders(&mut self, on: bool) {
+        self.placeholders = on;
+    }
+
+    /// Whether the roughened outline of `id` is ready for its current version and settings.
+    pub fn is_ready(&self, map: &Map, id: Id) -> bool {
+        match (map.version(id), map.roughness(id), self.entries.get(&id)) {
+            (Some(version), Some(roughness), Some(entry)) => {
+                entry.version == version && entry.roughness == *roughness
+            }
+            _ => false,
+        }
+    }
+
+    /// The outlines of `map` that are not ready, as jobs that can run anywhere.
+    pub fn pending(&self, map: &Map) -> Vec<RoughnessJob> {
+        let mut jobs = Vec::new();
+        for id in map.draw_order() {
+            if self.is_ready(map, id) {
+                continue;
+            }
+            let (Some(version), Some(roughness), Some(crate::Node::Object(object))) =
+                (map.version(id), map.roughness(id), map.node(id))
+            else {
+                continue;
+            };
+            if let Some(geometry) = object.kind.geometry() {
+                jobs.push(RoughnessJob {
+                    id,
+                    version,
+                    roughness: roughness.clone(),
+                    geometry: geometry.clone(),
+                });
+            }
+        }
+        jobs
+    }
+
+    /// Keeps a finished job unless the cache already holds that Object at the same or a newer
+    /// version. Returns whether it was kept.
+    pub fn accept(&mut self, done: RoughnessDone) -> bool {
+        if self
+            .entries
+            .get(&done.id)
+            .is_some_and(|entry| entry.version >= done.version)
+        {
+            return false;
+        }
+        self.entries.insert(
+            done.id,
+            CacheEntry {
+                version: done.version,
+                roughness: done.roughness,
+                outline: done.outline,
+            },
+        );
+        true
     }
 
     /// Forgets Objects that are no longer in `map`.

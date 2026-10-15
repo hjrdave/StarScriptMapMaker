@@ -9,13 +9,14 @@ use ssmap_core::land::{self, BrushStroke};
 use ssmap_core::scatter::{self, ScatterBrush, ScatterStroke, Terrain};
 use ssmap_core::{
     Blob, Command, CommandError, EmbedAsset, EmbedFont, ExecuteError, History, Id, Label, Map,
-    MultiPolygon, Node, NodeRef, ObjectKind, Op, PickIndex, Point, Rect, RoughnessCache, Selection,
-    Stamp, StampIndex,
+    MultiPolygon, Node, NodeRef, ObjectKind, Op, PickIndex, Point, Rect, Selection, Stamp,
+    StampIndex,
 };
 use ssmap_fonts::FALLBACK_FAMILY;
 use ssmap_render::{Content, Fonts, LabelLayout, MapScene, SpriteStore};
 
 use crate::layer_tree::node_name;
+use crate::rebuild::{OutlineRebuild, SharedRoughness};
 use crate::tools::ToolId;
 
 /// The land brush's starting diameter, in Canvas units.
@@ -49,7 +50,11 @@ pub struct Editor {
     /// Rebuilt lazily once the Map has changed.
     pick_index: Option<PickIndex>,
     /// Roughened outlines, shared by the screen and picking so they agree.
-    roughness: RoughnessCache,
+    roughness: SharedRoughness,
+    /// The background computation of outlines after a Map opens, while it runs.
+    rebuild: Option<OutlineRebuild>,
+    /// The count of finished outlines when the scene was last built.
+    rebuild_seen: usize,
     /// Stamp art, shared with the Canvas renderer. Absent in headless tests.
     sprites: Option<SpriteStore>,
     stamp_index: Option<StampIndex>,
@@ -126,7 +131,9 @@ impl Editor {
             gesture_open: false,
             gesture_selection: Vec::new(),
             pick_index: None,
-            roughness: RoughnessCache::new(),
+            roughness: SharedRoughness::default(),
+            rebuild: None,
+            rebuild_seen: 0,
             sprites: None,
             stamp_index: None,
             selected_asset: None,
@@ -261,7 +268,7 @@ impl Editor {
         let map = &self.map;
         let index = match &mut self.pick_index {
             Some(index) if index.is_current(map) => index,
-            slot => slot.insert(PickIndex::build(map, &mut self.roughness)),
+            slot => slot.insert(PickIndex::build(map, &mut self.roughness.lock())),
         };
         index.pick(point)
     }
@@ -297,8 +304,39 @@ impl Editor {
     /// What the Canvas draws for the Map, rebuilt only once it has changed. Drops roughened
     /// outlines of Objects that are gone.
     pub fn scene_content(&mut self) -> Content {
-        self.roughness.retain(&self.map);
-        self.scene.content(&self.map, &mut self.roughness)
+        let mut cache = self.roughness.lock();
+        cache.retain(&self.map);
+        let Some(rebuild) = &self.rebuild else {
+            return self.scene.content(&self.map, &mut cache);
+        };
+        // Outlines finished since the last build are worth drawing, so build again.
+        let completed = rebuild.completed();
+        if completed != self.rebuild_seen {
+            self.rebuild_seen = completed;
+            self.scene.invalidate();
+        }
+        // Until an outline is ready, its stored outline stands in for it.
+        cache.set_placeholders(true);
+        let content = self.scene.content(&self.map, &mut cache);
+        cache.set_placeholders(false);
+        // Done only once nothing landed since this build began; else the next call builds again.
+        if !rebuild.running() && rebuild.completed() == self.rebuild_seen {
+            self.rebuild = None;
+        }
+        content
+    }
+
+    /// Computes every roughened outline on a background thread, calling `repaint` as each
+    /// completes. Until then the Canvas draws the stored outlines.
+    pub fn rebuild_outlines(&mut self, repaint: impl Fn() + Send + 'static) {
+        self.rebuild_seen = 0;
+        self.scene.invalidate();
+        self.rebuild = Some(OutlineRebuild::start(&self.map, &self.roughness, repaint));
+    }
+
+    /// Whether some roughened outline is still being computed in the background.
+    pub fn rebuilding(&self) -> bool {
+        self.rebuild.as_ref().is_some_and(OutlineRebuild::running)
     }
 
     /// The selected Landmasses and Lakes, which move and resize with the handles.
@@ -401,7 +439,7 @@ impl Editor {
         let new_id = Id::new();
         let planned = land::brush_command(
             &self.map,
-            &mut self.roughness,
+            &mut self.roughness.lock(),
             &self.selection,
             self.active_layer,
             stroke,
@@ -798,7 +836,7 @@ impl Editor {
         } else {
             Vec::new()
         };
-        let terrain = Terrain::of(&self.map, &mut self.roughness);
+        let terrain = Terrain::of(&self.map, &mut self.roughness.lock());
         self.end_gesture();
         self.begin_gesture("Scatter Stamps");
         let Some(parent) = self.placement_layer() else {

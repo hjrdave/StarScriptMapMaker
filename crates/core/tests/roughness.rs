@@ -158,3 +158,51 @@ fn the_cache_recomputes_only_changed_objects() {
     assert!(cache.outline(&map, east).is_none());
     cache.retain(&map);
 }
+
+#[test]
+fn placeholders_are_stored_outlines_and_pending_jobs_match_a_synchronous_build() {
+    let default = Roughness::new(8.0, 30.0, 11);
+    let mut map = Map::new(Canvas::new(
+        4096,
+        3072,
+        Scale::new(0.25, DistanceUnit::Miles),
+    ));
+    map.apply(Op::SetDefaults {
+        defaults: MapDefaults {
+            roughness: default,
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    let layer = insert(&mut map, None, Node::Layer(Layer::new("Land")));
+    let west = insert(&mut map, Some(layer), landmass(island(0.0)));
+    let east = insert(&mut map, Some(layer), landmass(island(1000.0)));
+
+    let mut cache = RoughnessCache::new();
+    cache.set_placeholders(true);
+    assert_eq!(*cache.outline(&map, west).unwrap(), island(0.0));
+    assert!(!cache.is_ready(&map, west));
+    assert_eq!(cache.computed(), 0);
+    cache.set_placeholders(false);
+
+    let jobs = cache.pending(&map);
+    assert_eq!(jobs.len(), 2);
+    for job in jobs {
+        assert!(cache.accept(job.run()));
+    }
+    assert!(cache.is_ready(&map, west) && cache.is_ready(&map, east));
+    let mut sync = RoughnessCache::new();
+    for id in [west, east] {
+        assert_eq!(cache.outline(&map, id), sync.outline(&map, id));
+    }
+    assert_eq!(cache.computed(), 0);
+
+    // Editing one island leaves only that island pending.
+    map.apply(Op::ReplaceGeometry {
+        id: east,
+        geometry: island(1100.0),
+    })
+    .unwrap();
+    assert_eq!(cache.pending(&map).len(), 1);
+    assert!(cache.is_ready(&map, west));
+}

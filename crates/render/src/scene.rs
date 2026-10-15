@@ -43,6 +43,11 @@ impl MapScene {
         self.built = None;
     }
 
+    /// Drops the built content so the next call rebuilds it, as when outlines have become ready.
+    pub fn invalidate(&mut self) {
+        self.built = None;
+    }
+
     /// What the Canvas draws for `map`, rebuilt only when the Map has changed since.
     /// Landmasses and Lakes use their roughened outlines from `roughness`.
     pub fn content(&mut self, map: &Map, roughness: &mut RoughnessCache) -> Content {
