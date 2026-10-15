@@ -9,10 +9,13 @@ use lyon::tessellation::{
     BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, VertexBuffers,
 };
 use ssmap_core::land::{self, BrushStroke};
-use ssmap_core::{Affine, Command, Id, Label, LabelStyles, MultiPolygon, NodeRef, Point, Stamp};
+use ssmap_core::{
+    Affine, Command, ExportRegion, Id, Label, LabelStyles, MultiPolygon, NodeRef, Point, Stamp,
+};
 use ssmap_render::View;
 
 use crate::editor::Editor;
+use crate::export_region::{self, RegionDrag};
 use crate::handles::{self, Bounds, Grip};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -25,10 +28,11 @@ pub enum ToolId {
     Stamp,
     Scatter,
     StampEraser,
+    ExportRegion,
 }
 
 impl ToolId {
-    pub const ALL: [ToolId; 8] = [
+    pub const ALL: [ToolId; 9] = [
         ToolId::Select,
         ToolId::Pan,
         ToolId::LandBrush,
@@ -37,6 +41,7 @@ impl ToolId {
         ToolId::Stamp,
         ToolId::Scatter,
         ToolId::StampEraser,
+        ToolId::ExportRegion,
     ];
 
     pub fn label(self) -> &'static str {
@@ -49,6 +54,7 @@ impl ToolId {
             ToolId::Stamp => "Stamp",
             ToolId::Scatter => "Scatter",
             ToolId::StampEraser => "Stamp Eraser",
+            ToolId::ExportRegion => "Export Region",
         }
     }
 
@@ -62,6 +68,7 @@ impl ToolId {
             ToolId::Stamp => egui::Key::S,
             ToolId::Scatter => egui::Key::C,
             ToolId::StampEraser => egui::Key::E,
+            ToolId::ExportRegion => egui::Key::X,
         }
     }
 }
@@ -109,6 +116,8 @@ pub struct ToolState {
     stroke: Option<Stroke>,
     node_drag: Option<NodeDrag>,
     lasso: Option<Lasso>,
+    /// An Export Region drag in progress, with the region as it was before the drag.
+    region_drag: Option<(RegionDrag, ExportRegion)>,
     /// A box-select in node-edit mode: where it began and where the pointer is, in Canvas units.
     marquee: Option<(Point, Point)>,
     /// The Label whose text is being typed in the overlay box.
@@ -297,6 +306,7 @@ pub fn canvas_input(
                 }
             }
         }
+        ToolId::ExportRegion => export_region_tool(editor, view, state, input),
         ToolId::Scatter => scatter_tool(editor, view, state, input, false),
         ToolId::StampEraser => scatter_tool(editor, view, state, input, true),
         ToolId::Label => {
@@ -314,6 +324,9 @@ pub fn canvas_input(
             }
         }
     }
+    if editor.active_tool != ToolId::ExportRegion {
+        state.region_drag = None;
+    }
     if editor.active_tool != ToolId::Lasso {
         state.lasso = None;
     }
@@ -321,7 +334,97 @@ pub fn canvas_input(
     if !scattering && editor.active_tool != ToolId::LandBrush {
         state.stroke = None;
     }
-    editor.tool_busy = state.lasso.is_some() || (scattering && state.stroke.is_some());
+    editor.tool_busy = state.lasso.is_some()
+        || state.region_drag.is_some()
+        || (scattering && state.stroke.is_some());
+}
+
+/// The custom export region, if the Map has one.
+pub fn custom_region(editor: &Editor) -> Option<Bounds> {
+    match &editor.map.export_settings.region {
+        ExportRegion::Custom { rect } => Some(Bounds {
+            min: rect.min,
+            max: rect.max,
+        }),
+        ExportRegion::Canvas => None,
+    }
+}
+
+/// Draw the custom export region by dragging on empty Canvas, move it by dragging inside,
+/// and resize it from its handles. The region is stored in the Map's export settings as
+/// `ExportRegion::Custom` while dragging; Escape puts it back as it was.
+fn export_region_tool(
+    editor: &mut Editor,
+    view: &View,
+    state: &mut ToolState,
+    input: &CanvasInput<'_>,
+) {
+    let response = input.response;
+    let ppp = input.pixels_per_point;
+    let canvas = [
+        f64::from(editor.map.canvas.width),
+        f64::from(editor.map.canvas.height),
+    ];
+    if std::mem::take(&mut editor.cancel_tool)
+        && let Some((_, before)) = state.region_drag.take()
+    {
+        editor.map.export_settings.region = before;
+        return;
+    }
+    let existing = custom_region(editor);
+    let grip_at = |pos: egui::Pos2| {
+        let bounds = existing?;
+        handles::hit(&bounds, view, response.rect.min, ppp, pos, false)
+    };
+    if response.hovered() {
+        let icon = match response.hover_pos() {
+            Some(pos) if state.region_drag.is_none() => match grip_at(pos) {
+                Some(grip) => grip.cursor(),
+                None if existing.is_some_and(|b| b.contains(input.canvas_point(view, pos))) => {
+                    egui::CursorIcon::Move
+                }
+                None => egui::CursorIcon::Crosshair,
+            },
+            _ => egui::CursorIcon::Crosshair,
+        };
+        response.ctx.set_cursor_icon(icon);
+    }
+    if response.drag_started_by(egui::PointerButton::Primary)
+        && state.region_drag.is_none()
+        && let Some(pos) = response.ctx.input(|i| i.pointer.press_origin())
+    {
+        let start = input.canvas_point(view, pos);
+        let drag = match (existing, grip_at(pos)) {
+            (Some(bounds), Some(Grip::Resize(handle))) => RegionDrag::Resize {
+                handle,
+                start,
+                original: bounds.rect(),
+            },
+            (Some(bounds), _) if bounds.contains(start) => RegionDrag::Move {
+                start,
+                original: bounds.rect(),
+            },
+            _ => RegionDrag::Draw { anchor: start },
+        };
+        state.region_drag = Some((drag, editor.map.export_settings.region.clone()));
+    }
+    let Some((drag, before)) = state.region_drag.clone() else {
+        return;
+    };
+    if response.dragged_by(egui::PointerButton::Primary)
+        && let Some(pos) = response.interact_pointer_pos()
+    {
+        let rect = drag.rect(input.canvas_point(view, pos), canvas);
+        editor.map.export_settings.region = ExportRegion::Custom { rect };
+    }
+    if response.drag_stopped() {
+        state.region_drag = None;
+        if let ExportRegion::Custom { rect } = &editor.map.export_settings.region
+            && !export_region::is_usable(rect)
+        {
+            editor.map.export_settings.region = before;
+        }
+    }
 }
 
 /// Paint land by dragging, or erase with the erase modifier held. Each stroke is one Undo
@@ -878,6 +981,14 @@ pub fn paint_overlay(
 ) {
     if editor.active_tool == ToolId::Select {
         paint_nodes(painter, editor, view, state, origin, hover, ppp);
+    }
+    if let Some(bounds) = custom_region(editor) {
+        // Editor-only: drawn with egui over the Canvas, so it never reaches an export.
+        if editor.active_tool == ToolId::ExportRegion {
+            handles::paint(painter, &bounds, view, origin, ppp, false);
+        } else {
+            handles::paint_outline(painter, &bounds, view, origin, ppp);
+        }
     }
     if editor.active_tool == ToolId::Lasso {
         paint_lasso(painter, view, state, origin, hover, ppp);

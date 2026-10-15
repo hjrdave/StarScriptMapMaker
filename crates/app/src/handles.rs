@@ -310,6 +310,26 @@ pub fn hit(
         .map(Grip::Resize)
 }
 
+/// Draws just the box, for an outline that is shown but not being edited.
+pub fn paint_outline(
+    painter: &egui::Painter,
+    bounds: &Bounds,
+    view: &View,
+    origin: egui::Pos2,
+    ppp: f64,
+) {
+    let rect = egui::Rect::from_two_pos(
+        to_screen(view, origin, ppp, bounds.min),
+        to_screen(view, origin, ppp, bounds.max),
+    );
+    painter.rect_stroke(
+        rect,
+        0.0,
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(24, 160, 251)),
+        egui::StrokeKind::Outside,
+    );
+}
+
 /// Draws the selection box and its handles, with the rotate knob when `rotatable`.
 pub fn paint(
     painter: &egui::Painter,
