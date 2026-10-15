@@ -16,7 +16,7 @@ impl Id {
         Self(Uuid::now_v7())
     }
 
-    pub fn from_uuid(uuid: Uuid) -> Self {
+    pub const fn from_uuid(uuid: Uuid) -> Self {
         Self(uuid)
     }
 

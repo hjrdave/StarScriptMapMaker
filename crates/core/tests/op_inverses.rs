@@ -2,7 +2,7 @@
 
 use proptest::prelude::*;
 use ssmap_core::{
-    Canvas, Color, DistanceUnit, Id, Label, Lake, Landmass, Layer, Map, MapDefaults, MapView,
+    Canvas, Color, DistanceUnit, Halo, Id, Label, Lake, Landmass, Layer, Map, MapDefaults, MapView,
     MultiPolygon, Node, Object, ObjectKind, Op, Point, Polygon, Property, Roughness, Scale, Stamp,
     Subtree,
 };
@@ -42,12 +42,15 @@ fn label() -> impl Strategy<Value = Label> {
                     text,
                     position,
                     rotation,
-                    size,
-                    all_caps,
-                    opacity,
+                    size: Some(size),
+                    all_caps: Some(all_caps),
+                    opacity: Some(opacity),
                     ..Label::default()
                 };
-                label.halo.width = halo;
+                label.halo = Some(Halo {
+                    width: halo,
+                    ..Halo::default()
+                });
                 label
             },
         )

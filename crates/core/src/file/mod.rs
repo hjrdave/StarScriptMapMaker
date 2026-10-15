@@ -12,6 +12,7 @@
 //!
 //! - `blobs (hash, data)` and `embedded (kind, key, props)`: the Assets and fonts the Map
 //!   embeds (see `embed.rs`). Added in format 1.1; a 1.0 file gains them on its next save.
+//!   Format 1.2 adds the Label styles to the Map defaults; older files get the default style.
 //!
 //! Saves are incremental: only rows whose node changed are written, inside one SQLite
 //! transaction, so a crash mid-save leaves the previous save intact. Save As and new files
@@ -48,7 +49,7 @@ use crate::node::{Node, Object};
 
 /// The format this version writes. A minor bump only adds optional fields; a major bump is
 /// anything else, and needs a migration.
-pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 1 };
+pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 2 };
 
 /// The longer side of the preview image stored in every save, in pixels.
 pub const PREVIEW_SIZE: u32 = 512;
