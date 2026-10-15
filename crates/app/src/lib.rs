@@ -6,6 +6,7 @@ mod canvas_view;
 pub mod credits;
 pub mod document;
 pub mod editor;
+pub mod export_dialog;
 pub mod frame_time;
 pub mod handles;
 mod label_styles;
@@ -34,6 +35,7 @@ use crate::canvas_view::CanvasView;
 use crate::credits::Credits;
 use crate::document::Document;
 use crate::editor::Editor;
+use crate::export_dialog::ExportDialog;
 use crate::label_styles::LabelStylesPanel;
 use crate::layer_tree::LayerTree;
 use crate::new_map::NewMapDialog;
@@ -74,6 +76,7 @@ pub struct MapMakerApp {
     recent: RecentFiles,
     updates: UpdateCheck,
     new_map_dialog: NewMapDialog,
+    export_dialog: ExportDialog,
     open_dialog: FileDialog,
     save_dialog: FileDialog,
     /// What to do once the user decides what to do with unsaved changes.
@@ -164,6 +167,7 @@ impl MapMakerApp {
             recent: RecentFiles::load(cc.storage),
             updates: UpdateCheck::load(cc.storage),
             new_map_dialog: NewMapDialog::default(),
+            export_dialog: ExportDialog::default(),
             open_dialog: map_files().title("Open Map"),
             save_dialog: map_files().title("Save Map As"),
             pending: None,
@@ -540,6 +544,15 @@ impl MapMakerApp {
             if ui.button("Save As…").clicked() {
                 self.show_save_dialog();
             }
+            ui.separator();
+            if ui.button("Export PNG…").clicked() {
+                let directory = self.document.path().and_then(Path::parent);
+                self.export_dialog.open_with(
+                    &self.editor.map.export_settings,
+                    directory.map(Path::to_path_buf),
+                );
+                ui.close();
+            }
         });
         ui.menu_button("Help", |ui| {
             if ui.button("Credits…").clicked() {
@@ -578,6 +591,9 @@ impl MapMakerApp {
 
         if let Some(canvas) = self.new_map_dialog.show(ctx) {
             self.request_new(canvas);
+        }
+        if let Some(settings) = self.export_dialog.show(ctx, &self.editor.map.canvas) {
+            self.editor.map.export_settings = settings;
         }
         self.recovery_dialog(ctx);
         self.unsaved_dialog(ctx);
@@ -942,6 +958,7 @@ impl eframe::App for MapMakerApp {
         self.handle_close(&ctx);
         let dialog_open = self.pending.is_some()
             || self.new_map_dialog.open
+            || self.export_dialog.open
             || self.recovery_prompt.is_some()
             || *self.open_dialog.state() == DialogState::Open
             || *self.save_dialog.state() == DialogState::Open;
