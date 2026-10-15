@@ -32,5 +32,9 @@ tempfile.workspace = true
 name = "pan_zoom"
 harness = false
 
+[[bench]]
+name = "open_to_frame"
+harness = false
+
 [lints]
 workspace = true
