@@ -1,0 +1,63 @@
+name: Nightly benchmark
+
+# DRAFT for review. Automated runs may not edit .github/, so this sits in docs/ci/.
+# To enable it, copy it to .github/workflows/ (see the note below on the file name).
+#
+# NOTE: .github/workflows/nightly.yml already exists (the nightly package builds), so copy
+# this one as .github/workflows/nightly-bench.yml, or move its job into that file.
+#
+# Runs the large-Map benchmark (crates/core/benches/large_map.rs; spec §11, ADR 0005): save,
+# open and Command apply on 100k Stamps and about 1M coastline vertices. The benchmark's own
+# guard exits non-zero when save or open takes more than 2x its ADR 0005 target, which fails
+# the job. Otherwise the criterion output is posted as the job summary and uploaded as an
+# artifact for trend numbers.
+on:
+  schedule:
+    - cron: "43 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  large-map:
+    name: large Map benchmark
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Run the benchmark
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo bench -p ssmap-core --bench large_map --locked 2>&1 | tee bench.txt
+      - name: Post the numbers
+        if: always()
+        shell: bash
+        run: |
+          echo "## Large Map benchmark" >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          echo "Fails only above 2x the ADR 0005 targets (save 200 ms, open 3 s)." >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          grep -E '^(large_map/|guard:|error:)|time:' bench.txt >> "$GITHUB_STEP_SUMMARY" || echo "no benchmark output" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: large-map-bench
+          path: |
+            bench.txt
+            target/criterion
+          if-no-files-found: warn
+          retention-days: 30
