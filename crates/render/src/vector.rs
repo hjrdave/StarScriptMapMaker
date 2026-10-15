@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use lyon::path::Path;
@@ -843,6 +843,9 @@ struct TessellationShared {
     generation: AtomicU64,
     /// How many rebuilds are still running.
     building: AtomicUsize,
+    /// Held while a rebuild ends, so a waiter never misses the wake-up.
+    ended: Mutex<()>,
+    ended_signal: Condvar,
 }
 
 #[derive(Default)]
@@ -971,6 +974,20 @@ impl TessellationCache {
         self.shared.building.load(Ordering::SeqCst) > 0
     }
 
+    /// Blocks until no [`TessellationRebuild`] is running, so a frame drawn afterwards leaves
+    /// out no Object. Export calls this before it renders. A rebuild that is neither run nor
+    /// dropped on another thread would wait forever.
+    pub fn wait_until_ready(&self) {
+        let mut guard = self.shared.ended.lock().expect("tessellation wait lock");
+        while self.is_building() {
+            guard = self
+                .shared
+                .ended_signal
+                .wait(guard)
+                .expect("tessellation wait lock");
+        }
+    }
+
     /// Changes whenever a rebuild lands an Object or ends, which is when what was drawn from
     /// a partly filled cache is out of date.
     pub fn generation(&self) -> u64 {
@@ -1057,8 +1074,17 @@ impl TessellationRebuild {
 
 impl Drop for TessellationRebuild {
     fn drop(&mut self) {
-        self.cache.shared.building.fetch_sub(1, Ordering::SeqCst);
+        {
+            let _guard = self
+                .cache
+                .shared
+                .ended
+                .lock()
+                .expect("tessellation wait lock");
+            self.cache.shared.building.fetch_sub(1, Ordering::SeqCst);
+        }
         self.cache.shared.generation.fetch_add(1, Ordering::SeqCst);
+        self.cache.shared.ended_signal.notify_all();
     }
 }
 

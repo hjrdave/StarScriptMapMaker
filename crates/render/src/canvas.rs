@@ -273,6 +273,18 @@ impl CanvasRenderer {
         self.content.cache().rebuild(content.groups())
     }
 
+    /// Blocks until the derived data behind a frame of `content` is complete: the Stamp art
+    /// it draws is rasterised and no tessellation rebuild is running. A frame drawn afterwards
+    /// has no placeholders and leaves out no Object. (Roughened outlines are part of
+    /// `content`; wait on the [`RoughnessCache`](ssmap_core::RoughnessCache) before building it.)
+    pub fn wait_until_ready(&self, content: &Content) {
+        if let Some(store) = self.stamps.store() {
+            store.prefetch(content.stamps().iter().map(|placed| &placed.draw.asset));
+            store.wait_until_ready();
+        }
+        self.content.cache().wait_until_ready();
+    }
+
     /// How long a frame may spend applying finished background results before carrying the
     /// rest to the next frame ([`APPLY_BUDGET`] by default); `None` applies them all.
     /// Returns the previous budget.

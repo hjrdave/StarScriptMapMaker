@@ -12,7 +12,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -225,6 +225,9 @@ struct Shared {
     generation: AtomicU64,
     /// How many rebuilds are still running.
     rebuilding: AtomicUsize,
+    /// Held while a rebuild ends, so a waiter never misses the wake-up.
+    ended: Mutex<()>,
+    ended_signal: Condvar,
 }
 
 #[derive(Debug)]
@@ -302,6 +305,20 @@ impl RoughnessCache {
     /// placeholders is out of date. Outlines computed on demand do not change it.
     pub fn generation(&self) -> u64 {
         self.shared.generation.load(Ordering::SeqCst)
+    }
+
+    /// Blocks until no [`Rebuild`] is running, so every outline asked for afterwards is the
+    /// roughened one, not a stored placeholder. Export calls this before it builds its scene.
+    /// A rebuild that is neither run nor dropped on another thread would wait forever.
+    pub fn wait_until_ready(&self) {
+        let mut guard = self.shared.ended.lock().expect("roughness wait lock");
+        while self.is_rebuilding() {
+            guard = self
+                .shared
+                .ended_signal
+                .wait(guard)
+                .expect("roughness wait lock");
+        }
     }
 
     /// Starts rebuilding every outline of `map` that is not ready. Until the returned
@@ -395,8 +412,12 @@ impl Rebuild {
 
 impl Drop for Rebuild {
     fn drop(&mut self) {
-        self.shared.rebuilding.fetch_sub(1, Ordering::SeqCst);
+        {
+            let _guard = self.shared.ended.lock().expect("roughness wait lock");
+            self.shared.rebuilding.fetch_sub(1, Ordering::SeqCst);
+        }
         self.shared.generation.fetch_add(1, Ordering::SeqCst);
+        self.shared.ended_signal.notify_all();
     }
 }
 
@@ -499,6 +520,27 @@ mod tests {
         // Up to and including [300, 300], the edges before the moved node are untouched.
         let end = before.iter().position(|p| *p == [300.0, 300.0]).unwrap();
         assert_eq!(before[..=end], after[..=end]);
+    }
+
+    #[test]
+    fn waiting_returns_once_the_rebuild_ends() {
+        let cache = RoughnessCache::new();
+        // Nothing rebuilding: no wait.
+        cache.wait_until_ready();
+        let map = Map::new(crate::Canvas::new(
+            100,
+            100,
+            crate::Scale::new(1.0, crate::DistanceUnit::Miles),
+        ));
+        let rebuild = cache.rebuild(&map);
+        assert!(cache.is_rebuilding());
+        let worker = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            rebuild.run(|| {});
+        });
+        cache.wait_until_ready();
+        assert!(!cache.is_rebuilding());
+        worker.join().unwrap();
     }
 
     #[test]

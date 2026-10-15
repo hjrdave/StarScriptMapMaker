@@ -215,6 +215,10 @@ impl StampRenderer {
         }
     }
 
+    pub(crate) fn store(&self) -> Option<&SpriteStore> {
+        self.store.as_ref()
+    }
+
     /// Where Asset art comes from. Replacing the store forgets everything uploaded.
     pub(crate) fn set_store(&mut self, store: SpriteStore) {
         self.generation = store.generation();
