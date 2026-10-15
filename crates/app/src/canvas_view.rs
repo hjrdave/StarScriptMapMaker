@@ -6,11 +6,12 @@ use eframe::egui_wgpu::{self, wgpu};
 use ssmap_core::Command;
 use ssmap_render::{
     CanvasRenderer, CanvasScene, GpuCapabilities, Presenter, Quality, RgbaImage, SpriteStore,
-    Suitability, View, render_to_image,
+    Suitability, TessellationCache, View, render_to_image,
 };
 
 use crate::editor::Editor;
 use crate::handles::{self, Bounds};
+use crate::tessellation::BackgroundTessellation;
 use crate::tools::{self, CanvasInput, ToolState};
 
 /// Space left around the Canvas when it is first fitted, in points.
@@ -31,20 +32,25 @@ struct CanvasResources {
 /// egui's callback resources. Returns false, leaving the Canvas as a placeholder, when the
 /// adapter is below the hardware floor. Called once per run, so a software-adapter warning
 /// shows once.
-pub fn install(render_state: &egui_wgpu::RenderState, sprites: SpriteStore) -> bool {
+pub fn install(
+    render_state: &egui_wgpu::RenderState,
+    sprites: SpriteStore,
+) -> Option<TessellationCache> {
     let capabilities = GpuCapabilities::query(&render_state.adapter);
     match capabilities.suitability() {
         Suitability::Ok => {}
         Suitability::SoftwareWarning(message) => eprintln!("Warning: {message}"),
         Suitability::BelowFloor(message) => {
             eprintln!("Error: {message}");
-            return false;
+            return None;
         }
     }
     let mut renderer = CanvasRenderer::new(&render_state.device, capabilities);
     renderer.set_sprites(sprites);
     // eframe draws egui without MSAA; the Canvas does its own multisampling offscreen.
     let presenter = Presenter::new(&render_state.device, render_state.target_format, 1);
+    // The cache is shared with the renderer, so the app fills it without reaching into egui.
+    let cache = renderer.tessellation_cache();
     render_state
         .renderer
         .write()
@@ -53,7 +59,7 @@ pub fn install(render_state: &egui_wgpu::RenderState, sprites: SpriteStore) -> b
             renderer,
             presenter,
         });
-    true
+    Some(cache)
 }
 
 /// Renders the whole Canvas, `longest_side` pixels on its longer side, as for the preview
@@ -83,6 +89,8 @@ pub struct CanvasView {
     view: Option<View>,
     /// False without a wgpu device (as in UI tests); the Canvas is then a flat placeholder.
     gpu: bool,
+    /// Tessellates Objects on a thread of its own after a Map opens.
+    tessellation: BackgroundTessellation,
     tools: ToolState,
     /// Where the panel was last drawn, in points, and the pixels per point then.
     panel: Option<(egui::Rect, f64)>,
@@ -93,10 +101,12 @@ pub struct CanvasView {
 }
 
 impl CanvasView {
-    pub fn new(gpu: bool) -> Self {
+    /// `cache` is the renderer's tessellation cache; `None` without a wgpu device.
+    pub fn new(cache: Option<TessellationCache>) -> Self {
         Self {
             view: None,
-            gpu,
+            gpu: cache.is_some(),
+            tessellation: BackgroundTessellation::new(cache),
             tools: ToolState::default(),
             panel: None,
             last_view: None,
@@ -123,6 +133,7 @@ impl CanvasView {
     /// Starts afresh for another Map: fits it to the panel on the next frame and forgets
     /// what was drawn and dragged.
     pub fn refit(&mut self) {
+        self.tessellation.arm();
         self.view = None;
         self.last_view = None;
         self.gesture_until = 0.0;
@@ -195,6 +206,13 @@ impl CanvasView {
             .with_quality(quality);
         let painter = ui.painter_at(rect);
         if self.gpu {
+            // Before the callback is queued, so this frame already leaves out Objects that
+            // the worker has yet to finish.
+            let ctx = ui.ctx().clone();
+            self.tessellation
+                .update(&scene.content, editor.outlines_rebuilding(), move || {
+                    ctx.request_repaint()
+                });
             painter.add(egui_wgpu::Callback::new_paint_callback(
                 rect,
                 CanvasCallback { scene, view },

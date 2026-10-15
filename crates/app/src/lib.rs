@@ -14,6 +14,7 @@ pub mod new_map;
 mod properties;
 mod recent;
 pub mod recovery;
+mod tessellation;
 pub mod tools;
 pub mod update;
 
@@ -128,9 +129,9 @@ impl MapMakerApp {
         let sprites = SpriteStore::new(Arc::new(library));
         let ctx = cc.egui_ctx.clone();
         sprites.set_repaint(move || ctx.request_repaint());
-        let gpu = match cc.wgpu_render_state.as_ref() {
+        let cache = match cc.wgpu_render_state.as_ref() {
             Some(render_state) => canvas_view::install(render_state, sprites.clone()),
-            None => false,
+            None => None,
         };
         let map_files = || -> FileDialog {
             FileDialog::new()
@@ -158,7 +159,7 @@ impl MapMakerApp {
             label_styles: LabelStylesPanel::default(),
             asset_browser: AssetBrowser::default(),
             sprites,
-            canvas_view: CanvasView::new(gpu),
+            canvas_view: CanvasView::new(cache),
             credits,
             recent: RecentFiles::load(cc.storage),
             updates: UpdateCheck::load(cc.storage),
