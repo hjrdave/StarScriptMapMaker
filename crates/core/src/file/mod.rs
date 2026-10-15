@@ -13,6 +13,7 @@
 //! - `blobs (hash, data)` and `embedded (kind, key, props)`: the Assets and fonts the Map
 //!   embeds (see `embed.rs`). Added in format 1.1; a 1.0 file gains them on its next save.
 //!   Format 1.2 adds the Label styles to the Map defaults; older files get the default style.
+//!   Format 1.3 adds the `export_settings` meta key (JSON); older files get the defaults.
 //!
 //! Saves are incremental: only rows whose node changed are written, inside one SQLite
 //! transaction, so a crash mid-save leaves the previous save intact. Save As and new files
@@ -43,13 +44,14 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, Transactio
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::export::ExportSettings;
 use crate::id::Id;
 use crate::map::{Canvas, Map, MapDefaults, MapView, Subtree};
 use crate::node::{Node, Object};
 
 /// The format this version writes. A minor bump only adds optional fields; a major bump is
 /// anything else, and needs a migration.
-pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 2 };
+pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 3 };
 
 /// The longer side of the preview image stored in every save, in pixels.
 pub const PREVIEW_SIZE: u32 = 512;
@@ -170,6 +172,7 @@ pub struct MapFile {
     saved: HashMap<Id, SavedRow>,
     saved_canvas: Option<Canvas>,
     saved_defaults: Option<MapDefaults>,
+    saved_export: Option<ExportSettings>,
     saved_embedded: embed::SavedEmbedded,
     saved_revision: u64,
 }
@@ -195,6 +198,7 @@ impl MapFile {
                 saved: HashMap::new(),
                 saved_canvas: None,
                 saved_defaults: None,
+                saved_export: None,
                 saved_embedded: Default::default(),
                 saved_revision: 0,
             })
@@ -234,6 +238,12 @@ impl MapFile {
                 .map_err(|err| FileError::Damaged(format!("the Map defaults: {err}")))?,
             None => MapDefaults::default(),
         };
+        // Absent from files saved before format 1.3.
+        let export_settings: ExportSettings = match read_meta::<String>(&conn, "export_settings")? {
+            Some(json) => serde_json::from_str(&json)
+                .map_err(|err| FileError::Damaged(format!("the export settings: {err}")))?,
+            None => ExportSettings::default(),
+        };
         let generation = read_meta::<String>(&conn, "save_generation")?
             .and_then(|text| Uuid::parse_str(&text).ok())
             .unwrap_or_else(Uuid::nil);
@@ -244,6 +254,7 @@ impl MapFile {
             defaults: defaults.clone(),
             layers,
             embedded,
+            export_settings: export_settings.clone(),
         })
         .map_err(|err| FileError::Damaged(err.to_string()))?;
         let file = Self {
@@ -254,6 +265,7 @@ impl MapFile {
             saved,
             saved_canvas: Some(canvas),
             saved_defaults: Some(defaults),
+            saved_export: Some(export_settings),
             saved_embedded,
             saved_revision: map.revision(),
         };
@@ -273,6 +285,10 @@ impl MapFile {
             let canvas = serde_json::to_string(&map.canvas).expect("a Canvas serialises");
             write_meta(&tx, "canvas", &canvas)?;
         }
+        if self.saved_export.as_ref() != Some(&map.export_settings) {
+            let json = serde_json::to_string(&map.export_settings).expect("settings serialise");
+            write_meta(&tx, "export_settings", &json)?;
+        }
         if self.saved_defaults.as_ref() != Some(map.defaults()) {
             let defaults = serde_json::to_string(map.defaults()).expect("defaults serialise");
             write_meta(&tx, "defaults", &defaults)?;
@@ -291,6 +307,7 @@ impl MapFile {
         self.saved = saved;
         self.saved_canvas = Some(map.canvas.clone());
         self.saved_defaults = Some(map.defaults().clone());
+        self.saved_export = Some(map.export_settings.clone());
         self.saved_embedded = saved_embedded;
         self.generation = generation;
         self.saved_revision = map.revision();
@@ -323,6 +340,7 @@ impl MapFile {
                 saved: self.saved.clone(),
                 saved_canvas: self.saved_canvas.clone(),
                 saved_defaults: self.saved_defaults.clone(),
+                saved_export: self.saved_export.clone(),
                 saved_embedded: self.saved_embedded.clone(),
                 saved_revision: self.saved_revision,
             })
@@ -393,6 +411,7 @@ fn save_via_temp(
         saved,
         saved_canvas,
         saved_defaults,
+        saved_export,
         saved_embedded,
         saved_revision,
         ..
@@ -410,6 +429,7 @@ fn save_via_temp(
         saved,
         saved_canvas,
         saved_defaults,
+        saved_export,
         saved_embedded,
         saved_revision,
     };

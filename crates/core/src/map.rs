@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::embedded::Embedded;
+use crate::export::ExportSettings;
 use crate::extra::Extra;
 use crate::id::Id;
 use crate::label::{LabelStyles, ResolvedLabel};
@@ -128,6 +129,9 @@ pub struct MapView {
     /// The Assets and fonts embedded in the Map.
     #[serde(default, skip_serializing_if = "Embedded::is_empty")]
     pub embedded: Embedded,
+    /// The last PNG export settings. Files saved before they existed get the defaults.
+    #[serde(default, skip_serializing_if = "ExportSettings::is_default")]
+    pub export_settings: ExportSettings,
 }
 
 #[derive(Clone, Debug)]
@@ -146,6 +150,8 @@ pub struct Map {
     pub(crate) defaults: MapDefaults,
     /// Changed only by the embed Ops.
     pub(crate) embedded: Embedded,
+    /// The last PNG export settings. Not an Op: it is a preference, not map content.
+    pub export_settings: ExportSettings,
     pub(crate) root: Vec<Id>,
     pub(crate) entries: HashMap<Id, Entry>,
     /// Increases with every applied Op; touched nodes take its new value as their version.
@@ -158,6 +164,7 @@ impl Map {
             canvas,
             defaults: MapDefaults::default(),
             embedded: Embedded::default(),
+            export_settings: ExportSettings::default(),
             root: Vec::new(),
             entries: HashMap::new(),
             revision: 0,
@@ -175,6 +182,7 @@ impl Map {
         let mut map = Self::new(view.canvas);
         map.defaults = view.defaults;
         map.embedded = view.embedded;
+        map.export_settings = view.export_settings;
         for subtree in view.layers {
             if !subtree.node.is_layer() {
                 return Err(InvariantError::ObjectAtRoot(subtree.id));
@@ -191,6 +199,7 @@ impl Map {
             defaults: self.defaults.clone(),
             layers: self.root.iter().map(|&id| self.subtree(id)).collect(),
             embedded: self.embedded.clone(),
+            export_settings: self.export_settings.clone(),
         }
     }
 
