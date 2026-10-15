@@ -121,7 +121,8 @@ pub struct Asset {
 }
 
 /// How an Asset's art is stored, from its file extension.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum ArtFormat {
     /// Rasterised at whatever scale is needed.
     Svg,

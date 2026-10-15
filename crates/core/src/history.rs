@@ -287,10 +287,13 @@ fn op_bytes(op: &Op) -> usize {
                 ..
             } => std::mem::size_of::<Label>() + label.text.len(),
             Op::ReplaceGeometry { geometry, .. } => geometry_bytes(geometry),
+            Op::SetBlob { data, .. } => data.as_ref().map_or(0, |data| data.len()),
             Op::Remove { .. }
             | Op::SetProperty { .. }
             | Op::Move { .. }
-            | Op::SetDefaults { .. } => 0,
+            | Op::SetDefaults { .. }
+            | Op::SetEmbeddedAsset { .. }
+            | Op::SetEmbeddedFont { .. } => 0,
         }
 }
 

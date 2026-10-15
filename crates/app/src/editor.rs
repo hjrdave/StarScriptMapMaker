@@ -8,9 +8,11 @@ use ssmap_core::asset::AssetRef;
 use ssmap_core::land::{self, BrushStroke};
 use ssmap_core::scatter::{self, ScatterBrush, ScatterStroke, Terrain};
 use ssmap_core::{
-    Command, CommandError, ExecuteError, History, Id, Label, Map, MultiPolygon, Node, NodeRef,
-    ObjectKind, Op, PickIndex, Point, Rect, RoughnessCache, Selection, Stamp, StampIndex,
+    Blob, Command, CommandError, EmbedAsset, EmbedFont, ExecuteError, History, Id, Label, Map,
+    MultiPolygon, Node, NodeRef, ObjectKind, Op, PickIndex, Point, Rect, RoughnessCache, Selection,
+    Stamp, StampIndex,
 };
+use ssmap_fonts::FALLBACK_FAMILY;
 use ssmap_render::{Content, Fonts, LabelLayout, MapScene, SpriteStore};
 
 use crate::layer_tree::node_name;
@@ -560,6 +562,55 @@ impl Editor {
         if let Ok(Some(selection)) = self.history.redo(&mut self.map) {
             self.restore(selection);
         }
+    }
+
+    /// Embeds every Asset and bundled font the Map uses that it doesn't embed yet, as one Undo
+    /// step (ADR 0005). Assets no installed pack provides are skipped, and an Asset already
+    /// embedded keeps its embedded copy. Returns whether anything was embedded.
+    pub fn embed_used_assets(&mut self) -> bool {
+        let mut assets = Vec::new();
+        if let Some(library) = self
+            .sprites
+            .as_ref()
+            .map(|sprites| sprites.library().clone())
+        {
+            for reference in self.map.used_assets() {
+                if self.map.embedded().assets.contains_key(&reference) {
+                    continue;
+                }
+                let Some((pack, asset)) = library.asset(&reference) else {
+                    continue;
+                };
+                match EmbedAsset::read(pack, asset) {
+                    Ok(embed) => assets.push(embed),
+                    Err(err) => self.error(format!("Couldn’t embed {reference}: {err}")),
+                }
+            }
+        }
+        let mut families = self.map.used_font_families();
+        if !families.is_empty() {
+            families.insert(FALLBACK_FAMILY.to_owned());
+        }
+        let fonts: Vec<EmbedFont> = ssmap_fonts::FONTS
+            .iter()
+            .filter(|font| families.contains(font.family))
+            .filter(|font| !self.map.embedded().fonts.contains_key(font.file))
+            .filter_map(|font| {
+                let family = ssmap_fonts::FAMILIES
+                    .iter()
+                    .find(|f| f.name == font.family)?;
+                Some(EmbedFont {
+                    family: font.family.to_owned(),
+                    file: font.file.to_owned(),
+                    licence: family.licence.to_owned(),
+                    data: Blob::new(font.data),
+                })
+            })
+            .collect();
+        if assets.is_empty() && fonts.is_empty() {
+            return false;
+        }
+        self.run(Command::EmbedAssets { assets, fonts })
     }
 
     /// Takes the Ops that committed steps, undo and redo applied since the last call, for the

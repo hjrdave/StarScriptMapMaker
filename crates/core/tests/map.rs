@@ -218,6 +218,7 @@ fn from_view_rejects_duplicate_ids() {
         canvas: empty_map().canvas,
         defaults: Default::default(),
         layers: vec![layer.clone(), layer],
+        embedded: Default::default(),
     };
     assert!(Map::from_view(view).is_err());
 }

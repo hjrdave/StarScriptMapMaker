@@ -127,6 +127,7 @@ fn map() -> impl Strategy<Value = Map> {
                 ..Default::default()
             },
             layers,
+            embedded: Default::default(),
         })
         .expect("generated trees are valid")
     })

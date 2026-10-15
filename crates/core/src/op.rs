@@ -8,7 +8,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::asset::AssetRef;
 use crate::color::Color;
+use crate::embedded::{Blob, ContentHash, EmbeddedAsset, EmbeddedFont};
 use crate::geometry::MultiPolygon;
 use crate::id::Id;
 use crate::map::{InvariantError, Map, MapDefaults, Subtree};
@@ -40,6 +42,22 @@ pub enum Op {
     },
     /// Replaces the Map-wide defaults.
     SetDefaults { defaults: MapDefaults },
+    /// Stores the embedded file with content hash `hash`, or with `None` removes it.
+    SetBlob {
+        hash: ContentHash,
+        data: Option<Blob>,
+    },
+    /// Sets the embedded record of an Asset, or with `None` removes it. The files it names
+    /// are separate [`Op::SetBlob`]s.
+    SetEmbeddedAsset {
+        asset: AssetRef,
+        record: Option<Box<EmbeddedAsset>>,
+    },
+    /// Sets the embedded record of the font file named `file`, or with `None` removes it.
+    SetEmbeddedFont {
+        file: String,
+        record: Option<Box<EmbeddedFont>>,
+    },
 }
 
 /// A settable property and its new value.
@@ -87,6 +105,8 @@ pub enum OpError {
     NoSuchProperty(Id, &'static str),
     #[error("{0} has no geometry")]
     NoGeometry(Id),
+    #[error("the embedded file does not match its content hash {0}")]
+    BlobHashMismatch(ContentHash),
     #[error(transparent)]
     Invariant(#[from] InvariantError),
 }
@@ -158,6 +178,33 @@ impl Map {
             Op::SetDefaults { defaults } => Op::SetDefaults {
                 defaults: std::mem::replace(&mut self.defaults, defaults),
             },
+            Op::SetBlob { hash, data } => {
+                let old = match data {
+                    Some(data) => self.embedded.blobs.insert(hash, data),
+                    None => self.embedded.blobs.remove(&hash),
+                };
+                Op::SetBlob { hash, data: old }
+            }
+            Op::SetEmbeddedAsset { asset, record } => {
+                let old = match record {
+                    Some(record) => self.embedded.assets.insert(asset.clone(), *record),
+                    None => self.embedded.assets.remove(&asset),
+                };
+                Op::SetEmbeddedAsset {
+                    asset,
+                    record: old.map(Box::new),
+                }
+            }
+            Op::SetEmbeddedFont { file, record } => {
+                let old = match record {
+                    Some(record) => self.embedded.fonts.insert(file.clone(), *record),
+                    None => self.embedded.fonts.remove(&file),
+                };
+                Op::SetEmbeddedFont {
+                    file,
+                    record: old.map(Box::new),
+                }
+            }
         })
     }
 
@@ -198,7 +245,14 @@ impl Map {
                 }
                 check_index(*index, len)?;
             }
-            Op::SetDefaults { .. } => {}
+            Op::SetBlob {
+                hash,
+                data: Some(data),
+            } if data.hash() != *hash => return Err(OpError::BlobHashMismatch(*hash)),
+            Op::SetDefaults { .. }
+            | Op::SetBlob { .. }
+            | Op::SetEmbeddedAsset { .. }
+            | Op::SetEmbeddedFont { .. } => {}
         }
         Ok(())
     }

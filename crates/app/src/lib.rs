@@ -392,6 +392,7 @@ impl MapMakerApp {
     pub fn save(&mut self) -> bool {
         // A gesture still open would otherwise reach the journal after the save holding it.
         self.editor.end_gesture();
+        self.editor.embed_used_assets();
         let preview = self.preview_png();
         match self.document.save(&self.editor.map, preview.as_deref()) {
             Some(result) => self.saved(result),
@@ -405,6 +406,7 @@ impl MapMakerApp {
     /// Saves a copy at `path` that becomes the open file.
     pub fn save_as_path(&mut self, path: &Path) -> bool {
         self.editor.end_gesture();
+        self.editor.embed_used_assets();
         let preview = self.preview_png();
         let path = document::with_extension(path.to_path_buf());
         let result = self
