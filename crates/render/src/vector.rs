@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 use lyon::path::Path;
 use lyon::tessellation::{
@@ -153,6 +154,9 @@ pub struct LyonRenderer {
     /// Draws no colour, and sets the stencil to the reference.
     mask: wgpu::RenderPipeline,
     mesh: Option<Mesh>,
+    /// Drawn instead of `mesh` while set: the groups applied chunk by chunk (see
+    /// [`LyonRenderer::apply_chunks`]).
+    chunked: Option<Chunked<ChunkMesh>>,
     cache: TessellationCache,
 }
 
@@ -241,6 +245,7 @@ impl LyonRenderer {
             reset: pipeline("fill reset", StencilUse::Reset),
             mask: pipeline("fill mask", StencilUse::Mask),
             mesh: None,
+            chunked: None,
             cache: TessellationCache::new(),
         }
     }
@@ -267,6 +272,7 @@ impl LyonRenderer {
             draws,
             runs,
         } = build(groups, cuts, &self.cache);
+        self.chunked = None;
         self.mesh = (!geometry.indices.is_empty()).then(|| Mesh {
             vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("vector vertices"),
@@ -283,6 +289,34 @@ impl LyonRenderer {
         });
     }
 
+    /// Whether the groups are drawn chunk by chunk (see [`LyonRenderer::start_chunks`]).
+    pub(crate) fn is_chunked(&self) -> bool {
+        self.chunked.is_some()
+    }
+
+    /// Like [`LyonRenderer::set_runs`], but only splits the groups into chunks, which
+    /// [`LyonRenderer::apply_chunks`] then builds. What was drawn stays until its chunk is
+    /// replaced.
+    pub(crate) fn start_chunks(&mut self, groups: &[VectorGroup], cuts: &[usize]) {
+        self.mesh = None;
+        let previous = self.chunked.take();
+        self.chunked = Some(Chunked::new(previous, groups, cuts, &self.cache));
+    }
+
+    /// Builds the chunks of the groups last given to [`LyonRenderer::start_chunks`] that are
+    /// out of date, within `budget` (all of them if `None`). Returns whether all are built.
+    pub(crate) fn apply_chunks(
+        &mut self,
+        device: &wgpu::Device,
+        groups: &[VectorGroup],
+        budget: Option<Duration>,
+    ) -> bool {
+        let Some(chunked) = &mut self.chunked else {
+            return true;
+        };
+        chunked.apply(groups, &self.cache, budget, |built| upload(device, built))
+    }
+
     /// Draws run `run` of the groups last given to [`LyonRenderer::set_runs`], only inside the
     /// active Clip if `clipped`, and only what `filter` lets through.
     pub(crate) fn draw_run(
@@ -292,17 +326,46 @@ impl LyonRenderer {
         clipped: bool,
         filter: &DrawFilter,
     ) {
+        if let Some(chunked) = &self.chunked {
+            let Some(range) = chunked.runs.get(run) else {
+                return;
+            };
+            for part in chunked.chunks[range.clone()]
+                .iter()
+                .filter_map(|chunk| chunk.part.as_ref())
+                .filter(|part| overlaps(part.bounds, filter.bounds))
+            {
+                let Some((vertices, indices)) = &part.buffers else {
+                    continue;
+                };
+                pass.set_vertex_buffer(0, vertices.slice(..));
+                pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
+                self.draw_draws(pass, &part.draws, clipped, filter);
+            }
+            return;
+        }
         let Some(mesh) = &self.mesh else { return };
         let Some(range) = mesh.runs.get(run) else {
             return;
         };
         pass.set_vertex_buffer(0, mesh.vertices.slice(..));
         pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
+        self.draw_draws(pass, &mesh.draws[range.clone()], clipped, filter);
+    }
+
+    /// Draws what `filter` lets through of `draws`, from the buffers already set on `pass`.
+    fn draw_draws(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        draws: &[Draw],
+        clipped: bool,
+        filter: &DrawFilter,
+    ) {
         pass.set_stencil_reference(if clipped { CLIP_INSIDE } else { 0 });
         let plain = if clipped { &self.clipped } else { &self.plain };
         let visible =
             |draw: &&Draw| (filter.effects || !draw.effect) && overlaps(draw.bounds, filter.bounds);
-        for draw in mesh.draws[range.clone()].iter().filter(visible) {
+        for draw in draws.iter().filter(visible) {
             if draw.once {
                 pass.set_pipeline(&self.once);
                 pass.draw_indexed(draw.indices.clone(), 0, 0..1);
@@ -428,6 +491,11 @@ struct Built {
 fn build(groups: &[VectorGroup], cuts: &[usize], cache: &TessellationCache) -> Built {
     let mut tessellators = Tessellators::default();
     let meshes = resolve(groups, cache, &mut tessellators);
+    merge(&meshes, cuts)
+}
+
+/// Merges the triangles of resolved groups into draws, split into runs at `cuts`.
+fn merge(meshes: &[Option<Arc<GroupMesh>>], cuts: &[usize]) -> Built {
     let mut geometry: VertexBuffers<Vertex, u32> = VertexBuffers::new();
     let mut draws: Vec<Draw> = Vec::new();
     let mut runs: Vec<Range<usize>> = Vec::new();
@@ -481,6 +549,216 @@ fn build(groups: &[VectorGroup], cuts: &[usize], cache: &TessellationCache) -> B
         geometry,
         draws,
         runs,
+    }
+}
+
+/// What a frame may spend applying finished background results to the drawn geometry. Anything
+/// over carries to the next frame, so input is never held up for more than about one frame.
+pub const APPLY_BUDGET: Duration = Duration::from_millis(4);
+
+/// Groups per chunk. An Object that lands marks only the chunks holding its groups dirty.
+const CHUNK_GROUPS: usize = 64;
+
+/// A stretch of groups inside one run, merged and uploaded on its own.
+struct Chunk<P> {
+    groups: Range<usize>,
+    /// What was last built for the chunk; `None` until the first build.
+    part: Option<P>,
+    /// The groups changed since `part` was built.
+    stale: bool,
+    /// Objects left out of `part` because they were not ready.
+    missing: Vec<ObjectRef>,
+}
+
+/// The groups split into chunks that are rebuilt one by one within a time budget, giving the
+/// same triangles in the same order as merging everything at once (see [`merge`]). Cuts are
+/// chunk edges, so a run is a whole number of chunks.
+struct Chunked<P> {
+    chunks: Vec<Chunk<P>>,
+    /// The chunks of each run.
+    runs: Vec<Range<usize>>,
+    /// The groups of each Object, which are not always next to each other.
+    objects: HashMap<Id, Vec<usize>>,
+}
+
+impl<P> Chunked<P> {
+    /// Splits `groups` at `cuts` (see [`LyonRenderer::set_runs`]) and every [`CHUNK_GROUPS`]
+    /// groups, and marks every chunk for a rebuild. A chunk that covers the same groups as
+    /// before keeps its old part, which keeps drawing until it is replaced.
+    fn new(
+        previous: Option<Chunked<P>>,
+        groups: &[VectorGroup],
+        cuts: &[usize],
+        cache: &TessellationCache,
+    ) -> Self {
+        let mut old = previous.map(|p| p.chunks).unwrap_or_default().into_iter();
+        let mut chunks = Vec::new();
+        let mut runs = Vec::new();
+        let mut start = 0;
+        for end in cuts
+            .iter()
+            .map(|&cut| cut.min(groups.len()))
+            .chain([groups.len()])
+        {
+            let first = chunks.len();
+            let mut at = start;
+            while at < end {
+                let next = (at + CHUNK_GROUPS).min(end);
+                let kept = old.next().filter(|chunk| chunk.groups == (at..next));
+                chunks.push(Chunk {
+                    groups: at..next,
+                    part: kept.and_then(|chunk| chunk.part),
+                    stale: true,
+                    missing: Vec::new(),
+                });
+                at = next;
+            }
+            runs.push(first..chunks.len());
+            start = end.max(start);
+        }
+        let mut objects: HashMap<Id, Vec<usize>> = HashMap::new();
+        for (index, group) in groups.iter().enumerate() {
+            if let Some(object) = group.object {
+                objects.entry(object.id).or_default().push(index);
+                cache.note_version(object.id, object.version);
+            }
+        }
+        if !cache.is_building() {
+            cache.retain(|id| objects.contains_key(&id));
+        }
+        Self {
+            chunks,
+            runs,
+            objects,
+        }
+    }
+
+    /// Rebuilds the chunks that are stale or were missing an Object that is ready now, until
+    /// `budget` would be spent (a chunk is never left half built, and one is always built).
+    /// Returns whether none is left to rebuild.
+    fn apply(
+        &mut self,
+        groups: &[VectorGroup],
+        cache: &TessellationCache,
+        budget: Option<Duration>,
+        mut upload: impl FnMut(Built) -> P,
+    ) -> bool {
+        let start = Instant::now();
+        let mut tessellators = Tessellators::default();
+        let building = cache.is_building();
+        let mut slowest = Duration::ZERO;
+        let mut built = false;
+        for chunk in &mut self.chunks {
+            let dirty = chunk.part.is_none()
+                || chunk.stale
+                || chunk
+                    .missing
+                    .iter()
+                    .any(|object| cache.has_version(object.id, object.version));
+            if !dirty {
+                continue;
+            }
+            if let Some(budget) = budget
+                && built
+                && start.elapsed() + slowest > budget
+            {
+                return false;
+            }
+            let began = Instant::now();
+            let (meshes, missing) = resolve_chunk(
+                groups,
+                &self.objects,
+                &chunk.groups,
+                cache,
+                &mut tessellators,
+                building,
+            );
+            chunk.part = Some(upload(merge(&meshes, &[])));
+            chunk.stale = false;
+            chunk.missing = missing;
+            slowest = slowest.max(began.elapsed());
+            built = true;
+        }
+        true
+    }
+}
+
+/// Like [`resolve`] for the groups in `range` only. Looks an Object up by all its groups,
+/// wherever they are, so chunk edges never split what the cache keeps whole.
+fn resolve_chunk(
+    groups: &[VectorGroup],
+    objects: &HashMap<Id, Vec<usize>>,
+    range: &Range<usize>,
+    cache: &TessellationCache,
+    tessellators: &mut Tessellators,
+    building: bool,
+) -> (Vec<Option<Arc<GroupMesh>>>, Vec<ObjectRef>) {
+    let mut found: HashMap<Id, Option<Vec<Arc<GroupMesh>>>> = HashMap::new();
+    let mut missing = Vec::new();
+    let meshes = range
+        .clone()
+        .map(|index| {
+            let group = &groups[index];
+            let Some(object) = group.object else {
+                return Some(Arc::new(mesh_group(group, tessellators)));
+            };
+            let indices = &objects[&object.id];
+            let meshes = found.entry(object.id).or_insert_with(|| {
+                let sources: Vec<&VectorGroup> = indices.iter().map(|&i| &groups[i]).collect();
+                if let Some(meshes) = cache.lookup(object, &sources) {
+                    return Some(meshes);
+                }
+                if building {
+                    missing.push(object);
+                    return None;
+                }
+                let meshes: Vec<_> = sources
+                    .iter()
+                    .map(|group| Arc::new(mesh_group(group, tessellators)))
+                    .collect();
+                cache.store(object, &sources, meshes.clone());
+                Some(meshes)
+            });
+            let position = indices.binary_search(&index).expect("indexed above");
+            meshes.as_ref().map(|meshes| meshes[position].clone())
+        })
+        .collect();
+    (meshes, missing)
+}
+
+/// A chunk's triangles on the GPU.
+struct ChunkMesh {
+    /// Vertex and index buffers; `None` for a chunk with nothing to draw.
+    buffers: Option<(wgpu::Buffer, wgpu::Buffer)>,
+    draws: Vec<Draw>,
+    bounds: [f32; 4],
+}
+
+fn upload(device: &wgpu::Device, built: Built) -> ChunkMesh {
+    let Built {
+        geometry, draws, ..
+    } = built;
+    let bounds = draws
+        .iter()
+        .fold(EMPTY_BOUNDS, |all, d| union(all, d.bounds));
+    let buffers = (!geometry.indices.is_empty()).then(|| {
+        (
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("chunk vertices"),
+                contents: bytemuck::cast_slice(&geometry.vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            }),
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("chunk indices"),
+                contents: bytemuck::cast_slice(&geometry.indices),
+                usage: wgpu::BufferUsages::INDEX,
+            }),
+        )
+    });
+    ChunkMesh {
+        buffers,
+        draws,
+        bounds,
     }
 }
 
@@ -623,6 +901,14 @@ impl TessellationCache {
         let mut inner = self.inner();
         inner.entries.retain(|&id, _| keep(id));
         inner.current.retain(|&id, _| keep(id));
+    }
+
+    /// Whether some tessellation of Object `id` at `version` is kept, whatever its groups.
+    fn has_version(&self, id: Id, version: u64) -> bool {
+        self.inner()
+            .entries
+            .get(&id)
+            .is_some_and(|entry| entry.version == version)
     }
 
     /// Whether Object `id` is tessellated for exactly these groups.
@@ -844,6 +1130,182 @@ mod tests {
         let built = build(&groups, &[2], &background);
         assert_eq!(built.geometry.indices, expected.indices);
         assert_eq!(positions(&built.geometry), positions(&expected));
+    }
+
+    /// The triangles of a run, corner by corner in draw order.
+    fn run_triangles(built: &Built, run: usize) -> Vec<[f32; 2]> {
+        built.draws[built.runs[run].clone()]
+            .iter()
+            .flat_map(|draw| draw.indices.clone())
+            .map(|i| built.geometry.vertices[built.geometry.indices[i as usize] as usize].position)
+            .collect()
+    }
+
+    /// Objects whose groups are not next to each other, like ripples drawn before the fill.
+    fn interleaved(objects: usize) -> Vec<VectorGroup> {
+        let refs: Vec<ObjectRef> = (0..objects).map(|_| object(1)).collect();
+        let mut groups = Vec::new();
+        for (i, &o) in refs.iter().enumerate() {
+            groups.push(stroke(30.0 * i as f32, o));
+        }
+        for (i, &o) in refs.iter().enumerate() {
+            groups.push(fill(30.0 * i as f32, Some(o)));
+            groups.push(fill(-30.0 * i as f32, None));
+        }
+        groups
+    }
+
+    fn chunked(
+        groups: &[VectorGroup],
+        cuts: &[usize],
+        cache: &TessellationCache,
+    ) -> Chunked<Built> {
+        Chunked::new(None, groups, cuts, cache)
+    }
+
+    /// The triangles of `run` that a chunked frame would draw.
+    fn chunked_triangles(chunks: &Chunked<Built>, run: usize) -> Vec<[f32; 2]> {
+        chunks.chunks[chunks.runs[run].clone()]
+            .iter()
+            .filter_map(|chunk| chunk.part.as_ref())
+            .flat_map(|built| run_triangles(built, 0))
+            .collect()
+    }
+
+    #[test]
+    fn chunks_give_the_triangles_of_the_full_merge() {
+        let groups = interleaved(100);
+        let cuts = [70, 70, 140];
+        let cache = TessellationCache::new();
+        cache.rebuild(&groups).run(|| {});
+        let full = build(&groups, &cuts, &cache);
+        let mut chunks = chunked(&groups, &cuts, &cache);
+        assert!(chunks.apply(&groups, &cache, None, |built| built));
+        assert_eq!(chunks.runs.len(), full.runs.len());
+        for run in 0..full.runs.len() {
+            assert_eq!(
+                chunked_triangles(&chunks, run),
+                run_triangles(&full, run),
+                "run {run}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_landing_object_rebuilds_only_its_chunks() {
+        let groups = interleaved(300);
+        let cache = TessellationCache::new();
+        let rebuild = cache.rebuild(&groups);
+        let mut chunks = chunked(&groups, &[], &cache);
+        let mut uploads = 0;
+        // Nothing is ready: every chunk is built once, empty of Objects.
+        assert!(chunks.apply(&groups, &cache, None, |built| {
+            uploads += 1;
+            built
+        }));
+        let total = uploads;
+        assert!(total > 4);
+        uploads = 0;
+        assert!(chunks.apply(&groups, &cache, None, |built| {
+            uploads += 1;
+            built
+        }));
+        assert_eq!(uploads, 0, "nothing landed");
+        let mut landed = 0;
+        rebuild.run(|| {
+            landed += 1;
+            if landed == 1 {
+                uploads = 0;
+                assert!(chunks.apply(&groups, &cache, None, |built| {
+                    uploads += 1;
+                    built
+                }));
+            }
+        });
+        // The first Object has one group in the strokes and one in the fills.
+        assert_eq!(uploads, 2);
+    }
+
+    #[test]
+    fn a_frame_leaves_work_over_budget_for_the_next() {
+        let groups = interleaved(300);
+        let cache = TessellationCache::new();
+        cache.rebuild(&groups).run(|| {});
+        let mut chunks = chunked(&groups, &[], &cache);
+        let mut frames = 0;
+        loop {
+            let mut uploads = 0;
+            let done = chunks.apply(&groups, &cache, Some(Duration::ZERO), |built| {
+                uploads += 1;
+                built
+            });
+            assert_eq!(uploads, 1, "a frame with no budget builds one chunk");
+            frames += 1;
+            if done {
+                break;
+            }
+        }
+        assert_eq!(frames, chunks.chunks.len());
+        assert!(chunks.chunks.iter().all(|chunk| chunk.part.is_some()));
+    }
+
+    #[test]
+    fn applying_results_stays_inside_the_frame_budget() {
+        // Big outlines, as on the large benchmark Map.
+        let objects: Vec<ObjectRef> = (0..600).map(|_| object(1)).collect();
+        let groups: Vec<VectorGroup> = objects
+            .iter()
+            .enumerate()
+            .map(|(i, &o)| {
+                let mut builder = Path::builder();
+                let n = 400;
+                for k in 0..n {
+                    let angle = k as f32 / n as f32 * std::f32::consts::TAU;
+                    let radius = 40.0 + (k % 7) as f32;
+                    let p = point(50.0 * i as f32 + radius * angle.cos(), radius * angle.sin());
+                    if k == 0 {
+                        builder.begin(p);
+                    } else {
+                        builder.line_to(p);
+                    }
+                }
+                builder.close();
+                VectorGroup::fill(builder.build(), Color::rgb(1, 2, 3), FillRule::EvenOdd)
+                    .of_object(o)
+            })
+            .collect();
+        let cache = TessellationCache::new();
+        let rebuild = cache.rebuild(&groups);
+        let mut chunks = chunked(&groups, &[], &cache);
+        let budget = APPLY_BUDGET;
+        // What one chunk costs at most, since a chunk is never left half built.
+        let mut one_chunk = Duration::ZERO;
+        let mut frames = Vec::new();
+        rebuild.run(|| {
+            let start = Instant::now();
+            chunks.apply(&groups, &cache, Some(budget), |built| built);
+            frames.push(start.elapsed());
+        });
+        while {
+            let start = Instant::now();
+            let mut uploads = 0;
+            let done = chunks.apply(&groups, &cache, Some(budget), |built| {
+                uploads += 1;
+                built
+            });
+            let took = start.elapsed();
+            if uploads == 1 {
+                one_chunk = one_chunk.max(took);
+            }
+            frames.push(took);
+            !done
+        } {}
+        let worst = frames.iter().max().copied().unwrap();
+        assert!(
+            worst <= budget + one_chunk.max(Duration::from_millis(2)) * 3,
+            "a frame spent {worst:?} applying results, over {budget:?}"
+        );
+        assert!(chunks.chunks.iter().all(|chunk| chunk.part.is_some()));
     }
 
     #[test]

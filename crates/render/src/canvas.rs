@@ -3,6 +3,7 @@
 
 use std::ops::Range;
 use std::sync::Arc;
+use std::time::Duration;
 
 use lyon::math::Box2D;
 use lyon::path::{Path, Winding};
@@ -14,8 +15,8 @@ use crate::ocean::{OceanPass, OceanUniform};
 use crate::sprite::SpriteStore;
 use crate::stamp::{PlacedStamp, StampRenderer};
 use crate::vector::{
-    DrawFilter, FillRule, LyonRenderer, TessellationCache, TessellationRebuild, VectorGroup,
-    VectorRenderer,
+    APPLY_BUDGET, DrawFilter, FillRule, LyonRenderer, TessellationCache, TessellationRebuild,
+    VectorGroup, VectorRenderer,
 };
 use crate::view::View;
 
@@ -200,6 +201,10 @@ pub struct CanvasRenderer {
     drawn_tessellation: u64,
     /// Where the content's vector groups are split to draw Stamps between them.
     content_cuts: Vec<usize>,
+    /// What a frame may spend applying finished results; `None` is no limit.
+    apply_budget: Option<Duration>,
+    /// Results were left over by the last frame's budget.
+    carry: bool,
     target: Option<Target>,
 }
 
@@ -248,6 +253,8 @@ impl CanvasRenderer {
             drawn_content: None,
             drawn_tessellation: 0,
             content_cuts: Vec::new(),
+            apply_budget: Some(APPLY_BUDGET),
+            carry: false,
             target: None,
         }
     }
@@ -264,6 +271,18 @@ impl CanvasRenderer {
     /// ready yet, and the next frame after each completion draws it.
     pub fn start_tessellation(&self, content: &Content) -> TessellationRebuild {
         self.content.cache().rebuild(content.groups())
+    }
+
+    /// How long a frame may spend applying finished background results before carrying the
+    /// rest to the next frame ([`APPLY_BUDGET`] by default); `None` applies them all.
+    /// Returns the previous budget.
+    pub fn set_apply_budget(&mut self, budget: Option<Duration>) -> Option<Duration> {
+        std::mem::replace(&mut self.apply_budget, budget)
+    }
+
+    /// Whether the last frame left results to apply, so another frame should follow.
+    pub fn apply_pending(&self) -> bool {
+        self.carry
     }
 
     pub fn capabilities(&self) -> &GpuCapabilities {
@@ -299,11 +318,9 @@ impl CanvasRenderer {
         let new_art = self.stamps.refresh_store();
         // Read first, so an Object that lands during the build draws in the next frame.
         let tessellation = self.content.cache().generation();
-        if new_art
-            || tessellation != self.drawn_tessellation
-            || self.drawn_content.as_ref() != Some(&scene.content)
-        {
-            self.drawn_tessellation = tessellation;
+        let building = self.content.cache().is_building();
+        let content_changed = new_art || self.drawn_content.as_ref() != Some(&scene.content);
+        if content_changed {
             self.stamps.prepare(device, queue, scene.content.stamps());
             let clips = scene.content.clips();
             let cuts: Vec<usize> = {
@@ -316,7 +333,13 @@ impl CanvasRenderer {
                 cuts.dedup();
                 cuts
             };
-            self.content.set_runs(device, scene.content.groups(), &cuts);
+            // While a rebuild runs (or a carried apply is unfinished), take the new content in
+            // chunks within the frame budget; otherwise merge it all at once.
+            if building || self.carry {
+                self.content.start_chunks(scene.content.groups(), &cuts);
+            } else {
+                self.content.set_runs(device, scene.content.groups(), &cuts);
+            }
             // Run 2n of the masks is scope n's land and run 2n + 1 its Lakes.
             let mut mask_groups = Vec::new();
             let mut mask_cuts = Vec::new();
@@ -329,6 +352,19 @@ impl CanvasRenderer {
             self.masks.set_runs(device, &mask_groups, &mask_cuts);
             self.content_cuts = cuts;
             self.drawn_content = Some(scene.content.clone());
+        }
+        if content_changed || tessellation != self.drawn_tessellation || self.carry {
+            self.drawn_tessellation = tessellation;
+            if self.content.is_chunked() {
+                self.carry =
+                    !self
+                        .content
+                        .apply_chunks(device, scene.content.groups(), self.apply_budget);
+            } else if !content_changed {
+                // Results landed with no chunks to take them: merge everything.
+                self.content
+                    .set_runs(device, scene.content.groups(), &self.content_cuts);
+            }
         }
         self.ensure_target(device, view.size);
         queue.write_buffer(&self.view_uniform, 0, bytemuck::bytes_of(&view.uniform()));
