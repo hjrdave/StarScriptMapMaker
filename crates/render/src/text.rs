@@ -366,6 +366,7 @@ impl LabelLayout {
         VectorGroup {
             shapes,
             effect: false,
+            object: None,
         }
     }
 }

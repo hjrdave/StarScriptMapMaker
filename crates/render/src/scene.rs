@@ -18,7 +18,7 @@ use crate::color::Color;
 use crate::color::ColorExt as _;
 use crate::stamp::{PlacedStamp, StampDraw};
 use crate::text::{Fonts, LabelLayout, LayoutKey};
-use crate::vector::{FillRule, Paint, VectorGroup, VectorShape};
+use crate::vector::{FillRule, ObjectRef, Paint, VectorGroup, VectorShape};
 
 /// The Map's drawn Objects and the derived data behind them. The editor keeps one per open
 /// Map; export builds its own.
@@ -117,12 +117,16 @@ impl MapScene {
                     if let (Some(shore), Some(outline)) =
                         (map.shore(sibling), roughness.outline(map, sibling))
                     {
+                        let first = groups.len();
                         ripple_groups(&outline, shore, layer_opacity(map, sibling), &mut groups);
+                        mark_object(map, sibling, &mut groups[first..]);
                     }
                 }
             }
             let first_stamp = stamps.len();
+            let first_group = groups.len();
             self.draw(map, roughness, id, &mut groups, &mut stamps, &mut seen);
+            mark_object(map, id, &mut groups[first_group..]);
             for placed in &mut stamps[first_stamp..] {
                 placed.clip = clip;
             }
@@ -211,6 +215,16 @@ impl MapScene {
     }
 }
 
+/// Records that `groups` draw Object `id`, at its current version.
+fn mark_object(map: &Map, id: Id, groups: &mut [VectorGroup]) {
+    let Some(version) = map.version(id) else {
+        return;
+    };
+    for group in groups {
+        group.object = Some(ObjectRef { id, version });
+    }
+}
+
 /// The Landmass `id` is clipped to: that of the nearest Layer above it that has a Clip. A
 /// Layer's own Clip replaces any Clip of the Layers around it.
 fn clip_target(map: &Map, id: Id) -> Option<Id> {
@@ -286,6 +300,7 @@ fn stroke(path: Path, color: Color, width: f32, opacity: f32) -> VectorGroup {
             paint: Paint::Stroke { width },
         }],
         effect: false,
+        object: None,
     }
 }
 
