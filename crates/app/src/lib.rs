@@ -55,6 +55,8 @@ pub fn launch_file(args: impl IntoIterator<Item = OsString>) -> Option<PathBuf> 
 
 pub struct MapMakerApp {
     editor: Editor,
+    /// Lets background work ask for a repaint.
+    ctx: egui::Context,
     document: Document,
     layer_tree: LayerTree,
     properties: PropertiesPanel,
@@ -135,8 +137,11 @@ impl MapMakerApp {
         unsaved_found.reverse();
         let mut editor = Editor::new(map);
         editor.set_sprites(sprites.clone());
+        let ctx = cc.egui_ctx.clone();
+        editor.rebuild_in_background(move || ctx.request_repaint());
         Self {
             editor,
+            ctx: cc.egui_ctx.clone(),
             document: Document::default(),
             layer_tree: LayerTree::default(),
             properties: PropertiesPanel::default(),
@@ -222,6 +227,9 @@ impl MapMakerApp {
         self.editor = Editor::new(map);
         self.editor.set_sprites(self.sprites.clone());
         self.editor.selected_asset = selected_asset;
+        let ctx = self.ctx.clone();
+        self.editor
+            .rebuild_in_background(move || ctx.request_repaint());
         self.layer_tree = LayerTree::default();
         self.properties = PropertiesPanel::default();
         self.canvas_view.refit();

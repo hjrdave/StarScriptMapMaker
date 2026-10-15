@@ -49,6 +49,12 @@ impl MapScene {
         self.built = None;
     }
 
+    /// Drops the built content so the next [`content`](Self::content) call rebuilds it, for when
+    /// the roughened outlines changed without the Map changing.
+    pub fn invalidate(&mut self) {
+        self.built = None;
+    }
+
     /// Switches to the fonts the Map embeds, which win over the bundled ones, if they
     /// differ from the ones in use. Labels are shaped again when they do.
     fn use_embedded_fonts(&mut self, map: &Map) {

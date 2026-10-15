@@ -158,3 +158,49 @@ fn the_cache_recomputes_only_changed_objects() {
     assert!(cache.outline(&map, east).is_none());
     cache.retain(&map);
 }
+
+#[test]
+fn a_deferred_rebuild_shows_stored_outlines_then_matches_a_synchronous_build() {
+    let mut map = Map::new(Canvas::new(
+        2048,
+        2048,
+        Scale::new(1.0, DistanceUnit::Miles),
+    ));
+    let layer = insert(&mut map, None, Node::Layer(Layer::new("Land")));
+    let west = insert(&mut map, Some(layer), landmass(island(0.0)));
+    let east = insert(&mut map, Some(layer), landmass(island(1000.0)));
+
+    let mut sync = RoughnessCache::new();
+    let expected_west = sync.outline(&map, west).unwrap();
+    let expected_east = sync.outline(&map, east).unwrap();
+
+    let mut cache = RoughnessCache::new();
+    let jobs = cache.defer_uncached(&map);
+    assert_eq!(jobs.len(), 2);
+    assert_eq!(cache.deferred(), 2);
+
+    // Nothing is computed while the jobs are out: the stored outlines stand in.
+    assert_eq!(*cache.outline(&map, west).unwrap(), island(0.0));
+    assert_eq!(cache.computed(), 0);
+
+    // Editing one island meanwhile computes only that island, on the spot.
+    map.apply(Op::ReplaceGeometry {
+        id: east,
+        geometry: island(1100.0),
+    })
+    .unwrap();
+    assert_eq!(
+        *cache.outline(&map, east).unwrap(),
+        roughen(&island(1100.0), map.roughness(east).unwrap())
+    );
+    assert_eq!(cache.computed(), 1);
+
+    for job in jobs {
+        cache.accept(job.run());
+    }
+    assert_eq!(cache.deferred(), 0);
+    // The stale east result is ignored; west is bit-identical to the synchronous build.
+    assert_eq!(*cache.outline(&map, west).unwrap(), *expected_west);
+    assert_ne!(*cache.outline(&map, east).unwrap(), *expected_east);
+    assert_eq!(cache.computed(), 2);
+}

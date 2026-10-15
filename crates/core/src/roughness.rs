@@ -211,6 +211,39 @@ fn unit(hash: u64) -> f64 {
 pub struct RoughnessCache {
     entries: HashMap<Id, CacheEntry>,
     computed: u64,
+    /// Objects (and the version) whose roughened outline a background job is still computing.
+    deferred: HashMap<Id, u64>,
+}
+
+/// One outline for a background thread to roughen: a copy of everything it needs, so the thread
+/// never reads the Map.
+#[derive(Debug)]
+pub struct RoughenJob {
+    id: Id,
+    version: u64,
+    roughness: Roughness,
+    geometry: MultiPolygon,
+}
+
+impl RoughenJob {
+    /// Roughens the outline, exactly as [`RoughnessCache::outline`] would.
+    pub fn run(self) -> RoughenDone {
+        RoughenDone {
+            id: self.id,
+            version: self.version,
+            outline: Arc::new(roughen(&self.geometry, &self.roughness)),
+            roughness: self.roughness,
+        }
+    }
+}
+
+/// A finished [`RoughenJob`], to hand to [`RoughnessCache::accept`].
+#[derive(Debug)]
+pub struct RoughenDone {
+    id: Id,
+    version: u64,
+    roughness: Roughness,
+    outline: Arc<MultiPolygon>,
 }
 
 #[derive(Debug)]
@@ -240,6 +273,10 @@ impl RoughnessCache {
         {
             return Some(entry.outline.clone());
         }
+        if self.deferred.get(&id) == Some(&version) {
+            // A background job is computing it: use the stored outline until it delivers.
+            return Some(Arc::new(geometry.clone()));
+        }
         let outline = Arc::new(roughen(geometry, roughness));
         self.computed += 1;
         self.entries.insert(
@@ -253,6 +290,76 @@ impl RoughnessCache {
         Some(outline)
     }
 
+    /// Starts a background rebuild: returns a job for every Landmass and Lake whose roughened
+    /// outline is not cached, and until each job is [accepted](Self::accept),
+    /// [`outline`](Self::outline) answers for that Object with its stored outline instead of
+    /// computing. An Object edited meanwhile has a new version and is computed on the spot.
+    pub fn defer_uncached(&mut self, map: &Map) -> Vec<RoughenJob> {
+        let jobs: Vec<RoughenJob> = map
+            .ids()
+            .filter_map(|id| {
+                let version = map.version(id)?;
+                let roughness = map.roughness(id)?;
+                let crate::Node::Object(object) = map.node(id)? else {
+                    return None;
+                };
+                let geometry = object.kind.geometry()?;
+                if self
+                    .entries
+                    .get(&id)
+                    .is_some_and(|e| e.version == version && e.roughness == *roughness)
+                {
+                    return None;
+                }
+                Some(RoughenJob {
+                    id,
+                    version,
+                    roughness: roughness.clone(),
+                    geometry: geometry.clone(),
+                })
+            })
+            .collect();
+        self.deferred = jobs.iter().map(|j| (j.id, j.version)).collect();
+        jobs
+    }
+
+    /// Computes every outline still deferred, on the calling thread. For callers that need exact
+    /// outlines now, such as export.
+    pub fn finish_deferred(&mut self, map: &Map) {
+        let ids: Vec<Id> = std::mem::take(&mut self.deferred).into_keys().collect();
+        for id in ids {
+            self.outline(map, id);
+        }
+    }
+
+    /// How many outlines background jobs have yet to deliver.
+    pub fn deferred(&self) -> usize {
+        self.deferred.len()
+    }
+
+    /// Stores a finished job. Results for an Object edited since are harmless: they are ignored
+    /// on lookup because their version no longer matches. Returns whether anything was stored.
+    pub fn accept(&mut self, done: RoughenDone) -> bool {
+        if self.deferred.get(&done.id) == Some(&done.version) {
+            self.deferred.remove(&done.id);
+        }
+        if self.entries.get(&done.id).is_some_and(|e| {
+            e.version > done.version || (e.version == done.version && e.roughness == done.roughness)
+        }) {
+            return false;
+        }
+        self.computed += 1;
+        self.entries.insert(
+            done.id,
+            CacheEntry {
+                version: done.version,
+                roughness: done.roughness,
+                outline: done.outline,
+            },
+        );
+        true
+    }
+
     /// Forgets Objects that are no longer in `map`.
     pub fn retain(&mut self, map: &Map) {
         self.entries.retain(|&id, _| map.contains(id));
@@ -261,6 +368,7 @@ impl RoughnessCache {
     /// Empties the cache, as when another Map is opened.
     pub fn clear(&mut self) {
         self.entries.clear();
+        self.deferred.clear();
     }
 
     /// How many outlines this cache has computed, for tests and profiling.

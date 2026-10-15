@@ -1,7 +1,8 @@
 //! Editor state around one Map: history, Selection, the active Layer and tool, and the
 //! message bar. Every change to the Map goes through a Command here.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, mpsc};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use ssmap_core::asset::AssetRef;
@@ -9,8 +10,8 @@ use ssmap_core::land::{self, BrushStroke};
 use ssmap_core::scatter::{self, ScatterBrush, ScatterStroke, Terrain};
 use ssmap_core::{
     Blob, Command, CommandError, EmbedAsset, EmbedFont, ExecuteError, History, Id, Label, Map,
-    MultiPolygon, Node, NodeRef, ObjectKind, Op, PickIndex, Point, Rect, RoughnessCache, Selection,
-    Stamp, StampIndex,
+    MultiPolygon, Node, NodeRef, ObjectKind, Op, PickIndex, Point, Rect, RoughenDone,
+    RoughnessCache, Selection, Stamp, StampIndex,
 };
 use ssmap_fonts::FALLBACK_FAMILY;
 use ssmap_render::{Content, Fonts, LabelLayout, MapScene, SpriteStore};
@@ -50,6 +51,8 @@ pub struct Editor {
     pick_index: Option<PickIndex>,
     /// Roughened outlines, shared by the screen and picking so they agree.
     roughness: RoughnessCache,
+    /// Finished outlines from the background rebuild after a Map opens.
+    rebuild: Option<mpsc::Receiver<RoughenDone>>,
     /// Stamp art, shared with the Canvas renderer. Absent in headless tests.
     sprites: Option<SpriteStore>,
     stamp_index: Option<StampIndex>,
@@ -127,6 +130,7 @@ impl Editor {
             gesture_selection: Vec::new(),
             pick_index: None,
             roughness: RoughnessCache::new(),
+            rebuild: None,
             sprites: None,
             stamp_index: None,
             selected_asset: None,
@@ -306,9 +310,72 @@ impl Editor {
         Some(stamp.bounds(&self.sprites.as_ref()?.shape(&stamp.asset)?))
     }
 
+    /// Roughens every Landmass and Lake outline on background threads instead of on the first
+    /// frame. Until an outline is done the Canvas draws the stored one, and `wake` is called as
+    /// each finishes so the host can repaint.
+    pub fn rebuild_in_background(&mut self, wake: impl Fn() + Send + Sync + 'static) {
+        let jobs = self.roughness.defer_uncached(&self.map);
+        if jobs.is_empty() {
+            self.rebuild = None;
+            return;
+        }
+        let (sender, receiver) = mpsc::channel();
+        let queue = Arc::new(Mutex::new(jobs));
+        let wake = Arc::new(wake);
+        let workers =
+            thread::available_parallelism().map_or(1, |n| n.get().saturating_sub(1).max(1));
+        for _ in 0..workers {
+            let (queue, sender, wake) = (queue.clone(), sender.clone(), wake.clone());
+            thread::spawn(move || {
+                loop {
+                    let Some(job) = queue.lock().ok().and_then(|mut q| q.pop()) else {
+                        return;
+                    };
+                    if sender.send(job.run()).is_err() {
+                        return;
+                    }
+                    wake();
+                }
+            });
+        }
+        self.rebuild = Some(receiver);
+    }
+
+    /// Takes in outlines the background rebuild has finished, and redraws if any arrived.
+    fn collect_rebuilt(&mut self) {
+        let Some(receiver) = &self.rebuild else {
+            return;
+        };
+        let mut changed = false;
+        loop {
+            match receiver.try_recv() {
+                Ok(done) => changed |= self.roughness.accept(done),
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.rebuild = None;
+                    break;
+                }
+            }
+        }
+        if changed {
+            self.scene.invalidate();
+            self.pick_index = None;
+        }
+    }
+
+    /// Roughens whatever the background rebuild has not finished, on this thread, so the next
+    /// drawing is exact. Export calls this before rendering.
+    pub fn finish_rebuild(&mut self) {
+        self.rebuild = None;
+        self.roughness.finish_deferred(&self.map);
+        self.scene.invalidate();
+        self.pick_index = None;
+    }
+
     /// What the Canvas draws for the Map, rebuilt only once it has changed. Drops roughened
     /// outlines of Objects that are gone.
     pub fn scene_content(&mut self) -> Content {
+        self.collect_rebuilt();
         self.sync_embedded();
         self.roughness.retain(&self.map);
         self.scene.content(&self.map, &mut self.roughness)
@@ -412,6 +479,7 @@ impl Editor {
     /// nothing, or is refused, leaves no Undo step.
     pub fn finish_brush_stroke(&mut self, stroke: BrushStroke) {
         let new_id = Id::new();
+        self.finish_rebuild();
         let planned = land::brush_command(
             &self.map,
             &mut self.roughness,
@@ -842,6 +910,7 @@ impl Editor {
         } else {
             Vec::new()
         };
+        self.finish_rebuild();
         let terrain = Terrain::of(&self.map, &mut self.roughness);
         self.end_gesture();
         self.begin_gesture("Scatter Stamps");

@@ -37,6 +37,6 @@ pub use node::{
 };
 pub use op::{Op, OpError, Property};
 pub use pick::PickIndex;
-pub use roughness::{Roughness, RoughnessCache, roughen};
+pub use roughness::{RoughenDone, RoughenJob, Roughness, RoughnessCache, roughen};
 pub use shore::{MAX_RIPPLES, ShoreKind, ShoreOutline, ShoreRipples, ShoreShading, ShoreStyle};
 pub use stamp_pick::{SpriteShape, StampIndex};

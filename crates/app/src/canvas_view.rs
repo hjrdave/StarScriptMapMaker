@@ -67,6 +67,7 @@ pub fn render_whole_canvas(
     let resources = egui_renderer
         .callback_resources
         .get_mut::<CanvasResources>()?;
+    editor.finish_rebuild();
     let scene = CanvasScene::new(&editor.map.canvas).with_content(editor.scene_content());
     let view = View::whole_canvas(scene.canvas_size, longest_side);
     Some(render_to_image(
