@@ -223,6 +223,33 @@ impl SpriteStore {
         }
     }
 
+    /// How many sprites are being built right now.
+    pub fn pending(&self) -> usize {
+        let state = self.state();
+        [&state.embedded_sprites, &state.installed_sprites]
+            .into_iter()
+            .flat_map(|cache| cache.values())
+            .filter(|slot| matches!(slot, Slot::Pending))
+            .count()
+    }
+
+    /// Blocks until no sprite is being built, so a frame drawn afterwards has no placeholders.
+    /// Export calls this after [`SpriteStore::prefetch`]ing the Assets it draws.
+    pub fn wait_until_ready(&self) {
+        let mut state = self.state();
+        loop {
+            let pending = [&state.embedded_sprites, &state.installed_sprites]
+                .into_iter()
+                .flat_map(|cache| cache.values())
+                .any(|slot| matches!(slot, Slot::Pending));
+            if !pending {
+                return;
+            }
+            // The lock is held from the look to the wait, so the wake-up is not missed.
+            state = self.inner.finished.wait(state).expect("sprite cache lock");
+        }
+    }
+
     /// The sprite of `asset` as the open Map draws it, waiting for it if it is being built.
     /// `None` if neither a copy nor an installed Asset exists or the art is unreadable.
     pub fn get(&self, asset: &AssetRef) -> Option<Arc<Sprite>> {

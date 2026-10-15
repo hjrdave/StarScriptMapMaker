@@ -21,6 +21,7 @@ pub mod silhouette;
 pub mod sprite;
 mod stamp;
 pub mod text;
+mod tiled;
 mod vector;
 mod view;
 
@@ -36,6 +37,7 @@ pub use scene::MapScene;
 pub use sprite::{Sprite, SpriteState, SpriteStore};
 pub use stamp::{PlacedStamp, StampDraw};
 pub use text::{Fonts, LabelLayout};
+pub use tiled::{ExportStatus, TILE_MARGIN, Tile, TilePlan, TiledExport, TiledExportError};
 pub use vector::{
     APPLY_BUDGET, FillRule, LyonRenderer, ObjectRef, Paint, TessellationCache, TessellationRebuild,
     VectorGroup, VectorRenderer, VectorShape,
