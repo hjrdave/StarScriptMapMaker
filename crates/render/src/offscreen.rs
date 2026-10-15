@@ -20,8 +20,11 @@ pub fn render_to_image(
     view: &View,
 ) -> RgbaImage {
     let mut encoder = device.create_command_encoder(&Default::default());
+    // An image shows everything that is ready, so it applies all of it, not one frame's share.
+    let budget = renderer.set_apply_budget(None);
     let texture = renderer.render(device, queue, &mut encoder, scene, view);
     let readback = Readback::record(device, &mut encoder, texture);
+    renderer.set_apply_budget(budget);
     queue.submit([encoder.finish()]);
     readback.finish(device)
 }

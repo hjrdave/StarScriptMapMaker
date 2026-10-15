@@ -215,7 +215,11 @@ impl CanvasView {
                 });
             painter.add(egui_wgpu::Callback::new_paint_callback(
                 rect,
-                CanvasCallback { scene, view },
+                CanvasCallback {
+                    scene,
+                    view,
+                    ctx: ui.ctx().clone(),
+                },
             ));
         } else {
             paint_placeholder(&painter, rect, &scene, &view, ppp);
@@ -339,6 +343,8 @@ fn paint_placeholder(
 struct CanvasCallback {
     scene: CanvasScene,
     view: View,
+    /// Asked for another frame when this one left finished results to apply.
+    ctx: egui::Context,
 }
 
 impl egui_wgpu::CallbackTrait for CanvasCallback {
@@ -358,6 +364,9 @@ impl egui_wgpu::CallbackTrait for CanvasCallback {
             .expect("installed at startup");
         let texture = renderer.render(device, queue, encoder, &self.scene, &self.view);
         presenter.set_source(device, texture);
+        if renderer.apply_pending() {
+            self.ctx.request_repaint();
+        }
         Vec::new()
     }
 
