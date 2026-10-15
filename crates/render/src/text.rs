@@ -20,7 +20,7 @@ use lyon::math::{Angle, Box2D, Point, Transform, point};
 use lyon::path::Path;
 use lyon::path::builder::NoAttributes;
 use lyon::path::path::BuilderImpl;
-use ssmap_core::{Align, ContentHash, Embedded, FontFace, Label};
+use ssmap_core::{Align, ContentHash, Embedded, FontFace, ResolvedLabel};
 use ssmap_fonts::{FALLBACK_FAMILY, FONTS};
 
 use crate::color::ColorExt as _;
@@ -210,7 +210,7 @@ pub struct LayoutKey {
 }
 
 impl LayoutKey {
-    pub fn of(label: &Label) -> Self {
+    pub fn of(label: &ResolvedLabel) -> Self {
         Self {
             text: label.display_text(),
             family: label.font.family.clone(),
@@ -226,7 +226,7 @@ impl LayoutKey {
 
 impl LabelLayout {
     /// Shapes `label`'s text in its font, with letter spacing, line height and alignment.
-    pub fn shape(fonts: &mut Fonts, label: &Label) -> Self {
+    pub fn shape(fonts: &mut Fonts, label: &ResolvedLabel) -> Self {
         let family = fonts.family_name(&label.font.family);
         let weight = fonts.weight(&family, &label.font);
         let system = &mut fonts.system;
@@ -318,7 +318,7 @@ impl LabelLayout {
 
     /// The corners of the text block on the Canvas, clockwise from the top-left, grown by
     /// the halo.
-    pub fn corners(&self, label: &Label) -> [[f64; 2]; 4] {
+    pub fn corners(&self, label: &ResolvedLabel) -> [[f64; 2]; 4] {
         let grow = label.halo.width;
         let [min, max] = self.bounds();
         let (min, max) = (
@@ -335,7 +335,7 @@ impl LabelLayout {
     }
 
     /// Whether a Canvas point falls on the text block or its halo.
-    pub fn contains(&self, label: &Label, canvas_point: [f64; 2]) -> bool {
+    pub fn contains(&self, label: &ResolvedLabel, canvas_point: [f64; 2]) -> bool {
         let [x, y] = to_local(label, canvas_point);
         let grow = label.halo.width;
         let [min, max] = self.bounds();
@@ -344,7 +344,7 @@ impl LabelLayout {
 
     /// What to draw for `label`: its fill on top of its halo, faded by `opacity` (such as
     /// the Layers above it) as well as the Label's own.
-    pub fn group(&self, label: &Label, opacity: f32) -> VectorGroup {
+    pub fn group(&self, label: &ResolvedLabel, opacity: f32) -> VectorGroup {
         let opacity = opacity * label.opacity;
         let path = self.outlines.clone().transformed(&transform(label));
         let mut shapes = vec![VectorShape {
@@ -371,13 +371,13 @@ impl LabelLayout {
 }
 
 /// The Label's frame to Canvas: rotate clockwise about the position, then move there.
-fn transform(label: &Label) -> Transform {
+fn transform(label: &ResolvedLabel) -> Transform {
     Transform::rotation(Angle::degrees(label.rotation as f32))
         .then_translate([label.position[0] as f32, label.position[1] as f32].into())
 }
 
 /// A point in the Label's own frame on the Canvas, in `f64` for picking and handles.
-pub fn to_canvas(label: &Label, local: [f64; 2]) -> [f64; 2] {
+pub fn to_canvas(label: &ResolvedLabel, local: [f64; 2]) -> [f64; 2] {
     let (sin, cos) = label.rotation.to_radians().sin_cos();
     [
         label.position[0] + local[0] * cos - local[1] * sin,
@@ -386,7 +386,7 @@ pub fn to_canvas(label: &Label, local: [f64; 2]) -> [f64; 2] {
 }
 
 /// A Canvas point in the Label's own frame.
-pub fn to_local(label: &Label, canvas: [f64; 2]) -> [f64; 2] {
+pub fn to_local(label: &ResolvedLabel, canvas: [f64; 2]) -> [f64; 2] {
     let (sin, cos) = label.rotation.to_radians().sin_cos();
     let [dx, dy] = [canvas[0] - label.position[0], canvas[1] - label.position[1]];
     [dx * cos + dy * sin, -dx * sin + dy * cos]
@@ -482,15 +482,15 @@ mod tests {
     use ssmap_core::FontFace;
     use ssmap_fonts::LABEL_FAMILIES;
 
-    fn label(text: &str, family: &str) -> Label {
-        Label {
+    fn label(text: &str, family: &str) -> ResolvedLabel {
+        ResolvedLabel {
             text: text.into(),
             font: FontFace {
                 family: family.into(),
                 ..FontFace::default()
             },
             size: 100.0,
-            ..Label::default()
+            ..ResolvedLabel::default()
         }
     }
 
@@ -500,7 +500,7 @@ mod tests {
     }
 
     /// Which family drew each glyph of `label`, as the fonts spell it.
-    fn families(fonts: &mut Fonts, label: &Label) -> Vec<String> {
+    fn families(fonts: &mut Fonts, label: &ResolvedLabel) -> Vec<String> {
         let family = fonts.family_name(&label.font.family);
         let weight = fonts.weight(&family, &label.font);
         let mut buffer = Buffer::new(&mut fonts.system, Metrics::new(100.0, 120.0));
@@ -653,7 +653,7 @@ mod tests {
         assert!(caps > lower);
         assert_ne!(
             LayoutKey::of(&text),
-            LayoutKey::of(&Label {
+            LayoutKey::of(&ResolvedLabel {
                 all_caps: false,
                 ..text
             })
@@ -679,7 +679,7 @@ mod tests {
 
     #[test]
     fn local_and_canvas_frames_invert() {
-        let text = Label {
+        let text = ResolvedLabel {
             position: [12.0, -7.0],
             rotation: 33.0,
             ..label("x", "Cinzel")

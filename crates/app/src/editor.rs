@@ -9,8 +9,8 @@ use ssmap_core::land::{self, BrushStroke};
 use ssmap_core::scatter::{self, ScatterBrush, ScatterStroke, Terrain};
 use ssmap_core::{
     Blob, Command, CommandError, EmbedAsset, EmbedFont, ExecuteError, History, Id, Label, Map,
-    MultiPolygon, Node, NodeRef, ObjectKind, Op, PickIndex, Point, Rect, RoughnessCache, Selection,
-    Stamp, StampIndex,
+    MultiPolygon, Node, NodeRef, ObjectKind, Op, PickIndex, Point, Rect, ResolvedLabel,
+    RoughnessCache, Selection, Stamp, StampIndex,
 };
 use ssmap_fonts::FALLBACK_FAMILY;
 use ssmap_render::{Content, Fonts, LabelLayout, MapScene, SpriteStore};
@@ -746,9 +746,9 @@ impl Editor {
         }
     }
 
-    /// A Label and its shaped text.
-    pub fn label_layout(&mut self, id: Id) -> Option<(Label, Arc<LabelLayout>)> {
-        let label = self.label(id)?.clone();
+    /// A Label with its style applied, and its shaped text.
+    pub fn label_layout(&mut self, id: Id) -> Option<(ResolvedLabel, Arc<LabelLayout>)> {
+        let label = self.map.resolved_label(id)?;
         let layout = self.scene.label_layout(id, &label);
         Some((label, layout))
     }

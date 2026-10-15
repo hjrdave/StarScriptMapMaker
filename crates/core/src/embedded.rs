@@ -325,7 +325,9 @@ impl Map {
         self.ids()
             .filter_map(|id| match self.node(id)? {
                 Node::Object(object) => match &object.kind {
-                    ObjectKind::Label(label) => Some(label.font.family.clone()),
+                    ObjectKind::Label(label) => {
+                        Some(label.resolve(self.label_styles()).font.family)
+                    }
                     _ => None,
                 },
                 Node::Layer(_) => None,

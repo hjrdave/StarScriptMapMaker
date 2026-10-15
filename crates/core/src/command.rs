@@ -13,9 +13,10 @@ use crate::color::Color;
 use crate::embedded::{Blob, ContentHash, EmbedAsset, EmbedFont, EmbeddedFont};
 use crate::geometry::{Affine, MultiPolygon, NodeRef, Point};
 use crate::id::Id;
+use crate::label::{Label, LabelStyle, LabelStyles};
 use crate::land;
 use crate::map::{Map, MapDefaults, Subtree};
-use crate::node::{Label, Lake, Landmass, Layer, Node, Object, ObjectKind, Stamp};
+use crate::node::{Lake, Landmass, Layer, Node, Object, ObjectKind, Stamp};
 use crate::op::{Op, OpError, Property};
 use crate::roughness::Roughness;
 use crate::shore::{ShoreKind, ShoreStyle};
@@ -195,6 +196,25 @@ pub enum Command {
         id: Id,
         label: Box<Label>,
     },
+    /// Adds a Label style, last in the list. Its name must be new.
+    CreateLabelStyle {
+        style: LabelStyle,
+    },
+    /// Renames a Label style. The new name must not belong to another style.
+    RenameLabelStyle {
+        id: Id,
+        name: String,
+    },
+    /// Replaces the settings of a Label style, and so restyles every Label that follows it
+    /// and does not override them, as one edit. The style keeps its name.
+    SetLabelStyle {
+        style: LabelStyle,
+    },
+    /// Deletes a Label style other than the default. Labels that follow it get its values as
+    /// overrides and move to the default style, so nothing changes on the Canvas.
+    DeleteLabelStyle {
+        id: Id,
+    },
     /// Places a Stamp with the given id inside Layer `parent`. `index` counts from the bottom
     /// of the Stacking order; omitted, the Stamp goes on top.
     CreateStamp {
@@ -278,6 +298,16 @@ pub enum CommandError {
     NotALabel(Id),
     #[error("invalid Label: {0}")]
     InvalidLabel(&'static str),
+    #[error("no Label style has id {0}")]
+    NoLabelStyle(Id),
+    #[error("invalid Label style: {0}")]
+    InvalidLabelStyle(&'static str),
+    #[error("a Label style named \"{0}\" already exists")]
+    LabelStyleNameInUse(String),
+    #[error("Label style id {0} is already in use")]
+    LabelStyleIdInUse(Id),
+    #[error("the default Label style cannot be deleted")]
+    DefaultLabelStyle,
     #[error("{0} is not a Stamp")]
     NotAStamp(Id),
     #[error("cannot embed: {0}")]
@@ -323,6 +353,10 @@ impl Command {
             Command::SetDefaultShore { .. } => "Change Default Shore Style",
             Command::CreateLabel { .. } => "Add Label",
             Command::SetLabel { .. } => "Edit Label",
+            Command::CreateLabelStyle { .. } => "Add Label Style",
+            Command::RenameLabelStyle { .. } => "Rename Label Style",
+            Command::SetLabelStyle { .. } => "Edit Label Style",
+            Command::DeleteLabelStyle { .. } => "Delete Label Style",
             Command::CreateStamp { .. } => "Add Stamp",
             Command::SetStamp { .. } => "Edit Stamp",
             Command::PlaceStamps { .. } => "Place Stamps",
@@ -561,7 +595,7 @@ impl Command {
                 }
                 layer(map, *parent)?;
                 unlocked(map, *parent)?;
-                check_label(label)?;
+                check_label(map, label)?;
                 Ok(vec![Op::Insert {
                     parent: Some(*parent),
                     index: index.unwrap_or(map.children(Some(*parent)).len()),
@@ -581,8 +615,73 @@ impl Command {
                     _ => return Err(CommandError::NotALabel(*id)),
                 }
                 unlocked(map, *id)?;
-                check_label(label)?;
+                check_label(map, label)?;
                 Ok(vec![set(*id, Property::Label(label.clone()))])
+            }
+            Command::CreateLabelStyle { style } => {
+                valid_label_style(style)?;
+                let styles = map.label_styles();
+                if styles.get(style.id).is_some() {
+                    return Err(CommandError::LabelStyleIdInUse(style.id));
+                }
+                style_name_free(map, style.id, &style.name)?;
+                let mut list = styles.to_vec();
+                list.push(style.clone());
+                Ok(vec![set_label_styles(map, list)])
+            }
+            Command::RenameLabelStyle { id, name } => {
+                let mut list = map.label_styles().to_vec();
+                let style = list
+                    .iter_mut()
+                    .find(|style| style.id == *id)
+                    .ok_or(CommandError::NoLabelStyle(*id))?;
+                style.name = name.clone();
+                valid_label_style(style)?;
+                style_name_free(map, *id, name)?;
+                Ok(vec![set_label_styles(map, list)])
+            }
+            Command::SetLabelStyle { style } => {
+                valid_label_style(style)?;
+                let mut list = map.label_styles().to_vec();
+                let slot = list
+                    .iter_mut()
+                    .find(|slot| slot.id == style.id)
+                    .ok_or(CommandError::NoLabelStyle(style.id))?;
+                let name = std::mem::take(&mut slot.name);
+                *slot = LabelStyle {
+                    name,
+                    ..style.clone()
+                };
+                Ok(vec![set_label_styles(map, list)])
+            }
+            Command::DeleteLabelStyle { id } => {
+                if *id == LabelStyle::DEFAULT_ID {
+                    return Err(CommandError::DefaultLabelStyle);
+                }
+                let style = map
+                    .label_styles()
+                    .get(*id)
+                    .ok_or(CommandError::NoLabelStyle(*id))?;
+                let mut list = map.label_styles().to_vec();
+                list.retain(|style| style.id != *id);
+                // The Labels are rewritten even if locked: nothing about how they look changes.
+                let mut users = map.labels_using(*id);
+                users.sort();
+                let mut ops = vec![set_label_styles(map, list)];
+                for user in users {
+                    let Some(Node::Object(Object {
+                        kind: ObjectKind::Label(label),
+                        ..
+                    })) = map.node(user)
+                    else {
+                        continue;
+                    };
+                    let mut label = label.clone();
+                    label.bake(style);
+                    label.style = LabelStyle::DEFAULT_ID;
+                    ops.push(set(user, Property::Label(label)));
+                }
+                Ok(ops)
             }
             Command::CreateStamp {
                 id,
@@ -1096,33 +1195,49 @@ fn valid_roughness(roughness: &Roughness) -> Result<(), CommandError> {
 }
 
 /// Checks a Label's values are drawable.
-fn check_label(label: &Label) -> Result<(), CommandError> {
-    let invalid = |reason| Err(CommandError::InvalidLabel(reason));
-    if label.text.is_empty() {
-        return invalid("the text is empty");
+fn check_label(map: &Map, label: &Label) -> Result<(), CommandError> {
+    if let Some(opacity) = label.opacity
+        && !(0.0..=1.0).contains(&opacity)
+    {
+        return Err(CommandError::InvalidOpacity(opacity));
     }
-    if !label.position.iter().all(|v| v.is_finite()) || !label.rotation.is_finite() {
-        return invalid("the position and rotation must be finite");
+    if let Some(problem) = label.problem() {
+        return Err(CommandError::InvalidLabel(problem));
     }
-    if !(label.size.is_finite() && label.size > 0.0) {
-        return invalid("the size must be greater than 0");
-    }
-    if !label.letter_spacing.is_finite() {
-        return invalid("the letter spacing must be finite");
-    }
-    if !(label.line_height.is_finite() && label.line_height > 0.0) {
-        return invalid("the line height must be greater than 0");
-    }
-    if !(1..=1000).contains(&label.font.weight) {
-        return invalid("the font weight must be from 1 to 1000");
-    }
-    if !(label.halo.width.is_finite() && label.halo.width >= 0.0) {
-        return invalid("the halo width must be 0 or more");
-    }
-    if !(0.0..=1.0).contains(&label.opacity) {
-        return Err(CommandError::InvalidOpacity(label.opacity));
+    if map.label_styles().get(label.style).is_none() {
+        return Err(CommandError::NoLabelStyle(label.style));
     }
     Ok(())
+}
+
+fn valid_label_style(style: &LabelStyle) -> Result<(), CommandError> {
+    match style.problem() {
+        Some(problem) => Err(CommandError::InvalidLabelStyle(problem)),
+        None => Ok(()),
+    }
+}
+
+/// Fails if a style other than `id` already has `name`.
+fn style_name_free(map: &Map, id: Id, name: &str) -> Result<(), CommandError> {
+    let name = name.trim();
+    if map
+        .label_styles()
+        .iter()
+        .any(|style| style.id != id && style.name.trim() == name)
+    {
+        return Err(CommandError::LabelStyleNameInUse(name.to_owned()));
+    }
+    Ok(())
+}
+
+/// An Op that replaces the Map's Label styles and leaves the other defaults alone.
+fn set_label_styles(map: &Map, styles: Vec<LabelStyle>) -> Op {
+    Op::SetDefaults {
+        defaults: MapDefaults {
+            label_styles: LabelStyles::new(styles),
+            ..map.defaults().clone()
+        },
+    }
 }
 
 /// Checks a Stamp's values are drawable.

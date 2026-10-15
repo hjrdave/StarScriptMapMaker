@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ssmap_core::asset::{AssetRef, PackLibrary, PackRoots, PackSource, read_pack};
-use ssmap_core::{Blob, Canvas, Command, DistanceUnit, EmbedAsset, EmbedFont, Label, Map, Scale};
+use ssmap_core::{
+    Blob, Canvas, Command, DistanceUnit, EmbedAsset, EmbedFont, Map, ResolvedLabel, Scale,
+};
 use ssmap_render::{Fonts, LabelLayout, SpriteStore};
 
 fn pack_source() -> PathBuf {
@@ -133,14 +135,14 @@ fn the_generation_moves_only_when_the_embedded_assets_change() {
 }
 
 fn width(fonts: &mut Fonts, family: &str) -> f64 {
-    let label = Label {
+    let label = ResolvedLabel {
         text: "Hamlet".into(),
         font: ssmap_core::FontFace {
             family: family.into(),
             ..Default::default()
         },
         size: 100.0,
-        ..Label::default()
+        ..ResolvedLabel::default()
     };
     let [min, max] = LabelLayout::shape(fonts, &label).bounds();
     max[0] - min[0]

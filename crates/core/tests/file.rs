@@ -95,13 +95,13 @@ fn sample_map() -> (Map, Id, Id) {
         text: "Ærendál\nthe Old Kingdom".into(),
         position: [1234.5, 678.25],
         rotation: 12.0,
-        letter_spacing: 0.15,
-        all_caps: true,
-        halo: Halo {
+        letter_spacing: Some(0.15),
+        all_caps: Some(true),
+        halo: Some(Halo {
             width: 2.5,
             color: Color::rgba(255, 250, 240, 200),
             ..Halo::default()
-        },
+        }),
         ..Label::default()
     })));
     label.locked = true;

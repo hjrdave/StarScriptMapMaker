@@ -9,7 +9,7 @@ use lyon::tessellation::{
     BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, VertexBuffers,
 };
 use ssmap_core::land::{self, BrushStroke};
-use ssmap_core::{Affine, Command, Id, Label, MultiPolygon, NodeRef, Point, Stamp};
+use ssmap_core::{Affine, Command, Id, Label, LabelStyles, MultiPolygon, NodeRef, Point, Stamp};
 use ssmap_render::View;
 
 use crate::editor::Editor;
@@ -167,6 +167,8 @@ struct Drag {
     /// The selected Labels as they were, so every frame transforms from the start and
     /// rounding never builds up.
     labels: Vec<(Id, Label)>,
+    /// The Label styles the Labels follow, which resizing needs to scale what they inherit.
+    styles: LabelStyles,
     /// The selected Stamps as they were, for the same reason.
     stamps: Vec<(Id, Stamp)>,
 }
@@ -1088,6 +1090,7 @@ fn start_drag(
         bounds,
         outlines,
         labels,
+        styles: editor.map.label_styles().clone(),
         stamps,
     });
 }
@@ -1118,9 +1121,10 @@ fn drag_commands(drag: &Drag, point: [f64; 2], snap: bool) -> Option<Vec<Command
                     return None;
                 }
                 let (scale, fixed) = drag.bounds.scaling(handle, delta);
+                let styles = drag.styles.clone();
                 (
                     Some(Command::Transform { ids, transform }),
-                    Box::new(move |label| handles::scaled(label, scale, fixed)),
+                    Box::new(move |label| handles::scaled(label, &styles, scale, fixed)),
                     Box::new(move |stamp| handles::scaled_stamp(stamp, scale, fixed)),
                 )
             }
@@ -1168,10 +1172,11 @@ mod tests {
                 Id::new(),
                 Label {
                     text: "x".into(),
-                    size: 10.0,
+                    size: Some(10.0),
                     ..Label::default()
                 },
             )],
+            styles: LabelStyles::default(),
             stamps: Vec::new(),
         }
     }
@@ -1192,7 +1197,7 @@ mod tests {
             [300.0, 0.0],
             false,
         );
-        assert_eq!(scaled.size, 20.0);
+        assert_eq!(scaled.size, Some(20.0));
         assert_eq!(scaled.position, [100.0, 0.0], "scaled about the left edge");
         let rotated = dragged(&drag(Some(Grip::Rotate)), [0.0, 100.0], false);
         assert!((rotated.rotation - 90.0).abs() < 1e-9);

@@ -9,6 +9,7 @@ use crate::color::Color;
 use crate::extra::Extra;
 use crate::geometry::{MultiPolygon, Point};
 use crate::id::Id;
+use crate::label::Label;
 use crate::roughness::Roughness;
 use crate::shore::{ShoreKind, ShoreStyle};
 
@@ -342,67 +343,6 @@ impl Default for Stamp {
             fill: None,
             opacity: 1.0,
             extra: Extra::new(),
-        }
-    }
-}
-
-/// Text placed on the Map, sized in Canvas units so it is part of the picture (ADR 0006).
-/// It has no geometry blob: its fields are plain JSON in the Map file.
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(default)]
-pub struct Label {
-    /// The text, with explicit line breaks as `\n`.
-    pub text: String,
-    /// The anchor in Canvas units: the vertical centre of the text block, and its left edge,
-    /// centre or right edge according to `align`.
-    pub position: Point,
-    pub align: Align,
-    /// Degrees clockwise about `position`.
-    pub rotation: f64,
-    pub font: FontFace,
-    /// The em size in Canvas units.
-    pub size: f64,
-    /// Extra space after each character, as a share of `size`.
-    pub letter_spacing: f64,
-    /// The distance from one baseline to the next, as a multiple of `size`.
-    pub line_height: f64,
-    /// Shows the text in capitals without changing what is stored.
-    pub all_caps: bool,
-    pub fill: Color,
-    /// From 0 (transparent) to 1 (opaque), for fill and halo alike.
-    pub opacity: f32,
-    pub halo: Halo,
-    #[serde(flatten)]
-    pub extra: Extra,
-}
-
-impl Default for Label {
-    fn default() -> Self {
-        Self {
-            text: String::new(),
-            position: [0.0, 0.0],
-            align: Align::Centre,
-            rotation: 0.0,
-            font: FontFace::default(),
-            size: 48.0,
-            letter_spacing: 0.0,
-            line_height: 1.2,
-            all_caps: false,
-            fill: Color::rgb(0x2b, 0x21, 0x18),
-            opacity: 1.0,
-            halo: Halo::default(),
-            extra: Extra::new(),
-        }
-    }
-}
-
-impl Label {
-    /// The text as drawn: in capitals when `all_caps` is set.
-    pub fn display_text(&self) -> String {
-        if self.all_caps {
-            self.text.to_uppercase()
-        } else {
-            self.text.clone()
         }
     }
 }
