@@ -40,6 +40,34 @@ pub struct AttributedAsset {
     pub credits: String,
 }
 
+impl AttributedAsset {
+    /// The line crediting this Asset, such as `Sword by Lorc, Icons (CC-BY-3.0) https://...`.
+    pub fn credit_line(&self) -> String {
+        let mut line = format!(
+            "{} by {}, {} ({})",
+            self.asset_name, self.author, self.pack_name, self.licence
+        );
+        if let Some(url) = self.source_url.as_ref().or(self.licence_url.as_ref()) {
+            line.push(' ');
+            line.push_str(url);
+        }
+        line
+    }
+}
+
+/// The credit lines for `assets`: one per Asset, then each pack's own credit line once.
+pub fn credit_lines(assets: &[AttributedAsset]) -> Vec<String> {
+    let mut lines: Vec<String> = assets.iter().map(AttributedAsset::credit_line).collect();
+    let mut seen = BTreeSet::new();
+    for asset in assets {
+        let credit = asset.credits.trim();
+        if !credit.is_empty() && seen.insert(credit) {
+            lines.push(credit.to_owned());
+        }
+    }
+    lines
+}
+
 impl Pack {
     /// This pack's credits entry.
     pub fn credit(&self) -> PackCredit {

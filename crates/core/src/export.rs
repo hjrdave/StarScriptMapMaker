@@ -3,6 +3,8 @@
 //! Only the settings live here; rendering and UI come later. The settings are stored in the
 //! Map (ADR 0005) with the file name only, never an absolute path.
 
+use std::path::{Path, PathBuf};
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -54,6 +56,43 @@ impl Default for CreditsOptions {
             png_chunk: true,
         }
     }
+}
+
+/// The PNG text chunk keyword the credits are written under.
+pub const CREDITS_CHUNK_KEYWORD: &str = "Credits";
+
+/// What an export writes for its credits.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct CreditsOutput {
+    /// The text of `<name>.credits.txt`.
+    pub file: Option<String>,
+    /// The text of the PNG text chunk.
+    pub chunk: Option<String>,
+}
+
+impl CreditsOptions {
+    /// What to write for `lines`. A Map with no credit lines gets neither output.
+    pub fn output(&self, lines: &[String]) -> CreditsOutput {
+        if lines.is_empty() {
+            return CreditsOutput {
+                file: None,
+                chunk: None,
+            };
+        }
+        let mut text = lines.join("\n");
+        text.push('\n');
+        CreditsOutput {
+            file: self.text_file.then(|| text.clone()),
+            chunk: self.png_chunk.then_some(text),
+        }
+    }
+}
+
+/// `<name>.credits.txt` beside the PNG at `png`.
+pub fn credits_file_path(png: &Path) -> PathBuf {
+    let mut name = png.file_stem().unwrap_or_default().to_owned();
+    name.push(".credits.txt");
+    png.with_file_name(name)
 }
 
 /// The last export settings of a Map.

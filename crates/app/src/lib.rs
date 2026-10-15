@@ -947,7 +947,7 @@ impl eframe::App for MapMakerApp {
         }
         self.dialogs(&ctx);
         self.update_title(&ctx);
-        self.credits.show(&ctx);
+        self.credits.show(&ctx, &mut self.editor);
         self.label_styles.show(&ctx, &mut self.editor);
         self.updates.show(&ctx);
         egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));

@@ -39,6 +39,12 @@ impl PngMeta {
             .push(("Software".to_owned(), format!("{name} {version}")));
         self
     }
+
+    /// Adds the credits as a text chunk under `keyword`.
+    pub fn with_credits(mut self, keyword: &str, credits: &str) -> Self {
+        self.text.push((keyword.to_owned(), credits.to_owned()));
+        self
+    }
 }
 
 pub struct PngWriter {
@@ -183,6 +189,22 @@ mod tests {
             info.uncompressed_latin1_text
                 .iter()
                 .any(|t| t.keyword == "Software" && t.text == "Star Script Map Maker 1.2.3")
+        );
+    }
+
+    #[test]
+    fn credits_are_written_as_a_text_chunk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("out.png");
+        let meta = PngMeta::default().with_credits("Credits", "Sword by Lorc\nShield by Lorc\n");
+        let mut w = PngWriter::create(&path, 1, 1, &meta).unwrap();
+        w.write_row(&[1, 2, 3, 4]).unwrap();
+        w.finish().unwrap();
+        let (.., info) = decode(&path);
+        assert!(
+            info.uncompressed_latin1_text
+                .iter()
+                .any(|t| t.keyword == "Credits" && t.text == "Sword by Lorc\nShield by Lorc\n")
         );
     }
 

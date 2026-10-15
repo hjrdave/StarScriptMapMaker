@@ -31,8 +31,8 @@ pub use embedded::{
     Blob, ContentHash, EmbedAsset, EmbedFont, Embedded, EmbeddedAsset, EmbeddedFont,
 };
 pub use export::{
-    CreditsOptions, ExportRegion, ExportSettings, ExportSize, ExportSizeError, MAX_EXPORT_SIDE,
-    SizeMode, WARN_EXPORT_SIDE,
+    CREDITS_CHUNK_KEYWORD, CreditsOptions, CreditsOutput, ExportRegion, ExportSettings, ExportSize,
+    ExportSizeError, MAX_EXPORT_SIDE, SizeMode, WARN_EXPORT_SIDE, credits_file_path,
 };
 pub use extra::Extra;
 pub use geometry::{Affine, MultiPolygon, NodeRef, Point, Polygon, Rect};

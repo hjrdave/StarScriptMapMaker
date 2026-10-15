@@ -2,6 +2,8 @@
 //! what licence.
 
 use eframe::egui;
+
+use crate::editor::Editor;
 use ssmap_core::asset::{PackCredit, PackLibrary};
 use ssmap_fonts::FAMILIES;
 
@@ -63,13 +65,14 @@ impl Credits {
         &self.page
     }
 
-    pub fn show(&mut self, ctx: &egui::Context) {
+    pub fn show(&mut self, ctx: &egui::Context, editor: &mut Editor) {
         let page = &self.page;
         egui::Window::new("Credits")
             .open(&mut self.open)
             .default_width(480.0)
             .vscroll(true)
             .show(ctx, |ui| {
+                map_credits(ui, editor);
                 ui.heading("Asset packs");
                 if page.packs.is_empty() {
                     ui.label("No Asset packs are loaded.");
@@ -106,6 +109,29 @@ impl Credits {
                 }
             });
     }
+}
+
+/// The credit lines this Map owes, with actions to copy them or add them to the Map.
+fn map_credits(ui: &mut egui::Ui, editor: &mut Editor) {
+    let lines = editor.credit_lines();
+    if lines.is_empty() {
+        return;
+    }
+    ui.heading("This Map");
+    ui.label("Its Assets ask to be credited when you share it:");
+    for line in &lines {
+        ui.label(line);
+    }
+    ui.horizontal(|ui| {
+        if ui.button("Copy").clicked() {
+            ui.ctx().copy_text(lines.join("\n"));
+            editor.info("Copied the credits");
+        }
+        if ui.button("Add as Label").clicked() {
+            editor.add_credits_label();
+        }
+    });
+    ui.add_space(8.0);
 }
 
 #[cfg(test)]
