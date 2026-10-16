@@ -248,6 +248,78 @@ fn export_disables_scale_options_over_the_cap() {
     );
 }
 
+type PasteAnswer = Option<ssmap_app::paste_dialog::Choice>;
+
+fn paste_prompt(gaps: ssmap_core::PasteGaps) -> Harness<'static, PasteAnswer> {
+    dialog_harness(
+        move |ui, answer: &mut PasteAnswer| {
+            if answer.is_none() {
+                *answer = ssmap_app::paste_dialog::show(ui.ctx(), &gaps);
+            }
+        },
+        None,
+    )
+}
+
+#[test]
+fn the_paste_popup_lists_each_kind_of_missing_item() {
+    let mut harness = paste_prompt(ssmap_core::PasteGaps {
+        assets: vec!["pack/tree".parse().unwrap()],
+        fonts: vec!["Papyrus".into()],
+        label_styles: 2,
+    });
+    harness.run();
+    harness.get_by_label("• Assets become placeholders until installed: pack/tree");
+    harness.get_by_label("• Fonts are swapped for Noto Serif: Papyrus");
+    harness.get_by_label("• 2 labels will follow this Map’s default style");
+}
+
+#[test]
+fn the_paste_popup_only_lists_what_is_missing() {
+    let mut harness = paste_prompt(ssmap_core::PasteGaps {
+        label_styles: 1,
+        ..Default::default()
+    });
+    harness.run();
+    harness.get_by_label("• 1 label will follow this Map’s default style");
+    assert!(harness.query_by_label_contains("Assets become").is_none());
+    assert!(harness.query_by_label_contains("Fonts are").is_none());
+}
+
+#[test]
+fn the_paste_popup_pastes_on_confirm_and_not_on_cancel() {
+    let gaps = ssmap_core::PasteGaps {
+        label_styles: 1,
+        ..Default::default()
+    };
+    let mut harness = paste_prompt(gaps.clone());
+    harness.run();
+    harness.get_by_label("Paste anyway").click();
+    harness.run();
+    assert_eq!(
+        *harness.state(),
+        Some(ssmap_app::paste_dialog::Choice::Paste)
+    );
+
+    let mut harness = paste_prompt(gaps.clone());
+    harness.run();
+    harness.get_by_label("Cancel").click();
+    harness.run();
+    assert_eq!(
+        *harness.state(),
+        Some(ssmap_app::paste_dialog::Choice::Cancel)
+    );
+
+    let mut harness = paste_prompt(gaps);
+    harness.run();
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    assert_eq!(
+        *harness.state(),
+        Some(ssmap_app::paste_dialog::Choice::Cancel)
+    );
+}
+
 #[test]
 fn esc_cancels_the_export_progress_dialog() {
     let mut harness = dialog_harness(
