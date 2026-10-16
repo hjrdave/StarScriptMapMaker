@@ -207,13 +207,10 @@ impl UpdateCheck {
 
     /// The first-launch question, the running check and the result window.
     pub fn show(&mut self, ctx: &egui::Context) {
-        match self.enabled {
-            None => self.ask(ctx),
-            Some(true) if !self.started => {
-                self.started = true;
-                self.start(false);
-            }
-            Some(_) => {}
+        // While undecided nothing is checked; the Home tab asks (see [`Self::banner`]).
+        if self.enabled == Some(true) && !self.started {
+            self.started = true;
+            self.start(false);
         }
         if self.pending.is_some() {
             if self.poll() {
@@ -225,25 +222,44 @@ impl UpdateCheck {
         self.notice_window(ctx);
     }
 
-    fn ask(&mut self, ctx: &egui::Context) {
+    /// The first-launch question, as a banner at the bottom of the Home tab. Answering sets
+    /// the choice, which the banner then no longer shows for.
+    pub fn banner(&mut self, ui: &mut egui::Ui) {
+        let p = crate::theme::palette(ui.ctx());
         let mut choice = None;
-        egui::Modal::new(egui::Id::new("update_check_prompt")).show(ctx, |ui| {
-            ui.heading("Check for updates?");
-            ui.label(
-                "StarScript Map Maker can look on GitHub for a newer version each time it \
-                 starts. It only asks for a small file listing the latest version and sends \
-                 nothing about you or your Maps. It never installs anything by itself.",
-            );
-            ui.label("You can change this later in the Help menu.");
-            ui.horizontal(|ui| {
-                if ui.button("Check for Updates").clicked() {
-                    choice = Some(true);
-                }
-                if ui.button("Don’t Check").clicked() {
-                    choice = Some(false);
-                }
+        egui::Frame::NONE
+            .fill(p.bg_panel)
+            .stroke(egui::Stroke::new(1.0, p.border_strong))
+            .corner_radius(crate::theme::RADIUS_DOCK)
+            .inner_margin(egui::Margin::symmetric(16, 12))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(
+                            egui::RichText::new("Check for updates automatically?")
+                                .size(crate::theme::BODY + 1.0)
+                                .color(p.text_primary)
+                                .strong(),
+                        );
+                        ui.label(
+                            egui::RichText::new(
+                                "Once each time it starts. Only the app version and platform are sent — \
+                                 never your maps. Change this any time in the Help menu.",
+                            )
+                            .size(crate::theme::BODY)
+                            .color(p.text_secondary),
+                        );
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Check automatically").clicked() {
+                            choice = Some(true);
+                        }
+                        if ui.button("Not now").clicked() {
+                            choice = Some(false);
+                        }
+                    });
+                });
             });
-        });
         if let Some(choice) = choice {
             self.set_enabled(choice);
         }

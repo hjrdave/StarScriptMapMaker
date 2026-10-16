@@ -7,6 +7,7 @@ use egui_kittest::kittest::{NodeT, Queryable};
 use ssmap_app::MapMakerApp;
 use ssmap_app::shell::Side;
 use ssmap_app::theme::metrics;
+use ssmap_core::{Canvas, DistanceUnit, Scale};
 
 fn app() -> Harness<'static, MapMakerApp> {
     app_with_step(0.25)
@@ -17,6 +18,13 @@ fn app_with_step(step_dt: f32) -> Harness<'static, MapMakerApp> {
         .with_step_dt(step_dt)
         .with_size(egui::vec2(1280.0, 800.0))
         .build_eframe(|cc| MapMakerApp::with_recovery_dir(cc, None));
+    harness.run();
+    // The app starts on Home with no Map; these tests need one open for the panels.
+    harness.state_mut().new_map(Canvas::new(
+        4096,
+        3072,
+        Scale::new(0.25, DistanceUnit::Miles),
+    ));
     harness.run();
     harness
 }
