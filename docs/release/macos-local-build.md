@@ -30,6 +30,39 @@ The build is unsigned (ADR 0008), so macOS blocks it the first time.
   Use the path the script printed, or the copy in Applications. A locally built app is
   often not quarantined at all; this matters for a copy that came through a download.
 
+## Native menu bar check (#199)
+
+On macOS the menus are the native menu bar, built with `muda` from the same menu model as the
+egui bar (`crates/app/src/menu.rs`, `native_menu.rs`). CI cannot build or run that code, so
+nobody has seen it yet. Check it by hand:
+
+- [ ] There is no egui menu bar under the tab strip. The menu bar at the top of the screen
+      shows StarScript Map Maker, File, Edit, View, Map, Layer, Object, Window and Help.
+- [ ] Open every menu. Each lists the items of the egui bar (File: New Map… to Re-export;
+      Edit: Undo to Deselect; View: Zoom, panels, Home, Tab 2–9; Window: one entry per open
+      Map; Help: Credits, update checks), with the shortcut shown on the right.
+- [ ] The StarScript Map Maker menu has About StarScript Map Maker (opens Credits),
+      Check for Updates…, Services, Hide, Hide Others, Show All and Quit. ⌘H hides the app.
+      ⌘Q with unsaved changes asks what to do with them, as closing the window does.
+- [ ] On Home, only New Map…, New Tab, Open…, Open Recent, Home, Credits and the update
+      items are enabled. With a Map open the rest enable. Layer ▸ Delete, Edit ▸ Delete,
+      Deselect and View ▸ Zoom to Selection are disabled until something is selected;
+      Object ▸ Union and Subtract need two selected Objects.
+- [ ] Draw something: Edit shows "Undo <name>" (for example "Undo Add Layer"), and the title
+      changes after each further change. Undo it: "Redo <name>" appears. Switch to another tab:
+      the titles follow that tab. Open Recent lists the recent Maps.
+- [ ] Each ⌘ shortcut fires **once**, not twice (watch for a double Undo, two New Map
+      dialogs, or the panels toggling back): ⌘N, ⌘T, ⌘O, ⌘W, ⌘S, ⇧⌘S, ⌘E, ⌘Z, ⇧⌘Z, ⌘A, ⇧⌘A,
+      ⌘+, ⌘−, ⌥⌘1, ⌥⌘2, ⇧⌘N, ⌘1, ⌘2–⌘9. ⌘+ should also work as ⌘= on a US keyboard.
+- [ ] Keys without ⌘ still work and show no label in the menu: Backspace, Enter, Esc, ⇥ (hide
+      panels), ⇧1, ⇧2 and ⇧0.
+- [ ] Text fields keep their keys: click into a Label's text box, a Properties field and the
+      Home search box. ⌘Z, ⌘A, ⌘C and ⌘V edit the text, Backspace and Esc act on the text, and
+      the Map is not changed.
+- [ ] Open a dialog (Export, New Map): menu items and shortcuts do nothing under it.
+- [ ] Tick marks: Help ▸ Check for updates at startup and the active Map under Window show a
+      tick, and choosing one leaves the tick matching its state.
+
 ## Manual test checklist
 
 - [ ] Launch the app. Open the Credits screen.
