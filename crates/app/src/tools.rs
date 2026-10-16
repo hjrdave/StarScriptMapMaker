@@ -450,7 +450,7 @@ fn export_region_tool(
 fn land_brush(editor: &mut Editor, view: &View, state: &mut ToolState, input: &CanvasInput<'_>) {
     let response = input.response;
     let radius = editor.brush_size / 2.0;
-    let erase_held = response.ctx.input(|i| i.modifiers.alt);
+    let erase_held = response.ctx.input(|i| i.modifiers.alt) != editor.erase_default;
     if response.hovered() {
         response.ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
     }
@@ -1046,7 +1046,7 @@ pub fn paint_overlay(
         return;
     }
     let palette = crate::theme::palette(painter.ctx());
-    let erase_held = painter.ctx().input(|i| i.modifiers.alt);
+    let erase_held = painter.ctx().input(|i| i.modifiers.alt) != editor.erase_default;
     let erasing = state.stroke.as_ref().map_or(erase_held, |s| s.erase);
     let (fill, line) = if erasing {
         (palette.danger.gamma_multiply(0.3), palette.danger)
