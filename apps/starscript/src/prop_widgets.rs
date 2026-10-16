@@ -493,6 +493,8 @@ pub struct ScrubSpec<'a> {
     pub slider_max: Option<f64>,
     /// What double-clicking a slider resets to.
     pub default: Option<f64>,
+    /// Whether the slider track is logarithmic, so small values are easy to set on a wide range.
+    pub log: bool,
 }
 
 impl<'a> ScrubSpec<'a> {
@@ -507,7 +509,14 @@ impl<'a> ScrubSpec<'a> {
             height: metrics::FIELD[0],
             slider_max: None,
             default: None,
+            log: false,
         }
+    }
+
+    /// A logarithmic slider track, for settings that span a wide range.
+    pub fn logarithmic(mut self) -> Self {
+        self.log = true;
+        self
     }
 
     /// The slider track covers `range.min..=max`; typing may go beyond, up to `range.max`.
@@ -676,9 +685,195 @@ pub fn scrub_field(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> 
 // ---------------------------------------------------------------------------------------------
 // Slider
 
+/// Where a logarithmic track bends, as a fraction of the span: the first part of the track is
+/// spent on the smallest values without letting `ln(0)` in.
+const LOG_KNEE: f64 = 0.01;
+
+/// Where `value` sits along a track from `min` to `max`, 0..=1.
+fn slider_t(min: f64, max: f64, value: f64, log: bool) -> f64 {
+    let linear = ((value - min) / (max - min)).clamp(0.0, 1.0);
+    if log {
+        (linear / LOG_KNEE).ln_1p() / (1.0 / LOG_KNEE).ln_1p()
+    } else {
+        linear
+    }
+}
+
 /// The value a slider holds at `t` (0..=1) along its track.
-fn slider_value(min: f64, max: f64, t: f64, decimals: usize) -> f64 {
-    round_to(min + t.clamp(0.0, 1.0) * (max - min), decimals)
+fn slider_value(min: f64, max: f64, t: f64, decimals: usize, log: bool) -> f64 {
+    let t = t.clamp(0.0, 1.0);
+    let linear = if log {
+        LOG_KNEE * ((t * (1.0 / LOG_KNEE).ln_1p()).exp() - 1.0)
+    } else {
+        t
+    };
+    round_to(min + linear.clamp(0.0, 1.0) * (max - min), decimals)
+}
+
+/// Width of the number box, including its up / down arrows.
+const BOX_WIDTH: f32 = 76.0;
+/// Width of the up / down arrows at the right of the number box.
+const STEPPER_WIDTH: f32 = 16.0;
+
+/// The number box with up / down arrows: shows the value, types an exact one (Enter or blur
+/// commits, Esc cancels, clamped to the spec's hard range) and nudges by the spec's step when an
+/// arrow is clicked (⇧ ×10, ⌥ ×0.1). Returns the new value when it changed.
+fn number_box(
+    ui: &mut egui::Ui,
+    value: f64,
+    spec: &ScrubSpec<'_>,
+    typing: &mut Option<String>,
+    width: f32,
+) -> Option<f64> {
+    let palette = theme::palette(ui.ctx());
+    let enabled = ui.is_enabled();
+    let mut next = None;
+    let (box_rect, box_response) = ui.allocate_exact_size(
+        Vec2::new(width, spec.height),
+        if enabled {
+            Sense::click()
+        } else {
+            Sense::hover()
+        },
+    );
+    ui.painter().rect(
+        box_rect,
+        theme::RADIUS_FIELD,
+        palette.bg_field,
+        Stroke::new(1.0, palette.border_subtle),
+        StrokeKind::Inside,
+    );
+    let split = box_rect.right() - STEPPER_WIDTH;
+    let text_rect = egui::Rect::from_min_max(box_rect.min, egui::pos2(split, box_rect.max.y));
+    let arrows = egui::Rect::from_min_max(egui::pos2(split, box_rect.min.y), box_rect.max);
+    if let Some(text) = typing.as_mut() {
+        let field = ui.put(
+            text_rect,
+            egui::TextEdit::singleline(text)
+                .frame(egui::Frame::NONE)
+                .margin(egui::Margin::symmetric(6, 0))
+                .horizontal_align(egui::Align::RIGHT)
+                .font(egui::FontId::new(theme::MONO, theme::mono_family())),
+        );
+        if !field.has_focus() && !field.lost_focus() {
+            field.request_focus();
+        }
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            *typing = None;
+        } else if field.lost_focus() {
+            // Enter or clicking away both commit.
+            let typed = typing.take().unwrap_or_default();
+            if let Some(result) = eval_expression(&typed, value) {
+                let result = round_to(spec.range.clamp(result), spec.decimals.max(3));
+                if result != value {
+                    next = Some(result);
+                }
+            }
+        }
+    } else {
+        paint_value(
+            ui,
+            text_rect,
+            &spec.format(value),
+            spec.provenance,
+            egui::Align2::RIGHT_CENTER,
+        );
+        box_response.widget_info(|| {
+            egui::WidgetInfo::text_edit(enabled, spec.format(value), spec.format(value), spec.label)
+        });
+        if enabled && box_response.clicked() {
+            *typing = Some(format!("{value:.*}", spec.decimals));
+        }
+    }
+
+    // The arrows: up on top, down below, each half the box high.
+    let mid = arrows.center().y;
+    let up = egui::Rect::from_min_max(arrows.min, egui::pos2(arrows.max.x, mid));
+    let down = egui::Rect::from_min_max(egui::pos2(arrows.min.x, mid), arrows.max);
+    for (half, dir) in [(up, 1.0_f64), (down, -1.0_f64)] {
+        let response = ui.interact(
+            half,
+            ui.id().with(("stepper", spec.label, dir as i32)),
+            if enabled {
+                Sense::click()
+            } else {
+                Sense::hover()
+            },
+        );
+        let name = if dir > 0.0 {
+            format!("Increase {}", spec.label)
+        } else {
+            format!("Decrease {}", spec.label)
+        };
+        response
+            .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, &name));
+        if enabled && response.clicked() {
+            let speed = Speed::from_modifiers(ui.input(|i| i.modifiers));
+            let stepped = round_to(
+                spec.range.clamp(value + dir * spec.step * speed.factor()),
+                spec.decimals.max(if speed == Speed::Fine { 2 } else { 0 }),
+            );
+            if stepped != value {
+                next = Some(stepped);
+            }
+        }
+        let colour = if !enabled {
+            palette.text_tertiary
+        } else if response.hovered() {
+            palette.gold_text
+        } else {
+            palette.text_secondary
+        };
+        let c = half.center();
+        let (w, h) = (3.5, 2.0);
+        let points = if dir > 0.0 {
+            vec![
+                egui::pos2(c.x - w, c.y + h),
+                egui::pos2(c.x + w, c.y + h),
+                egui::pos2(c.x, c.y - h),
+            ]
+        } else {
+            vec![
+                egui::pos2(c.x - w, c.y - h),
+                egui::pos2(c.x + w, c.y - h),
+                egui::pos2(c.x, c.y + h),
+            ]
+        };
+        ui.painter()
+            .add(egui::Shape::convex_polygon(points, colour, Stroke::NONE));
+    }
+    next
+}
+
+/// A whole-number setting (like the ripple Count): a number box with up / down arrows and no
+/// slider. Typing and the arrows each commit as one instant step.
+pub fn number_field(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit {
+    let id = ui.make_persistent_id(("number", spec.label));
+    let mut typing: Option<String> = ui.data(|d| d.get_temp(id));
+    let mut edit = Edit::default();
+    ui.horizontal(|ui| {
+        let (label_rect, _) = ui.allocate_exact_size(
+            Vec2::new(label_width(ui, spec.label, spec.provenance), spec.height),
+            Sense::hover(),
+        );
+        paint_label(ui, label_rect, spec.label, spec.provenance);
+        if let Some(next) = number_box(ui, *value, spec, &mut typing, BOX_WIDTH) {
+            *value = next;
+            edit = Edit::instant();
+        }
+        if trailing(ui, spec.label, spec.provenance) {
+            edit.reset = true;
+        }
+    });
+    ui.data_mut(|d| match typing {
+        Some(text) => {
+            d.insert_temp(id, text);
+        }
+        None => {
+            d.remove::<String>(id);
+        }
+    });
+    edit
 }
 
 /// A slider with a small number box. Dragging is one gesture; clicking the track is one step.
@@ -697,7 +892,7 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
         );
         paint_label(ui, label_rect, spec.label, spec.provenance);
 
-        let readout_w = 64.0;
+        let readout_w = BOX_WIDTH;
         let track_w = (ui.available_width()
             - readout_w
             - ui.spacing().item_spacing.x
@@ -736,7 +931,7 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
                     && let Some(pos) = response.interact_pointer_pos()
                 {
                     let t = f64::from((pos.x - rect.left() - 6.0) / (rect.width() - 12.0));
-                    let next = slider_value(min, max, t, spec.decimals);
+                    let next = slider_value(min, max, t, spec.decimals, spec.log);
                     if next != *value {
                         *value = next;
                         edit.changed = true;
@@ -757,7 +952,12 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
                     (dir, Speed::from_modifiers(i.modifiers))
                 });
                 if dir != 0.0 {
-                    let nudge = (span / 100.0).max(spec.step) * speed.factor();
+                    let base = if spec.log {
+                        spec.step
+                    } else {
+                        (span / 100.0).max(spec.step)
+                    };
+                    let nudge = base * speed.factor();
                     let next = round_to(
                         spec.range.clamp(*value + dir * nudge),
                         spec.decimals.max(if speed == Speed::Fine { 2 } else { 0 }),
@@ -770,7 +970,7 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
             }
         }
         let t = if usable {
-            ((*value - min) / span).clamp(0.0, 1.0) as f32
+            slider_t(min, max, *value, spec.log) as f32
         } else {
             0.0
         };
@@ -810,59 +1010,9 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
             thumb,
             Stroke::new(1.0, palette.bg_field),
         );
-        let (box_rect, box_response) =
-            ui.allocate_exact_size(Vec2::new(readout_w, spec.height), Sense::click());
-        ui.painter().rect(
-            box_rect,
-            theme::RADIUS_FIELD,
-            palette.bg_field,
-            Stroke::new(1.0, palette.border_subtle),
-            StrokeKind::Inside,
-        );
-        if let Some(text) = typing.as_mut() {
-            let field = ui.put(
-                box_rect,
-                egui::TextEdit::singleline(text)
-                    .frame(egui::Frame::NONE)
-                    .margin(egui::Margin::symmetric(6, 0))
-                    .horizontal_align(egui::Align::RIGHT)
-                    .font(egui::FontId::new(theme::MONO, theme::mono_family())),
-            );
-            if !field.has_focus() && !field.lost_focus() {
-                field.request_focus();
-            }
-            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                typing = None;
-            } else if field.lost_focus() {
-                // Enter or clicking away both commit.
-                let typed = typing.take().unwrap_or_default();
-                if let Some(result) = eval_expression(&typed, *value) {
-                    let result = round_to(spec.range.clamp(result), spec.decimals.max(3));
-                    if result != *value {
-                        *value = result;
-                        edit = Edit::instant();
-                    }
-                }
-            }
-        } else {
-            paint_value(
-                ui,
-                box_rect,
-                &spec.format(*value),
-                spec.provenance,
-                egui::Align2::RIGHT_CENTER,
-            );
-            box_response.widget_info(|| {
-                egui::WidgetInfo::text_edit(
-                    enabled,
-                    spec.format(*value),
-                    spec.format(*value),
-                    spec.label,
-                )
-            });
-            if enabled && box_response.clicked() {
-                typing = Some(format!("{value:.*}", spec.decimals));
-            }
+        if let Some(next) = number_box(ui, *value, spec, &mut typing, readout_w) {
+            *value = next;
+            edit = Edit::instant();
         }
         if trailing(ui, spec.label, spec.provenance) {
             edit.reset = true;
@@ -1285,9 +1435,24 @@ mod tests {
 
     #[test]
     fn slider_value_maps_and_clamps_the_track() {
-        assert_eq!(slider_value(0.0, 50.0, 0.5, 1), 25.0);
-        assert_eq!(slider_value(0.0, 50.0, 2.0, 1), 50.0);
-        assert_eq!(slider_value(10.0, 20.0, -1.0, 0), 10.0);
+        assert_eq!(slider_value(0.0, 50.0, 0.5, 1, false), 25.0);
+        assert_eq!(slider_value(0.0, 50.0, 2.0, 1, false), 50.0);
+        assert_eq!(slider_value(10.0, 20.0, -1.0, 0, false), 10.0);
+        assert_eq!(slider_value(10.0, 20.0, 2.0, 0, true), 20.0);
+    }
+
+    #[test]
+    fn logarithmic_track_favours_small_values_and_round_trips() {
+        // Half way along a log track is far below half the span.
+        assert!(slider_value(0.0, 100.0, 0.5, 3, true) < 10.0);
+        assert_eq!(slider_value(0.0, 100.0, 0.0, 3, true), 0.0);
+        assert_eq!(slider_value(0.0, 100.0, 1.0, 3, true), 100.0);
+        for v in [0.0, 1.0, 5.0, 40.0, 100.0] {
+            let t = slider_t(0.0, 100.0, v, true);
+            assert!((slider_value(0.0, 100.0, t, 3, true) - v).abs() < 0.01);
+        }
+        assert_eq!(slider_t(0.0, 100.0, 50.0, false), 0.5);
+        assert_eq!(slider_t(0.0, 100.0, 500.0, true), 1.0);
     }
 
     #[test]
