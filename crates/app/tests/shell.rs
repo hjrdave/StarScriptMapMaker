@@ -70,6 +70,19 @@ fn the_header_button_collapses_layers_and_clicking_the_rail_expands_it() {
 }
 
 #[test]
+fn the_collapse_control_sits_at_the_bottom_and_stays_put_when_toggled() {
+    let mut harness = app();
+    let expanded = harness.get_by_label("Collapse Layers (⌘⌥1)").rect();
+    let header = harness.get_by_label("New Layer (⇧⌘N)").rect();
+    assert!(expanded.center().y > header.center().y + 200.0);
+    harness.get_by_label("Collapse Layers (⌘⌥1)").click();
+    harness.run();
+    let collapsed = harness.get_by_label("Expand Layers (⌘⌥1)").rect();
+    assert_eq!(expanded.center().y, collapsed.center().y);
+    assert!(harness.query_by_label("New Layer (⇧⌘N)").is_none());
+}
+
+#[test]
 fn the_properties_shortcut_hides_and_shows_properties() {
     let mut harness = app();
     assert!(harness.query_by_label("Properties").is_some());

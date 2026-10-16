@@ -17,7 +17,7 @@ const INDENT: f32 = 14.0;
 const ROW_BUTTON: f32 = 18.0;
 /// Glyph size inside a row.
 const ROW_GLYPH: f32 = 14.0;
-const FOOTER_HEIGHT: f32 = 24.0;
+pub(crate) const FOOTER_HEIGHT: f32 = 24.0;
 
 /// Why a Depth-sorted Layer's Stamps can't be reordered by hand.
 pub const DEPTH_SORT_HINT: &str = "Depth sort is on for this Layer: Stamps are listed in the order they draw, by Anchor height. Move a Stamp to re-sort it.";
@@ -259,8 +259,9 @@ enum Action {
 }
 
 impl LayerTree {
-    /// `footer` shows the Object and Layer counts under the list.
-    pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor, footer_shown: bool) {
+    /// `footer_shown` shows the Object and Layer counts in the bar under the list. The bar
+    /// always holds the collapse control; returns true when it was clicked.
+    pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor, footer_shown: bool) -> bool {
         let revision = editor.map.revision();
         let rows = match self.cache.take() {
             Some((r, g, rows)) if r == revision && g == self.collapse_generation => rows,
@@ -280,8 +281,7 @@ impl LayerTree {
 
         let mut actions = Vec::new();
         ui.spacing_mut().item_spacing.y = 0.0;
-        let footer_height = if footer_shown { FOOTER_HEIGHT } else { 0.0 };
-        let list_height = (ui.available_height() - footer_height).max(ROW_HEIGHT);
+        let list_height = (ui.available_height() - FOOTER_HEIGHT).max(ROW_HEIGHT);
         egui::ScrollArea::vertical()
             .auto_shrink(false)
             .max_height(list_height)
@@ -291,9 +291,8 @@ impl LayerTree {
                 }
             });
         self.cache = Some((revision, self.collapse_generation, rows));
-        if footer_shown {
-            footer(ui, &footer_text(objects, layers));
-        }
+        let text = footer_shown.then(|| footer_text(objects, layers));
+        let collapse_clicked = footer(ui, text.as_deref());
 
         for action in actions {
             match action {
@@ -336,6 +335,7 @@ impl LayerTree {
                 Action::CancelRename => self.renaming = None,
             }
         }
+        collapse_clicked
     }
 
     fn row(&mut self, ui: &mut egui::Ui, editor: &Editor, row: Row, actions: &mut Vec<Action>) {
@@ -640,8 +640,9 @@ fn indicator(ui: &mut egui::Ui, icon: Icon, tint: egui::Color32, label: &str) {
     response.on_hover_text(label);
 }
 
-/// The Object and Layer counts under the list.
-fn footer(ui: &mut egui::Ui, text: &str) {
+/// The bar under the list: the Object and Layer counts (when `text` is given) and, at its
+/// end, the collapse control. Returns true when that was clicked.
+fn footer(ui: &mut egui::Ui, text: Option<&str>) -> bool {
     let palette = theme::palette(ui.ctx());
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), FOOTER_HEIGHT),
@@ -658,11 +659,19 @@ fn footer(ui: &mut egui::Ui, text: &str) {
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     child.add_space(theme::SPACING[3]);
-    child.label(
-        egui::RichText::new(text)
-            .size(theme::CAPTION)
-            .color(palette.text_tertiary),
-    );
+    if let Some(text) = text {
+        child.label(
+            egui::RichText::new(text)
+                .size(theme::CAPTION)
+                .color(palette.text_tertiary),
+        );
+    }
+    child
+        .with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.add_space(theme::SPACING[2]);
+            crate::shell::collapse_button(ui, false).clicked()
+        })
+        .inner
 }
 
 /// Top quarter drops above, bottom quarter below; the middle drops into a Layer, or splits
