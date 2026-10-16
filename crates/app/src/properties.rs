@@ -9,6 +9,7 @@ use ssmap_fonts::LABEL_FAMILIES;
 
 use crate::editor::Editor;
 use crate::layer_tree::{landmass_name, landmasses, node_name, selected_landmass};
+use crate::prop_widgets::{self, Provenance};
 
 #[derive(Default)]
 pub struct PropertiesPanel {
@@ -61,7 +62,6 @@ impl PropertiesPanel {
                             }
                             ui.end_row();
                             if let Some(fill) = object.kind.fill() {
-                                ui.label("Fill");
                                 self.fill(ui, editor, id, fill);
                                 ui.end_row();
                             }
@@ -82,25 +82,18 @@ impl PropertiesPanel {
         }
     }
 
-    /// A colour button whose picker changes the fill live. Everything picked until the
-    /// pointer is released is one Undo step.
+    /// The fill swatch, whose popover changes the fill live. Everything picked until the
+    /// pointer is released is one Undo step (ended at the top of `show`).
     fn fill(&mut self, ui: &mut egui::Ui, editor: &mut Editor, id: Id, fill: Color) {
-        let mut rgba = egui::Color32::from_rgba_unmultiplied(fill.r, fill.g, fill.b, fill.a);
-        let changed = egui::color_picker::color_edit_button_srgba(
-            ui,
-            &mut rgba,
-            egui::color_picker::Alpha::OnlyBlend,
-        )
-        .changed();
-        if !changed {
-            return;
+        let mut colour = Some(fill);
+        let response = prop_widgets::swatch(ui, "Fill", &mut colour, false, Provenance::Plain);
+        if response.edit.changed {
+            let command = Command::SetFill {
+                ids: vec![id],
+                fill: colour.unwrap_or(fill),
+            };
+            self.live_edit(editor, "Change Fill", command);
         }
-        let [r, g, b, a] = rgba.to_srgba_unmultiplied();
-        let command = Command::SetFill {
-            ids: vec![id],
-            fill: Color::rgba(r, g, b, a),
-        };
-        self.live_edit(editor, "Change Fill", command);
     }
 
     /// Applies a colour pick as it happens. Everything picked until the pointer is released is
