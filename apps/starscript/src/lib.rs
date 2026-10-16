@@ -885,6 +885,21 @@ impl MapMakerApp {
         }
     }
 
+    /// Loads the packs under `roots` afresh, for after one is installed or deleted. Every
+    /// open Map, the Asset picker and the Canvas see the change on the next frame, without a
+    /// restart. Returns what could not be loaded.
+    pub fn reload_packs(&mut self, roots: &PackRoots) -> Vec<ssmap_core::asset::LoadProblem> {
+        let (library, problems) = PackLibrary::load(roots);
+        self.app.credits = Credits::new(&library);
+        self.app.sprites.set_library(Arc::new(library));
+        problems
+    }
+
+    /// The store the open Maps draw from, for tests.
+    pub fn sprites(&self) -> &SpriteStore {
+        &self.app.sprites
+    }
+
     /// The Editor of the Map showing, for tests; `None` on Home.
     pub fn active_editor_mut(&mut self) -> Option<&mut Editor> {
         if !self.map_showing() {

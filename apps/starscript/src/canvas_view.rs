@@ -324,6 +324,7 @@ impl CanvasView {
             let select = crate::theme::palette(ui.ctx()).select;
             handles::paint(&painter, &bounds, &view, rect.min, ppp, rotatable, select);
         }
+        paint_missing_names(&painter, editor, &view, rect.min, ppp);
         tools::paint_overlay(
             &painter,
             editor,
@@ -439,6 +440,27 @@ impl CanvasView {
             self.tools.editing = None;
             editor.end_gesture();
         }
+    }
+}
+
+/// Writes the Asset's name on the box drawn for each Stamp whose Asset is not installed.
+fn paint_missing_names(
+    painter: &egui::Painter,
+    editor: &Editor,
+    view: &View,
+    origin: egui::Pos2,
+    ppp: f64,
+) {
+    for (position, scale, name) in editor.missing_stamps() {
+        let center = handles::to_screen(view, origin, ppp, position);
+        let width = (ssmap_render::PLACEHOLDER_SIZE[0] * scale * view.zoom / ppp) as f32;
+        let galley = painter.layout(
+            name,
+            egui::FontId::proportional(11.0),
+            egui::Color32::from_gray(40),
+            width.max(1.0),
+        );
+        painter.galley(center - galley.size() / 2.0, galley, egui::Color32::BLACK);
     }
 }
 

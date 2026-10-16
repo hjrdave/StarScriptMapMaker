@@ -17,7 +17,7 @@ use ssmap_fonts::FALLBACK_FAMILY;
 use ssmap_render::wgpu;
 use ssmap_render::{
     CanvasRenderer, Content, ExportContext, ExportError, ExportJob, ExportStep, Fonts, LabelLayout,
-    MapScene, SpriteStore,
+    MapScene, SpriteState, SpriteStore,
 };
 
 use crate::clipboard::Clipboard;
@@ -67,6 +67,8 @@ pub struct Editor {
     /// Stamp art, shared with the Canvas renderer. Absent in headless tests.
     sprites: Option<SpriteStore>,
     stamp_index: Option<StampIndex>,
+    /// The store's generation when `stamp_index` was last reset.
+    sprites_generation: u64,
     /// The Asset the Stamp tool places, chosen in the Asset browser.
     pub selected_asset: Option<AssetRef>,
     /// The scatter brush's settings. Its radius is half the shared `brush_size`.
@@ -153,6 +155,7 @@ impl Editor {
             outlines_seen: 0,
             sprites: None,
             stamp_index: None,
+            sprites_generation: 0,
             selected_asset: None,
         }
     }
@@ -189,11 +192,42 @@ impl Editor {
     /// Points the sprite store at the Assets the Map embeds, which win over the installed
     /// packs'. Run before anything reads sprites, since an Op, Undo or Redo can change them.
     fn sync_embedded(&mut self) {
-        if let Some(sprites) = &self.sprites
-            && sprites.set_embedded(self.map.embedded())
-        {
-            self.stamp_index = None;
+        if let Some(sprites) = &self.sprites {
+            sprites.set_embedded(self.map.embedded());
+            // The library can also change under us, when a pack is installed or deleted.
+            let generation = sprites.generation();
+            if generation != self.sprites_generation {
+                self.sprites_generation = generation;
+                self.stamp_index = None;
+            }
         }
+    }
+
+    /// The Stamps whose Asset is neither embedded nor installed, with the Asset's name: the
+    /// Canvas draws a box for each and the app writes the name on it.
+    pub fn missing_stamps(&self) -> Vec<(Point, f64, String)> {
+        let Some(sprites) = &self.sprites else {
+            return Vec::new();
+        };
+        let library = sprites.library();
+        let map = &self.map;
+        map.draw_order()
+            .into_iter()
+            .filter_map(|id| match map.node(id) {
+                Some(Node::Object(object)) => match &object.kind {
+                    ObjectKind::Stamp(stamp) => Some(stamp),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .filter(|stamp| matches!(sprites.poll(&stamp.asset), SpriteState::Missing))
+            .map(|stamp| {
+                let name = library
+                    .asset(&stamp.asset)
+                    .map_or_else(|| stamp.asset.to_string(), |(_, found)| found.name.clone());
+                (stamp.position, stamp.scale, name)
+            })
+            .collect()
     }
 
     pub fn sprites(&self) -> Option<&SpriteStore> {
@@ -1522,7 +1556,7 @@ impl Editor {
         let commands = scatter::shuffle_commands(
             &self.map,
             &self.selection,
-            |asset| group_of(library, asset),
+            |asset| group_of(&library, asset),
             random_seed(),
         );
         if commands.is_empty() {
@@ -1544,11 +1578,8 @@ impl Editor {
     /// "Pine cluster · v2": the Asset's name, and its place in its Variant group when it has
     /// one. Falls back to the reference when the Asset is not in the library.
     pub fn asset_caption(&self, asset: &AssetRef) -> String {
-        let Some((_, found)) = self
-            .sprites
-            .as_ref()
-            .and_then(|sprites| sprites.library().asset(asset))
-        else {
+        let library = self.sprites.as_ref().map(SpriteStore::library);
+        let Some((_, found)) = library.as_ref().and_then(|library| library.asset(asset)) else {
             return asset.to_string();
         };
         let group = self.variant_group(asset);
@@ -1562,7 +1593,7 @@ impl Editor {
     fn variant_group(&self, asset: &AssetRef) -> Vec<AssetRef> {
         self.sprites
             .as_ref()
-            .map(|sprites| group_of(sprites.library(), asset))
+            .map(|sprites| group_of(&sprites.library(), asset))
             .unwrap_or_default()
     }
 
