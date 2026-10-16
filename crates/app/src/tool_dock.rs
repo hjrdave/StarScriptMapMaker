@@ -22,7 +22,7 @@ const GROUPS: [&[ToolId]; 4] = [
         ToolId::Lasso,
         ToolId::Label,
     ],
-    &[ToolId::Stamp, ToolId::Scatter, ToolId::StampEraser],
+    &[ToolId::Stamp, ToolId::StampEraser],
     &[ToolId::ExportRegion],
 ];
 

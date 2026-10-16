@@ -1,5 +1,5 @@
 //! The Asset picker: the installed Asset packs, filtered by pack, category and a search over
-//! names and tags, as a grid of thumbnails. It sits in the Stamp and Scatter Brush tool
+//! names and tags, as a grid of thumbnails. It sits in the Stamp tool
 //! sections of Properties; choosing an Asset sets `Editor::selected_asset`.
 
 use std::collections::HashMap;

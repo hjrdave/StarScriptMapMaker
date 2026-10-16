@@ -1,4 +1,4 @@
-//! The floating tool dock: clicking selects a tool, ⇧S is Scatter Brush (C no longer is), and
+//! The floating tool dock: clicking selects a tool, S is Stamp (C selects nothing), and
 //! the dock stays inside the Canvas when Layers collapses.
 
 use eframe::egui;
@@ -55,11 +55,8 @@ fn clicking_a_dock_button_sets_the_active_tool() {
 }
 
 #[test]
-fn shift_s_selects_scatter_brush_and_c_no_longer_does() {
+fn s_selects_stamp_and_c_does_not_select_a_tool() {
     let mut harness = app(egui::vec2(WIDTH, 800.0));
-    harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::S);
-    harness.run();
-    assert_eq!(harness.state().editor().active_tool, ToolId::Scatter);
     harness.key_press(egui::Key::V);
     harness.run();
     assert_eq!(harness.state().editor().active_tool, ToolId::Select);

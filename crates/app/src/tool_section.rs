@@ -1,5 +1,5 @@
 //! The active tool's settings, at the top of Properties above the selection: the Land Brush's
-//! size and mode, the Stamp's Asset picker, the Scatter Brush's picker and settings, and the
+//! size and mode, the Stamp's Asset picker, its scatter settings, and the
 //! Stamp Eraser's size. Tools without settings get no section.
 
 use eframe::egui;
@@ -27,7 +27,6 @@ pub fn icon(tool: ToolId) -> Icon {
         ToolId::Lasso => Icon::Lasso,
         ToolId::Label => Icon::Label,
         ToolId::Stamp => Icon::Stamp,
-        ToolId::Scatter => Icon::Scatter,
         ToolId::StampEraser => Icon::StampEraser,
         ToolId::ExportRegion => Icon::ExportRegion,
     }
@@ -37,11 +36,7 @@ pub fn icon(tool: ToolId) -> Icon {
 pub fn has_section(tool: ToolId) -> bool {
     matches!(
         tool,
-        ToolId::LandBrush
-            | ToolId::WaterBrush
-            | ToolId::Stamp
-            | ToolId::Scatter
-            | ToolId::StampEraser
+        ToolId::LandBrush | ToolId::WaterBrush | ToolId::Stamp | ToolId::StampEraser
     )
 }
 
@@ -69,8 +64,7 @@ impl ToolSection {
                 ui.add_space(theme::SPACING[2]);
                 match tool {
                     ToolId::LandBrush | ToolId::WaterBrush => land_brush(ui, editor),
-                    ToolId::Stamp => self.browser.show(ui, editor),
-                    ToolId::Scatter => {
+                    ToolId::Stamp => {
                         self.browser.show(ui, editor);
                         ui.add_space(theme::SPACING[2]);
                         scatter_settings(ui, editor);

@@ -27,13 +27,12 @@ pub enum ToolId {
     Lasso,
     Label,
     Stamp,
-    Scatter,
     StampEraser,
     ExportRegion,
 }
 
 impl ToolId {
-    pub const ALL: [ToolId; 10] = [
+    pub const ALL: [ToolId; 9] = [
         ToolId::Select,
         ToolId::Pan,
         ToolId::LandBrush,
@@ -41,7 +40,6 @@ impl ToolId {
         ToolId::Lasso,
         ToolId::Label,
         ToolId::Stamp,
-        ToolId::Scatter,
         ToolId::StampEraser,
         ToolId::ExportRegion,
     ];
@@ -55,14 +53,12 @@ impl ToolId {
             ToolId::Lasso => "Lasso",
             ToolId::Label => "Label",
             ToolId::Stamp => "Stamp",
-            ToolId::Scatter => "Scatter Brush",
             ToolId::StampEraser => "Stamp Eraser",
             ToolId::ExportRegion => "Export Region",
         }
     }
 
-    /// The key and modifiers that select the tool. Scatter Brush is ⇧S, so check it before
-    /// Stamp's S: egui ignores an extra Shift when matching.
+    /// The key and modifiers that select the tool.
     pub fn shortcut(self) -> (egui::Modifiers, egui::Key) {
         let none = egui::Modifiers::NONE;
         match self {
@@ -73,7 +69,6 @@ impl ToolId {
             ToolId::Lasso => (none, egui::Key::L),
             ToolId::Label => (none, egui::Key::T),
             ToolId::Stamp => (none, egui::Key::S),
-            ToolId::Scatter => (egui::Modifiers::SHIFT, egui::Key::S),
             ToolId::StampEraser => (none, egui::Key::E),
             ToolId::ExportRegion => (none, egui::Key::X),
         }
@@ -101,7 +96,7 @@ pub const BRUSH_SIZES: std::ops::RangeInclusive<f64> = 2.0..=2000.0;
 pub fn uses_brush_size(tool: ToolId) -> bool {
     matches!(
         tool,
-        ToolId::LandBrush | ToolId::WaterBrush | ToolId::Scatter | ToolId::StampEraser
+        ToolId::LandBrush | ToolId::WaterBrush | ToolId::Stamp | ToolId::StampEraser
     )
 }
 
@@ -324,22 +319,8 @@ pub fn canvas_input(
             }
         }
         ToolId::Pan => {}
-        ToolId::Stamp => {
-            if response.hovered() {
-                response.ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
-            }
-            if response.clicked()
-                && let Some(pos) = response.interact_pointer_pos()
-            {
-                if editor.selected_asset.is_none() {
-                    editor.error("Choose an Asset in the Asset browser first");
-                } else {
-                    editor.place_stamp(to_canvas(pos));
-                }
-            }
-        }
+        ToolId::Stamp => scatter_tool(editor, view, state, input, false),
         ToolId::ExportRegion => export_region_tool(editor, view, state, input),
-        ToolId::Scatter => scatter_tool(editor, view, state, input, false),
         ToolId::StampEraser => scatter_tool(editor, view, state, input, true),
         ToolId::Label => {
             if response.clicked()
@@ -362,7 +343,7 @@ pub fn canvas_input(
     if editor.active_tool != ToolId::Lasso {
         state.lasso = None;
     }
-    let scattering = matches!(editor.active_tool, ToolId::Scatter | ToolId::StampEraser);
+    let scattering = matches!(editor.active_tool, ToolId::Stamp | ToolId::StampEraser);
     if !scattering && !matches!(editor.active_tool, ToolId::LandBrush | ToolId::WaterBrush) {
         state.stroke = None;
     }
@@ -531,9 +512,11 @@ fn land_brush(
     }
 }
 
-/// The scatter brush and the Stamp eraser: drag a stroke, and on release one Command places or
-/// removes Stamps ([`Editor::scatter_stamps`], [`Editor::erase_stamps`]). Nothing changes in
-/// the Map while dragging; Escape drops the stroke.
+/// The Stamp tool and the Stamp eraser. Stamp: a click places one Stamp, and a drag scatters
+/// Stamps along the path. Eraser: a click or drag removes Stamps. On release one Command applies
+/// ([`Editor::place_stamp`], [`Editor::scatter_stamps`], [`Editor::erase_stamps`]). Nothing
+/// changes in the Map while dragging; Escape drops the stroke. egui's drag threshold separates
+/// a slightly shaky click from a drag.
 fn scatter_tool(
     editor: &mut Editor,
     view: &View,
@@ -549,8 +532,19 @@ fn scatter_tool(
         state.stroke = None;
         return;
     }
+    if !erase
+        && response.clicked_by(egui::PointerButton::Primary)
+        && let Some(pos) = response.interact_pointer_pos()
+    {
+        if editor.selected_asset.is_none() {
+            editor.error("Choose an Asset in the Asset browser first");
+        } else {
+            editor.place_stamp(input.canvas_point(view, pos));
+        }
+        return;
+    }
     let pressed = response.drag_started_by(egui::PointerButton::Primary)
-        || response.clicked_by(egui::PointerButton::Primary);
+        || (erase && response.clicked_by(egui::PointerButton::Primary));
     if pressed && state.stroke.is_none() {
         let origin = response.ctx.input(|i| i.pointer.press_origin());
         if let Some(origin) = origin.or(response.interact_pointer_pos()) {
@@ -1070,7 +1064,7 @@ pub fn paint_overlay(
     if editor.active_tool == ToolId::Lasso {
         paint_lasso(painter, view, state, origin, hover, ppp);
     }
-    if matches!(editor.active_tool, ToolId::Scatter | ToolId::StampEraser) {
+    if matches!(editor.active_tool, ToolId::Stamp | ToolId::StampEraser) {
         paint_scatter_cursor(painter, editor, view, state, origin, hover, ppp);
         return;
     }

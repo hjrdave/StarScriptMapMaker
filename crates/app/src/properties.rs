@@ -921,13 +921,13 @@ mod tests {
     }
 
     #[test]
-    fn scatter_shows_the_picker_and_its_settings_and_select_shows_no_tool_section() {
+    fn stamp_shows_the_picker_and_scatter_settings_and_select_shows_no_tool_section() {
         let (mut fixture, _, _) = fixture();
         install_test_pack(&mut fixture.editor, false);
-        fixture.editor.active_tool = ToolId::Scatter;
+        fixture.editor.active_tool = ToolId::Stamp;
         let mut harness = harness(fixture);
         for label in [
-            "Scatter Brush",
+            "Stamp",
             "Size",
             "Place on",
             "Density",
@@ -943,7 +943,7 @@ mod tests {
 
         harness.state_mut().editor.active_tool = ToolId::Select;
         harness.run();
-        for label in ["Scatter Brush", "Density", "Tree (test-pack/tree)"] {
+        for label in ["Density", "Tree (test-pack/tree)"] {
             assert!(harness.query_by_label(label).is_none(), "{label}");
         }
     }
