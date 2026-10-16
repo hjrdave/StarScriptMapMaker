@@ -2,6 +2,7 @@
 //! [`MapMakerApp`], so UI tests can drive the same app headlessly.
 
 mod asset_browser;
+mod canvas_controls;
 mod canvas_view;
 pub mod credits;
 pub mod document;
@@ -27,6 +28,7 @@ mod tessellation;
 pub mod theme;
 pub mod tools;
 pub mod update;
+pub mod zoom;
 
 use eframe::{egui, egui_wgpu};
 use egui_file_dialog::{DialogState, FileDialog, Filter};
@@ -1246,8 +1248,31 @@ impl MapMakerApp {
         } else if save {
             self.save();
         }
+        let zoom = ctx.input_mut(|input| {
+            if input.consume_key(Modifiers::COMMAND, Key::Plus)
+                || input.consume_key(Modifiers::COMMAND, Key::Equals)
+            {
+                Some(zoom::Zoom::In)
+            } else if input.consume_key(Modifiers::COMMAND, Key::Minus) {
+                Some(zoom::Zoom::Out)
+            } else if input.consume_key(Modifiers::SHIFT, Key::Num0) {
+                Some(zoom::Zoom::Percent(1.0))
+            } else if input.consume_key(Modifiers::SHIFT, Key::Num1) {
+                Some(zoom::Zoom::Fit)
+            } else if input.consume_key(Modifiers::SHIFT, Key::Num2) {
+                Some(zoom::Zoom::Selection)
+            } else {
+                None
+            }
+        });
+        if let Some(zoom) = zoom {
+            self.tabs[self.active].canvas_view.request_zoom(zoom);
+        }
         let editor = &mut self.tabs[self.active].editor;
         ctx.input_mut(|input| {
+            if editor.node_edit().is_some() && input.consume_key(Modifiers::NONE, Key::Enter) {
+                editor.leave_node_edit();
+            }
             if input.consume_shortcut(&shortcut(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z))
                 || input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::Y))
             {

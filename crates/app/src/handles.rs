@@ -317,6 +317,7 @@ pub fn paint_outline(
     view: &View,
     origin: egui::Pos2,
     ppp: f64,
+    accent: egui::Color32,
 ) {
     let rect = egui::Rect::from_two_pos(
         to_screen(view, origin, ppp, bounds.min),
@@ -325,12 +326,12 @@ pub fn paint_outline(
     painter.rect_stroke(
         rect,
         0.0,
-        egui::Stroke::new(1.0, egui::Color32::from_rgb(24, 160, 251)),
+        egui::Stroke::new(1.0, accent),
         egui::StrokeKind::Outside,
     );
 }
 
-/// Draws the selection box and its handles, with the rotate knob when `rotatable`.
+/// Draws the box and its handles in `accent`, with the rotate knob when `rotatable`.
 pub fn paint(
     painter: &egui::Painter,
     bounds: &Bounds,
@@ -338,8 +339,8 @@ pub fn paint(
     origin: egui::Pos2,
     ppp: f64,
     rotatable: bool,
+    accent: egui::Color32,
 ) {
-    let accent = egui::Color32::from_rgb(24, 160, 251);
     let rect = egui::Rect::from_two_pos(
         to_screen(view, origin, ppp, bounds.min),
         to_screen(view, origin, ppp, bounds.max),
