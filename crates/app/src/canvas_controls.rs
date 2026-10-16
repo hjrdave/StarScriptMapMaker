@@ -35,7 +35,7 @@ fn zoom_control_anchor(canvas: egui::Rect) -> egui::Pos2 {
     )
 }
 
-/// The `−` | `84% ▾` | `+` control over the bottom-right of `canvas`. `percent` is the current
+/// The `−` | `84%` | `+` control over the bottom-right of `canvas`. `percent` is the current
 /// zoom as a share of 1:1 in points; `field` keeps the menu's percentage text between frames.
 pub fn zoom_control(
     ctx: &egui::Context,
@@ -61,13 +61,15 @@ pub fn zoom_control(
                     {
                         chosen = Some(Zoom::Out);
                     }
-                    let label = format!("{percent:.0}% ▾");
+                    let label = format!("{percent:.0}%");
                     ui.menu_button(label, |ui| {
                         if let Some(zoom) = zoom_menu(ui, percent, can_zoom_to_selection, field) {
                             chosen = Some(zoom);
                             ui.close();
                         }
-                    });
+                    })
+                    .response
+                    .on_hover_text("Zoom options");
                     if ui
                         .add(egui::Button::new("+").frame(false))
                         .on_hover_text("Zoom in (⌘+)")

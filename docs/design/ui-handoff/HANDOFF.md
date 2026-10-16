@@ -41,7 +41,7 @@ Never: project, element, symbol, folder (except real filesystem folders on the H
 │ Layers   │                  Canvas                       │ Properties     │
 │ 232      │                                               │ 288            │
 │ (→ 40    │                                               │                │
-│  rail)   │         ┌───────── tool dock ─────────┐  [− 84%▾ +]           │
+│  rail)   │         ┌───────── tool dock ─────────┐  [− 84% +]           │
 ├──────────┴───────────────────────────────────────────────┴────────────────┤
 │ Zoom 84% · X 3,118 Y 1,886 px · 779 × 471 mi · Selection … · Frame 4.1 ms │ 24  status bar
 └───────────────────────────────────────────────────────────────────────────┘
@@ -85,7 +85,7 @@ Stacks two things:
 
 ### Canvas overlays
 - **Tool dock**: floating, bottom-centre of the canvas area (never over a panel), 40 px from bottom. Groups: Select V, Pan H │ Land Brush B, Lasso L, Label T │ Stamp S, Scatter Brush ⇧S, Stamp Eraser E │ Export Region X. Active = gold-subtle fill + gold inset ring. Tooltip above after 500 ms: name + shortcut.
-- **Zoom control**: bottom-right: − | `84% ▾` | +. The dropdown: editable % field, Zoom to Fit (⇧1), Zoom to Selection (⇧2), 25 / 50 / 100 (⇧0) / 200 / 400 / 800 %.
+- **Zoom control**: bottom-right: − | `84%` | +. The dropdown: editable % field, Zoom to Fit (⇧1), Zoom to Selection (⇧2), 25 / 50 / 100 (⇧0) / 200 / 400 / 800 %.
 - **Cursor HUD**: small pill near the cursor during a gesture ("Paint · 48 px → Valdren mainland", "Scatter · Pine cluster · Land only · +212 this stroke").
 - Selection = blue `#4FA3E0` bounds + white handles. Brush cursor = white ring over a dark ring. In-progress stroke = gold dashed outline.
 - Node editing: blue banner top-centre ("Editing nodes · 3 of 142 selected · Cancel / Done"), square nodes (selected = filled blue), box-select marquee, + ghost on hovered edge for "double-click to add".
