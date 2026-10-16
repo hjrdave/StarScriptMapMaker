@@ -21,9 +21,58 @@ pub enum Side {
     Right,
 }
 
+/// A section of the left sidebar. One shows at a time; the icon strip switches between them.
+/// A new section is a variant here and one row in [`SidebarSection::ALL`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SidebarSection {
+    #[default]
+    Layers,
+}
+
+impl SidebarSection {
+    /// Every section, in the order of the icon strip.
+    pub const ALL: [Self; 1] = [Self::Layers];
+
+    pub fn icon(self) -> Icon {
+        match self {
+            Self::Layers => Icon::LayerGroup,
+        }
+    }
+
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Layers => "Layers",
+        }
+    }
+
+    /// The accessible label and tooltip: the name and the shortcut.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Layers => "Layers (⌘⌥1)",
+        }
+    }
+
+    /// Whether the section is offered now. Sections that depend on the Map (such as Art
+    /// boards) will return false when they have nothing to show.
+    pub fn available(self) -> bool {
+        true
+    }
+}
+
+/// What a click on the Layers rail asked for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RailClick {
+    /// The collapse control: expand the sidebar to the section it last showed.
+    Expand,
+    /// A section icon: expand the sidebar to that section.
+    Section(SidebarSection),
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Shell {
+    /// The sidebar section the left bar shows.
+    sidebar_section: SidebarSection,
     layers_width: f32,
     properties_width: f32,
     /// The user collapsed Layers to its rail.
@@ -103,6 +152,7 @@ impl Layout {
 impl Default for Shell {
     fn default() -> Self {
         Self {
+            sidebar_section: SidebarSection::default(),
             layers_width: metrics::LAYERS_PANEL_DEFAULT,
             properties_width: metrics::PROPERTIES_PANEL_DEFAULT,
             layers_collapsed: false,
@@ -175,6 +225,18 @@ impl Shell {
     /// Whether the Layers column shows, as the full panel or as the rail.
     pub fn layers_shown(&self) -> bool {
         !self.panels_hidden
+    }
+
+    /// The section the sidebar shows.
+    pub fn sidebar_section(&self) -> SidebarSection {
+        self.sidebar_section
+    }
+
+    /// Switches the sidebar to `section`, if it is available.
+    pub fn set_sidebar_section(&mut self, section: SidebarSection) {
+        if section.available() {
+            self.sidebar_section = section;
+        }
     }
 
     /// Whether Layers is collapsed to its rail.
@@ -299,7 +361,10 @@ impl Shell {
 
     /// The Layers rail was clicked. If the user collapsed Layers and the window has room, that
     /// expands it; otherwise the window is too narrow and Layers opens over the Canvas.
-    pub fn click_layers_rail(&mut self) {
+    pub fn click_layers_rail(&mut self, click: RailClick) {
+        if let RailClick::Section(section) = click {
+            self.set_sidebar_section(section);
+        }
         let mut expanded = self.clone();
         expanded.layers_collapsed = false;
         if expanded.layout(self.window_width).layers == PanelMode::Rail {
@@ -416,18 +481,48 @@ pub fn collapse_button(ui: &mut egui::Ui, collapsed: bool) -> egui::Response {
     icons::icon_button_flipped(ui, Icon::CollapseDouble, label, collapsed)
 }
 
-/// The 40 pt rail Layers collapses to: only icons, with the expand control pinned to the
-/// bottom. Returns true when that was clicked, which expands Layers.
-pub fn layers_rail(ui: &mut egui::Ui, path: &[String]) -> bool {
+/// The 40 pt rail Layers collapses to: only the section icons, with the expand control pinned
+/// to the bottom. Returns what was clicked, which expands the sidebar.
+pub fn layers_rail(
+    ui: &mut egui::Ui,
+    path: &[String],
+    current: SidebarSection,
+) -> Option<RailClick> {
     let palette = theme::palette(ui.ctx());
     let rect = ui.max_rect();
-    let tint = palette.text_secondary;
-    let layers_y = rect.top() + metrics::PANEL_HEADER / 2.0;
-    let slot = egui::Rect::from_center_size(
-        egui::pos2(rect.center().x, layers_y),
-        egui::Vec2::splat(icons::GRID + 8.0),
-    );
-    icons::paint(ui, slot, Icon::LayerGroup, icons::GRID, tint);
+    let mut clicked = None;
+    let step = icons::GRID + 8.0 + theme::SPACING[1];
+    let mut layers_y = rect.top() + metrics::PANEL_HEADER / 2.0;
+    let mut count = 0.0;
+    for section in SidebarSection::ALL.into_iter().filter(|s| s.available()) {
+        let slot = egui::Rect::from_center_size(
+            egui::pos2(rect.center().x, layers_y + count * step),
+            egui::Vec2::splat(icons::GRID + 8.0),
+        );
+        let response = ui.interact(
+            slot,
+            ui.id().with(("sidebar section", section.title())),
+            egui::Sense::click(),
+        );
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, section.label())
+        });
+        let tint = if section == current || response.hovered() {
+            palette.text_primary
+        } else {
+            palette.text_secondary
+        };
+        icons::paint(ui, slot, section.icon(), icons::GRID, tint);
+        if response
+            .on_hover_text(section.label())
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            clicked = Some(RailClick::Section(section));
+        }
+        count += 1.0;
+    }
+    layers_y += (count - 1.0).max(0.0) * step;
     if !path.is_empty() {
         let text = path.join(" › ");
         let galley = ui.painter().layout_no_wrap(
@@ -456,9 +551,13 @@ pub fn layers_rail(ui: &mut egui::Ui, path: &[String]) -> bool {
         ui.new_child(egui::UiBuilder::new().max_rect(bar).layout(
             egui::Layout::top_down(egui::Align::Center).with_main_align(egui::Align::Center),
         ));
-    collapse_button(&mut bottom, true)
+    if collapse_button(&mut bottom, true)
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
+    {
+        clicked = Some(RailClick::Expand);
+    }
+    clicked
 }
 
 /// The 40 pt rail Properties narrows to at the smallest window. Returns true when clicked,
@@ -632,6 +731,14 @@ mod tests {
         assert_eq!(serde_json::from_str::<Shell>(&json).unwrap(), shell);
         let wild: Shell = serde_json::from_str(r#"{"layers_width": 5000}"#).unwrap();
         assert_eq!(wild.clamped().width(Side::Left), metrics::LAYERS_PANEL_MAX);
+    }
+
+    #[test]
+    fn the_sidebar_section_defaults_to_layers_and_is_stored() {
+        let old: Shell = serde_json::from_str(r#"{"layers_width": 300}"#).unwrap();
+        assert_eq!(old.sidebar_section(), SidebarSection::Layers);
+        let json = serde_json::to_string(&Shell::default()).unwrap();
+        assert!(json.contains("sidebar_section"));
     }
 
     #[test]

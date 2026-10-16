@@ -205,6 +205,22 @@ fn a_narrow_window_shows_layers_as_a_rail_that_opens_over_the_canvas() {
 }
 
 #[test]
+fn the_collapsed_rail_shows_the_section_icons_and_a_click_expands_to_that_section() {
+    let mut harness = app();
+    harness.get_by_label("Collapse Layers (⌘⌥1)").click();
+    harness.run();
+    assert!(harness.state().shell().layers_collapsed());
+    harness.get_by_label("Layers (⌘⌥1)").click();
+    harness.run();
+    assert!(!harness.state().shell().layers_collapsed());
+    assert_eq!(
+        harness.state().shell().sidebar_section(),
+        ssmap_app::shell::SidebarSection::Layers
+    );
+    assert!(harness.query_by_label("Collapse Layers (⌘⌥1)").is_some());
+}
+
+#[test]
 fn a_press_outside_the_overlay_closes_it() {
     let mut harness = app_sized(0.25, 1100.0);
     harness.get_by_label("Expand Layers (⌘⌥1)").click();
