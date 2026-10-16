@@ -1,26 +1,28 @@
 //! One open Map and everything about it that is per Map: its editor, file, view and UI state.
 //!
-//! [`MapMakerApp`](crate::MapMakerApp) holds one `MapTab` today and routes through it as the
-//! active tab; the multi-tab work builds on this. A `MapTab` needs no window: it can be built,
-//! opened from a file and driven with Commands in a plain test.
+//! [`MapMakerApp`](crate::MapMakerApp) holds a list of `MapTab`s and routes through the active
+//! one. A `MapTab` needs no window: it can be built, opened from a file and driven with
+//! Commands in a plain test.
 //!
 //! # Canvas renderer with several tabs
 //!
-//! `canvas_view::install` creates one `CanvasRenderer` and one `TessellationCache` for the
-//! whole run. The renderer owns GPU pipelines and the sprite atlas, which do not depend on the
-//! Map and are expensive, while the cache holds tessellated geometry keyed by Object, which is
-//! only valid for one Map. With several tabs the decision is: **keep one renderer and give each
-//! tab its own `TessellationCache`.** `install` then stops returning a cache; each new tab asks
-//! the renderer for one (`CanvasRenderer::tessellation_cache()` is a shared handle) and passes
-//! it to its `CanvasView`, which already holds an `Option<TessellationCache>`. Only the active
-//! tab draws, so no per-tab renderer or GPU memory is needed, and a tab's cache is dropped with
-//! the tab. The renderer's per-frame scene is built from the active tab's `Editor`, as today.
+//! `canvas_view::install` creates one `CanvasRenderer` for the whole run. The renderer owns GPU
+//! pipelines and the sprite atlas, which do not depend on the Map and are expensive, while a
+//! `TessellationCache` holds tessellated geometry keyed by Object, which is only valid for one
+//! Map. So **there is one renderer and each tab has its own `TessellationCache`**, created with
+//! the tab and dropped with it. Each frame the active tab's cache is handed to the renderer
+//! (`CanvasRenderer::use_tessellation_cache`), so switching back to a fully built Map only
+//! merges its cached meshes again and tessellates nothing.
+//!
+//! Background work **keeps going** when a tab is not active: the tessellation and roughness
+//! workers own their threads and finish into the tab's own caches. What pauses is only the
+//! starting of further work, which the active tab's frame does; it resumes on return.
 
 use std::path::{Path, PathBuf};
 
 use ssmap_core::Map;
 use ssmap_core::file::FileError;
-use ssmap_render::{SpriteStore, TessellationCache};
+use ssmap_render::TessellationCache;
 
 use crate::canvas_view::CanvasView;
 use crate::document::Document;
@@ -45,6 +47,8 @@ pub struct MapTab {
     pub(crate) pending: Option<Pending>,
     /// The folder of the last export, for Re-export when the Map has no file yet.
     pub(crate) export_directory: Option<PathBuf>,
+    /// While quitting: the user has already decided about this tab's unsaved changes.
+    pub(crate) quit_decided: bool,
 }
 
 impl MapTab {
@@ -61,6 +65,7 @@ impl MapTab {
             recovery_prompt: None,
             pending: None,
             export_directory: None,
+            quit_decided: false,
         }
     }
 
@@ -88,16 +93,14 @@ impl MapTab {
         self.document.has_unsaved_changes(&self.editor.map)
     }
 
-    /// Puts another Map in this tab, keeping the selected Asset and dropping per-Map UI state.
-    pub(crate) fn replace(&mut self, document: Document, map: Map, sprites: SpriteStore) {
-        self.document = document;
-        let selected_asset = self.editor.selected_asset.take();
-        self.editor = Editor::new(map);
-        self.editor.set_sprites(sprites);
-        self.editor.selected_asset = selected_asset;
-        self.layer_tree = LayerTree::default();
-        self.properties = PropertiesPanel::default();
-        self.canvas_view.refit();
+    /// The Recovery journal being written for this tab's Map, once there is one.
+    pub fn recovery_journal(&self) -> Option<&Path> {
+        self.recovery.journal_path()
+    }
+
+    /// This tab's tessellation cache; `None` without a wgpu device.
+    pub fn tessellation_cache(&self) -> Option<&TessellationCache> {
+        self.canvas_view.cache()
     }
 }
 

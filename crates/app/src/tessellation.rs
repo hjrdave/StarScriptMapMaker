@@ -18,11 +18,6 @@ impl BackgroundTessellation {
         Self { cache, armed: true }
     }
 
-    /// Another Map has opened: its Objects are tessellated in the background.
-    pub fn arm(&mut self) {
-        self.armed = true;
-    }
-
     /// Called each frame with the content about to be drawn. While armed, starts a worker
     /// whenever Objects are not ready and none is running, which includes the content rebuilt
     /// when a roughened outline lands (`outlines_running` says more may follow). `repaint` is
@@ -159,16 +154,36 @@ mod tests {
     }
 
     #[test]
-    fn a_map_opened_later_arms_it_again() {
-        let content = content(2);
-        let mut tessellation = BackgroundTessellation::new(Some(TessellationCache::new()));
-        tessellation
-            .update(&content, false, || {})
+    fn each_tab_keeps_its_own_cache_and_switching_back_tessellates_nothing() {
+        let first = content(3);
+        let second = content(2);
+        let (first_cache, second_cache) = (TessellationCache::new(), TessellationCache::new());
+        let mut first_tab = BackgroundTessellation::new(Some(first_cache.clone()));
+        let mut second_tab = BackgroundTessellation::new(Some(second_cache.clone()));
+        first_tab
+            .update(&first, false, || {})
             .unwrap()
             .join()
             .unwrap();
-        assert!(tessellation.update(&content, false, || {}).is_none());
-        tessellation.arm();
-        assert!(tessellation.armed);
+        let built = first_cache.generation();
+        let objects = first_cache.len();
+        assert!(second_cache.is_empty(), "the other tab's cache is separate");
+
+        // The second tab is shown and tessellates its own Map.
+        second_tab
+            .update(&second, false, || {})
+            .unwrap()
+            .join()
+            .unwrap();
+        assert_eq!(first_cache.generation(), built);
+
+        // Back to the first tab: nothing is pending, no worker starts, and no Object is
+        // tessellated again (the cache's generation counts every Object that lands).
+        assert_eq!(first_cache.pending(first.groups()), 0);
+        assert!(first_tab.update(&first, false, || {}).is_none());
+        assert_eq!(first_cache.generation(), built);
+        assert_eq!(first_cache.len(), objects);
+        assert!(!first_cache.same_as(&second_cache));
+        assert!(first_cache.same_as(&first_cache.clone()));
     }
 }

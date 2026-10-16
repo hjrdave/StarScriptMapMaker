@@ -28,7 +28,7 @@ use egui_file_dialog::{DialogState, FileDialog, Filter};
 use ssmap_core::asset::{PackLibrary, PackRoots};
 use ssmap_core::file::{JournalBase, MapFile, PREVIEW_SIZE, remove_journal};
 use ssmap_core::{CREDITS_CHUNK_KEYWORD, Canvas, DistanceUnit, Map, Scale};
-use ssmap_render::{ExportJob, PngMeta, SpriteStore};
+use ssmap_render::{ExportJob, PngMeta, SpriteStore, TessellationCache};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -65,8 +65,15 @@ pub fn launch_file(args: impl IntoIterator<Item = OsString>) -> Option<PathBuf> 
 }
 
 pub struct MapMakerApp {
-    /// The one open Map: the active tab, reached through [`Self::tab`].
-    tab: MapTab,
+    /// The open Maps, one per tab, in the order of the tab row. May be empty.
+    tabs: Vec<MapTab>,
+    /// The index of the active tab: the one whose Map the window shows and every command acts
+    /// on, reached through [`Self::tab`]. Meaningless while `tabs` is empty.
+    active: usize,
+    /// Where journals of Maps never saved go; `None` turns them off.
+    recovery_dir: Option<PathBuf>,
+    /// Whether the Canvas renderer is installed, so new tabs get a tessellation cache.
+    gpu: bool,
     asset_browser: AssetBrowser,
     /// The installed Asset packs' art, shared with the Canvas renderer and picking.
     sprites: SpriteStore,
@@ -79,9 +86,13 @@ pub struct MapMakerApp {
     export_run: Option<ExportRun>,
     open_dialog: FileDialog,
     save_dialog: FileDialog,
-    /// Journals of Maps never saved left by a crash, oldest first, offered one at a time
-    /// while the open Map has no unsaved changes.
+    /// Journals of Maps never saved left by a crash, oldest first, offered one at a time.
     unsaved_found: Vec<Found>,
+    /// The journal of a Map never saved being offered now; recovering it opens a new tab.
+    unsaved_prompt: Option<Found>,
+    /// A tab's unsaved-changes question was answered Save for a Map never saved: what to do
+    /// once the Save As dialog saves it. Closing that dialog instead cancels.
+    awaiting_save: Option<(usize, Pending)>,
     /// Set once the user has chosen to close despite unsaved changes.
     close_allowed: bool,
     /// `None` without a GPU, as in UI tests; saves then store no preview.
@@ -107,9 +118,9 @@ impl MapMakerApp {
         let canvas = Canvas::new(4096, 3072, Scale::new(0.25, DistanceUnit::Miles));
         let (map, layers, problem) = new_map::start_map(canvas);
         let mut app = Self::with_map(cc, map, recovery_dir);
-        app.tab.editor.default_layers = layers;
+        app.tabs[0].editor.default_layers = layers;
         if let Some(problem) = problem {
-            app.tab.editor.error(problem);
+            app.tabs[0].editor.error(problem);
         }
         app
     }
@@ -127,9 +138,9 @@ impl MapMakerApp {
         let sprites = SpriteStore::new(Arc::new(library));
         let ctx = cc.egui_ctx.clone();
         sprites.set_repaint(move || ctx.request_repaint());
-        let cache = match cc.wgpu_render_state.as_ref() {
+        let gpu = match cc.wgpu_render_state.as_ref() {
             Some(render_state) => canvas_view::install(render_state, sprites.clone()),
-            None => None,
+            None => false,
         };
         let map_files = || -> FileDialog {
             FileDialog::new()
@@ -144,13 +155,21 @@ impl MapMakerApp {
                 .add_save_extension("Map file", document::EXTENSION)
                 .default_save_extension("Map file")
         };
-        let recovery = Recovery::new(recovery_dir);
-        let mut unsaved_found = recovery.find_unsaved();
+        let mut unsaved_found = Recovery::new(recovery_dir.clone()).find_unsaved();
         unsaved_found.reverse();
-        let mut tab = MapTab::new(map, cache, recovery);
+        let mut tab = MapTab::new(
+            map,
+            gpu.then(TessellationCache::new),
+            Recovery::new(recovery_dir.clone()),
+        );
         tab.editor.set_sprites(sprites.clone());
         Self {
-            tab,
+            tabs: vec![tab],
+            active: 0,
+            recovery_dir,
+            gpu,
+            awaiting_save: None,
+            unsaved_prompt: None,
             asset_browser: AssetBrowser::default(),
             sprites,
             credits,
@@ -184,22 +203,96 @@ impl MapMakerApp {
 
     /// Whether a Label's text box is open on the Canvas.
     pub fn editing_label_text(&self) -> bool {
-        self.tab.canvas_view.editing_text()
+        self.tab().canvas_view.editing_text()
     }
 
     /// The screen position of a Canvas point in the Canvas panel, once it has been drawn.
     pub fn canvas_to_screen(&self, point: [f64; 2]) -> Option<egui::Pos2> {
-        self.tab.canvas_view.to_screen(point)
+        self.tab().canvas_view.to_screen(point)
     }
 
-    /// The Recovery journal being written for the open Map, once there is one.
+    /// The Recovery journal being written for the active tab's Map, once there is one.
     pub fn recovery_journal(&self) -> Option<&Path> {
-        self.tab.recovery.journal_path()
+        self.tab().recovery_journal()
     }
 
-    /// Whether edits are waiting to be written to the Recovery journal.
+    /// Whether edits are waiting to be written to the active tab's Recovery journal.
     pub fn has_unjournaled_changes(&self) -> bool {
-        self.tab.recovery.has_pending()
+        self.tab().recovery.has_pending()
+    }
+
+    /// The open Maps, in tab order.
+    pub fn tabs(&self) -> &[MapTab] {
+        &self.tabs
+    }
+
+    /// The index of the active tab.
+    pub fn active_tab(&self) -> usize {
+        self.active
+    }
+
+    /// Makes tab `index` the active one; out of range does nothing.
+    pub fn focus_tab(&mut self, index: usize) {
+        if index < self.tabs.len() {
+            self.active = index;
+        }
+    }
+
+    /// Closes tab `index`, first asking about unsaved changes (the question is answered in the
+    /// dialog on the next frame).
+    pub fn close_tab(&mut self, index: usize) {
+        let Some(tab) = self.tabs.get_mut(index) else {
+            return;
+        };
+        if tab.has_unsaved_changes() {
+            tab.pending = Some(Pending::CloseTab);
+            self.active = index;
+        } else {
+            self.remove_tab(index);
+        }
+    }
+
+    /// Drops tab `index` and its Recovery journal, keeping the same Map active if it can.
+    fn remove_tab(&mut self, index: usize) {
+        let mut tab = self.tabs.remove(index);
+        tab.recovery.reset();
+        if index < self.active || self.active >= self.tabs.len() {
+            self.active = self.active.saturating_sub(1);
+        }
+    }
+
+    /// The index of the tab showing the Map file at `path`, comparing canonical paths.
+    fn tab_for(&self, path: &Path) -> Option<usize> {
+        let canonical = |path: &Path| std::fs::canonicalize(path).unwrap_or(path.to_path_buf());
+        let wanted = canonical(path);
+        self.tabs.iter().position(|tab| {
+            tab.document
+                .path()
+                .is_some_and(|open| canonical(open) == wanted)
+        })
+    }
+
+    /// A new tab for `map`, with this run's art and a Recovery journal of its own.
+    fn new_tab(&self, map: Map, document: Document) -> MapTab {
+        let recovery = Recovery::new(self.recovery_dir.clone());
+        let mut tab = MapTab::new(map, self.gpu.then(TessellationCache::new), recovery);
+        tab.document = document;
+        tab.editor.set_sprites(self.sprites.clone());
+        tab
+    }
+
+    /// Adds `tab` after the others and shows it.
+    fn push_tab(&mut self, tab: MapTab) {
+        self.tabs.push(tab);
+        self.active = self.tabs.len() - 1;
+    }
+
+    /// Shows a message on the active tab's status bar, or on stderr when no Map is open.
+    fn notify_error(&mut self, message: String) {
+        match self.tabs.get_mut(self.active) {
+            Some(tab) => tab.editor.error(message),
+            None => eprintln!("{message}"),
+        }
     }
 
     /// The window title, as last sent to the window.
@@ -207,121 +300,72 @@ impl MapMakerApp {
         &self.title
     }
 
-    /// Opens a Map file in place of the current Map, without asking about unsaved changes.
+    /// Opens a Map file in a new tab and shows it, or shows the tab that already has that
+    /// file open.
     pub fn open_path(&mut self, path: &Path) -> bool {
+        if let Some(index) = self.tab_for(path) {
+            self.active = index;
+            return true;
+        }
         match Document::open(path) {
             Ok((document, map)) => {
-                self.tab.recovery.reset();
-                self.tab.recovery_prompt = None;
-                self.replace(document, map);
+                let mut tab = self.new_tab(map, document);
                 let ctx = self.egui_ctx.clone();
-                self.tab
-                    .editor
+                tab.editor
                     .start_background_roughness(move || ctx.request_repaint());
                 self.recent.add(path);
-                self.tab
-                    .editor
-                    .info(format!("Opened “{}”", self.tab.document.name()));
-                self.find_recovery(path);
+                tab.editor.info(format!("Opened “{}”", tab.document.name()));
+                find_recovery(&mut tab, path);
+                self.push_tab(tab);
                 true
             }
             Err(err) => {
                 let name = path.file_name().unwrap_or_default().to_string_lossy();
-                self.tab
-                    .editor
-                    .error(format!("Couldn’t open “{name}”: {err}"));
+                self.notify_error(format!("Couldn’t open “{name}”: {err}"));
                 false
             }
         }
     }
 
-    fn replace(&mut self, document: Document, map: Map) {
-        self.tab.replace(document, map, self.sprites.clone());
-    }
-
-    /// The active tab: the one whose Map the window shows and every command acts on.
+    /// The active tab: the one whose Map the window shows and every command acts on. Panics
+    /// while no Map is open.
     fn tab(&self) -> &MapTab {
-        &self.tab
+        &self.tabs[self.active]
     }
 
-    /// Replaces the open Map with a new one from the starter template, without asking about
-    /// unsaved changes.
+    /// Opens a new Map from the starter template in a new tab and shows it.
     pub fn new_map(&mut self, canvas: Canvas) {
         let (map, layers, problem) = new_map::start_map(canvas);
-        self.tab.recovery.reset();
-        self.tab.recovery_prompt = None;
-        self.replace(Document::default(), map);
-        self.tab.editor.default_layers = layers;
+        let mut tab = self.new_tab(map, Document::default());
+        tab.editor.default_layers = layers;
         match problem {
-            Some(problem) => self.tab.editor.error(problem),
-            None => self.tab.editor.info("Created a new Map"),
+            Some(problem) => tab.editor.error(problem),
+            None => tab.editor.info("Created a new Map"),
         }
-    }
-
-    /// Starts a new Map, first asking whether to discard unsaved changes.
-    fn request_new(&mut self, canvas: Canvas) {
-        if self.tab.document.has_unsaved_changes(&self.tab.editor.map) {
-            self.tab.pending = Some(Pending::New(canvas));
-        } else {
-            self.new_map(canvas);
-        }
-    }
-
-    /// Opens a Map file, first asking whether to discard unsaved changes.
-    fn request_open(&mut self, path: PathBuf) {
-        if self.tab.document.has_unsaved_changes(&self.tab.editor.map) {
-            self.tab.pending = Some(Pending::Open(path));
-        } else {
-            self.open_path(&path);
-        }
-    }
-
-    /// Offers the Recovery journal a crash left beside the Map file just opened: to replay
-    /// if it was written against this save, or else only as a separate copy.
-    fn find_recovery(&mut self, path: &Path) {
-        match Recovery::find_beside(path) {
-            Ok(Some(found)) => {
-                let generation = self.tab.document.save_generation().unwrap_or_default();
-                self.tab.recovery_prompt = Some(if found.recovered.matches(generation) {
-                    RecoveryPrompt::Replay(found)
-                } else {
-                    RecoveryPrompt::Copy {
-                        found,
-                        reason: CHANGED_SINCE.into(),
-                    }
-                });
-            }
-            Ok(None) => {}
-            Err(err) => self.tab.editor.error(format!(
-                "Couldn’t read the unsaved changes to “{}”: {err}",
-                self.tab.document.name()
-            )),
-        }
+        self.push_tab(tab);
     }
 
     /// Applies a journal's changes to the Map file it was written against.
     fn replay_recovery(&mut self, found: Found) {
+        let tab = &mut self.tabs[self.active];
         let ops = found.recovered.ops.clone();
-        match found.recovered.clone().replay(&mut self.tab.editor.map) {
+        match found.recovered.clone().replay(&mut tab.editor.map) {
             Ok(()) => {
-                if let Err(err) = self.tab.recovery.resume(
-                    &self.tab.document,
-                    &self.tab.editor.map,
-                    &found.path,
-                    &ops,
-                ) {
-                    self.tab
-                        .editor
+                if let Err(err) =
+                    tab.recovery
+                        .resume(&tab.document, &tab.editor.map, &found.path, &ops)
+                {
+                    tab.editor
                         .error(format!("Couldn’t write the Recovery journal: {err}"));
                     return;
                 }
-                self.tab.editor.info(format!(
+                tab.editor.info(format!(
                     "Recovered the unsaved changes to “{}”",
-                    self.tab.document.name()
+                    tab.document.name()
                 ));
             }
             Err(err) => {
-                self.tab.recovery_prompt = Some(RecoveryPrompt::Copy {
+                tab.recovery_prompt = Some(RecoveryPrompt::Copy {
                     found,
                     reason: format!("The unsaved changes no longer apply to it ({err})."),
                 });
@@ -329,13 +373,14 @@ impl MapMakerApp {
         }
     }
 
-    /// Saves a journal's changes, applied as far as they go, as a copy beside the open Map
-    /// file, which is left as it is.
+    /// Saves a journal's changes, applied as far as they go, as a copy beside the active
+    /// tab's Map file, which is left as it is.
     fn save_recovered_copy(&mut self, found: Found) {
-        let Some(path) = self.tab.document.path().map(Path::to_path_buf) else {
+        let tab = &mut self.tabs[self.active];
+        let Some(path) = tab.document.path().map(Path::to_path_buf) else {
             return;
         };
-        let mut copy = self.tab.editor.map.clone();
+        let mut copy = tab.editor.map.clone();
         let skipped = found.recovered.replay_lenient(&mut copy);
         let copy_path = recovery::recovered_copy_path(&path);
         let copy_name = copy_path.file_name().unwrap_or_default().to_string_lossy();
@@ -348,18 +393,17 @@ impl MapMakerApp {
                     1 => " (1 change no longer applied)".into(),
                     n => format!(" ({n} changes no longer applied)"),
                 };
-                self.tab.editor.info(format!(
+                tab.editor.info(format!(
                     "Saved the recovered changes as “{copy_name}”{skipped}"
                 ));
             }
-            Err(err) => self
-                .tab
+            Err(err) => tab
                 .editor
                 .error(format!("Couldn’t save “{copy_name}”: {err}")),
         }
     }
 
-    /// Opens a Map never saved from the journal a crash left.
+    /// Opens a Map never saved from the journal a crash left, in a new tab.
     fn recover_unsaved(&mut self, found: Found) {
         let JournalBase::Unsaved { map: view } = found.recovered.base.clone() else {
             return;
@@ -367,69 +411,126 @@ impl MapMakerApp {
         let mut map = match Map::from_view(*view) {
             Ok(map) => map,
             Err(err) => {
-                self.tab
-                    .editor
-                    .error(format!("Couldn’t recover the unsaved Map: {err}"));
+                self.notify_error(format!("Couldn’t recover the unsaved Map: {err}"));
                 return;
             }
         };
         found.recovered.replay_lenient(&mut map);
-        self.replace(Document::recovered(), map);
-        if let Err(err) =
-            self.tab
-                .recovery
-                .resume(&self.tab.document, &self.tab.editor.map, &found.path, &[])
+        let mut tab = self.new_tab(map, Document::recovered());
+        if let Err(err) = tab
+            .recovery
+            .resume(&tab.document, &tab.editor.map, &found.path, &[])
         {
-            self.tab
-                .editor
+            tab.editor
                 .error(format!("Couldn’t write the Recovery journal: {err}"));
-            return;
+        } else {
+            tab.editor.info("Recovered an unsaved Map");
         }
-        self.tab.editor.info("Recovered an unsaved Map");
+        self.push_tab(tab);
     }
 
-    /// Writes the Ops applied this frame to the Recovery journal once they are due, and
-    /// wakes up in time for that.
+    /// Writes the Ops applied this frame, in every tab, to its Recovery journal once they are
+    /// due, and wakes up in time for that.
     fn journal(&mut self, ctx: &egui::Context) {
         let now = Instant::now();
-        self.tab
-            .recovery
-            .record(self.tab.editor.take_applied(), now);
         // What falls due within a frame is written now: egui repaints at once for so short a
         // wait anyway.
         let frame = Duration::from_secs_f32(ctx.input(|input| input.predicted_dt));
-        if let Err(err) =
-            self.tab
+        for tab in &mut self.tabs {
+            tab.recovery.record(tab.editor.take_applied(), now);
+            if let Err(err) = tab
                 .recovery
-                .flush_if_due(now + frame, &self.tab.document, &self.tab.editor.map)
-        {
-            self.tab
-                .editor
-                .error(format!("Couldn’t write the Recovery journal: {err}"));
-        }
-        if let Some(wait) = self.tab.recovery.due_in(now) {
-            ctx.request_repaint_after(wait);
+                .flush_if_due(now + frame, &tab.document, &tab.editor.map)
+            {
+                tab.editor
+                    .error(format!("Couldn’t write the Recovery journal: {err}"));
+            }
+            if let Some(wait) = tab.recovery.due_in(now) {
+                ctx.request_repaint_after(wait);
+            }
         }
     }
 
-    /// A close with unsaved changes asks first; a clean close deletes the Recovery journal.
+    /// Closing the window with unsaved changes asks about each tab that has some, in turn; a
+    /// clean close deletes every Recovery journal.
     fn handle_close(&mut self, ctx: &egui::Context) {
         if !ctx.input(|input| input.viewport().close_requested()) || self.close_allowed {
             return;
         }
-        if self.tab.document.has_unsaved_changes(&self.tab.editor.map) {
+        if self.tabs.iter().any(MapTab::has_unsaved_changes) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.tab.pending = Some(Pending::Close);
+            // A question already on screen is the quit in progress.
+            let asking =
+                self.awaiting_save.is_some() || self.tabs.iter().any(|t| t.pending.is_some());
+            if !asking {
+                self.advance_quit(ctx);
+            }
         } else {
-            self.tab.recovery.reset();
+            for tab in &mut self.tabs {
+                tab.recovery.reset();
+            }
         }
     }
 
-    /// Closes the window, discarding unsaved changes and their Recovery journal.
+    /// Quitting: shows the next tab with unsaved changes that has not been decided about and
+    /// asks what to do with it; closes the window once none is left.
+    fn advance_quit(&mut self, ctx: &egui::Context) {
+        let next = self
+            .tabs
+            .iter()
+            .position(|tab| tab.has_unsaved_changes() && !tab.quit_decided);
+        match next {
+            Some(index) => {
+                self.active = index;
+                self.tabs[index].pending = Some(Pending::Quit);
+            }
+            None => self.close(ctx),
+        }
+    }
+
+    /// Stops a quit: every tab stays open and is asked about again next time.
+    fn cancel_quit(&mut self) {
+        for tab in &mut self.tabs {
+            tab.quit_decided = false;
+        }
+    }
+
+    /// Closes the window, discarding unsaved changes and their Recovery journals.
     fn close(&mut self, ctx: &egui::Context) {
         self.close_allowed = true;
-        self.tab.recovery.reset();
+        for tab in &mut self.tabs {
+            tab.recovery.reset();
+        }
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+
+    /// Whether a dialog has the keyboard, so shortcuts and the tab row wait.
+    fn dialog_open(&self) -> bool {
+        self.tabs
+            .get(self.active)
+            .is_some_and(|tab| tab.pending.is_some() || tab.recovery_prompt.is_some())
+            || self.tabs.iter().any(|tab| tab.pending.is_some())
+            || self.awaiting_save.is_some()
+            || self.unsaved_prompt.is_some()
+            || self.new_map_dialog.open
+            || self.export_dialog.open
+            || self.export_run.is_some()
+            || *self.open_dialog.state() == DialogState::Open
+            || *self.save_dialog.state() == DialogState::Open
+    }
+
+    /// Opens each `.ssmap` file dropped onto the window in a tab of its own.
+    fn open_dropped_files(&mut self, ctx: &egui::Context) {
+        let dropped = ctx.input(|input| input.raw.dropped_files.clone());
+        for file in dropped {
+            let path = file.path();
+            if path
+                .extension()
+                .is_some_and(|extension| extension == document::EXTENSION)
+            {
+                self.open_path(path);
+            }
+        }
     }
 
     /// Whether the user chose to close the window.
@@ -440,14 +541,11 @@ impl MapMakerApp {
     /// Saves to the open file, or asks where to save a Map that has never been saved.
     pub fn save(&mut self) -> bool {
         // A gesture still open would otherwise reach the journal after the save holding it.
-        self.tab.editor.end_gesture();
-        self.tab.editor.embed_used_assets();
+        self.tabs[self.active].editor.end_gesture();
+        self.tabs[self.active].editor.embed_used_assets();
         let preview = self.preview_png();
-        match self
-            .tab
-            .document
-            .save(&self.tab.editor.map, preview.as_deref())
-        {
+        let tab = &mut self.tabs[self.active];
+        match tab.document.save(&tab.editor.map, preview.as_deref()) {
             Some(result) => self.saved(result),
             None => {
                 self.show_save_dialog();
@@ -456,45 +554,47 @@ impl MapMakerApp {
         }
     }
 
-    /// Saves a copy at `path` that becomes the open file.
+    /// Saves a copy at `path` that becomes the active tab's file.
     pub fn save_as_path(&mut self, path: &Path) -> bool {
-        self.tab.editor.end_gesture();
-        self.tab.editor.embed_used_assets();
+        self.tabs[self.active].editor.end_gesture();
+        self.tabs[self.active].editor.embed_used_assets();
         let preview = self.preview_png();
         let path = document::with_extension(path.to_path_buf());
-        let result = self
-            .tab
+        let tab = &mut self.tabs[self.active];
+        let result = tab
             .document
-            .save_as(&path, &self.tab.editor.map, preview.as_deref());
+            .save_as(&path, &tab.editor.map, preview.as_deref());
         self.saved(result)
     }
 
     fn saved(&mut self, result: Result<(), ssmap_core::file::FileError>) -> bool {
+        let tab = &mut self.tabs[self.active];
         match result {
             Ok(()) => {
                 // The save holds every change so far; the journal starts over.
-                self.tab.editor.take_applied();
-                self.tab.recovery.reset();
-                if let Some(path) = self.tab.document.path().map(Path::to_path_buf) {
-                    self.recent.add(&path);
+                tab.editor.take_applied();
+                tab.recovery.reset();
+                if let Some(path) = tab.document.path() {
+                    self.recent.add(path);
                 }
-                self.tab
-                    .editor
-                    .info(format!("Saved “{}”", self.tab.document.name()));
+                tab.editor.info(format!("Saved “{}”", tab.document.name()));
                 true
             }
             Err(err) => {
-                let name = self.tab.document.name();
-                self.tab
-                    .editor
-                    .error(format!("Couldn’t save “{name}”: {err}"));
+                let name = tab.document.name();
+                tab.editor.error(format!("Couldn’t save “{name}”: {err}"));
                 false
             }
         }
     }
 
     fn show_open_dialog(&mut self) {
-        if let Some(dir) = self.tab.document.path().and_then(Path::parent) {
+        if let Some(dir) = self
+            .tabs
+            .get(self.active)
+            .and_then(|tab| tab.document.path())
+            .and_then(Path::parent)
+        {
             self.open_dialog.config_mut().initial_directory = dir.to_path_buf();
         }
         self.open_dialog.pick_file();
@@ -502,18 +602,24 @@ impl MapMakerApp {
 
     fn show_save_dialog(&mut self) {
         let config = self.save_dialog.config_mut();
-        if let Some(dir) = self.tab.document.path().and_then(Path::parent) {
+        let tab = &self.tabs[self.active];
+        if let Some(dir) = tab.document.path().and_then(Path::parent) {
             config.initial_directory = dir.to_path_buf();
         }
-        config.default_file_name = self.tab.document.name();
+        config.default_file_name = tab.document.name();
         self.save_dialog.save_file();
     }
 
     /// The preview PNG stored with each save, rendered like the screen.
     fn preview_png(&mut self) -> Option<Vec<u8>> {
         let render_state = self.render_state.as_ref()?;
-        let image =
-            canvas_view::render_whole_canvas(render_state, &mut self.tab.editor, PREVIEW_SIZE)?;
+        let tab = &mut self.tabs[self.active];
+        let image = canvas_view::render_whole_canvas(
+            render_state,
+            &mut tab.editor,
+            tab.canvas_view.cache(),
+            PREVIEW_SIZE,
+        )?;
         let mut png = Vec::new();
         image::ImageEncoder::write_image(
             image::codecs::png::PngEncoder::new(&mut png),
@@ -539,32 +645,45 @@ impl MapMakerApp {
                 if let Some(path) = self.recent.menu(ui) {
                     ui.close();
                     if path.is_file() {
-                        self.request_open(path);
+                        self.open_path(&path);
                     } else {
                         self.recent.remove(&path);
-                        self.tab
-                            .editor
-                            .error(format!("“{}” no longer exists", path.display()));
+                        self.notify_error(format!("“{}” no longer exists", path.display()));
                     }
                 }
             });
             ui.separator();
-            if ui.button("Save").clicked() {
+            let has_tab = !self.tabs.is_empty();
+            if ui.add_enabled(has_tab, egui::Button::new("Save")).clicked() {
                 self.save();
             }
-            if ui.button("Save As…").clicked() {
+            if ui
+                .add_enabled(has_tab, egui::Button::new("Save As…"))
+                .clicked()
+            {
                 self.show_save_dialog();
             }
+            if ui
+                .add_enabled(has_tab, egui::Button::new("Close Tab"))
+                .clicked()
+            {
+                self.close_tab(self.active);
+                ui.close();
+            }
             ui.separator();
-            if ui.button("Export PNG…").clicked() {
-                let directory = self.tab.document.path().and_then(Path::parent);
+            if ui
+                .add_enabled(has_tab, egui::Button::new("Export PNG…"))
+                .clicked()
+            {
+                let tab = &self.tabs[self.active];
+                let directory = tab.document.path().and_then(Path::parent);
                 self.export_dialog.open_with(
-                    &self.tab.editor.map.export_settings,
+                    &tab.editor.map.export_settings,
                     directory.map(Path::to_path_buf),
                 );
                 ui.close();
             }
-            let again = self.re_export_target().is_some() && self.export_run.is_none();
+            let again = has_tab && self.re_export_target().is_some() && self.export_run.is_none();
             if ui
                 .add_enabled(again, egui::Button::new("Re-export"))
                 .clicked()
@@ -601,23 +720,36 @@ impl MapMakerApp {
     fn dialogs(&mut self, ctx: &egui::Context) {
         self.open_dialog.update(ctx);
         if let Some(path) = self.open_dialog.take_picked() {
-            self.request_open(path);
+            self.open_path(&path);
         }
         self.save_dialog.update(ctx);
         if let Some(path) = self.save_dialog.take_picked() {
-            self.save_as_path(&path);
+            let saved = self.save_as_path(&path);
+            match self.awaiting_save.take() {
+                Some((index, pending)) if saved && index == self.active => {
+                    self.finish(pending, ctx);
+                }
+                Some(_) => self.cancel_quit(),
+                None => {}
+            }
+        } else if self.awaiting_save.is_some() && *self.save_dialog.state() != DialogState::Open {
+            // The Save As dialog was closed without saving: the question is cancelled.
+            self.awaiting_save = None;
+            self.cancel_quit();
         }
 
         if let Some(canvas) = self.new_map_dialog.show(ctx) {
-            self.request_new(canvas);
+            self.new_map(canvas);
         }
-        match self.export_dialog.show(ctx, &self.tab.editor.map.canvas) {
-            Some(DialogAction::Save(settings)) => self.tab.editor.map.export_settings = settings,
-            Some(DialogAction::Export(settings)) => {
-                self.tab.editor.map.export_settings = settings;
-                self.export_from_dialog();
+        if let Some(tab) = self.tabs.get_mut(self.active) {
+            match self.export_dialog.show(ctx, &tab.editor.map.canvas) {
+                Some(DialogAction::Save(settings)) => tab.editor.map.export_settings = settings,
+                Some(DialogAction::Export(settings)) => {
+                    tab.editor.map.export_settings = settings;
+                    self.export_from_dialog();
+                }
+                None => {}
             }
-            None => {}
         }
         self.export_progress(ctx);
         self.recovery_dialog(ctx);
@@ -632,16 +764,17 @@ impl MapMakerApp {
         } else {
             directory
         };
-        let settings = &mut self.tab.editor.map.export_settings;
+        let tab = &mut self.tabs[self.active];
+        let settings = &mut tab.editor.map.export_settings;
         if settings.file_name.as_deref().is_none_or(str::is_empty) {
-            settings.file_name = Some(format!("{}.png", self.tab.document.name()));
+            settings.file_name = Some(format!("{}.png", tab.document.name()));
         }
-        self.tab.export_directory = Some(directory);
+        tab.export_directory = Some(directory);
         self.start_export();
     }
 
     fn document_directory(&self) -> Option<PathBuf> {
-        self.tab
+        self.tab()
             .document
             .path()
             .and_then(Path::parent)
@@ -650,51 +783,57 @@ impl MapMakerApp {
 
     /// Where Re-export would write, from the stored settings; `None` before a first export.
     fn re_export_target(&self) -> Option<PathBuf> {
-        let directory = self
-            .tab
+        let tab = self.tab();
+        let directory = tab
             .export_directory
             .clone()
             .or_else(|| self.document_directory())?;
-        export_run::export_path(&self.tab.editor.map.export_settings, &directory)
+        export_run::export_path(&tab.editor.map.export_settings, &directory)
     }
 
-    /// Runs an export from the stored settings without opening the dialog.
+    /// Runs an export of the active tab from the stored settings without opening the dialog.
     fn re_export(&mut self) {
         if self.re_export_target().is_none() {
-            self.tab
+            self.tabs[self.active]
                 .editor
                 .error("Export the Map once with Export PNG… first");
             return;
         }
-        if self.tab.export_directory.is_none() {
-            self.tab.export_directory = self.document_directory();
+        if self.tab().export_directory.is_none() {
+            self.tabs[self.active].export_directory = self.document_directory();
         }
         self.start_export();
     }
 
-    /// Starts exporting to the stored file name in `export_directory`.
+    /// Starts exporting the active tab to the stored file name in `export_directory`. Only
+    /// one export runs at a time.
     fn start_export(&mut self) {
         if self.export_run.is_some() {
             return;
         }
         if self.render_state.is_none() {
-            self.tab.editor.error("Export needs a graphics adapter");
+            self.tabs[self.active]
+                .editor
+                .error("Export needs a graphics adapter");
             return;
         }
         let Some(dest) = self.re_export_target() else {
-            self.tab.editor.error("The export has no file name");
+            self.tabs[self.active]
+                .editor
+                .error("The export has no file name");
             return;
         };
-        let settings = self.tab.editor.map.export_settings.clone();
-        let output = settings.credits.output(&self.tab.editor.credit_lines());
+        let tab = &mut self.tabs[self.active];
+        let settings = tab.editor.map.export_settings.clone();
+        let output = settings.credits.output(&tab.editor.credit_lines());
         let mut meta =
             PngMeta::default().with_software("StarScript Map Maker", env!("CARGO_PKG_VERSION"));
         if let Some(chunk) = &output.chunk {
             meta = meta.with_credits(CREDITS_CHUNK_KEYWORD, chunk);
         }
-        match ExportJob::new(&self.tab.editor.map, &settings, meta, &dest) {
+        match ExportJob::new(&tab.editor.map, &settings, meta, &dest) {
             Ok(job) => self.export_run = Some(ExportRun::new(job, dest, output.file)),
-            Err(err) => self.tab.editor.error(format!("Export failed: {err}")),
+            Err(err) => tab.editor.error(format!("Export failed: {err}")),
         }
     }
 
@@ -706,20 +845,23 @@ impl MapMakerApp {
         let Some(render_state) = self.render_state.as_ref() else {
             return;
         };
-        let editor = &mut self.tab.editor;
-        let outcome = run.frame(
-            |job| match canvas_view::step_export(render_state, editor, job) {
-                Some(step) => step.map_err(|err| err.to_string()),
-                None => Err("no graphics adapter".to_owned()),
-            },
-        );
+        let tab = &mut self.tabs[self.active];
+        let editor = &mut tab.editor;
+        let cache = tab.canvas_view.cache();
+        let outcome =
+            run.frame(
+                |job| match canvas_view::step_export(render_state, editor, cache, job) {
+                    Some(step) => step.map_err(|err| err.to_string()),
+                    None => Err("no graphics adapter".to_owned()),
+                },
+            );
         let dest = run.dest().to_path_buf();
         match outcome {
             Outcome::Running(progress) => {
                 if export_run::show_progress(ctx, &dest, progress) {
                     run.cancel();
                     self.export_run = None;
-                    self.tab.editor.info("Export cancelled");
+                    tab.editor.info("Export cancelled");
                 } else {
                     // Keep stepping even when no input arrives.
                     ctx.request_repaint();
@@ -727,7 +869,7 @@ impl MapMakerApp {
             }
             Outcome::Finished(size) => {
                 self.export_run = None;
-                self.tab.editor.info(format!(
+                tab.editor.info(format!(
                     "Exported {} × {} px to {}",
                     size.width,
                     size.height,
@@ -736,33 +878,29 @@ impl MapMakerApp {
             }
             Outcome::Failed(message) => {
                 self.export_run = None;
-                self.tab.editor.error(format!("Export failed: {message}"));
+                tab.editor.error(format!("Export failed: {message}"));
             }
         }
     }
 
-    /// Asks what to do with unsaved changes before opening another Map or closing.
+    /// Asks what to do with the active tab's unsaved changes before it closes or the app quits.
     fn unsaved_dialog(&mut self, ctx: &egui::Context) {
-        let Some(pending) = self.tab.pending.clone() else {
+        let Some(tab) = self.tabs.get(self.active) else {
             return;
         };
-        let has_file = self.tab.document.path().is_some();
-        let name = self.tab.document.name();
-        let question = match pending {
-            Pending::Open(_) | Pending::New(_) => {
-                format!("Discard the unsaved changes to “{name}”?")
-            }
-            Pending::Close => format!("Save the changes to “{name}” before closing?"),
+        let Some(pending) = tab.pending.clone() else {
+            return;
         };
+        let name = tab.document.name();
         let mut choice = None;
         egui::Modal::new(egui::Id::new("unsaved_changes")).show(ctx, |ui| {
             ui.heading("Unsaved changes");
-            ui.label(question);
+            ui.label(format!("Save the changes to “{name}” before closing?"));
             ui.horizontal(|ui| {
-                if has_file && ui.button("Save").clicked() {
+                if ui.button("Save").clicked() {
                     choice = Some(UnsavedChoice::Save);
                 }
-                if ui.button("Discard").clicked() {
+                if ui.button("Don’t Save").clicked() {
                     choice = Some(UnsavedChoice::Discard);
                 }
                 if ui.button("Cancel").clicked() {
@@ -773,36 +911,55 @@ impl MapMakerApp {
         let Some(choice) = choice else {
             return;
         };
-        self.tab.pending = None;
-        let proceed = match choice {
-            UnsavedChoice::Save => self.save(),
-            UnsavedChoice::Discard => true,
-            UnsavedChoice::Cancel => false,
-        };
-        if proceed {
-            match pending {
-                Pending::Open(path) => {
-                    self.open_path(&path);
+        self.tabs[self.active].pending = None;
+        match choice {
+            UnsavedChoice::Save if self.tab().document.path().is_none() => {
+                // A Map never saved is saved through Save As.
+                self.awaiting_save = Some((self.active, pending));
+                self.show_save_dialog();
+            }
+            UnsavedChoice::Save => {
+                if self.save() {
+                    self.finish(pending, ctx);
+                } else {
+                    self.cancel_quit();
                 }
-                Pending::New(canvas) => self.new_map(canvas),
-                Pending::Close => self.close(ctx),
+            }
+            UnsavedChoice::Discard => self.finish(pending, ctx),
+            UnsavedChoice::Cancel => self.cancel_quit(),
+        }
+    }
+
+    /// The answer to an unsaved-changes question lets `pending` go ahead.
+    fn finish(&mut self, pending: Pending, ctx: &egui::Context) {
+        match pending {
+            Pending::CloseTab => self.remove_tab(self.active),
+            Pending::Quit => {
+                self.tabs[self.active].quit_decided = true;
+                self.advance_quit(ctx);
             }
         }
     }
 
-    /// Offers a Recovery journal left by a crash: the open Map file's, or else one of a Map
-    /// never saved while the open Map has no unsaved changes.
+    /// Offers a Recovery journal left by a crash: the active tab's Map file's, or else one of
+    /// a Map never saved, which opens in a tab of its own.
     fn recovery_dialog(&mut self, ctx: &egui::Context) {
-        if self.tab.recovery_prompt.is_none()
-            && self.tab.pending.is_none()
-            && !self.tab.document.has_unsaved_changes(&self.tab.editor.map)
-        {
-            self.tab.recovery_prompt = self.unsaved_found.pop().map(RecoveryPrompt::Unsaved);
+        let tab_asking = self
+            .tabs
+            .get(self.active)
+            .is_some_and(|tab| tab.recovery_prompt.is_some() || tab.pending.is_some());
+        if !tab_asking && self.awaiting_save.is_none() && self.unsaved_prompt.is_none() {
+            self.unsaved_prompt = self.unsaved_found.pop();
         }
-        let Some(prompt) = &self.tab.recovery_prompt else {
+        let Some(tab) = self.tabs.get(self.active) else {
+            self.unsaved_journal_dialog(ctx);
             return;
         };
-        let name = self.tab.document.name();
+        let Some(prompt) = &tab.recovery_prompt else {
+            self.unsaved_journal_dialog(ctx);
+            return;
+        };
+        let name = tab.document.name();
         let (text, recover) = match prompt {
             RecoveryPrompt::Replay(_) => (
                 format!(
@@ -818,10 +975,6 @@ impl MapMakerApp {
                      left as it is."
                 ),
                 "Save Recovered Copy",
-            ),
-            RecoveryPrompt::Unsaved(_) => (
-                "A Map that was never saved wasn’t closed properly. Recover it?".into(),
-                "Recover",
             ),
         };
         let mut recovered = None;
@@ -840,34 +993,64 @@ impl MapMakerApp {
         let Some(recovered) = recovered else {
             return;
         };
-        let prompt = self.tab.recovery_prompt.take().expect("shown above");
+        let prompt = self.tabs[self.active]
+            .recovery_prompt
+            .take()
+            .expect("shown above");
         match (prompt, recovered) {
             (RecoveryPrompt::Replay(found), true) => self.replay_recovery(found),
             (RecoveryPrompt::Copy { found, .. }, true) => self.save_recovered_copy(found),
-            (RecoveryPrompt::Unsaved(found), true) => self.recover_unsaved(found),
-            (
-                RecoveryPrompt::Replay(found)
-                | RecoveryPrompt::Copy { found, .. }
-                | RecoveryPrompt::Unsaved(found),
-                false,
-            ) => {
+            (RecoveryPrompt::Replay(found) | RecoveryPrompt::Copy { found, .. }, false) => {
                 if let Err(err) = remove_journal(&found.path) {
-                    self.tab
-                        .editor
-                        .error(format!("Couldn’t delete the unsaved changes: {err}"));
+                    self.notify_error(format!("Couldn’t delete the unsaved changes: {err}"));
                 }
             }
         }
     }
 
-    /// Shows the file name in the window title, with a dot while there are unsaved changes.
-    fn update_title(&mut self, ctx: &egui::Context) {
-        let dirty = if self.tab.document.has_unsaved_changes(&self.tab.editor.map) {
-            " •"
-        } else {
-            ""
+    /// Offers the journal of a Map never saved that a crash left: recovering it opens a tab.
+    fn unsaved_journal_dialog(&mut self, ctx: &egui::Context) {
+        if self.unsaved_prompt.is_none() {
+            return;
+        }
+        let mut recovered = None;
+        egui::Modal::new(egui::Id::new("recovery")).show(ctx, |ui| {
+            ui.heading("Recover unsaved changes");
+            ui.label("A Map that was never saved wasn’t closed properly. Recover it?");
+            ui.horizontal(|ui| {
+                if ui.button("Recover").clicked() {
+                    recovered = Some(true);
+                }
+                if ui.button("Discard Changes").clicked() {
+                    recovered = Some(false);
+                }
+            });
+        });
+        let Some(recovered) = recovered else {
+            return;
         };
-        let title = format!("{}{dirty} — StarScript Map Maker", self.tab.document.name());
+        let found = self.unsaved_prompt.take().expect("shown above");
+        if recovered {
+            self.recover_unsaved(found);
+        } else if let Err(err) = remove_journal(&found.path) {
+            self.notify_error(format!("Couldn’t delete the unsaved changes: {err}"));
+        }
+    }
+
+    /// Shows the active Map's file name in the window title, with a dot while it has unsaved
+    /// changes.
+    fn update_title(&mut self, ctx: &egui::Context) {
+        let title = match self.tabs.get(self.active) {
+            Some(tab) => {
+                let dirty = if tab.has_unsaved_changes() {
+                    " •"
+                } else {
+                    ""
+                };
+                format!("{}{dirty} — StarScript Map Maker", tab.document.name())
+            }
+            None => "StarScript Map Maker".to_owned(),
+        };
         if title != self.title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.title = title;
@@ -877,28 +1060,41 @@ impl MapMakerApp {
     fn shortcuts(&mut self, ctx: &egui::Context) {
         // Text fields keep their own undo and keys. The Label text box keeps Escape too,
         // which egui takes its focus away for before this runs.
-        if ctx.egui_wants_keyboard_input() || self.tab.canvas_view.editing_text() {
+        if ctx.egui_wants_keyboard_input()
+            || self
+                .tabs
+                .get(self.active)
+                .is_some_and(|tab| tab.canvas_view.editing_text())
+        {
             return;
         }
         use egui::{Key, KeyboardShortcut, Modifiers};
         let shortcut = |modifiers, key| KeyboardShortcut::new(modifiers, key);
-        let (open, save, save_as) = ctx.input_mut(|input| {
+        let (open, save, save_as, close_tab) = ctx.input_mut(|input| {
             // Shift+S first: plain Cmd+S would also match it.
             let save_as =
                 input.consume_shortcut(&shortcut(Modifiers::COMMAND | Modifiers::SHIFT, Key::S));
             let save = input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::S));
             let open = input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::O));
-            (open, save, save_as)
+            let close_tab = input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::W));
+            (open, save, save_as, close_tab)
         });
         if open {
             self.show_open_dialog();
+        }
+        if self.tabs.is_empty() {
+            return;
+        }
+        if close_tab {
+            self.close_tab(self.active);
+            return;
         }
         if save_as {
             self.show_save_dialog();
         } else if save {
             self.save();
         }
-        let editor = &mut self.tab.editor;
+        let editor = &mut self.tabs[self.active].editor;
         ctx.input_mut(|input| {
             if input.consume_shortcut(&shortcut(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z))
                 || input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::Y))
@@ -953,7 +1149,10 @@ impl MapMakerApp {
         ui.horizontal(|ui| {
             self.file_menu(ui);
             ui.separator();
-            let editor = &mut self.tab.editor;
+            let Some(tab) = self.tabs.get_mut(self.active) else {
+                return;
+            };
+            let editor = &mut tab.editor;
             for tool in ToolId::ALL {
                 let selected = editor.active_tool == tool;
                 if ui
@@ -987,7 +1186,7 @@ impl MapMakerApp {
             {
                 editor.shuffle_variants();
             }
-            ui.toggle_value(&mut self.tab.label_styles.open, "Label styles");
+            ui.toggle_value(&mut tab.label_styles.open, "Label styles");
             ui.separator();
             let undo_hint = editor.undo_label().map(|l| format!("Undo {l}"));
             let undo = ui.add_enabled(editor.can_undo(), egui::Button::new("Undo"));
@@ -1035,9 +1234,45 @@ impl MapMakerApp {
         });
     }
 
+    /// The row of tabs, one per open Map; clicking one shows it, its ✕ closes it.
+    fn tab_strip(&mut self, ui: &mut egui::Ui, enabled: bool) {
+        let mut show = None;
+        let mut close = None;
+        ui.add_enabled_ui(enabled, |ui| {
+            ui.horizontal(|ui| {
+                for (index, tab) in self.tabs.iter().enumerate() {
+                    let dirty = if tab.has_unsaved_changes() {
+                        " •"
+                    } else {
+                        ""
+                    };
+                    ui.push_id(index, |ui| {
+                        let label = format!("{}{dirty}", tab.document.name());
+                        if ui.selectable_label(index == self.active, label).clicked() {
+                            show = Some(index);
+                        }
+                        if ui.small_button("✕").on_hover_text("Close Tab").clicked() {
+                            close = Some(index);
+                        }
+                    });
+                    ui.separator();
+                }
+            });
+        });
+        if let Some(index) = show {
+            self.focus_tab(index);
+        }
+        if let Some(index) = close {
+            self.close_tab(index);
+        }
+    }
+
     fn status_bar(&mut self, ui: &mut egui::Ui) {
+        let Some(tab) = self.tabs.get(self.active) else {
+            return;
+        };
         ui.horizontal(|ui| {
-            if let Some(notice) = self.tab.editor.notice() {
+            if let Some(notice) = tab.editor.notice() {
                 let color = if notice.is_error {
                     ui.visuals().error_fg_color
                 } else {
@@ -1050,13 +1285,13 @@ impl MapMakerApp {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let ppp = f64::from(ui.ctx().pixels_per_point());
-                if let Some(zoom) = self.tab.canvas_view.zoom(ppp) {
+                if let Some(zoom) = tab.canvas_view.zoom(ppp) {
                     ui.label(format!("{:.0}%", zoom * 100.0));
                 }
-                if let Some(layer) = self.tab.editor.active_layer() {
+                if let Some(layer) = tab.editor.active_layer() {
                     ui.weak(format!(
                         "Active Layer: {}",
-                        layer_tree::node_name(&self.tab.editor.map, layer)
+                        layer_tree::node_name(&tab.editor.map, layer)
                     ));
                 }
             });
@@ -1067,20 +1302,43 @@ impl MapMakerApp {
 /// Why a Map file's journal is offered only as a copy, when its save generation differs.
 const CHANGED_SINCE: &str = "The file was replaced or saved elsewhere since they were made.";
 
+/// Offers the Recovery journal a crash left beside the Map file just opened in `tab`: to
+/// replay if it was written against this save, or else only as a separate copy.
+fn find_recovery(tab: &mut MapTab, path: &Path) {
+    match Recovery::find_beside(path) {
+        Ok(Some(found)) => {
+            let generation = tab.document.save_generation().unwrap_or_default();
+            tab.recovery_prompt = Some(if found.recovered.matches(generation) {
+                RecoveryPrompt::Replay(found)
+            } else {
+                RecoveryPrompt::Copy {
+                    found,
+                    reason: CHANGED_SINCE.into(),
+                }
+            });
+        }
+        Ok(None) => {}
+        Err(err) => tab.editor.error(format!(
+            "Couldn’t read the unsaved changes to “{}”: {err}",
+            tab.document.name()
+        )),
+    }
+}
+
+/// What happens to a tab once the user has decided about its unsaved changes.
 #[derive(Clone)]
 enum Pending {
-    Open(PathBuf),
-    New(Canvas),
-    Close,
+    /// Close the tab.
+    CloseTab,
+    /// Quit the app, which asks about every tab with unsaved changes in turn.
+    Quit,
 }
 
 enum RecoveryPrompt {
-    /// The open Map file's journal, written against its current save.
+    /// The tab's Map file's journal, written against its current save.
     Replay(Found),
-    /// The open Map file's journal, written against another save of it.
+    /// The tab's Map file's journal, written against another save of it.
     Copy { found: Found, reason: String },
-    /// The journal of a Map never saved.
-    Unsaved(Found),
 }
 
 enum UnsavedChoice {
@@ -1099,38 +1357,45 @@ impl eframe::App for MapMakerApp {
         let ctx = ui.ctx().clone();
         // Dialogs take the keyboard while they are open.
         self.handle_close(&ctx);
-        let dialog_open = self.tab.pending.is_some()
-            || self.new_map_dialog.open
-            || self.export_dialog.open
-            || self.export_run.is_some()
-            || self.tab.recovery_prompt.is_some()
-            || *self.open_dialog.state() == DialogState::Open
-            || *self.save_dialog.state() == DialogState::Open;
+        let dialog_open = self.dialog_open();
         if !dialog_open {
+            self.open_dropped_files(&ctx);
             self.shortcuts(&ctx);
         }
         self.dialogs(&ctx);
         self.update_title(&ctx);
-        self.credits.show(&ctx, &mut self.tab.editor);
-        self.tab.label_styles.show(&ctx, &mut self.tab.editor);
-        self.updates.show(&ctx);
+        egui::Panel::top("tabs").show(ui, |ui| self.tab_strip(ui, !dialog_open));
         egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
+        if self.tabs.is_empty() {
+            self.updates.show(&ctx);
+            egui::CentralPanel::default().show(ui, |ui| {
+                ui.centered_and_justified(|ui| {
+                    ui.weak("No Map is open. Use File → New Map… or Open…");
+                });
+            });
+            return;
+        }
+        let tab = &mut self.tabs[self.active];
+        self.credits.show(&ctx, &mut tab.editor);
+        tab.label_styles.show(&ctx, &mut tab.editor);
+        self.updates.show(&ctx);
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));
+        let tab = &mut self.tabs[self.active];
         egui::Panel::bottom("assets")
             .resizable(true)
             .default_size(150.0)
-            .show(ui, |ui| self.asset_browser.show(ui, &mut self.tab.editor));
+            .show(ui, |ui| self.asset_browser.show(ui, &mut tab.editor));
         egui::Panel::left("layers")
             .resizable(true)
             .default_size(240.0)
-            .show(ui, |ui| self.tab.layer_tree.show(ui, &mut self.tab.editor));
+            .show(ui, |ui| tab.layer_tree.show(ui, &mut tab.editor));
         egui::Panel::right("properties")
             .resizable(true)
             .default_size(260.0)
-            .show(ui, |ui| self.tab.properties.show(ui, &mut self.tab.editor));
+            .show(ui, |ui| tab.properties.show(ui, &mut tab.editor));
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
-            .show(ui, |ui| self.tab.canvas_view.show(ui, &mut self.tab.editor));
+            .show(ui, |ui| tab.canvas_view.show(ui, &mut tab.editor));
         self.journal(&ctx);
     }
 }

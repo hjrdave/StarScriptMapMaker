@@ -314,7 +314,7 @@ fn closing_with_unsaved_changes_asks_and_a_clean_close_deletes_the_journal() {
     assert!(recovery_path(&file).exists());
 
     request_close(&mut harness);
-    harness.get_by_label("Discard").click();
+    harness.get_by_label("Don’t Save").click();
     harness.run();
     assert!(harness.state().is_closing());
     assert!(!recovery_path(&file).exists());

@@ -254,6 +254,13 @@ impl LyonRenderer {
     pub(crate) fn cache(&self) -> &TessellationCache {
         &self.cache
     }
+
+    /// Draws from another cache, dropping what was built from the old one.
+    pub(crate) fn set_cache(&mut self, cache: TessellationCache) {
+        self.cache = cache;
+        self.mesh = None;
+        self.chunked = None;
+    }
 }
 
 impl LyonRenderer {
@@ -867,6 +874,11 @@ struct TessellationEntry {
 impl TessellationCache {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Whether `other` is a handle to this same store, not just an equal-looking one.
+    pub fn same_as(&self, other: &TessellationCache) -> bool {
+        Arc::ptr_eq(&self.shared, &other.shared)
     }
 
     fn inner(&self) -> MutexGuard<'_, TessellationInner> {
