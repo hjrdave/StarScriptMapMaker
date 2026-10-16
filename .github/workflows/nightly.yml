@@ -44,7 +44,7 @@ jobs:
       - name: Install cargo-packager
         run: cargo install cargo-packager --version "$CARGO_PACKAGER_VERSION" --locked
       - name: Build packages
-        working-directory: crates/app
+        working-directory: apps/starscript
         run: cargo packager --release --formats ${{ matrix.formats }}
       - name: Write a Map file to open
         run: cargo run --release --locked -p ssmap-core --example new_map -- target/Smoke.ssmap
