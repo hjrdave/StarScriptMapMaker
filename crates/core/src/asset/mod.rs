@@ -38,6 +38,7 @@
 mod credits;
 mod install;
 mod library;
+mod manage;
 mod manifest;
 
 use std::fmt;
@@ -49,6 +50,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub use credits::{AttributedAsset, PackCredit, credit_lines};
 pub use install::{ASSETS_DIR_ENV, PACK_MANIFEST, assets_dir, built_in_packs_dir, user_packs_dir};
 pub use library::{LoadProblem, PackLibrary, PackRoots};
+pub use manage::{DeleteError, InstallError, InstallProgress};
 pub use manifest::{ManifestError, ManifestErrors, parse_manifest, read_pack};
 
 /// One Asset pack, as read from its manifest.
