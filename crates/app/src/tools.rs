@@ -137,6 +137,23 @@ struct NodeDrag {
     shape: Vec<usize>,
 }
 
+/// The dark line under an in-progress stroke's gold dashes, so they show on any map colour.
+const HALO: egui::Stroke = egui::Stroke {
+    width: 3.0,
+    color: egui::Color32::from_black_alpha(110),
+};
+/// The dash and gap lengths of an in-progress stroke's outline, in points.
+const DASH: f32 = 6.0;
+const GAP: f32 = 4.0;
+
+impl ToolState {
+    /// Drops a node drag or box-select in progress, as when node editing ends.
+    pub fn clear_node_gestures(&mut self) {
+        self.node_drag = None;
+        self.marquee = None;
+    }
+}
+
 /// How close, in egui points, the pointer must be to grab a node or an edge.
 const NODE_GRAB: f64 = 8.0;
 const EDGE_GRAB: f64 = 6.0;
@@ -635,10 +652,11 @@ fn paint_lasso(
     let Some(lasso) = &state.lasso else {
         return;
     };
+    let palette = crate::theme::palette(painter.ctx());
     let color = if lasso.erase {
-        egui::Color32::from_rgb(200, 60, 50)
+        palette.danger
     } else {
-        egui::Color32::from_rgb(90, 70, 40)
+        palette.gold
     };
     let mut points: Vec<egui::Pos2> = lasso
         .points
@@ -650,11 +668,13 @@ fn paint_lasso(
     {
         points.push(hover);
     }
-    painter.add(egui::Shape::line(
-        points.clone(),
-        egui::Stroke::new(3.0, egui::Color32::WHITE),
+    painter.add(egui::Shape::line(points.clone(), HALO));
+    painter.extend(egui::Shape::dashed_line(
+        &points,
+        egui::Stroke::new(1.5, color),
+        DASH,
+        GAP,
     ));
-    painter.add(egui::Shape::line(points, egui::Stroke::new(1.5, color)));
     if !lasso.freehand {
         for &p in &lasso.points {
             let pos = crate::handles::to_screen(view, origin, ppp, p);
@@ -892,7 +912,8 @@ fn paint_nodes(
     };
     let to_screen = |p: Point| crate::handles::to_screen(view, origin, ppp, p);
     let area = painter.clip_rect().expand(24.0);
-    let line = egui::Stroke::new(1.5, egui::Color32::from_rgb(40, 120, 220));
+    let select = crate::theme::palette(painter.ctx()).select;
+    let line = egui::Stroke::new(1.5, select);
 
     let mut visible: Vec<(NodeRef, egui::Pos2)> = Vec::new();
     for (part, polygon) in outline.0.iter().enumerate() {
@@ -944,26 +965,49 @@ fn paint_nodes(
             3.0
         };
         let rect = egui::Rect::from_center_size(*pos, egui::vec2(half * 2.0, half * 2.0));
-        let fill = if selected {
-            egui::Color32::from_rgb(40, 120, 220)
+        let (fill, edge) = if selected {
+            (select, egui::Color32::WHITE)
         } else {
-            egui::Color32::WHITE
+            (egui::Color32::WHITE, select)
         };
         painter.rect_filled(rect, 1.0, fill);
         painter.rect_stroke(
             rect,
             1.0,
-            egui::Stroke::new(1.0, egui::Color32::from_rgb(40, 120, 220)),
+            egui::Stroke::new(1.0, edge),
             egui::StrokeKind::Middle,
         );
     }
+    // Double-clicking an edge adds a node there: show where, as a ghost + under the pointer.
+    let per_point = ppp / view.zoom;
+    if hovered.is_none()
+        && state.node_drag.is_none()
+        && state.marquee.is_none()
+        && let Some(pos) = hover
+        && let Some(on_edge) = {
+            let local = pos - origin;
+            let point = view.to_canvas([f64::from(local.x) * ppp, f64::from(local.y) * ppp]);
+            match hit_outline(outline, point, NODE_GRAB * per_point, EDGE_GRAB * per_point) {
+                NodeHit::Edge(_, on_edge) => Some(on_edge),
+                _ => None,
+            }
+        }
+    {
+        let at = to_screen(on_edge);
+        painter.circle(
+            at,
+            5.0,
+            select.gamma_multiply(0.35),
+            egui::Stroke::new(1.0, select),
+        );
+        let arm = 2.5;
+        let plus = egui::Stroke::new(1.25, egui::Color32::WHITE);
+        painter.line_segment([at - egui::vec2(arm, 0.0), at + egui::vec2(arm, 0.0)], plus);
+        painter.line_segment([at - egui::vec2(0.0, arm), at + egui::vec2(0.0, arm)], plus);
+    }
     if let Some((a, b)) = state.marquee {
         let rect = egui::Rect::from_two_pos(to_screen(a), to_screen(b));
-        painter.rect_filled(
-            rect,
-            0.0,
-            egui::Color32::from_rgba_unmultiplied(40, 120, 220, 40),
-        );
+        painter.rect_filled(rect, 0.0, select.gamma_multiply(0.16));
         painter.rect_stroke(rect, 0.0, line, egui::StrokeKind::Middle);
     }
 }
@@ -984,10 +1028,11 @@ pub fn paint_overlay(
     }
     if let Some(bounds) = custom_region(editor) {
         // Editor-only: drawn with egui over the Canvas, so it never reaches an export.
+        let accent = crate::theme::palette(painter.ctx()).gold;
         if editor.active_tool == ToolId::ExportRegion {
-            handles::paint(painter, &bounds, view, origin, ppp, false);
+            handles::paint(painter, &bounds, view, origin, ppp, false, accent);
         } else {
-            handles::paint_outline(painter, &bounds, view, origin, ppp);
+            handles::paint_outline(painter, &bounds, view, origin, ppp, accent);
         }
     }
     if editor.active_tool == ToolId::Lasso {
@@ -1000,18 +1045,13 @@ pub fn paint_overlay(
     if editor.active_tool != ToolId::LandBrush {
         return;
     }
+    let palette = crate::theme::palette(painter.ctx());
     let erase_held = painter.ctx().input(|i| i.modifiers.alt);
     let erasing = state.stroke.as_ref().map_or(erase_held, |s| s.erase);
     let (fill, line) = if erasing {
-        (
-            egui::Color32::from_rgba_unmultiplied(200, 60, 50, 70),
-            egui::Color32::from_rgb(200, 60, 50),
-        )
+        (palette.danger.gamma_multiply(0.3), palette.danger)
     } else {
-        (
-            egui::Color32::from_rgba_unmultiplied(216, 196, 154, 140),
-            egui::Color32::from_rgb(90, 70, 40),
-        )
+        (palette.gold.gamma_multiply(0.25), palette.gold)
     };
     let radius = editor.brush_size / 2.0;
     if let Some(stroke) = &mut state.stroke {
@@ -1025,22 +1065,32 @@ pub fn paint_overlay(
         let to_screen = |p: Point| crate::handles::to_screen(view, origin, ppp, p);
         painter.add(egui::Shape::mesh(region_mesh(preview, fill, to_screen)));
         for ring in preview.0.iter().flat_map(|polygon| polygon.rings()) {
-            let points = ring.iter().map(|&p| to_screen(p)).collect();
-            painter.add(egui::Shape::closed_line(
-                points,
-                egui::Stroke::new(1.0, line),
+            let mut points: Vec<egui::Pos2> = ring.iter().map(|&p| to_screen(p)).collect();
+            if let Some(&first) = points.first() {
+                points.push(first);
+            }
+            painter.add(egui::Shape::line(points.clone(), HALO));
+            painter.extend(egui::Shape::dashed_line(
+                &points,
+                egui::Stroke::new(1.5, line),
+                DASH,
+                GAP,
             ));
         }
     }
     if let Some(pos) = hover {
-        let screen_radius = (radius * view.zoom / ppp) as f32;
-        painter.circle_stroke(
-            pos,
-            screen_radius,
-            egui::Stroke::new(1.5, egui::Color32::WHITE),
-        );
-        painter.circle_stroke(pos, screen_radius, egui::Stroke::new(0.75, line));
+        brush_ring(painter, pos, (radius * view.zoom / ppp) as f32);
     }
+}
+
+/// The brush cursor: a white ring over a dark one, so it shows on any map colour.
+fn brush_ring(painter: &egui::Painter, pos: egui::Pos2, radius: f32) {
+    painter.circle_stroke(
+        pos,
+        radius,
+        egui::Stroke::new(3.0, egui::Color32::from_black_alpha(140)),
+    );
+    painter.circle_stroke(pos, radius, egui::Stroke::new(1.25, egui::Color32::WHITE));
 }
 
 /// The scatter brush's and Stamp eraser's cursor: the brush circle, and the path of a stroke
@@ -1072,12 +1122,7 @@ fn paint_scatter_cursor(
         ));
     }
     if let Some(pos) = hover {
-        painter.circle_stroke(
-            pos,
-            screen_radius,
-            egui::Stroke::new(1.5, egui::Color32::WHITE),
-        );
-        painter.circle_stroke(pos, screen_radius, egui::Stroke::new(0.75, line));
+        brush_ring(painter, pos, screen_radius);
     }
 }
 

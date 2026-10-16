@@ -2,6 +2,7 @@
 //! [`MapMakerApp`], so UI tests can drive the same app headlessly.
 
 mod asset_browser;
+mod canvas_controls;
 mod canvas_view;
 pub mod credits;
 pub mod document;
@@ -28,6 +29,7 @@ pub mod theme;
 pub mod toast;
 pub mod tools;
 pub mod update;
+pub mod zoom;
 
 use eframe::{egui, egui_wgpu};
 use egui_file_dialog::{DialogState, FileDialog, Filter};
@@ -1247,8 +1249,31 @@ impl MapMakerApp {
         } else if save {
             self.save();
         }
+        let zoom = ctx.input_mut(|input| {
+            if input.consume_key(Modifiers::COMMAND, Key::Plus)
+                || input.consume_key(Modifiers::COMMAND, Key::Equals)
+            {
+                Some(zoom::Zoom::In)
+            } else if input.consume_key(Modifiers::COMMAND, Key::Minus) {
+                Some(zoom::Zoom::Out)
+            } else if input.consume_key(Modifiers::SHIFT, Key::Num0) {
+                Some(zoom::Zoom::Percent(1.0))
+            } else if input.consume_key(Modifiers::SHIFT, Key::Num1) {
+                Some(zoom::Zoom::Fit)
+            } else if input.consume_key(Modifiers::SHIFT, Key::Num2) {
+                Some(zoom::Zoom::Selection)
+            } else {
+                None
+            }
+        });
+        if let Some(zoom) = zoom {
+            self.tabs[self.active].canvas_view.request_zoom(zoom);
+        }
         let editor = &mut self.tabs[self.active].editor;
         ctx.input_mut(|input| {
+            if editor.node_edit().is_some() && input.consume_key(Modifiers::NONE, Key::Enter) {
+                editor.leave_node_edit();
+            }
             if input.consume_shortcut(&shortcut(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z))
                 || input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::Y))
             {
@@ -1334,14 +1359,6 @@ impl MapMakerApp {
             if editor.active_tool == ToolId::Scatter {
                 scatter_settings(ui, &mut editor.scatter);
             }
-            if editor.can_shuffle()
-                && ui
-                    .button("Shuffle Variant")
-                    .on_hover_text("Re-roll each selected Stamp within its Variant group")
-                    .clicked()
-            {
-                editor.shuffle_variants();
-            }
             ui.toggle_value(&mut tab.label_styles.open, "Label styles");
             ui.separator();
             let undo_hint = editor.undo_label().map(|l| format!("Undo {l}"));
@@ -1364,28 +1381,6 @@ impl MapMakerApp {
                 .clicked()
             {
                 editor.delete_selection();
-            }
-            ui.separator();
-            if ui
-                .add_enabled(editor.can_combine(), egui::Button::new("Union"))
-                .on_hover_text("Merge the selected Landmasses into the topmost one")
-                .clicked()
-            {
-                editor.union_selection();
-            }
-            if ui
-                .add_enabled(editor.can_combine(), egui::Button::new("Subtract"))
-                .on_hover_text("Cut the topmost selected Landmass out of the others")
-                .clicked()
-            {
-                editor.subtract_selection();
-            }
-            if ui
-                .add_enabled(editor.can_split(), egui::Button::new("Split Apart"))
-                .on_hover_text("Make each part of the selected Landmasses a Landmass of its own")
-                .clicked()
-            {
-                editor.split_selection();
             }
         });
     }
@@ -1654,6 +1649,9 @@ impl eframe::App for MapMakerApp {
                 .resizable(false)
                 .exact_size(self.shell.width(shell::Side::Right))
                 .show(ui, |ui| tab.properties.show(ui, &mut tab.editor));
+            if tab.properties.take_manage_label_styles() {
+                tab.label_styles.open = true;
+            }
             properties_divider = Some(panel.response.rect);
         }
         let canvas = egui::CentralPanel::default()
