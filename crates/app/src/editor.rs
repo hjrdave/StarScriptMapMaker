@@ -42,6 +42,8 @@ pub struct Editor {
     pub active_tool: ToolId,
     /// The land brush's diameter, in Canvas units.
     pub brush_size: f64,
+    /// Whether the land brush erases by default; holding the erase modifier gives the other.
+    pub erase_default: bool,
     node_edit: Option<NodeEdit>,
     /// Set by a tool while it holds something Escape should drop (a lasso half drawn).
     pub tool_busy: bool,
@@ -136,6 +138,7 @@ impl Editor {
             active_tool: ToolId::Select,
             scatter: ScatterBrush::default(),
             brush_size: DEFAULT_BRUSH_SIZE,
+            erase_default: false,
             node_edit: None,
             tool_busy: false,
             cancel_tool: false,
