@@ -18,6 +18,7 @@ pub mod icons;
 mod label_styles;
 mod layer_tree;
 pub mod menu;
+pub mod native_dialog;
 pub mod native_menu;
 pub mod new_map;
 pub mod prop_widgets;
@@ -37,7 +38,7 @@ pub mod update;
 pub mod zoom;
 
 use eframe::{egui, egui_wgpu};
-use egui_file_dialog::{DialogState, FileDialog, Filter};
+use native_dialog::{Pick, Polled};
 use ssmap_core::asset::{PackLibrary, PackRoots};
 use ssmap_core::file::{JournalBase, MapFile, PREVIEW_SIZE, remove_journal};
 use ssmap_core::{CREDITS_CHUNK_KEYWORD, Canvas, Map};
@@ -129,8 +130,8 @@ pub struct MapMakerApp {
     export_dialog: ExportDialog,
     /// The PNG export in progress, stepped once per frame behind a modal dialog.
     export_run: Option<ExportRun>,
-    open_dialog: FileDialog,
-    save_dialog: FileDialog,
+    open_dialog: Pick,
+    save_dialog: Pick,
     /// Journals of Maps never saved left by a crash, oldest first, offered one at a time.
     unsaved_found: Vec<Found>,
     /// The journal of a Map never saved being offered now; recovering it opens a new tab.
@@ -195,19 +196,6 @@ impl MapMakerApp {
             Some(render_state) => canvas_view::install(render_state, sprites.clone()),
             None => false,
         };
-        let map_files = || -> FileDialog {
-            FileDialog::new()
-                .add_file_filter(
-                    "Map files",
-                    Filter::new(|path: &Path| {
-                        path.extension()
-                            .is_some_and(|ext| ext == document::EXTENSION)
-                    }),
-                )
-                .default_file_filter("Map files")
-                .add_save_extension("Map file", document::EXTENSION)
-                .default_save_extension("Map file")
-        };
         let mut unsaved_found = Recovery::new(recovery_dir.clone()).find_unsaved();
         unsaved_found.reverse();
         let tabs: Vec<MapTab> = map
@@ -255,8 +243,16 @@ impl MapMakerApp {
             new_map_dialog: NewMapDialog::default(),
             export_dialog: ExportDialog::default(),
             export_run: None,
-            open_dialog: map_files().title("Open Map"),
-            save_dialog: map_files().title("Save Map As"),
+            open_dialog: if gpu {
+                Pick::default()
+            } else {
+                Pick::headless()
+            },
+            save_dialog: if gpu {
+                Pick::default()
+            } else {
+                Pick::headless()
+            },
             unsaved_found,
             close_allowed: false,
             render_state: cc.wgpu_render_state.clone(),
@@ -276,6 +272,11 @@ impl MapMakerApp {
 
     pub fn document(&self) -> &Document {
         self.tab().document()
+    }
+
+    /// Whether the system Save As dialog is showing.
+    pub fn save_dialog_open(&self) -> bool {
+        self.save_dialog.is_open()
     }
 
     /// Recently opened or saved Map files, newest first.
@@ -631,8 +632,8 @@ impl MapMakerApp {
             || self.new_map_dialog.open
             || self.export_dialog.open
             || self.export_run.is_some()
-            || *self.open_dialog.state() == DialogState::Open
-            || *self.save_dialog.state() == DialogState::Open
+            || self.open_dialog.is_open()
+            || self.save_dialog.is_open()
     }
 
     /// Opens each `.ssmap` file dropped onto the window in a tab of its own.
@@ -706,25 +707,19 @@ impl MapMakerApp {
     }
 
     fn show_open_dialog(&mut self) {
-        if let Some(dir) = self
+        let directory = self
             .tabs
             .get(self.active)
             .and_then(|tab| tab.document.path())
-            .and_then(Path::parent)
-        {
-            self.open_dialog.config_mut().initial_directory = dir.to_path_buf();
-        }
-        self.open_dialog.pick_file();
+            .and_then(Path::parent);
+        self.open_dialog.open_map(&self.egui_ctx, directory);
     }
 
     fn show_save_dialog(&mut self) {
-        let config = self.save_dialog.config_mut();
         let tab = &self.tabs[self.active];
-        if let Some(dir) = tab.document.path().and_then(Path::parent) {
-            config.initial_directory = dir.to_path_buf();
-        }
-        config.default_file_name = tab.document.name();
-        self.save_dialog.save_file();
+        let directory = tab.document.path().and_then(Path::parent);
+        self.save_dialog
+            .save_map(&self.egui_ctx, directory, &tab.document.name());
     }
 
     /// The preview PNG stored with each save, rendered like the screen.
@@ -999,24 +994,26 @@ impl MapMakerApp {
 
     /// File dialogs and the unsaved-changes question.
     fn dialogs(&mut self, ctx: &egui::Context) {
-        self.open_dialog.update(ctx);
-        if let Some(path) = self.open_dialog.take_picked() {
+        if let Polled::Chosen(path) = self.open_dialog.poll() {
             self.open_path(&path);
         }
-        self.save_dialog.update(ctx);
-        if let Some(path) = self.save_dialog.take_picked() {
-            let saved = self.save_as_path(&path);
-            match self.awaiting_save.take() {
-                Some((index, pending)) if saved && index == self.active => {
-                    self.finish(pending, ctx);
+        match self.save_dialog.poll() {
+            Polled::Chosen(path) => {
+                let saved = self.save_as_path(&path);
+                match self.awaiting_save.take() {
+                    Some((index, pending)) if saved && index == self.active => {
+                        self.finish(pending, ctx);
+                    }
+                    Some(_) => self.cancel_quit(),
+                    None => {}
                 }
-                Some(_) => self.cancel_quit(),
-                None => {}
             }
-        } else if self.awaiting_save.is_some() && *self.save_dialog.state() != DialogState::Open {
-            // The Save As dialog was closed without saving: the question is cancelled.
-            self.awaiting_save = None;
-            self.cancel_quit();
+            Polled::Cancelled if self.awaiting_save.is_some() => {
+                // The Save As dialog was closed without saving: the question is cancelled.
+                self.awaiting_save = None;
+                self.cancel_quit();
+            }
+            _ => {}
         }
 
         if let Some(canvas) = self.new_map_dialog.show(ctx) {

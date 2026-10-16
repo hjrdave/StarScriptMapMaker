@@ -8,6 +8,7 @@ use ssmap_core::{
     Canvas, ExportRegion, ExportSettings, MAX_EXPORT_SIDE, SizeMode, WARN_EXPORT_SIDE,
 };
 
+use crate::native_dialog::{Pick, Polled};
 use crate::{dialog, prop_widgets, theme};
 
 /// What the dialog tells the user about the chosen size.
@@ -123,6 +124,8 @@ pub struct ExportDialog {
     draft: ExportSettings,
     /// The folder to export into. Not stored in the Map, which keeps the file name only.
     pub directory: String,
+    /// The native folder picker, while it is open.
+    folder_pick: Pick,
 }
 
 impl ExportDialog {
@@ -145,6 +148,9 @@ impl ExportDialog {
     pub fn show(&mut self, ctx: &egui::Context, canvas: &Canvas) -> Option<DialogAction> {
         if !self.open {
             return None;
+        }
+        if let Polled::Chosen(folder) = self.folder_pick.poll() {
+            self.directory = folder.to_string_lossy().into_owned();
         }
         let mut action = None;
         let mut cancelled = false;
@@ -180,7 +186,19 @@ impl ExportDialog {
                     }
                     ui.end_row();
                     ui.label("Folder");
-                    ui.text_edit_singleline(&mut self.directory);
+                    ui.horizontal(|ui| {
+                        ui.text_edit_singleline(&mut self.directory);
+                        let browse = ui
+                            .add_enabled(!self.folder_pick.is_open(), egui::Button::new("Choose…"));
+                        if browse.clicked() {
+                            let current = PathBuf::from(&self.directory);
+                            self.folder_pick.folder(
+                                ui.ctx(),
+                                "Export Folder",
+                                Some(current.as_path()),
+                            );
+                        }
+                    });
                     ui.end_row();
                 });
             ui.separator();
