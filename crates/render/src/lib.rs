@@ -16,6 +16,7 @@ mod ocean;
 mod offscreen;
 mod png_writer;
 mod present;
+pub mod profile;
 pub mod raster;
 mod scene;
 pub mod silhouette;

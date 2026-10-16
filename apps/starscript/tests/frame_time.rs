@@ -71,16 +71,64 @@ fn runs_an_interaction_script() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(stdout.contains("script: paint\nframes: 2\n"), "{stdout}");
-    for label in [
-        "p50: ",
-        "p99: ",
-        "budget: ",
-        "  edit ",
-        "  scene ",
-        "  render ",
-    ] {
+    // Built with `profiling`, the three coarse stages are six finer ones (see below).
+    let stages: [&str; 3] = if cfg!(feature = "profiling") {
+        ["  input ", "  update ", "  draw "]
+    } else {
+        ["  edit ", "  scene ", "  render "]
+    };
+    for label in ["p50: ", "p99: ", "budget: "].into_iter().chain(stages) {
         assert!(stdout.contains(label), "missing {label:?} in:\n{stdout}");
     }
+}
+
+/// With the `profiling` feature the report breaks the frame into six stages that add up to it.
+#[cfg(feature = "profiling")]
+#[test]
+fn reports_the_six_stages_and_they_add_up() {
+    let output = Command::new(env!("CARGO_BIN_EXE_starscript-map-maker"))
+        .args([
+            "--frame-time",
+            "--software-adapter",
+            "--scale",
+            "0.01",
+            "--script",
+            "paint",
+            "--frames",
+            "5",
+        ])
+        .output()
+        .unwrap();
+    if output.status.code() == Some(2) && !env_flag("SSMAP_REQUIRE_SOFTWARE_GPU") {
+        eprintln!(
+            "skipping: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+        return;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success(), "{stdout}");
+    for stage in [
+        "input",
+        "update",
+        "roughness",
+        "tessellation",
+        "upload",
+        "draw",
+    ] {
+        assert!(
+            stdout.contains(&format!("  {stage} ")),
+            "missing stage {stage:?} in:\n{stdout}"
+        );
+    }
+    let share: f64 = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("stages add up to "))
+        .and_then(|rest| rest.split('%').next())
+        .and_then(|number| number.parse().ok())
+        .unwrap_or_else(|| panic!("no coverage line in:\n{stdout}"));
+    // The stages cover the frame, give or take setup between them and timer noise.
+    assert!((85.0..=100.5).contains(&share), "{share}% in:\n{stdout}");
 }
 
 #[test]

@@ -30,6 +30,8 @@ muda = { version = "0.21", default-features = false }
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow"] }
 png = "0.18"
+# Frame-stage spans, behind the profiling feature of ssmap-render and the app.
+tracing = { version = "0.1", default-features = false, features = ["std"] }
 # Native Open and Save dialogs (NSOpenPanel on macOS, the system dialogs elsewhere).
 rfd = "0.17"
 pollster = "1.0"

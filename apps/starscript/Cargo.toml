@@ -30,6 +30,11 @@ serde_json.workspace = true
 trash.workspace = true
 ureq.workspace = true
 uuid.workspace = true
+tracing = { workspace = true, optional = true }
+
+[features]
+# Per-stage frame timing: --frame-time reports six stages and the overlay shows them.
+profiling = ["ssmap-render/profiling", "dep:tracing"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 muda.workspace = true

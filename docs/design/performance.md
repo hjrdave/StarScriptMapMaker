@@ -93,15 +93,58 @@ stages (ms)      p50      p95      p99    worst
   - `edit`: applying the input to the Map: brush geometry, the Command, picking.
   - `scene`: rebuilding the scene from the Map: roughness generation and tessellation.
   - `render`: upload and draw, until the GPU reports it is done.
+- For a finer breakdown build with the `profiling` feature (next section).
 - The frame includes waiting for the GPU to finish. The editor overlaps the CPU and the GPU, so a
   real frame can be shorter than the sum, but the measurement is the same each time.
 - Numbers from the software adapter only show that the scripts run, and big relative changes.
   Record real-GPU numbers per OS in the PR description when a change is meant to affect speed.
 - Compare a change against `master` on the same machine, with nothing else running.
 
+## Per-stage timing (the `profiling` feature, issue #309)
+
+The render path marks six stages with `tracing` spans. They exist only in a build with the
+`profiling` feature, so a normal build, release included, has no spans and pays nothing
+(`scripts/check-profiling-off.sh` checks that; add `--binary` to also build the release binary
+and search it for the spans).
+
+```sh
+cargo run --release -p app --features profiling -- --frame-time --script paint
+```
+
+The `stages` table then has these rows in place of `edit`, `scene` and `render`:
+
+| Stage | What it covers |
+| --- | --- |
+| `input` | Applying the frame's input: brush geometry, Commands, picking. |
+| `update` | Rebuilding the scene from the Map, apart from roughness. |
+| `roughness` | Generating rough outlines (a cached outline costs almost nothing). |
+| `tessellation` | Turning Objects into triangles (only the Objects that changed). |
+| `upload` | Merging triangles, uploading buffers and Stamps, the view uniform. |
+| `draw` | Recording the pass, submitting it and waiting for the GPU. |
+
+Reading it:
+
+- A stage's time leaves out the stages inside it (roughness inside `update`, tessellation inside
+  `upload`), so the rows add up to the frame. The last line, `stages add up to N% of the frame
+  time`, checks that: it should be close to 100%. A low number means time is spent outside the
+  marked stages.
+- Start with the row that is largest at p95, then compare its p99 and worst: a stage whose worst
+  is far above its p95 is the one that causes hitches.
+- Under the editing scripts `roughness` and `tessellation` show the cost of an edit, since only
+  changed Objects are rebuilt. A large `tessellation` p50 on `pan-zoom` means the cache is not
+  being reused.
+
+### The overlay
+
+A build with the `profiling` feature, or a debug build, can show the frame time, frames per
+second and (with the feature) the six stages of the last frame in the corner of the editor. It is
+off by default; press **F3** to toggle it. The frame time turns red above 16.6 ms. It measures
+the time between frames while the editor is repainting, so it reads the real frame time during a
+drag, a stroke or a zoom, not while the editor is idle. Release builds without the feature have
+no overlay.
+
 ## Still to come (issue #245)
 
-Stage timing with `tracing` spans and an optional on-screen overlay, a regression check against a
-checked-in baseline (`docs/perf-baseline.json`) in the nightly job, and the fixes the numbers
-point to. Changes under `.github/` need the owner, so the workflow change will be a patch file
+A regression check against a checked-in baseline (`docs/perf-baseline.json`) in the nightly job,
+and the fixes the numbers point to. Changes under `.github/` need the owner, so the workflow change will be a patch file
 under `docs/`.

@@ -23,6 +23,11 @@ thiserror.workspace = true
 toml_edit.workspace = true
 unicode-script.workspace = true
 wgpu.workspace = true
+tracing = { workspace = true, optional = true }
+
+[features]
+# Marks the frame stages with tracing spans (issue #309). Off by default; off compiles to nothing.
+profiling = ["dep:tracing"]
 
 [dev-dependencies]
 serde_json.workspace = true
