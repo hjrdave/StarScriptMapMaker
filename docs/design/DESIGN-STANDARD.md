@@ -78,6 +78,10 @@ Title bar (tabs) → Layers panel | Canvas | Properties panel → status bar. De
 - **Floating controls** sit on the same baseline at the bottom of the canvas area (never over a panel): tool dock bottom-centre, zoom control bottom-right, both 40 px from the bottom and vertically centred on each other.
 - **No in-window toolbar buttons** for undo, zoom or export: those live in the native menu bar.
 
+### New tab
+
+The **+** button (and ⌘T) opens a blank **New Tab** start page, not the New Map dialog. It shows recent Map thumbnails (same card style as the Home tab), a **Create new map** card, and an **Open…** link for the file system. Picking any of these opens or creates the Map in that tab, and the tab then takes the Map's name. A blank New Tab has nothing to save, so closing it shows no Save prompt. With no recent Maps, show only Create new map and Open….
+
 ### Tool dock
 
 Floating, bottom-centre of the canvas area. Groups: Select V, Pan H │ Land Brush B, Lasso L, Label T │ Stamp S, Stamp Eraser E │ Export Region X. Active tool = gold-subtle fill + gold inset ring. Tooltip above the button after 500 ms: name + shortcut, on **one line** (no wrapping).
@@ -136,6 +140,7 @@ Changes the owner has decided after the handoff. The sections above already refl
 | Zoom button shows the percentage only | Mockup showed a trailing icon | #211 | Open |
 | Text gets Kerning, Tracking, Line height and Arch | Handoff had Tracking and Line height only | #213 | Open |
 | Landmass Roughness stays smooth to drag at high values | — | #220 | Open |
+| New tab opens a start page (recent thumbnails, Create new map, Open…) instead of the New Map dialog | Handoff: `+` = New Map | #223 | Open |
 | One Stamp tool: click places, drag scatters; no separate Scatter Brush | Handoff had Stamp and Scatter Brush as separate tools | #219 | Open |
 
 ## Checklist for any UI change
