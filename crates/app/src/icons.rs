@@ -51,7 +51,6 @@ icons! {
     Lasso, "Lasso", "lasso";
     Label, "Label", "label";
     Stamp, "Stamp", "stamp";
-    Scatter, "Scatter", "scatter";
     StampEraser, "Stamp Eraser", "stamp-eraser";
     ExportRegion, "Export Region", "export-region";
     Landmass, "Landmass", "landmass";

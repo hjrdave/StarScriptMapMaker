@@ -17,7 +17,7 @@ const TOOLTIP_GAP: f32 = 6.0;
 const GROUPS: [&[ToolId]; 4] = [
     &[ToolId::Select, ToolId::Pan],
     &[ToolId::LandBrush, ToolId::Lasso, ToolId::Label],
-    &[ToolId::Stamp, ToolId::Scatter, ToolId::StampEraser],
+    &[ToolId::Stamp, ToolId::StampEraser],
     &[ToolId::ExportRegion],
 ];
 
