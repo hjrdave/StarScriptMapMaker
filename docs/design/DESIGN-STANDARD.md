@@ -82,6 +82,10 @@ Title bar (tabs) → Layers panel | Canvas | Properties panel → status bar. De
 
 The **+** button (and ⌘T) opens a blank **New Tab** start page, not the New Map dialog. It shows recent Map thumbnails (same card style as the Home tab), a **Create new map** card, and an **Open…** link for the file system. Picking any of these opens or creates the Map in that tab, and the tab then takes the Map's name. A blank New Tab has nothing to save, so closing it shows no Save prompt. With no recent Maps, show only Create new map and Open….
 
+### Map cards (Home tab and New Tab)
+
+Cards follow Figma's dashboard file card: a rounded, bordered card with a large **thumbnail** across the top, a divider, then the Map **name** (bold) and **"Edited <relative time>"** (dim) in the footer. Extra details (pixel size, "Open in tab") go on hover or in the card menu, not on the card face. Each card has a right-click menu and a hover "…" button with **Delete** and **Show in Finder** (per platform: File Explorer / File Manager). Delete always asks for confirmation in a dialog that names the Map, says it moves to the Trash, defaults to Cancel, and notes if the Map is open in a tab. A Map whose file is missing shows a "missing" state with Show in Finder disabled and a "Remove from list" action.
+
 ### Tool dock
 
 Floating, bottom-centre of the canvas area. Groups: Select V, Pan H │ Land Brush B, Lasso L, Label T │ Stamp S, Stamp Eraser E │ Export Region X. Active tool = gold-subtle fill + gold inset ring. Tooltip above the button after 500 ms: name + shortcut, on **one line** (no wrapping).
@@ -140,6 +144,7 @@ Changes the owner has decided after the handoff. The sections above already refl
 | Zoom button shows the percentage only | Mockup showed a trailing icon | #211 | Open |
 | Text gets Kerning, Tracking, Line height and Arch | Handoff had Tracking and Line height only | #213 | Open |
 | Landmass Roughness stays smooth to drag at high values | — | #220 | Open |
+| Map cards are Figma-style (thumbnail, name, edited time) with Delete (confirmed) and Show in Finder | Handoff cards also showed size and an "Open in tab" chip on the face | #228 | Open |
 | New tab opens a start page (recent thumbnails, Create new map, Open…) instead of the New Map dialog | Handoff: `+` = New Map | #223 | Open |
 | One Stamp tool: click places, drag scatters; no separate Scatter Brush | Handoff had Stamp and Scatter Brush as separate tools | #219 | Open |
 
