@@ -443,7 +443,11 @@ mod tests {
         for layer in [layers.land, layers.assets, layers.labels] {
             assert!(map.contains(layer.expect("the template names its default Layers")));
         }
-        assert_eq!(map.canvas, canvas);
+        let expected = Canvas {
+            template: Some("Ocean".to_owned()),
+            ..canvas
+        };
+        assert_eq!(map.canvas, expected);
         assert_eq!(map.children(None).len(), 4);
         assert_eq!(map.label_styles().len(), 5);
     }

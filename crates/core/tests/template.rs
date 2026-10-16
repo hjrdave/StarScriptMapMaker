@@ -16,7 +16,11 @@ fn canvas() -> Canvas {
 #[test]
 fn the_starter_template_is_a_ready_layer_stack() {
     let map = MapTemplate::starter().unwrap().new_map(canvas());
-    assert_eq!(map.canvas, canvas());
+    let expected = Canvas {
+        template: Some("Ocean".to_owned()),
+        ..canvas()
+    };
+    assert_eq!(map.canvas, expected);
     map.validate().unwrap();
 
     let layers: Vec<(String, bool)> = map
@@ -152,6 +156,41 @@ fn a_map_takes_the_templates_background_and_the_chosen_canvas() {
     assert_eq!(map.canvas.height, 1000);
     assert_eq!(map.canvas.background.texture.strength, 0.0);
     assert_eq!(map.canvas.background.water, Color::rgb(0x6f, 0x9f, 0xc0));
+}
+
+#[test]
+fn a_map_remembers_its_template_and_a_background_change_keeps_it() {
+    let templates = MapTemplate::load_all().0;
+    let (ocean, parchment) = (&templates[0], &templates[3]);
+    let mut map = ocean.new_map(canvas());
+    assert_eq!(map.canvas.template.as_deref(), Some("Ocean"));
+
+    let mut history = ssmap_core::History::default();
+    let original = map.canvas.background.clone();
+    let background = parchment.background().clone();
+    history
+        .execute_step(&mut map, &Command::SetBackground { background }, Vec::new())
+        .unwrap();
+    assert_eq!(map.canvas.background, *parchment.background());
+    assert_eq!(map.canvas.template.as_deref(), Some("Ocean"));
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("changed.ssmap");
+    MapFile::create(&path, &map, None).unwrap();
+    let (_, reopened) = MapFile::open(&path).unwrap();
+    assert_eq!(reopened.canvas.background, *parchment.background());
+    assert_eq!(reopened.canvas.template.as_deref(), Some("Ocean"));
+
+    history.undo(&mut map).unwrap();
+    assert_eq!(map.canvas.background, original);
+}
+
+#[test]
+fn a_background_with_a_texture_strength_out_of_range_is_refused() {
+    let mut map = MapTemplate::starter().unwrap().new_map(canvas());
+    let mut background = map.canvas.background.clone();
+    background.texture.strength = 1.5;
+    assert!(map.execute(&Command::SetBackground { background }).is_err());
 }
 
 #[test]

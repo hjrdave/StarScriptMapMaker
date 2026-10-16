@@ -3,7 +3,8 @@
 //! A template is a data file (`templates/*.json` in the assets folder; `starter.json` is the
 //! default) in the shape of [`MapView`], plus a display `name` and a `format_version` naming
 //! the Map file format its shape follows. Starting a Map from it replaces the template's
-//! Canvas size and scale with the ones the user chose; the template's background stays.
+//! Canvas size and scale with the ones the user chose; the template's background stays, and the
+//! Map remembers the template's name.
 
 use std::path::{Path, PathBuf};
 
@@ -178,6 +179,7 @@ impl MapTemplate {
     /// background.
     pub fn new_map(&self, mut canvas: Canvas) -> Map {
         canvas.background = self.view.canvas.background.clone();
+        canvas.template = Some(self.name.clone());
         let view = MapView {
             canvas,
             ..self.view.clone()

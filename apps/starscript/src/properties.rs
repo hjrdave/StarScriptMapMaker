@@ -4,8 +4,8 @@ mod label_stamp;
 
 use eframe::egui;
 use ssmap_core::{
-    Canvas, Color, Command, DistanceUnit, Id, MAX_RIPPLES, Map, Node, ObjectKind, Roughness,
-    ShoreKind, ShoreStyle,
+    Canvas, Color, Command, DistanceUnit, Id, MAX_RIPPLES, Map, MapTemplate, Node, ObjectKind,
+    Roughness, ShoreKind, ShoreStyle,
 };
 
 use crate::editor::Editor;
@@ -27,6 +27,9 @@ pub struct PropertiesPanel {
     /// The Canvas point that stays put when it is resized, as (column, row) of the 3×3
     /// anchor grid: 0 is left / top, 1 the middle, 2 right / bottom.
     canvas_anchor: (u8, u8),
+    /// The templates whose look the background can take, read when the Map section first
+    /// opens.
+    templates: Option<Vec<MapTemplate>>,
 }
 
 /// A group of settings that may be inherited from a default: the value shown, where it
@@ -474,6 +477,73 @@ impl PropertiesPanel {
         }
     }
 
+    /// The template the Map was made from, and its background: pick another template's look,
+    /// or edit the water and texture fields. Either way the background changes on its own;
+    /// the template shown stays the one the Map was made from.
+    fn background_fields(&mut self, ui: &mut egui::Ui, editor: &mut Editor, canvas: &Canvas) {
+        row(ui, "Template", |ui| {
+            ui.label(canvas.template.as_deref().unwrap_or("None"));
+        });
+        caption(ui, "Background");
+        let templates = self
+            .templates
+            .get_or_insert_with(|| MapTemplate::load_all().0);
+        caption(ui, "Take the look of a template");
+        ui.horizontal_wrapped(|ui| {
+            for template in templates.iter() {
+                let same = *template.background() == canvas.background;
+                let name = format!("{} look", template.name());
+                if ui.selectable_label(same, name).clicked() {
+                    editor.run(Command::SetBackground {
+                        background: template.background().clone(),
+                    });
+                }
+            }
+        });
+
+        let mut next = canvas.background.clone();
+        let mut edit = Edit::default();
+        let mut merge = |next_edit: Edit| {
+            edit.began |= next_edit.began;
+            edit.changed |= next_edit.changed;
+            edit.finished |= next_edit.finished;
+        };
+        let colour_field = |ui: &mut egui::Ui, label: &str, colour: &mut Color| {
+            let mut value = Some(*colour);
+            let edit = prop_widgets::swatch(ui, label, &mut value, false, Provenance::Plain).edit;
+            *colour = value.unwrap_or(*colour);
+            edit
+        };
+        merge(colour_field(ui, "Water colour", &mut next.water));
+        let mut strength = f64::from(next.texture.strength);
+        merge(prop_widgets::slider(
+            ui,
+            &mut strength,
+            &ScrubSpec::new("Texture strength")
+                .range(0.0, 1.0)
+                .step(0.05)
+                .decimals(2),
+        ));
+        next.texture.strength = strength as f32;
+        let mut scale = f64::from(next.texture.scale);
+        merge(prop_widgets::slider(
+            ui,
+            &mut scale,
+            &ScrubSpec::new("Texture scale")
+                .range(0.1, 20.0)
+                .step(0.1)
+                .decimals(1),
+        ));
+        next.texture.scale = scale as f32;
+        merge(colour_field(ui, "Texture light", &mut next.texture.light));
+        merge(colour_field(ui, "Texture dark", &mut next.texture.dark));
+        self.live.apply(editor, edit, "Change Background", || {
+            Command::SetBackground {
+                background: next.clone(),
+            }
+        });
+    }
+
     /// The Map: Canvas, Scale and the Map-wide defaults. Collapsed until opened.
     fn map_properties(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         let canvas = editor.map.canvas.clone();
@@ -495,6 +565,8 @@ impl PropertiesPanel {
                     canvas.scale.distance_per_unit
                 ));
             });
+
+            self.background_fields(ui, editor, &canvas);
 
             caption(ui, "Default Roughness");
             let current = editor.map.defaults().roughness.clone();
@@ -1225,5 +1297,97 @@ mod tests {
             assert_eq!(geometry_of(harness.state(), island), before);
         }
         assert_eq!(harness.state().editor.map.canvas.width, 100);
+    }
+
+    /// Types `text` into the number box that shows `shown`.
+    fn type_into(harness: &mut Harness<'static, Fixture>, shown: &str, text: &str) {
+        harness.get_by_value(shown).click();
+        harness.run();
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+        harness.run();
+        harness
+            .get_by(|n| n.role() == egui::accesskit::Role::TextInput && n.is_focused())
+            .type_text(text);
+        harness.key_press(egui::Key::Enter);
+        harness.run();
+    }
+
+    fn ocean_fixture() -> Fixture {
+        let (mut fixture, _, _) = fixture();
+        fixture.editor.map.canvas.template = Some("Ocean".to_owned());
+        fixture
+    }
+
+    fn look_of(name: &str) -> ssmap_core::Background {
+        let templates = MapTemplate::load_all().0;
+        let template = templates.iter().find(|t| t.name() == name).unwrap();
+        template.background().clone()
+    }
+
+    #[test]
+    fn map_settings_name_the_template_the_map_was_made_from() {
+        let mut harness = harness(ocean_fixture());
+        open_map_section(&mut harness);
+        harness.get_by_label("Template");
+        harness.get_by_label("Ocean");
+    }
+
+    #[test]
+    fn taking_another_templates_look_is_one_undo_step_and_keeps_the_template() {
+        let fixture = ocean_fixture();
+        let original = fixture.editor.map.canvas.background.clone();
+        let mut harness = harness(fixture);
+        open_map_section(&mut harness);
+        click(&mut harness, "Parchment look");
+        let state = harness.state();
+        assert_eq!(state.editor.map.canvas.background, look_of("Parchment"));
+        assert_eq!(state.editor.map.canvas.template.as_deref(), Some("Ocean"));
+        assert_eq!(state.editor.undo_label(), Some("Change Background"));
+
+        // One undo step puts the whole look back.
+        harness.state_mut().editor.undo();
+        let canvas = &harness.state().editor.map.canvas;
+        assert_eq!(canvas.background, original);
+        assert_eq!(canvas.template.as_deref(), Some("Ocean"));
+    }
+
+    #[test]
+    fn changing_one_background_field_leaves_the_rest_and_is_one_undo_step() {
+        let fixture = ocean_fixture();
+        let original = fixture.editor.map.canvas.background.clone();
+        let mut harness = harness(fixture);
+        open_map_section(&mut harness);
+        type_into(&mut harness, "1.0", "2.5");
+        let state = harness.state();
+        let background = &state.editor.map.canvas.background;
+        assert_eq!(background.texture.scale, 2.5);
+        assert_eq!(background.water, original.water);
+        assert_eq!(background.texture.strength, original.texture.strength);
+        assert_eq!(state.editor.map.canvas.template.as_deref(), Some("Ocean"));
+
+        // One undo step puts the whole background back.
+        harness.state_mut().editor.undo();
+        assert_eq!(harness.state().editor.map.canvas.background, original);
+        harness.state_mut().editor.redo();
+        let scale = harness.state().editor.map.canvas.background.texture.scale;
+        assert_eq!(scale, 2.5);
+    }
+
+    #[test]
+    fn a_changed_background_and_the_template_name_survive_save_and_reopen() {
+        let mut harness = harness(ocean_fixture());
+        open_map_section(&mut harness);
+        click(&mut harness, "Winter look");
+        let shown = format!("{:.1}", look_of("Winter").texture.scale);
+        type_into(&mut harness, &shown, "2.5");
+        let map = &harness.state().editor.map;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("changed.ssmap");
+        ssmap_core::file::MapFile::create(&path, map, None).unwrap();
+        let (_, reopened) = ssmap_core::file::MapFile::open(&path).unwrap();
+        assert_eq!(reopened.canvas.background, map.canvas.background);
+        assert_ne!(reopened.canvas.background, look_of("Ocean"));
+        assert_eq!(reopened.canvas.template.as_deref(), Some("Ocean"));
     }
 }

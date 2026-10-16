@@ -304,6 +304,7 @@ fn op_bytes(op: &Op) -> usize {
             | Op::SetProperty { .. }
             | Op::Move { .. }
             | Op::SetDefaults { .. }
+            | Op::SetBackground { .. }
             | Op::ResizeCanvas { .. }
             | Op::SetEmbeddedAsset { .. }
             | Op::SetEmbeddedFont { .. } => 0,

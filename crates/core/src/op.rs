@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::asset::AssetRef;
+use crate::background::Background;
 use crate::color::Color;
 use crate::embedded::{Blob, ContentHash, EmbeddedAsset, EmbeddedFont};
 use crate::geometry::{MultiPolygon, Point};
@@ -48,6 +49,8 @@ pub enum Op {
         width: u32,
         height: u32,
     },
+    /// Replaces the Canvas's background.
+    SetBackground { background: Background },
     /// Replaces the Map-wide defaults.
     SetDefaults { defaults: MapDefaults },
     /// Stores the embedded file with content hash `hash`, or with `None` removes it.
@@ -207,6 +210,9 @@ impl Map {
                 canvas.height = height;
                 old
             }
+            Op::SetBackground { background } => Op::SetBackground {
+                background: std::mem::replace(&mut self.canvas.background, background),
+            },
             Op::SetDefaults { defaults } => Op::SetDefaults {
                 defaults: std::mem::replace(&mut self.defaults, defaults),
             },
@@ -282,6 +288,7 @@ impl Map {
                 data: Some(data),
             } if data.hash() != *hash => return Err(OpError::BlobHashMismatch(*hash)),
             Op::SetDefaults { .. }
+            | Op::SetBackground { .. }
             | Op::ResizeCanvas { .. }
             | Op::SetBlob { .. }
             | Op::SetEmbeddedAsset { .. }
