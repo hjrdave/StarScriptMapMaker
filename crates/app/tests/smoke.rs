@@ -180,7 +180,7 @@ fn save_as_then_open_round_trips_the_map() {
     assert_eq!(harness.state().editor().map.view(), edited_view);
     assert!(harness.state().editor().can_undo());
     assert_ne!(edited_view, saved_view);
-    harness.get_by_label("Layer 5");
+    assert!(harness.query_all_by_label("Layer 5").next().is_some());
     assert_eq!(harness.state().recent_files(), std::slice::from_ref(&saved));
     // Undo the extra edit so the Ctrl+S below leaves the file with one more Layer.
     harness.get_by_label("Undo").click();
