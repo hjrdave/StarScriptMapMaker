@@ -1588,6 +1588,11 @@ impl eframe::App for MapMakerApp {
                         {
                             self.shell.set_layers_collapsed(true);
                         }
+                        // Right to left: this lands just left of Collapse.
+                        if icons::icon_button(ui, icons::Icon::Add, "New Layer (⇧⌘N)").clicked()
+                        {
+                            tab.editor.new_layer();
+                        }
                     });
                     tab.layer_tree.show(ui, &mut tab.editor);
                 });

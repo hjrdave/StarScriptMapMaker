@@ -81,13 +81,17 @@ fn a_locked_layer_refuses_edits_with_a_visible_message() {
     let mut harness = app();
     harness.get_by_label("New Layer").click();
     harness.run();
-    // Every Layer has a Lock button; the Layers panel lists the new, topmost one first.
+    // Lock and eye show on hover; the Layers panel lists the new, topmost Layer first.
+    harness.get_by_label("Layer 5").hover();
+    harness.run();
     harness.query_all_by_label("Lock").next().unwrap().click();
     harness.run();
     let layer = *harness.state().editor().map.children(None).last().unwrap();
     assert!(harness.state().editor().map.node(layer).unwrap().locked());
 
     // The hide toggle is refused, and the reason shows in the status bar.
+    harness.get_by_label("Layer 5").hover();
+    harness.run();
     harness.query_all_by_label("Hide").next().unwrap().click();
     harness.run();
     let editor = harness.state().editor();
