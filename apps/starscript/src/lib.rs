@@ -24,6 +24,7 @@ pub mod native_dialog;
 pub mod native_menu;
 pub mod new_map;
 pub mod overlay;
+pub mod pack_install;
 mod pack_page;
 pub mod prop_widgets;
 mod properties;
@@ -114,6 +115,8 @@ struct AppState {
     /// The installed Asset packs' art, shared with the Canvas renderer and picking.
     sprites: SpriteStore,
     credits: Credits,
+    /// Where packs are loaded from and added to.
+    pack_roots: PackRoots,
     recent: RecentFiles,
     updates: UpdateCheck,
     /// Journals of Maps never saved left by a crash, oldest first, offered one at a time.
@@ -164,6 +167,10 @@ struct WindowState {
     export_run: Option<ExportRun>,
     open_dialog: Pick,
     save_dialog: Pick,
+    /// The folder dialog of Add pack….
+    pack_dialog: Pick,
+    /// The pack being added, or the message about the last one.
+    pack_install: pack_install::PackInstall,
     /// The Map file a Home card's Delete asked about; the dialog confirms before it is trashed.
     delete_prompt: Option<PathBuf>,
     /// A tab's unsaved-changes question was answered Save for a Map never saved: what to do
@@ -252,6 +259,7 @@ impl MapMakerApp {
             unsaved_prompt: None,
             sprites,
             credits,
+            pack_roots: PackRoots::installed(),
             recent: RecentFiles::load(cc.storage),
             // The native menu owns the ⌘ keys; the egui handler leaves them alone.
             shortcuts_off: if native_menu.is_some() {
@@ -292,6 +300,12 @@ impl MapMakerApp {
             } else {
                 Pick::headless()
             },
+            pack_dialog: if gpu {
+                Pick::default()
+            } else {
+                Pick::headless()
+            },
+            pack_install: pack_install::PackInstall::default(),
             close_allowed: false,
             leaving: Leaving::Quit,
             window_hidden: false,
@@ -904,6 +918,42 @@ impl MapMakerApp {
         problems
     }
 
+    /// Starts adding the pack folder `folder` in the background. The Asset packs page shows
+    /// the progress and the result; the picker and open Maps see the pack once it is in.
+    pub fn add_pack(&mut self, ctx: &egui::Context, folder: PathBuf) {
+        self.win.pack_install.start(
+            ctx,
+            folder,
+            self.app.sprites.library(),
+            self.app.pack_roots.clone(),
+        );
+    }
+
+    /// Takes in a finished install: reloads the packs so every view sees the new one.
+    fn finish_pack_install(&mut self) {
+        if self.win.pack_install.poll().is_some() {
+            let roots = self.app.pack_roots.clone();
+            for problem in self.reload_packs(&roots) {
+                eprintln!("Asset pack problem: {problem}");
+            }
+        }
+    }
+
+    /// Sets where packs are loaded from and added to, for tests.
+    pub fn set_pack_roots(&mut self, roots: PackRoots) {
+        self.app.pack_roots = roots;
+    }
+
+    /// The message about the last Add pack, for tests.
+    pub fn pack_install_status(&self) -> Option<&pack_install::Status> {
+        self.win.pack_install.status()
+    }
+
+    /// Whether the Add pack folder dialog is showing, for tests.
+    pub fn pack_dialog_open(&self) -> bool {
+        self.win.pack_dialog.is_open()
+    }
+
     /// The store the open Maps draw from, for tests.
     pub fn sprites(&self) -> &SpriteStore {
         &self.app.sprites
@@ -1182,6 +1232,10 @@ impl MapMakerApp {
 
     /// File dialogs and the unsaved-changes question.
     fn dialogs(&mut self, ctx: &egui::Context) {
+        if let Polled::Chosen(folder) = self.win.pack_dialog.poll() {
+            self.add_pack(ctx, folder);
+        }
+        self.finish_pack_install();
         if let Polled::Chosen(path) = self.win.open_dialog.poll() {
             self.open_path(&path);
         }
@@ -1847,6 +1901,7 @@ impl MapMakerApp {
             open: &open,
             packs: self.app.credits.page().packs.len(),
             sprites: Some(&self.app.sprites),
+            pack_status: self.win.pack_install.status(),
         };
         self.app.credits.show(&ctx, None);
         self.app.updates.show(&ctx);
@@ -1877,6 +1932,9 @@ impl MapMakerApp {
                 }
                 home::Action::Delete(path) => self.win.delete_prompt = Some(path),
                 home::Action::Credits => self.app.credits.open = true,
+                home::Action::AddPack => self.win.pack_dialog.folder(&ctx, "Add Asset pack", None),
+                home::Action::AddPackFolder(folder) => self.add_pack(&ctx, folder),
+                home::Action::DismissPackStatus => self.win.pack_install.dismiss(),
             }
         }
     }

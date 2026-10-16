@@ -289,6 +289,12 @@ pub enum Action {
     /// Ask to move the file to the Trash.
     Delete(PathBuf),
     Credits,
+    /// The folder dialog for a pack to add.
+    AddPack,
+    /// Install this pack folder.
+    AddPackFolder(PathBuf),
+    /// Close the message about the last Add pack.
+    DismissPackStatus,
 }
 
 /// What the screen draws besides its own state.
@@ -299,6 +305,8 @@ pub struct Data<'a> {
     pub packs: usize,
     /// The Asset packs' art, for the Asset packs page.
     pub sprites: Option<&'a ssmap_render::SpriteStore>,
+    /// The last Add pack: its progress or result.
+    pub pack_status: Option<&'a crate::pack_install::Status>,
 }
 
 struct Loaded {
@@ -581,9 +589,12 @@ impl Home {
     fn main(&mut self, ui: &mut egui::Ui, data: &Data<'_>, out: &mut Vec<Action>) {
         let p = theme::palette(ui.ctx());
         if self.view == View::Packs {
-            for action in self.pack_page.show(ui, data.sprites) {
+            for action in self.pack_page.show(ui, data.sprites, data.pack_status) {
                 match action {
                     pack_page::Action::Credits => out.push(Action::Credits),
+                    pack_page::Action::AddPack => out.push(Action::AddPack),
+                    pack_page::Action::AddFolder(path) => out.push(Action::AddPackFolder(path)),
+                    pack_page::Action::DismissStatus => out.push(Action::DismissPackStatus),
                 }
             }
             return;
