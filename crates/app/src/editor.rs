@@ -1064,6 +1064,23 @@ impl Editor {
         true
     }
 
+    /// "Pine cluster · v2": the Asset's name, and its place in its Variant group when it has
+    /// one. Falls back to the reference when the Asset is not in the library.
+    pub fn asset_caption(&self, asset: &AssetRef) -> String {
+        let Some((_, found)) = self
+            .sprites
+            .as_ref()
+            .and_then(|sprites| sprites.library().asset(asset))
+        else {
+            return asset.to_string();
+        };
+        let group = self.variant_group(asset);
+        match group.iter().position(|member| member == asset) {
+            Some(index) if group.len() > 1 => format!("{} · v{}", found.name, index + 1),
+            _ => found.name.clone(),
+        }
+    }
+
     /// The Assets in the Variant group `asset` belongs to; empty when it has none.
     fn variant_group(&self, asset: &AssetRef) -> Vec<AssetRef> {
         self.sprites

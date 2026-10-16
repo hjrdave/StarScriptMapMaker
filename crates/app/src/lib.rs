@@ -1333,14 +1333,6 @@ impl MapMakerApp {
             if editor.active_tool == ToolId::Scatter {
                 scatter_settings(ui, &mut editor.scatter);
             }
-            if editor.can_shuffle()
-                && ui
-                    .button("Shuffle Variant")
-                    .on_hover_text("Re-roll each selected Stamp within its Variant group")
-                    .clicked()
-            {
-                editor.shuffle_variants();
-            }
             ui.toggle_value(&mut tab.label_styles.open, "Label styles");
             ui.separator();
             let undo_hint = editor.undo_label().map(|l| format!("Undo {l}"));
@@ -1650,6 +1642,9 @@ impl eframe::App for MapMakerApp {
                 .resizable(false)
                 .exact_size(self.shell.width(shell::Side::Right))
                 .show(ui, |ui| tab.properties.show(ui, &mut tab.editor));
+            if tab.properties.take_manage_label_styles() {
+                tab.label_styles.open = true;
+            }
             properties_divider = Some(panel.response.rect);
         }
         egui::CentralPanel::default()

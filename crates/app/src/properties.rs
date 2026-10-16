@@ -1,11 +1,12 @@
 //! The properties panel: shows and edits what is selected, through Commands.
 
+mod label_stamp;
+
 use eframe::egui;
 use ssmap_core::{
-    Align, Color, Command, DistanceUnit, Id, Label, Landmass, MAX_RIPPLES, Map, Node, ObjectKind,
-    Roughness, ShoreKind, ShoreStyle, Stamp,
+    Color, Command, DistanceUnit, Id, MAX_RIPPLES, Map, Node, ObjectKind, Roughness, ShoreKind,
+    ShoreStyle,
 };
-use ssmap_fonts::LABEL_FAMILIES;
 
 use crate::editor::Editor;
 use crate::layer_tree::{landmass_name, landmasses, node_name, selected_landmass};
@@ -18,10 +19,10 @@ pub struct PropertiesPanel {
     name_edit: Option<(Id, String)>,
     /// The text being typed for a Label, committed when the field loses focus.
     text_edit: Option<(Id, String)>,
-    /// Set while a Label colour picker's edits are being gathered into one gesture.
-    colour_gesture: bool,
     /// Turns the scrubs, sliders and swatches into one Undo step each.
     live: LiveEdit,
+    /// "Manage Label styles…" was clicked; the window is opened by the owner of the tab.
+    manage_label_styles: bool,
 }
 
 /// A group of settings that may be inherited from a default: the value shown, where it
@@ -36,6 +37,11 @@ struct Inherit<'a, T> {
 }
 
 impl PropertiesPanel {
+    /// Whether "Manage Label styles…" was clicked since the last call.
+    pub fn take_manage_label_styles(&mut self) -> bool {
+        std::mem::take(&mut self.manage_label_styles)
+    }
+
     pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         // A change ends when the pointer is released, or when Escape cancelled it.
         self.live.apply(editor, Edit::default(), "", || {
@@ -547,423 +553,6 @@ impl PropertiesPanel {
             }
         });
     }
-
-    fn label_properties(
-        &mut self,
-        ui: &mut egui::Ui,
-        editor: &mut Editor,
-        id: Id,
-        locked: bool,
-        label: &Label,
-    ) {
-        // Colour pickers change on every frame of a drag: gather them into one Undo step,
-        // closed when the pointer lets go.
-        if self.colour_gesture && ui.input(|i| !i.pointer.any_down()) {
-            self.colour_gesture = false;
-            editor.end_gesture();
-        }
-        ui.label("Text");
-        let text = match &mut self.text_edit {
-            Some((editing, text)) if *editing == id => text,
-            _ => {
-                self.text_edit = Some((id, label.text.clone()));
-                &mut self.text_edit.as_mut().expect("just set").1
-            }
-        };
-        let field = ui.add(
-            egui::TextEdit::multiline(text)
-                .desired_rows(2)
-                .desired_width(f32::INFINITY),
-        );
-        if field.lost_focus() && *text != label.text {
-            let next = Label {
-                text: text.clone(),
-                ..label.clone()
-            };
-            if !editor.run(Command::SetLabel {
-                id,
-                label: Box::new(next),
-            }) {
-                self.text_edit = None;
-            }
-        } else if !field.has_focus() && *text != label.text {
-            // Changed elsewhere (undo, the text box on the Canvas): show the Map's value.
-            *text = label.text.clone();
-        }
-
-        let styles = editor.map.label_styles().clone();
-        let mut restyled = None;
-        egui::Grid::new("label style")
-            .num_columns(2)
-            .show(ui, |ui| {
-                ui.label("Style");
-                ui.horizontal(|ui| {
-                    let current = styles
-                        .get(label.style)
-                        .unwrap_or_else(|| styles.default_style());
-                    egui::ComboBox::from_id_salt("style")
-                        .selected_text(&current.name)
-                        .show_ui(ui, |ui| {
-                            for style in styles.iter() {
-                                if ui
-                                    .selectable_label(style.id == current.id, &style.name)
-                                    .clicked()
-                                {
-                                    restyled = Some(Label {
-                                        style: style.id,
-                                        ..label.clone()
-                                    });
-                                }
-                            }
-                        });
-                    let overridden = label.font.is_some()
-                        || label.size.is_some()
-                        || label.letter_spacing.is_some()
-                        || label.line_height.is_some()
-                        || label.all_caps.is_some()
-                        || label.fill.is_some()
-                        || label.opacity.is_some()
-                        || label.halo.is_some();
-                    if ui
-                        .add_enabled(overridden, egui::Button::new("Reset overrides"))
-                        .on_hover_text("Follow the style again")
-                        .clicked()
-                    {
-                        restyled = Some(Label {
-                            font: None,
-                            size: None,
-                            letter_spacing: None,
-                            line_height: None,
-                            all_caps: None,
-                            fill: None,
-                            opacity: None,
-                            halo: None,
-                            ..label.clone()
-                        });
-                    }
-                });
-                ui.end_row();
-            });
-        if let Some(next) = restyled {
-            editor.run(Command::SetLabel {
-                id,
-                label: Box::new(next),
-            });
-            return;
-        }
-
-        // Edits are made on the resolved settings; only what changed becomes an override.
-        let mut next = label.resolve(&styles);
-        // What changed this frame: a drag (one gesture), a click (one step) or a colour.
-        let mut dragged: Option<egui::Response> = None;
-        let mut clicked = false;
-        let mut coloured = false;
-        egui::Grid::new("label").num_columns(2).show(ui, |ui| {
-            ui.label("Font");
-            egui::ComboBox::from_id_salt("font")
-                .selected_text(&next.font.family)
-                .show_ui(ui, |ui| {
-                    for family in LABEL_FAMILIES {
-                        clicked |= ui
-                            .selectable_value(&mut next.font.family, (*family).to_owned(), *family)
-                            .clicked();
-                    }
-                });
-            ui.end_row();
-
-            ui.label("Weight");
-            ui.horizontal(|ui| {
-                drag(
-                    ui.add(egui::DragValue::new(&mut next.font.weight).range(100..=900)),
-                    &mut dragged,
-                );
-                clicked |= ui.checkbox(&mut next.font.italic, "Italic").changed();
-            });
-            ui.end_row();
-
-            ui.label("Size");
-            drag(
-                ui.add(
-                    egui::DragValue::new(&mut next.size)
-                        .range(0.1..=f64::MAX)
-                        .speed(0.5),
-                ),
-                &mut dragged,
-            );
-            ui.end_row();
-
-            ui.label("Letter spacing");
-            drag(
-                ui.add(
-                    egui::DragValue::new(&mut next.letter_spacing)
-                        .speed(0.005)
-                        .suffix(" em"),
-                ),
-                &mut dragged,
-            );
-            ui.end_row();
-
-            ui.label("Line height");
-            drag(
-                ui.add(
-                    egui::DragValue::new(&mut next.line_height)
-                        .range(0.1..=10.0)
-                        .speed(0.01)
-                        .suffix("×"),
-                ),
-                &mut dragged,
-            );
-            ui.end_row();
-
-            ui.label("Align");
-            ui.horizontal(|ui| {
-                for (align, name) in [
-                    (Align::Left, "Left"),
-                    (Align::Centre, "Centre"),
-                    (Align::Right, "Right"),
-                ] {
-                    clicked |= ui.selectable_value(&mut next.align, align, name).clicked();
-                }
-            });
-            ui.end_row();
-
-            ui.label("Rotation");
-            drag(
-                ui.add(
-                    egui::DragValue::new(&mut next.rotation)
-                        .speed(0.5)
-                        .suffix("°"),
-                ),
-                &mut dragged,
-            );
-            ui.end_row();
-
-            ui.label("All caps");
-            clicked |= ui.checkbox(&mut next.all_caps, "").changed();
-            ui.end_row();
-
-            ui.label("Fill");
-            coloured |= colour_button(ui, &mut next.fill);
-            ui.end_row();
-
-            ui.label("Opacity");
-            let mut percent = next.opacity * 100.0;
-            let slider = ui.add(egui::Slider::new(&mut percent, 0.0..=100.0).suffix("%"));
-            next.opacity = (percent / 100.0).clamp(0.0, 1.0);
-            drag(slider, &mut dragged);
-            ui.end_row();
-
-            ui.label("Halo");
-            ui.horizontal(|ui| {
-                drag(
-                    ui.add(
-                        egui::DragValue::new(&mut next.halo.width)
-                            .range(0.0..=f64::MAX)
-                            .speed(0.1),
-                    ),
-                    &mut dragged,
-                );
-                coloured |= colour_button(ui, &mut next.halo.color);
-            });
-            ui.end_row();
-
-            ui.label("Locked");
-            let mut lock = locked;
-            if ui.checkbox(&mut lock, "").changed() {
-                editor.run(Command::SetLocked { id, locked: lock });
-            }
-            ui.end_row();
-        });
-
-        let edited = label.with_resolved(&styles, &next);
-        let changed = edited != *label;
-        let set = Command::SetLabel {
-            id,
-            label: Box::new(edited),
-        };
-        if let Some(response) = dragged {
-            // Dragging a value is one gesture: live updates, one Undo step.
-            if response.drag_started() {
-                editor.begin_gesture("Edit Label");
-            }
-            if changed {
-                editor.gesture(set);
-            }
-            if response.drag_stopped() {
-                editor.end_gesture();
-            }
-        } else if coloured && changed {
-            if !self.colour_gesture {
-                editor.begin_gesture("Change Colour");
-                self.colour_gesture = true;
-            }
-            editor.gesture(set);
-        } else if clicked && changed {
-            editor.run(set);
-        }
-    }
-}
-
-impl PropertiesPanel {
-    /// Every override of a Stamp. Dragging a value is one gesture, a click one step, and a
-    /// colour pick everything until the pointer lets go.
-    fn stamp_properties(
-        &mut self,
-        ui: &mut egui::Ui,
-        editor: &mut Editor,
-        id: Id,
-        locked: bool,
-        stamp: &Stamp,
-    ) {
-        if self.colour_gesture && ui.input(|i| !i.pointer.any_down()) {
-            self.colour_gesture = false;
-            editor.end_gesture();
-        }
-        let mut next = stamp.clone();
-        let mut dragged: Option<egui::Response> = None;
-        let mut clicked = false;
-        let mut coloured = false;
-        egui::Grid::new("stamp").num_columns(2).show(ui, |ui| {
-            ui.label("Asset");
-            ui.label(next.asset.to_string());
-            ui.end_row();
-
-            ui.label("Position");
-            ui.horizontal(|ui| {
-                drag(
-                    ui.add(
-                        egui::DragValue::new(&mut next.position[0])
-                            .speed(0.5)
-                            .prefix("x "),
-                    ),
-                    &mut dragged,
-                );
-                drag(
-                    ui.add(
-                        egui::DragValue::new(&mut next.position[1])
-                            .speed(0.5)
-                            .prefix("y "),
-                    ),
-                    &mut dragged,
-                );
-            });
-            ui.end_row();
-
-            ui.label("Scale");
-            drag(
-                ui.add(
-                    egui::DragValue::new(&mut next.scale)
-                        .range(0.01..=100.0)
-                        .speed(0.01)
-                        .suffix("×"),
-                ),
-                &mut dragged,
-            );
-            ui.end_row();
-
-            ui.label("Rotation");
-            drag(
-                ui.add(
-                    egui::DragValue::new(&mut next.rotation)
-                        .speed(0.5)
-                        .suffix("°"),
-                ),
-                &mut dragged,
-            );
-            ui.end_row();
-
-            ui.label("Flip");
-            clicked |= ui.checkbox(&mut next.flip, "Horizontal").changed();
-            ui.end_row();
-
-            ui.label("Tint");
-            ui.horizontal(|ui| {
-                let mut tinted = next.tint.is_some();
-                if ui.checkbox(&mut tinted, "").changed() {
-                    next.tint = tinted.then(|| Color::rgb(0xff, 0xff, 0xff));
-                    clicked = true;
-                }
-                if let Some(tint) = &mut next.tint {
-                    coloured |= colour_button(ui, tint);
-                }
-            });
-            ui.end_row();
-
-            ui.label("Fill");
-            ui.horizontal(|ui| {
-                let mut own = next.fill.is_some();
-                if ui.checkbox(&mut own, "Own colour").changed() {
-                    next.fill = own.then_some(Landmass::DEFAULT_FILL);
-                    clicked = true;
-                }
-                if let Some(fill) = &mut next.fill {
-                    coloured |= colour_button(ui, fill);
-                }
-            });
-            ui.end_row();
-
-            ui.label("Opacity");
-            let mut percent = next.opacity * 100.0;
-            let slider = ui.add(egui::Slider::new(&mut percent, 0.0..=100.0).suffix("%"));
-            next.opacity = (percent / 100.0).clamp(0.0, 1.0);
-            drag(slider, &mut dragged);
-            ui.end_row();
-
-            ui.label("Locked");
-            let mut lock = locked;
-            if ui.checkbox(&mut lock, "").changed() {
-                editor.run(Command::SetLocked { id, locked: lock });
-            }
-            ui.end_row();
-        });
-
-        let set = Command::SetStamp {
-            id,
-            stamp: Box::new(next.clone()),
-        };
-        if let Some(response) = dragged {
-            if response.drag_started() {
-                editor.begin_gesture("Edit Stamp");
-            }
-            if next != *stamp {
-                editor.gesture(set);
-            }
-            if response.drag_stopped() {
-                editor.end_gesture();
-            }
-        } else if coloured && next != *stamp {
-            if !self.colour_gesture {
-                editor.begin_gesture("Change Colour");
-                self.colour_gesture = true;
-            }
-            editor.gesture(set);
-        } else if clicked && next != *stamp {
-            editor.run(set);
-        }
-    }
-}
-
-/// Notes a value widget that changed, or began or ended a drag, this frame.
-fn drag(response: egui::Response, dragged: &mut Option<egui::Response>) {
-    if response.changed() || response.drag_started() || response.drag_stopped() {
-        *dragged = Some(response);
-    }
-}
-
-/// A colour swatch that opens a picker. Returns whether the colour changed.
-fn colour_button(ui: &mut egui::Ui, color: &mut Color) -> bool {
-    let mut picked = egui::Color32::from_rgba_unmultiplied(color.r, color.g, color.b, color.a);
-    let changed = egui::color_picker::color_edit_button_srgba(
-        ui,
-        &mut picked,
-        egui::color_picker::Alpha::OnlyBlend,
-    )
-    .changed();
-    if changed {
-        let [r, g, b, a] = picked.to_srgba_unmultiplied();
-        *color = Color::rgba(r, g, b, a);
-    }
-    changed
 }
 
 /// "Layer › Object" for a selected Object, or the Layer's own name.
@@ -1051,7 +640,7 @@ mod tests {
     use super::*;
     use egui_kittest::Harness;
     use egui_kittest::kittest::{NodeT as _, Queryable};
-    use ssmap_core::{Canvas, DistanceUnit, MultiPolygon, Polygon, Scale};
+    use ssmap_core::{Canvas, DistanceUnit, Label, MultiPolygon, Polygon, Scale};
 
     struct Fixture {
         editor: Editor,
@@ -1199,6 +788,113 @@ mod tests {
         harness.get_by_label("Union").click();
         harness.run();
         assert_eq!(harness.state().editor.undo_label(), Some("Union"));
+    }
+
+    #[test]
+    fn an_overridden_label_size_resets_to_the_styles_size() {
+        let (mut fixture, layer, _) = fixture();
+        let style_size = Label::default()
+            .resolve(fixture.editor.map.label_styles())
+            .size;
+        let label = Id::new();
+        assert!(fixture.editor.run(Command::CreateLabel {
+            id: label,
+            parent: layer,
+            index: None,
+            label: Box::new(Label {
+                text: "Hello".to_owned(),
+                size: Some(style_size + 10.0),
+                ..Label::default()
+            }),
+        }));
+        fixture.editor.select(vec![label]);
+        let mut harness = harness(fixture);
+        harness.get_by_label("Reset Size").click();
+        harness.run();
+        let editor = &harness.state().editor;
+        let Some(Node::Object(object)) = editor.map.node(label) else {
+            panic!("an Object")
+        };
+        let ObjectKind::Label(stored) = &object.kind else {
+            panic!("a Label")
+        };
+        assert_eq!(stored.size, None);
+        assert_eq!(stored.resolve(editor.map.label_styles()).size, style_size);
+        // Inherited again: no reset arrow.
+        assert!(harness.query_by_label("Reset Size").is_none());
+    }
+
+    #[test]
+    fn manage_label_styles_asks_for_the_window() {
+        let (mut fixture, layer, _) = fixture();
+        let label = Id::new();
+        assert!(fixture.editor.run(Command::CreateLabel {
+            id: label,
+            parent: layer,
+            index: None,
+            label: Box::new(Label {
+                text: "Hello".to_owned(),
+                ..Label::default()
+            }),
+        }));
+        fixture.editor.select(vec![label]);
+        let mut harness = harness(fixture);
+        harness.get_by_label("Manage Label styles…").click();
+        harness.run();
+        assert!(harness.state_mut().panel.take_manage_label_styles());
+    }
+
+    #[test]
+    fn shuffle_variant_in_properties_stays_within_the_variant_group() {
+        use ssmap_core::asset::{AssetRef, PackLibrary, PackRoots};
+        use ssmap_render::SpriteStore;
+        let roots = PackRoots {
+            built_in: std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../core/tests/packs"),
+            user: None,
+        };
+        let (library, problems) = PackLibrary::load(&roots);
+        assert!(problems.is_empty(), "{problems:?}");
+        let (mut fixture, _, _) = fixture();
+        fixture
+            .editor
+            .set_sprites(SpriteStore::new(std::sync::Arc::new(library)));
+        fixture.editor.selected_asset = Some("test-pack/mountain-1".parse().unwrap());
+        let stamp = fixture
+            .editor
+            .place_stamp([10.0, 10.0])
+            .expect("a Stamp is placed");
+        fixture.editor.select(vec![stamp]);
+        // Placing picks any Asset of the Variant group.
+        let before = fixture.editor.stamp(stamp).expect("a Stamp").asset.clone();
+        let caption = fixture.editor.asset_caption(&before);
+        assert!(caption == "Mountain · v1" || caption == "Mountain · v2");
+        let mut harness = harness(fixture);
+        assert!(harness.query_by_label(&caption).is_some());
+
+        // The pick is random and may repeat the same Variant, so click until it changes.
+        let group: Vec<AssetRef> = ["test-pack/mountain-1", "test-pack/mountain-2"]
+            .iter()
+            .map(|s| s.parse().unwrap())
+            .collect();
+        let mut asset = before.clone();
+        for _ in 0..64 {
+            harness.get_by_label("Shuffle variant").click();
+            harness.run();
+            asset = harness
+                .state()
+                .editor
+                .stamp(stamp)
+                .expect("a Stamp")
+                .asset
+                .clone();
+            assert!(group.contains(&asset));
+            if asset != before {
+                break;
+            }
+        }
+        assert_ne!(asset, before);
+        assert_eq!(harness.state().editor.undo_label(), Some("Shuffle Variant"));
     }
 
     #[test]
