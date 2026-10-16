@@ -661,4 +661,32 @@ mod tests {
         bent.0[0].exterior[2][0] += 1.0;
         assert_eq!(translation(&outline, &bent), None);
     }
+
+    #[test]
+    fn a_pure_move_reuses_the_cached_outline_without_roughening() {
+        let settings = Roughness::new(8.0, 32.0, 5);
+        let outline = island();
+        let cache = RoughnessCache::new();
+        let id = Id::default();
+        let rough = Arc::new(roughen(&outline, &settings));
+        cache
+            .shared
+            .store(id, 1, settings.clone(), outline.clone(), rough.clone());
+
+        // A whole move takes the `moved` path: the cached outline, shifted, no `roughen`.
+        let offset = [40.5, -12.25];
+        let moved = outline.transformed(&Affine::translate(offset));
+        let reused = cache.moved(id, &moved, &settings).expect("translation");
+        assert_eq!(*reused, rough.transformed(&Affine::translate(offset)));
+
+        // A reshaped outline, or other settings, must be roughened afresh.
+        let mut bent = moved.clone();
+        bent.0[0].exterior[2][0] += 1.0;
+        assert!(cache.moved(id, &bent, &settings).is_none());
+        assert!(
+            cache
+                .moved(id, &moved, &Roughness::new(9.0, 32.0, 5))
+                .is_none()
+        );
+    }
 }
