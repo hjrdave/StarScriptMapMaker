@@ -32,25 +32,21 @@ struct CanvasResources {
 /// egui's callback resources. Returns false, leaving the Canvas as a placeholder, when the
 /// adapter is below the hardware floor. Called once per run, so a software-adapter warning
 /// shows once.
-pub fn install(
-    render_state: &egui_wgpu::RenderState,
-    sprites: SpriteStore,
-) -> Option<TessellationCache> {
+pub fn install(render_state: &egui_wgpu::RenderState, sprites: SpriteStore) -> bool {
     let capabilities = GpuCapabilities::query(&render_state.adapter);
     match capabilities.suitability() {
         Suitability::Ok => {}
         Suitability::SoftwareWarning(message) => eprintln!("Warning: {message}"),
         Suitability::BelowFloor(message) => {
             eprintln!("Error: {message}");
-            return None;
+            return false;
         }
     }
     let mut renderer = CanvasRenderer::new(&render_state.device, capabilities);
     renderer.set_sprites(sprites);
     // eframe draws egui without MSAA; the Canvas does its own multisampling offscreen.
     let presenter = Presenter::new(&render_state.device, render_state.target_format, 1);
-    // The cache is shared with the renderer, so the app fills it without reaching into egui.
-    let cache = renderer.tessellation_cache();
+    // Each tab brings its own tessellation cache, which the renderer switches to when it draws.
     render_state
         .renderer
         .write()
@@ -59,7 +55,7 @@ pub fn install(
             renderer,
             presenter,
         });
-    Some(cache)
+    true
 }
 
 /// Renders the whole Canvas, `longest_side` pixels on its longer side, as for the preview
@@ -67,12 +63,16 @@ pub fn install(
 pub fn render_whole_canvas(
     render_state: &egui_wgpu::RenderState,
     editor: &mut Editor,
+    cache: Option<&TessellationCache>,
     longest_side: u32,
 ) -> Option<RgbaImage> {
     let mut egui_renderer = render_state.renderer.write();
     let resources = egui_renderer
         .callback_resources
         .get_mut::<CanvasResources>()?;
+    if let Some(cache) = cache {
+        resources.renderer.use_tessellation_cache(cache);
+    }
     let scene = CanvasScene::new(&editor.map.canvas).with_content(editor.scene_content());
     let view = View::whole_canvas(scene.canvas_size, longest_side);
     Some(render_to_image(
@@ -88,12 +88,16 @@ pub fn render_whole_canvas(
 pub fn step_export(
     render_state: &egui_wgpu::RenderState,
     editor: &mut Editor,
+    cache: Option<&TessellationCache>,
     job: &mut ExportJob,
 ) -> Option<Result<ExportStep, ExportError>> {
     let mut egui_renderer = render_state.renderer.write();
     let resources = egui_renderer
         .callback_resources
         .get_mut::<CanvasResources>()?;
+    if let Some(cache) = cache {
+        resources.renderer.use_tessellation_cache(cache);
+    }
     Some(editor.step_export(
         job,
         &render_state.device,
@@ -107,6 +111,8 @@ pub struct CanvasView {
     view: Option<View>,
     /// False without a wgpu device (as in UI tests); the Canvas is then a flat placeholder.
     gpu: bool,
+    /// The tessellated Objects of this tab's Map, kept while another tab is shown.
+    cache: Option<TessellationCache>,
     /// Tessellates Objects on a thread of its own after a Map opens.
     tessellation: BackgroundTessellation,
     tools: ToolState,
@@ -119,17 +125,23 @@ pub struct CanvasView {
 }
 
 impl CanvasView {
-    /// `cache` is the renderer's tessellation cache; `None` without a wgpu device.
+    /// `cache` is this tab's tessellation cache; `None` without a wgpu device.
     pub fn new(cache: Option<TessellationCache>) -> Self {
         Self {
             view: None,
             gpu: cache.is_some(),
+            cache: cache.clone(),
             tessellation: BackgroundTessellation::new(cache),
             tools: ToolState::default(),
             panel: None,
             last_view: None,
             gesture_until: 0.0,
         }
+    }
+
+    /// This tab's tessellation cache; `None` without a wgpu device.
+    pub fn cache(&self) -> Option<&TessellationCache> {
+        self.cache.as_ref()
     }
 
     /// Whether a Label's text box is open.
@@ -146,16 +158,6 @@ impl CanvasView {
             ppp,
             point,
         ))
-    }
-
-    /// Starts afresh for another Map: fits it to the panel on the next frame and forgets
-    /// what was drawn and dragged.
-    pub fn refit(&mut self) {
-        self.tessellation.arm();
-        self.view = None;
-        self.last_view = None;
-        self.gesture_until = 0.0;
-        self.tools = ToolState::default();
     }
 
     /// Zoom as a share of 1:1, in points rather than physical pixels.
@@ -234,6 +236,7 @@ impl CanvasView {
             painter.add(egui_wgpu::Callback::new_paint_callback(
                 rect,
                 CanvasCallback {
+                    cache: self.cache.clone(),
                     scene,
                     view,
                     ctx: ui.ctx().clone(),
@@ -359,6 +362,8 @@ fn paint_placeholder(
 }
 
 struct CanvasCallback {
+    /// The shown tab's cache, which the renderer draws from this frame.
+    cache: Option<TessellationCache>,
     scene: CanvasScene,
     view: View,
     /// Asked for another frame when this one left finished results to apply.
@@ -380,6 +385,9 @@ impl egui_wgpu::CallbackTrait for CanvasCallback {
         } = resources
             .get_mut::<CanvasResources>()
             .expect("installed at startup");
+        if let Some(cache) = &self.cache {
+            renderer.use_tessellation_cache(cache);
+        }
         let texture = renderer.render(device, queue, encoder, &self.scene, &self.view);
         presenter.set_source(device, texture);
         if renderer.apply_pending() {

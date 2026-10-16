@@ -168,16 +168,23 @@ fn save_as_then_open_round_trips_the_map() {
     );
     let saved_view = editor.map.view();
 
-    // More edits, then open the saved file again: they are gone.
+    // More edits, then open the saved file again: it is already open, so its tab is shown as
+    // it was left, edits and all.
     harness.get_by_label("New Layer").click();
     harness.run();
     assert!(harness.state().title().starts_with("world.ssmap •"));
+    let edited_view = harness.state().editor().map.view();
     assert!(harness.state_mut().open_path(&saved));
     harness.run();
-    assert_eq!(harness.state().editor().map.view(), saved_view);
-    assert!(!harness.state().editor().can_undo());
+    assert_eq!(harness.state().tabs().len(), 1);
+    assert_eq!(harness.state().editor().map.view(), edited_view);
+    assert!(harness.state().editor().can_undo());
+    assert_ne!(edited_view, saved_view);
     harness.get_by_label("Layer 5");
     assert_eq!(harness.state().recent_files(), std::slice::from_ref(&saved));
+    // Undo the extra edit so the Ctrl+S below leaves the file with one more Layer.
+    harness.get_by_label("Undo").click();
+    harness.run();
 
     // Ctrl+S saves to the open file.
     harness.get_by_label("New Layer").click();

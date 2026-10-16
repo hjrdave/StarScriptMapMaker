@@ -265,6 +265,20 @@ impl CanvasRenderer {
         self.content.cache().clone()
     }
 
+    /// Draws the content from `cache` instead of the one it has been using, as when the editor
+    /// shows another Map: each Map keeps its own cache, so coming back to one that is fully
+    /// tessellated only merges its meshes again. Does nothing if `cache` is already in use.
+    pub fn use_tessellation_cache(&mut self, cache: &TessellationCache) {
+        if self.content.cache().same_as(cache) {
+            return;
+        }
+        self.content.set_cache(cache.clone());
+        self.drawn_content = None;
+        self.drawn_tessellation = 0;
+        self.content_cuts.clear();
+        self.carry = false;
+    }
+
     /// Starts tessellating the Objects of `content` that are not ready, so a Map that has just
     /// opened can show Objects as they complete. Run the result on a thread of its own, with a
     /// `ready` that requests a repaint; frames drawn meanwhile leave out Objects that are not
