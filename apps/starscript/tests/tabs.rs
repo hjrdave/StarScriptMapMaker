@@ -22,6 +22,8 @@ fn app(recovery_dir: Option<&Path>) -> Harness<'static, MapMakerApp> {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1280.0, 800.0))
         .build_eframe(move |cc| MapMakerApp::with_recovery_dir(cc, recovery_dir.clone()));
+    // Independent of the macOS hide-on-close default: here close means quit.
+    harness.state_mut().set_close_hides_window(false);
     harness.run();
     // The app starts on Home with no Map; these tests begin with one open.
     assert!(harness.state().tabs().is_empty());
