@@ -20,3 +20,7 @@ When the owner asks for a design change (layout, colour, spacing, type, icon, co
 4. Do not edit the mockup HTML or PNGs; the standard overrides them.
 
 If an implementation task conflicts with the design standard, follow the standard and say so in the PR. If the owner's request itself conflicts with the standard, the request wins: update the standard as above.
+
+## File format compatibility
+
+Backward compatibility of the `.ssmap` map format (and template files) is **not required** while the owner is the only user and the format is still being perfected. When a change needs new fields or a different shape, change the format and bump `format_version`. Do not write migrations for older files, and do not keep old code paths just to open them. Remove this section once the app has outside users.
