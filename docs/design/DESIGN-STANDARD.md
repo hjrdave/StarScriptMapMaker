@@ -63,7 +63,7 @@ UI font: system (SF Pro on macOS), with Inter / Noto Sans as fallback; JetBrains
 
 ## Key metrics (px)
 
-Title bar with tabs 38 · traffic-light inset 84 · Home tab 44 · Map tab 220 (min 120) · New-tab button 40 · status bar 24 · panel header 34 · layer row 26 · field height 22–26 · Layers panel 232 (200–360, rail 40) · Properties panel 288 (260–360) · tool button 32×30 · tool dock bottom offset 40 · minimum window 1024×640.
+Title bar with tabs 30 · traffic-light inset 84 · Home tab (scaled to the 30 px bar, see #232) · Map tab 220 (min 120) · New-tab button 40 · status bar 24 · panel header 34 · layer row 26 · field height 22–26 · Layers panel 232 (200–360, rail 40) · Properties panel 288 (260–360) · tool button 32×30 · tool dock bottom offset 40 · minimum window 1024×640.
 
 ## Icons
 
@@ -80,7 +80,7 @@ Title bar (tabs) → Layers panel | Canvas | Properties panel → status bar. De
 
 ### Tab bar alignment
 
-The macOS window buttons (close, minimize, zoom) are **vertically centered** in the tab bar, on one shared center line with the tab labels, icons, close buttons and the `+` button. Tabs are short: the tab bar is 38 px (the native title-bar row height) unless the buttons can't be centered at that height, so the buttons never sit above the middle of the tabs. The strip stays a window drag region.
+The macOS window buttons (close, minimize, zoom) are **vertically centered** in the tab bar, on one shared center line with the tab labels, icons, close buttons and the `+` button. Tabs are short: the tab bar is **30 px** (down from the handoff's 38 px), so its center matches the native buttons and they never sit above the middle of the tabs. The Home tab, active underline, close hit area and icons scale to fit. The strip stays a window drag region.
 
 ### Pop-out windows
 
@@ -181,7 +181,7 @@ Changes the owner has decided after the handoff. The sections above already refl
 | Map cards are Figma-style (thumbnail, name, edited time) with Delete (confirmed) and Show in Finder | Handoff cards also showed size and an "Open in tab" chip on the face | #228 | Open |
 | Home tab gets an Asset packs page: browse, add via GUI, delete user packs; built-in packs can't be deleted | Handoff listed Asset packs in the Library rail without a page spec | #229 | Open |
 | Asset thumbnails use a white background, off-white for white Assets | Handoff used the dark panel as the thumbnail background | #231 | Open |
-| Tabs are shorter so the macOS window buttons are vertically centered, like Figma's | Handoff gave the bar height but not the button alignment | #232 | Open |
+| Tab bar is 30 px (was 38) so the macOS window buttons are vertically centered, like Figma's | Handoff: title bar with tabs 38 px, Home tab 44 px | #232 | Open |
 | Multi-select with context menu (copy, cut, group) and copy/paste between tabs | Handoff had no selection context menu or cross-tab paste | #235 | Open |
 | Tabs can be popped out into separate windows; Assets and layers can be dragged between windows | Handoff had a single window with tabs | #236 | Open |
 | macOS: closing the window doesn't quit the app; ⌘Q quits; Dock click reopens | Handoff didn't specify close vs quit | #238 | Open |
