@@ -2445,7 +2445,13 @@ fn layers_panel(
             tab.editor.new_layer();
         }
     });
-    if tab.layer_tree.show(ui, &mut tab.editor, footer) {
+    let collapse = tab.layer_tree.show(ui, &mut tab.editor, footer);
+    if std::mem::take(&mut tab.layer_tree.paste_requested)
+        && let Some(at) = tab.canvas_view.paste_point(None)
+    {
+        tab.editor.paste(at);
+    }
+    if collapse {
         if overlay {
             shell.close_overlays();
         } else {

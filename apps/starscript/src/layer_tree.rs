@@ -250,10 +250,36 @@ pub struct LayerTree {
     collapse_generation: u64,
     /// A delete waiting on the confirmation: the Group it names and how many nodes are inside.
     confirm_delete: Option<(Id, usize)>,
+    /// The row a Shift-click range grows from: the last row clicked without Shift.
+    anchor: Option<Id>,
+    /// Set by the menu's Paste; the shell pastes, since it knows where the Canvas is looking.
+    pub paste_requested: bool,
+}
+
+/// How a click on a row changes the Selection.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Pick {
+    /// Selects only this row.
+    Only,
+    /// ⌘-click: adds the row, or removes it if it was selected.
+    Toggle,
+    /// Shift-click: every visible row from the anchor to this one, across Groups.
+    Range,
+}
+
+/// The ids of the visible `rows` from `from` to `to`, whichever comes first.
+fn range(rows: &[Row], from: Id, to: Id) -> Vec<Id> {
+    let position = |id| rows.iter().position(|row| row.id == id);
+    match (position(from), position(to)) {
+        (Some(a), Some(b)) => rows[a.min(b)..=a.max(b)].iter().map(|r| r.id).collect(),
+        _ => vec![to],
+    }
 }
 
 enum Action {
-    Select(Id, bool),
+    Select(Id, Pick),
+    /// Pastes what Copy or Cut took.
+    Paste,
     Run(Command),
     Toggle(Id),
     StartRename(Id),
@@ -335,25 +361,36 @@ impl LayerTree {
                     self.row(ui, editor, *row, &mut actions);
                 }
             });
-        self.cache = Some((revision, self.collapse_generation, rows));
         let text = footer_shown.then(|| footer_text(objects, layers));
         let collapse_clicked = footer(ui, text.as_deref());
 
         for action in actions {
             match action {
-                Action::Select(id, add) => {
-                    let mut selection = if add {
-                        editor.selection().to_vec()
-                    } else {
-                        Vec::new()
+                Action::Select(id, pick) => {
+                    let selection = match pick {
+                        Pick::Only => {
+                            self.anchor = Some(id);
+                            vec![id]
+                        }
+                        Pick::Toggle => {
+                            self.anchor = Some(id);
+                            let mut selection = editor.selection().to_vec();
+                            if selection.contains(&id) {
+                                selection.retain(|&s| s != id);
+                            } else {
+                                selection.push(id);
+                            }
+                            selection
+                        }
+                        Pick::Range => {
+                            let from = self.anchor.filter(|&a| editor.map.contains(a));
+                            self.anchor.get_or_insert(id);
+                            range(&rows, from.unwrap_or(id), id)
+                        }
                     };
-                    if add && selection.contains(&id) {
-                        selection.retain(|&s| s != id);
-                    } else {
-                        selection.push(id);
-                    }
                     editor.select(selection);
                 }
+                Action::Paste => self.paste_requested = true,
                 Action::Run(command) => {
                     editor.run(command);
                 }
@@ -422,6 +459,7 @@ impl LayerTree {
                 Action::CancelRename => self.renaming = None,
             }
         }
+        self.cache = Some((revision, self.collapse_generation, rows));
         self.confirm_delete_dialog(ui.ctx(), editor);
         collapse_clicked
     }
@@ -701,8 +739,15 @@ impl LayerTree {
         }
 
         if response.clicked() {
-            let add = ui.input(|i| i.modifiers.command);
-            actions.push(Action::Select(row.id, add));
+            let (command, shift) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
+            let pick = if shift {
+                Pick::Range
+            } else if command {
+                Pick::Toggle
+            } else {
+                Pick::Only
+            };
+            actions.push(Action::Select(row.id, pick));
         }
         if response.double_clicked() {
             actions.push(Action::StartRename(row.id));
@@ -730,14 +775,14 @@ impl LayerTree {
             }
             if ui.button("Group").clicked() {
                 if !selected {
-                    actions.push(Action::Select(row.id, false));
+                    actions.push(Action::Select(row.id, Pick::Only));
                 }
                 actions.push(Action::Group);
                 ui.close();
             }
             if layer.is_some() && ui.button("Ungroup").clicked() {
                 if !selected {
-                    actions.push(Action::Select(row.id, false));
+                    actions.push(Action::Select(row.id, Pick::Only));
                 }
                 actions.push(Action::Ungroup);
                 ui.close();
@@ -756,7 +801,7 @@ impl LayerTree {
                 .clicked()
             {
                 if !selected {
-                    actions.push(Action::Select(row.id, false));
+                    actions.push(Action::Select(row.id, Pick::Only));
                 }
                 actions.push(Action::Unlink);
                 ui.close();
@@ -767,6 +812,17 @@ impl LayerTree {
             }
             if ui.button("Cut").clicked() {
                 actions.push(Action::Cut(row.id));
+                ui.close();
+            }
+            if ui
+                .add_enabled(editor.has_clipboard(), egui::Button::new("Paste"))
+                .on_disabled_hover_text("Copy or cut something first")
+                .clicked()
+            {
+                if !selected {
+                    actions.push(Action::Select(row.id, Pick::Only));
+                }
+                actions.push(Action::Paste);
                 ui.close();
             }
             if !state.locked_by_parent {
@@ -1138,7 +1194,7 @@ mod tests {
     }
 
     use egui_kittest::Harness;
-    use egui_kittest::kittest::Queryable;
+    use egui_kittest::kittest::{NodeT, Queryable};
 
     struct Fixture {
         editor: Editor,
@@ -1432,5 +1488,142 @@ mod tests {
         harness.run();
         let editor = &harness.state().editor;
         assert!(!editor.map.contains(group) && !editor.map.contains(a));
+    }
+
+    /// Three Layers, the lowest inside a Group: the Group, its Layer, then the two others.
+    fn editor_with_a_group() -> (Editor, Vec<Id>) {
+        let (mut editor, a, _) = editor_with_two_layers();
+        editor.new_layer().unwrap();
+        let group = editor.new_group().unwrap();
+        let command = move_command(&editor.map, a, DropTarget::Into(group)).unwrap();
+        assert!(editor.run(command));
+        editor.select(Vec::new());
+        let ids = rows(&editor.map, &HashSet::new())
+            .iter()
+            .map(|row| row.id)
+            .collect();
+        (editor, ids)
+    }
+
+    fn click_row(harness: &mut Harness<'static, Fixture>, id: Id, modifiers: egui::Modifiers) {
+        let name = node_name(&harness.state().editor.map, id);
+        harness.get_by_label(&name).click_modifiers(modifiers);
+        harness.run();
+    }
+
+    fn sorted(mut ids: Vec<Id>) -> Vec<Id> {
+        ids.sort();
+        ids
+    }
+
+    #[test]
+    fn command_click_toggles_a_row_in_and_out_of_the_selection() {
+        let (editor, ids) = editor_with_a_group();
+        let mut harness = harness(editor);
+        click_row(&mut harness, ids[0], egui::Modifiers::NONE);
+        click_row(&mut harness, ids[2], egui::Modifiers::COMMAND);
+        assert_eq!(
+            sorted(harness.state().editor.selection().to_vec()),
+            sorted(vec![ids[0], ids[2]])
+        );
+        click_row(&mut harness, ids[0], egui::Modifiers::COMMAND);
+        assert_eq!(harness.state().editor.selection(), &[ids[2]]);
+    }
+
+    #[test]
+    fn shift_click_selects_the_rows_between_across_groups() {
+        let (editor, ids) = editor_with_a_group();
+        assert_eq!(ids.len(), 4, "the Group, its Layer and two more");
+        let mut harness = harness(editor);
+        // From the Group at the top down past its own Layer, then back up to the middle.
+        click_row(&mut harness, ids[0], egui::Modifiers::NONE);
+        click_row(&mut harness, ids[3], egui::Modifiers::SHIFT);
+        assert_eq!(
+            sorted(harness.state().editor.selection().to_vec()),
+            sorted(ids.clone())
+        );
+        click_row(&mut harness, ids[2], egui::Modifiers::SHIFT);
+        assert_eq!(
+            sorted(harness.state().editor.selection().to_vec()),
+            sorted(ids[0..=2].to_vec()),
+            "the range grows from the same anchor"
+        );
+    }
+
+    #[test]
+    fn a_panel_selection_is_the_canvas_selection() {
+        // The panel writes the Editor's Selection, which the Canvas reads for its handles
+        // and outline: one list, so the two cannot disagree.
+        let (editor, ids) = editor_with_a_group();
+        let mut harness = harness(editor);
+        click_row(&mut harness, ids[1], egui::Modifiers::NONE);
+        assert!(harness.state().editor.is_selected(ids[1]));
+        // A selection made elsewhere (the Canvas) shows in the panel's menu: Link is enabled
+        // only for a row that is part of a selection of two or more.
+        harness.state_mut().editor.select(vec![ids[1], ids[2]]);
+        harness.run();
+        let name = node_name(&harness.state().editor.map, ids[1]);
+        harness.get_by_label(&name).click_secondary();
+        harness.run();
+        assert!(!NodeT::accesskit_node(&harness.get_by_label("Link")).is_disabled());
+    }
+
+    fn open_menu(harness: &mut Harness<'static, Fixture>, id: Id) {
+        let name = node_name(&harness.state().editor.map, id);
+        harness.get_by_label(&name).click_secondary();
+        harness.run();
+    }
+
+    #[test]
+    fn the_menu_copies_and_pastes_the_selection() {
+        let (editor, ids) = editor_with_a_group();
+        let mut harness = harness(editor);
+        click_row(&mut harness, ids[2], egui::Modifiers::NONE);
+        click_row(&mut harness, ids[3], egui::Modifiers::COMMAND);
+        assert!(!harness.state().editor.has_clipboard());
+        open_menu(&mut harness, ids[3]);
+        harness.get_by_label("Copy").click();
+        harness.run();
+        assert!(harness.state().editor.has_clipboard());
+        assert!(
+            harness.state().editor.map.contains(ids[2]),
+            "Copy keeps them"
+        );
+
+        open_menu(&mut harness, ids[3]);
+        harness.get_by_label("Paste").click();
+        harness.run();
+        assert!(harness.state().tree.paste_requested);
+    }
+
+    #[test]
+    fn the_menu_cuts_groups_and_deletes_the_selection() {
+        let (editor, ids) = editor_with_a_group();
+        let mut harness = harness(editor);
+        click_row(&mut harness, ids[2], egui::Modifiers::NONE);
+        click_row(&mut harness, ids[3], egui::Modifiers::SHIFT);
+        open_menu(&mut harness, ids[3]);
+        harness.get_by_label("Group").click();
+        harness.run();
+        let editor = &harness.state().editor;
+        let [group] = editor.selection() else {
+            panic!("the new Group is selected")
+        };
+        assert_eq!(editor.map.children(Some(*group)).len(), 2);
+        let group = *group;
+
+        open_menu(&mut harness, group);
+        harness.get_by_label("Cut").click();
+        harness.run();
+        assert!(harness.state().editor.has_clipboard());
+        assert!(!harness.state().editor.map.contains(group));
+
+        // The Layer inside the first Group is empty, so no confirmation is asked.
+        let inner = ids[1];
+        click_row(&mut harness, inner, egui::Modifiers::NONE);
+        open_menu(&mut harness, inner);
+        harness.get_by_label("Delete").click();
+        harness.run();
+        assert!(!harness.state().editor.map.contains(inner));
     }
 }
