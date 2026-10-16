@@ -11,11 +11,11 @@ use thiserror::Error;
 use crate::asset::AssetRef;
 use crate::color::Color;
 use crate::embedded::{Blob, ContentHash, EmbeddedAsset, EmbeddedFont};
-use crate::geometry::MultiPolygon;
+use crate::geometry::{MultiPolygon, Point};
 use crate::id::Id;
 use crate::label::Label;
 use crate::map::{InvariantError, Map, MapDefaults, Subtree};
-use crate::node::{Node, ObjectKind, Stamp};
+use crate::node::{Membership, Node, ObjectKind, Stamp};
 use crate::roughness::Roughness;
 use crate::shore::ShoreStyle;
 
@@ -40,6 +40,13 @@ pub enum Op {
         id: Id,
         parent: Option<Id>,
         index: usize,
+    },
+    /// Sets the Canvas size and the workspace position of its top-left corner. No node
+    /// changes: Objects keep their positions and membership.
+    ResizeCanvas {
+        origin: Point,
+        width: u32,
+        height: u32,
     },
     /// Replaces the Map-wide defaults.
     SetDefaults { defaults: MapDefaults },
@@ -78,6 +85,8 @@ pub enum Property {
     Clip(Option<Id>),
     /// Layers only.
     DepthSort(bool),
+    /// Objects only.
+    Membership(Membership),
     /// Landmasses and Lakes only.
     Fill(Color),
     /// Landmasses and Lakes only. `None` uses the Map-wide default.
@@ -176,6 +185,22 @@ impl Map {
                     index: old_index,
                 }
             }
+            Op::ResizeCanvas {
+                origin,
+                width,
+                height,
+            } => {
+                let canvas = &mut self.canvas;
+                let old = Op::ResizeCanvas {
+                    origin: canvas.origin,
+                    width: canvas.width,
+                    height: canvas.height,
+                };
+                canvas.origin = origin;
+                canvas.width = width;
+                canvas.height = height;
+                old
+            }
             Op::SetDefaults { defaults } => Op::SetDefaults {
                 defaults: std::mem::replace(&mut self.defaults, defaults),
             },
@@ -251,6 +276,7 @@ impl Map {
                 data: Some(data),
             } if data.hash() != *hash => return Err(OpError::BlobHashMismatch(*hash)),
             Op::SetDefaults { .. }
+            | Op::ResizeCanvas { .. }
             | Op::SetBlob { .. }
             | Op::SetEmbeddedAsset { .. }
             | Op::SetEmbeddedFont { .. } => {}
@@ -289,6 +315,7 @@ fn check_index(index: usize, len: usize) -> Result<(), OpError> {
 /// Fails with the property's name if `node` does not have it.
 fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> {
     match (node, property) {
+        (Node::Layer(_), Property::Membership(_)) => Err("membership"),
         (Node::Layer(_), Property::Fill(_)) => Err("fill"),
         (Node::Layer(_), Property::Label(_)) => Err("label"),
         (Node::Layer(_), Property::Stamp(_)) => Err("stamp"),
@@ -311,7 +338,11 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
         (Node::Layer(_), _)
         | (
             Node::Object(_),
-            Property::Name(_) | Property::Locked(_) | Property::Roughness(_) | Property::Shore(_),
+            Property::Name(_)
+            | Property::Locked(_)
+            | Property::Membership(_)
+            | Property::Roughness(_)
+            | Property::Shore(_),
         ) => Ok(()),
         (Node::Object(_), Property::Visible(_)) => Err("visible"),
         (Node::Object(_), Property::Opacity(_)) => Err("opacity"),
@@ -348,6 +379,9 @@ fn set_property(node: &mut Node, property: Property) -> Property {
         }
         (Node::Object(object), Property::Locked(locked)) => {
             Property::Locked(std::mem::replace(&mut object.locked, locked))
+        }
+        (Node::Object(object), Property::Membership(membership)) => {
+            Property::Membership(std::mem::replace(&mut object.membership, membership))
         }
         (Node::Object(object), Property::Fill(fill)) => {
             let slot = object.kind.fill_mut().expect("checked");

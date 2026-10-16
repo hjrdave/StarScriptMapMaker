@@ -42,7 +42,9 @@ pub use history::{DEFAULT_BUDGET_BYTES, ExecuteError, History, HistoryError, Sel
 pub use id::Id;
 pub use label::{Label, LabelStyle, LabelStyles, ResolvedLabel};
 pub use map::{Canvas, DistanceUnit, InvariantError, Map, MapDefaults, MapView, Scale, Subtree};
-pub use node::{Align, FontFace, Halo, Lake, Landmass, Layer, Node, Object, ObjectKind, Stamp};
+pub use node::{
+    Align, FontFace, Halo, Lake, Landmass, Layer, Membership, Node, Object, ObjectKind, Stamp,
+};
 pub use op::{Op, OpError, Property};
 pub use pick::PickIndex;
 pub use roughness::{Rebuild, Roughness, RoughnessCache, roughen};
