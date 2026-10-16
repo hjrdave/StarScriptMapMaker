@@ -84,7 +84,7 @@ The **+** button (and ⌘T) opens a blank **New Tab** start page, not the New Ma
 
 ### Map cards (Home tab and New Tab)
 
-Cards follow Figma's dashboard file card: a rounded, bordered card with a large **thumbnail** across the top, a divider, then the Map **name** (bold) and **"Edited <relative time>"** (dim) in the footer. Extra details (pixel size, "Open in tab") go on hover or in the card menu, not on the card face. Each card has a right-click menu and a hover "…" button with **Delete** and **Show in Finder** (per platform: File Explorer / File Manager). Delete always asks for confirmation in a dialog that names the Map, says it moves to the Trash, defaults to Cancel, and notes if the Map is open in a tab. A Map whose file is missing shows a "missing" state with Show in Finder disabled and a "Remove from list" action.
+Cards follow Figma's dashboard file card: a rounded, bordered card with a large **thumbnail** across the top, a divider, then the Map **name** (bold) and **"Edited <relative time>"** (dim) in the footer. No icons on the card face: no file-type icon beside the name and no avatar. Extra details (pixel size, "Open in tab") go on hover or in the card menu, not on the card face. Each card has a right-click menu and a hover "…" button with **Delete** and **Show in Finder** (per platform: File Explorer / File Manager). Delete always asks for confirmation in a dialog that names the Map, says it moves to the Trash, defaults to Cancel, and notes if the Map is open in a tab. A Map whose file is missing shows a "missing" state with Show in Finder disabled and a "Remove from list" action.
 
 ### Tool dock
 
