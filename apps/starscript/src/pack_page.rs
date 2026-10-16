@@ -5,12 +5,14 @@
 //! [`PackPage::show`] draws it.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use eframe::egui::{self, Rect, vec2};
 use ssmap_core::asset::{Asset, AssetRef, Pack};
 use ssmap_render::SpriteStore;
 
 use crate::asset_browser::{self, ThumbArt, Thumbnail};
+use crate::pack_install::{self, Status};
 use crate::theme;
 
 /// Cards per row on the list.
@@ -23,10 +25,16 @@ const PREVIEW_HEIGHT: f32 = 84.0;
 const CARD_FOOTER: f32 = 92.0;
 
 /// What the user did on the page this frame.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Action {
     /// Open the Credits & licences view.
     Credits,
+    /// Open the folder dialog to add a pack.
+    AddPack,
+    /// Install this dropped folder.
+    AddFolder(PathBuf),
+    /// Close the message about the last install.
+    DismissStatus,
 }
 
 /// "Built in" or "Added by you".
@@ -86,9 +94,25 @@ pub struct PackPage {
 
 impl PackPage {
     /// Draws the page and returns what the user did.
-    pub fn show(&mut self, ui: &mut egui::Ui, sprites: Option<&SpriteStore>) -> Vec<Action> {
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        sprites: Option<&SpriteStore>,
+        status: Option<&Status>,
+    ) -> Vec<Action> {
         let mut actions = Vec::new();
         let p = theme::palette(ui.ctx());
+        // Folders dropped anywhere on the page are installed.
+        ui.ctx().input(|input| {
+            for file in &input.raw.dropped_files {
+                let path = file.path();
+                if path.is_dir() {
+                    actions.push(Action::AddFolder(path.to_path_buf()));
+                }
+            }
+        });
+        let dragging = ui.ctx().input(|input| !input.raw.hovered_files.is_empty());
+        let page = ui.max_rect();
         let Some(sprites) = sprites else {
             ui.label(egui::RichText::new("No Asset packs are loaded.").color(p.text_secondary));
             return actions;
@@ -131,12 +155,38 @@ impl PackPage {
                         if ui.button("Credits & licences").clicked() {
                             actions.push(Action::Credits);
                         }
+                        let running = matches!(status, Some(Status::Installing { .. }));
+                        if ui
+                            .add_enabled(!running, egui::Button::new("Add pack…"))
+                            .clicked()
+                        {
+                            actions.push(Action::AddPack);
+                        }
                     });
                 });
             });
+        if let Some(status) = status {
+            status_banner(ui, status, &mut actions);
+        }
         match self.open.clone().and_then(|id| library.pack(&id).cloned()) {
             Some(pack) => self.pack_detail(ui, sprites, &pack, &mut actions),
             None => self.pack_list(ui, sprites, library.packs()),
+        }
+        if dragging {
+            let painter = ui.painter();
+            painter.rect_stroke(
+                page.shrink(4.0),
+                theme::RADIUS_FIELD,
+                egui::Stroke::new(2.0, p.border_strong),
+                egui::StrokeKind::Inside,
+            );
+            painter.text(
+                page.center_top() + vec2(0.0, 28.0),
+                egui::Align2::CENTER_CENTER,
+                "Drop a pack folder to add it",
+                egui::FontId::new(theme::BODY, theme::ui_family()),
+                p.text_primary,
+            );
         }
         actions
     }
@@ -444,6 +494,38 @@ impl PackPage {
                 }
             });
     }
+}
+
+/// The message about the last Add pack: progress while it copies, then what came of it.
+fn status_banner(ui: &mut egui::Ui, status: &Status, actions: &mut Vec<Action>) {
+    let p = theme::palette(ui.ctx());
+    egui::Frame::NONE
+        .inner_margin(egui::Margin::symmetric(32, 8))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| match status {
+                Status::Installing { name, progress } => {
+                    ui.label(
+                        egui::RichText::new(format!("Adding {name}…")).color(p.text_secondary),
+                    );
+                    let bar = match pack_install::progress_fraction(*progress) {
+                        Some(fraction) => egui::ProgressBar::new(fraction),
+                        None => egui::ProgressBar::new(0.0).animate(true),
+                    };
+                    ui.add(bar.desired_width(200.0));
+                }
+                Status::Done(message) | Status::Failed(message) => {
+                    let color = if matches!(status, Status::Done(_)) {
+                        p.text_primary
+                    } else {
+                        p.gold_text
+                    };
+                    ui.label(egui::RichText::new(message).color(color));
+                    if ui.button("Dismiss").clicked() {
+                        actions.push(Action::DismissStatus);
+                    }
+                }
+            });
+        });
 }
 
 /// One line of text, cut with an ellipsis at `width`.
