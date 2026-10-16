@@ -97,6 +97,81 @@ fn a_map_from_the_template_saves_and_reopens() {
 }
 
 #[test]
+fn every_bundled_template_loads_validates_and_round_trips() {
+    let (templates, problems) = MapTemplate::load_all();
+    assert!(problems.is_empty(), "{problems:?}");
+    let ids: Vec<&str> = templates.iter().map(|t| t.id()).collect();
+    assert_eq!(
+        ids,
+        [
+            "starter",
+            "dark-ink",
+            "flat-colour",
+            "parchment",
+            "tropical",
+            "winter"
+        ]
+    );
+    let names: Vec<&str> = templates.iter().map(|t| t.name()).collect();
+    assert_eq!(
+        names,
+        [
+            "Ocean",
+            "Dark Ink",
+            "Flat Colour",
+            "Parchment",
+            "Tropical",
+            "Winter"
+        ]
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut backgrounds = Vec::new();
+    for template in &templates {
+        let map = template.new_map(canvas());
+        map.validate().unwrap();
+        assert_eq!(map.canvas.width, 2000);
+        let path = dir.path().join(format!("{}.ssmap", template.id()));
+        MapFile::create(&path, &map, None).unwrap();
+        let (_, reopened) = MapFile::open(&path).unwrap();
+        assert_eq!(reopened.view(), map.view(), "{}", template.name());
+        assert_eq!(reopened.canvas.background, map.canvas.background);
+        backgrounds.push(map.canvas.background.clone());
+    }
+    for (i, background) in backgrounds.iter().enumerate() {
+        assert!(!backgrounds[i + 1..].contains(background));
+    }
+}
+
+#[test]
+fn a_map_takes_the_templates_background_and_the_chosen_canvas() {
+    let (templates, _) = MapTemplate::load_all();
+    let flat = templates.iter().find(|t| t.id() == "flat-colour").unwrap();
+    let map = flat.new_map(canvas());
+    assert_eq!(map.canvas.width, 2000);
+    assert_eq!(map.canvas.height, 1000);
+    assert_eq!(map.canvas.background.texture.strength, 0.0);
+    assert_eq!(map.canvas.background.water, Color::rgb(0x6f, 0x9f, 0xc0));
+}
+
+#[test]
+fn a_broken_template_is_reported_and_the_rest_still_load() {
+    let dir = tempfile::tempdir().unwrap();
+    let starter = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/templates/starter.json"),
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("a-broken.json"), "{}").unwrap();
+    std::fs::write(dir.path().join("z-fine.json"), &starter).unwrap();
+    std::fs::write(dir.path().join("starter.json"), &starter).unwrap();
+    std::fs::write(dir.path().join("notes.txt"), "ignored").unwrap();
+    let (templates, problems) = MapTemplate::load_dir(dir.path());
+    let ids: Vec<&str> = templates.iter().map(|t| t.id()).collect();
+    assert_eq!(ids, ["starter", "z-fine"]);
+    assert_eq!(problems.len(), 1);
+}
+
+#[test]
 fn bad_templates_are_refused() {
     let starter = std::fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/templates/starter.json"),
