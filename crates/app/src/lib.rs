@@ -2135,7 +2135,8 @@ impl MapMakerApp {
     }
 }
 
-/// The Layers panel: its header and the tree. As an overlay, collapsing closes it.
+/// The Layers panel: its header, the tree and the bottom bar with the collapse control. As an
+/// overlay, collapsing closes it.
 fn layers_panel(
     ui: &mut egui::Ui,
     shell: &mut shell::Shell,
@@ -2144,20 +2145,17 @@ fn layers_panel(
     overlay: bool,
 ) {
     shell::panel_header(ui, "Layers", |ui| {
-        if icons::icon_button(ui, icons::Icon::CollapseLeft, "Collapse Layers (⌘⌥1)").clicked()
-        {
-            if overlay {
-                shell.close_overlays();
-            } else {
-                shell.set_layers_collapsed(true);
-            }
-        }
-        // Right to left: this lands just left of Collapse.
         if icons::icon_button(ui, icons::Icon::Add, "New Layer (⇧⌘N)").clicked() {
             tab.editor.new_layer();
         }
     });
-    tab.layer_tree.show(ui, &mut tab.editor, footer);
+    if tab.layer_tree.show(ui, &mut tab.editor, footer) {
+        if overlay {
+            shell.close_overlays();
+        } else {
+            shell.set_layers_collapsed(true);
+        }
+    }
 }
 
 /// Runs `on_deleted` (closing the tab, forgetting the file) only if the Trash move succeeded.

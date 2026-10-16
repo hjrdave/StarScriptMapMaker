@@ -84,6 +84,7 @@ icons! {
     ChevronDown, "Chevron down", "chevron-down";
     CollapseLeft, "Collapse left", "collapse-left";
     CollapseRight, "Collapse right", "collapse-right";
+    CollapseDouble, "Collapse double", "collapse-double";
     Layer, "Layer", "layer";
     Unlock, "Unlock", "unlock";
     Shape, "Shape", "shape";
@@ -297,6 +298,16 @@ pub fn icon_button(ui: &mut egui::Ui, icon: Icon, label: &str) -> egui::Response
     icon_button_with(ui, icon, label, 24.0, GRID, None)
 }
 
+/// [`icon_button`] with the glyph mirrored left to right when `flip` is set.
+pub fn icon_button_flipped(
+    ui: &mut egui::Ui,
+    icon: Icon,
+    label: &str,
+    flip: bool,
+) -> egui::Response {
+    icon_button_inner(ui, icon, label, 24.0, GRID, None, flip)
+}
+
 /// [`icon_button`] with its button `side` and glyph `size` in points, and optionally a `tint`
 /// in place of the visuals' text colour.
 pub fn icon_button_with(
@@ -306,6 +317,18 @@ pub fn icon_button_with(
     side: f32,
     size: f32,
     tint: Option<egui::Color32>,
+) -> egui::Response {
+    icon_button_inner(ui, icon, label, side, size, tint, false)
+}
+
+fn icon_button_inner(
+    ui: &mut egui::Ui,
+    icon: Icon,
+    label: &str,
+    side: f32,
+    size: f32,
+    tint: Option<egui::Color32>,
+    flip: bool,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(side), egui::Sense::click());
     response.widget_info(|| {
@@ -317,12 +340,13 @@ pub fn icon_button_with(
             ui.painter()
                 .rect_filled(rect, visuals.corner_radius, visuals.weak_bg_fill);
         }
-        paint(
+        paint_flipped(
             ui,
             rect,
             icon,
             size,
             tint.unwrap_or(visuals.fg_stroke.color),
+            flip,
         );
     }
     response.on_hover_text(label)
