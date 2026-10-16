@@ -5,7 +5,9 @@
 struct Ocean {
     canvas_size: vec2<f32>,
     strength: f32,
-    _pad: f32,
+    scale: f32,
+    light: vec4<f32>,
+    dark: vec4<f32>,
 };
 
 @group(1) @binding(0) var<uniform> ocean: Ocean;
@@ -49,15 +51,15 @@ fn value_noise(p: vec2<f32>) -> f32 {
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-    let n = value_noise(in.canvas / 180.0) * 0.6
-        + value_noise(in.canvas / 60.0) * 0.3
-        + value_noise(in.canvas / 20.0) * 0.1;
+    let p = in.canvas / ocean.scale;
+    let n = value_noise(p / 180.0) * 0.6
+        + value_noise(p / 60.0) * 0.3
+        + value_noise(p / 20.0) * 0.1;
     // Above the midpoint lightens, below darkens; premultiplied output. Blending is linear,
     // where white reads far stronger than black, so lightening is scaled down to balance.
     let amount = clamp((n - 0.5) * 2.0, -1.0, 1.0) * ocean.strength;
     if (amount >= 0.0) {
-        let light = amount * 0.35;
-        return vec4(vec3(light), light);
+        return ocean.light * (amount * 0.35);
     }
-    return vec4(vec3(0.0), -amount);
+    return ocean.dark * -amount;
 }

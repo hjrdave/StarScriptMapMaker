@@ -168,6 +168,25 @@ fn ocean_backdrop() {
 }
 
 #[test]
+fn flat_background_is_one_colour_and_follows_the_map() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let mut canvas = Canvas::new(800, 600, Scale::new(1.0, DistanceUnit::Miles));
+    canvas.background.water = ssmap_core::Color::rgb(0xe0, 0xc8, 0x90);
+    canvas.background.texture.strength = 0.0;
+    let scene = CanvasScene::new(&canvas);
+    let (_, view) = backdrop_scene();
+    let image = render(headless, &scene, &view);
+    for (x, y) in [(40, 40), (176, 132), (300, 200)] {
+        assert_eq!(
+            pixel(&image, x, y),
+            [0xe0, 0xc8, 0x90, 0xff],
+            "at ({x}, {y})"
+        );
+    }
+}
+
+#[test]
 fn whole_canvas_preview_shows_no_pasteboard() {
     let Some(gpu) = gpu() else { return };
     let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
