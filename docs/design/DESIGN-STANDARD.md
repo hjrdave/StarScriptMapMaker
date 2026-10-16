@@ -86,6 +86,10 @@ The **+** button (and ⌘T) opens a blank **New Tab** start page, not the New Ma
 
 Cards follow Figma's dashboard file card: a rounded, bordered card with a large **thumbnail** across the top, a divider, then the Map **name** (bold) and **"Edited <relative time>"** (dim) in the footer. No icons on the card face: no file-type icon beside the name and no avatar. Extra details (pixel size, "Open in tab") go on hover or in the card menu, not on the card face. Each card has a right-click menu and a hover "…" button with **Delete** and **Show in Finder** (per platform: File Explorer / File Manager). Delete always asks for confirmation in a dialog that names the Map, says it moves to the Trash, defaults to Cancel, and notes if the Map is open in a tab. A Map whose file is missing shows a "missing" state with Show in Finder disabled and a "Remove from list" action.
 
+### Asset packs page (Home tab)
+
+The Home tab's Library section has an **Asset packs** page. It lists every installed pack (name, preview thumbnails, author, licence, Asset count, built-in or user-added); opening a pack shows its Assets in a searchable thumbnail grid. **Add pack…** installs a pack through the native file picker, with progress and a clear error on failure. User-installed packs can be deleted from the card menu after a confirmation dialog that names the pack and says if maps use it. **Packs embedded in the app cannot be deleted**: they carry a "Built in" badge and the Delete action is hidden or disabled with a tooltip explaining why.
+
 ### Tool dock
 
 Floating, bottom-centre of the canvas area. Groups: Select V, Pan H │ Land Brush B, Lasso L, Label T │ Stamp S, Stamp Eraser E │ Export Region X. Active tool = gold-subtle fill + gold inset ring. Tooltip above the button after 500 ms: name + shortcut, on **one line** (no wrapping).
@@ -145,6 +149,7 @@ Changes the owner has decided after the handoff. The sections above already refl
 | Text gets Kerning, Tracking, Line height and Arch | Handoff had Tracking and Line height only | #213 | Open |
 | Landmass Roughness stays smooth to drag at high values | — | #220 | Open |
 | Map cards are Figma-style (thumbnail, name, edited time) with Delete (confirmed) and Show in Finder | Handoff cards also showed size and an "Open in tab" chip on the face | #228 | Open |
+| Home tab gets an Asset packs page: browse, add via GUI, delete user packs; built-in packs can't be deleted | Handoff listed Asset packs in the Library rail without a page spec | #229 | Open |
 | New tab opens a start page (last 6 Maps by most recently updated, Create new map, Open a file) instead of the New Map dialog | Handoff: `+` = New Map | #223 | Open |
 | One Stamp tool: click places, drag scatters; no separate Scatter Brush | Handoff had Stamp and Scatter Brush as separate tools | #219 | Open |
 
