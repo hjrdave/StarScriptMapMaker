@@ -90,6 +90,10 @@ Tab dragging works like Chrome. A tab can be popped out into its own window (dra
 
 On macOS, closing a window (red button) never quits the app, as in Photoshop. The app stays in the Dock with the menu bar active; only ⌘Q / StarScript ▸ Quit (or Dock ▸ Quit) quits. Closing a window with unsaved Maps shows the Save / Don't Save / Cancel prompt first. Clicking the Dock icon, or launching the app again, with no window open opens a new window on the Home tab. With no window open, New Map, Open… and Open Recent stay enabled. Windows and Linux are unchanged: closing the last window quits.
 
+### Art boards
+
+A Map can have several art boards in one shared workspace. One board is the **primary board** (marked with a badge and label) and is the only one exported; other boards are staging areas for assets and work in progress and are never included in the export. Objects can be moved or copied between boards. The name "board" is provisional until the glossary decision in #239 is made.
+
 ### New tab
 
 The **+** button (and ⌘T) opens a blank **New Tab** start page, not the New Map dialog. It is a quick "recent" screen: the **last 6** Maps as thumbnail cards ordered by **most recently updated**, a **Create new map** card, and an **Open a file** button for the file system. Picking any of these opens or creates the Map in that tab, and the tab then takes the Map's name. It has no side rail, search or sorting; the full list lives on the Home tab. A blank New Tab has nothing to save, so closing it shows no Save prompt. With no recent Maps, show only Create new map and Open a file.
@@ -172,6 +176,7 @@ Changes the owner has decided after the handoff. The sections above already refl
 | Multi-select with context menu (copy, cut, group) and copy/paste between tabs | Handoff had no selection context menu or cross-tab paste | #235 | Open |
 | Tabs can be popped out into separate windows; Assets and layers can be dragged between windows | Handoff had a single window with tabs | #236 | Open |
 | macOS: closing the window doesn't quit the app; ⌘Q quits; Dock click reopens | Handoff didn't specify close vs quit | #238 | Open |
+| A Map can have multiple art boards; only the primary board is exported | Handoff had one Canvas per Map | #239 | Open |
 | New tab opens a start page (last 6 Maps by most recently updated, Create new map, Open a file) instead of the New Map dialog | Handoff: `+` = New Map | #223 | Open |
 | One Stamp tool: click places, drag scatters; no separate Scatter Brush | Handoff had Stamp and Scatter Brush as separate tools | #219 | Open |
 
