@@ -12,14 +12,19 @@ pub struct View {
 impl View {
     /// Fits a `canvas` of the given size inside `size`, centred, leaving `margin` pixels clear.
     pub fn fit(canvas: [f64; 2], size: [u32; 2], margin: f64) -> Self {
+        Self::fit_at([0.0, 0.0], canvas, size, margin)
+    }
+
+    /// Like [`View::fit`] for a Canvas whose top-left corner is at `canvas_origin`.
+    pub fn fit_at(canvas_origin: [f64; 2], canvas: [f64; 2], size: [u32; 2], margin: f64) -> Self {
         let available = [
             (f64::from(size[0]) - 2.0 * margin).max(1.0),
             (f64::from(size[1]) - 2.0 * margin).max(1.0),
         ];
         let zoom = (available[0] / canvas[0]).min(available[1] / canvas[1]);
         let origin = [
-            (canvas[0] * zoom - f64::from(size[0])) / (2.0 * zoom),
-            (canvas[1] * zoom - f64::from(size[1])) / (2.0 * zoom),
+            canvas_origin[0] + (canvas[0] * zoom - f64::from(size[0])) / (2.0 * zoom),
+            canvas_origin[1] + (canvas[1] * zoom - f64::from(size[1])) / (2.0 * zoom),
         ];
         Self { origin, zoom, size }
     }
@@ -27,10 +32,15 @@ impl View {
     /// The whole Canvas and nothing else, scaled so its longer side is `longest_side` pixels,
     /// as for the preview stored in a Map file.
     pub fn whole_canvas(canvas: [f64; 2], longest_side: u32) -> Self {
+        Self::whole_canvas_at([0.0, 0.0], canvas, longest_side)
+    }
+
+    /// Like [`View::whole_canvas`] for a Canvas whose top-left corner is at `canvas_origin`.
+    pub fn whole_canvas_at(canvas_origin: [f64; 2], canvas: [f64; 2], longest_side: u32) -> Self {
         let scale = f64::from(longest_side) / canvas[0].max(canvas[1]);
         let side = |length: f64| ((length * scale).round() as u32).max(1);
         Self {
-            origin: [0.0, 0.0],
+            origin: canvas_origin,
             zoom: scale,
             size: [side(canvas[0]), side(canvas[1])],
         }

@@ -121,6 +121,9 @@ impl TiledExport<'_> {
         let mut scene = CanvasScene::new(&self.map.canvas).with_content(content);
         // A region reaching past the Canvas shows water, not the editor's pasteboard.
         scene.pasteboard = scene.backdrop.water;
+        // Only the Canvas is exported: its members are clipped at the edge and pasteboard
+        // Objects are left out.
+        scene.pasteboard_objects = false;
         let region = self.settings.region_rect(&self.map.canvas);
         let zoom = f64::from(output.width) / region.width();
         let max_side = self

@@ -57,6 +57,9 @@ pub struct VectorGroup {
     /// The Object the group draws, whose tessellation is cached as a whole. Groups of no
     /// Object (Clip masks, the backdrop) are tessellated afresh every time.
     pub object: Option<ObjectRef>,
+    /// The group draws an Object on the pasteboard, which shows in full around the Canvas
+    /// where other Objects are clipped at its edge, and is left out of export.
+    pub pasteboard: bool,
 }
 
 /// An Object at the version its groups were built from.
@@ -76,6 +79,7 @@ impl VectorGroup {
             }],
             effect: false,
             object: None,
+            pasteboard: false,
         }
     }
 
@@ -1132,6 +1136,7 @@ mod tests {
             }],
             effect: false,
             object: Some(object),
+            pasteboard: false,
         }
     }
 

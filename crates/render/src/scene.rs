@@ -9,8 +9,8 @@ use lyon::math::point;
 use lyon::path::Path;
 use ssmap_core::land;
 use ssmap_core::{
-    ContentHash, Id, Landmass, Map, MultiPolygon, Node, ObjectKind, Polygon, ResolvedLabel,
-    RoughnessCache, ShoreStyle,
+    ContentHash, Id, Landmass, Map, Membership, MultiPolygon, Node, ObjectKind, Polygon,
+    ResolvedLabel, RoughnessCache, ShoreStyle,
 };
 
 use crate::canvas::{ClipScope, Content};
@@ -129,6 +129,7 @@ impl MapScene {
             mark_object(map, id, &mut groups[first_group..]);
             for placed in &mut stamps[first_stamp..] {
                 placed.clip = clip;
+                placed.pasteboard = on_pasteboard(map, id);
             }
             if let Some(scope) = clips.last_mut().filter(|_| open.is_some()) {
                 scope.groups.end = groups.len();
@@ -177,6 +178,7 @@ impl MapScene {
             ObjectKind::Stamp(stamp) => stamps.push(PlacedStamp {
                 after: groups.len(),
                 clip: None,
+                pasteboard: false,
                 draw: StampDraw {
                     asset: stamp.asset.clone(),
                     position: stamp.position,
@@ -220,9 +222,16 @@ fn mark_object(map: &Map, id: Id, groups: &mut [VectorGroup]) {
     let Some(version) = map.version(id) else {
         return;
     };
+    let pasteboard = on_pasteboard(map, id);
     for group in groups {
         group.object = Some(ObjectRef { id, version });
+        group.pasteboard = pasteboard;
     }
+}
+
+/// Whether `id` is an Object that belongs to the pasteboard rather than the Canvas.
+fn on_pasteboard(map: &Map, id: Id) -> bool {
+    matches!(map.node(id), Some(Node::Object(object)) if object.membership == Membership::Pasteboard)
 }
 
 /// The Landmass `id` is clipped to: that of the nearest Layer above it that has a Clip. A
@@ -301,6 +310,7 @@ fn stroke(path: Path, color: Color, width: f32, opacity: f32) -> VectorGroup {
         }],
         effect: false,
         object: None,
+        pasteboard: false,
     }
 }
 
