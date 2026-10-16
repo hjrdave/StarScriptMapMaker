@@ -202,7 +202,8 @@ impl SpriteStore {
         true
     }
 
-    /// Changes whenever the embedded Assets or the library do.
+    /// Changes whenever the embedded Assets or the library do. Both counters only increase, so
+    /// the sum is only meant for equality checks, not as a count of anything.
     pub fn generation(&self) -> u64 {
         let state = self.state();
         state.generation + state.library_generation
