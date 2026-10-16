@@ -73,7 +73,7 @@ nobody has seen it yet. Check it by hand:
       `open -a "StarScript Map Maker" --args file.ssmap` should open it.
 - [ ] Export a PNG. Export again with a custom region (Export Region tool). Start an
       export and cancel it.
-- [ ] Title bar with tabs (#161): the tab strip is drawn in the title bar, 38 px high, with
+- [ ] Title bar with tabs (#161): the tab strip is drawn in the title bar, 30 px high, with
       the traffic lights clear at the left (84 px) and no title text.
 - [ ] Drag the empty part of the strip: the window moves. Double-click it: the window zooms.
 - [ ] Open a few Maps. Tabs are flat, 220 px wide, with a 1 px divider; the active tab has a
