@@ -7,6 +7,8 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+mod common;
+
 use ssmap_app::MapMakerApp;
 use ssmap_app::export_dialog::ExportDialog;
 use ssmap_app::export_run::{self, Progress};
@@ -52,8 +54,7 @@ fn dialog_harness<'a, S>(
 }
 
 fn new_layer(harness: &mut Harness<'_, MapMakerApp>) {
-    harness.get_by_label("New Layer").click();
-    harness.run();
+    common::new_layer(harness);
 }
 
 #[test]

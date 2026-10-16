@@ -4,6 +4,8 @@
 use eframe::egui;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+mod common;
+
 use ssmap_app::MapMakerApp;
 use ssmap_core::{Canvas, DistanceUnit, Scale};
 
@@ -30,8 +32,7 @@ fn launches_and_creates_a_layer() {
     // A new Map starts with the template's four Layers.
     assert_eq!(harness.state().editor().map.children(None).len(), 4);
 
-    harness.get_by_label("New Layer").click();
-    harness.run();
+    common::new_layer(&mut harness);
     let map = &harness.state().editor().map;
     assert_eq!(map.children(None).len(), 5);
     // The new Layer shows in the tree (and in the Properties breadcrumb) and is selected.
@@ -98,8 +99,7 @@ fn layers_row<'h>(harness: &'h Harness<'_, MapMakerApp>, label: &'h str) -> egui
 #[test]
 fn a_locked_layer_refuses_edits_with_a_visible_message() {
     let mut harness = app();
-    harness.get_by_label("New Layer").click();
-    harness.run();
+    common::new_layer(&mut harness);
     // Lock and eye show on hover; the Layers panel lists the new, topmost Layer first.
     layers_row(&harness, "Layer 5").hover();
     harness.run();
@@ -172,8 +172,7 @@ fn save_as_then_open_round_trips_the_map() {
     let path = dir.path().join("world");
     let mut harness = app();
     assert_eq!(harness.state().title(), "Untitled — StarScript Map Maker");
-    harness.get_by_label("New Layer").click();
-    harness.run();
+    common::new_layer(&mut harness);
     assert!(harness.state().title().starts_with("Untitled •"));
 
     assert!(harness.state_mut().save_as_path(&path));
@@ -193,8 +192,7 @@ fn save_as_then_open_round_trips_the_map() {
 
     // More edits, then open the saved file again: it is already open, so its tab is shown as
     // it was left, edits and all.
-    harness.get_by_label("New Layer").click();
-    harness.run();
+    common::new_layer(&mut harness);
     assert!(harness.state().title().starts_with("world.ssmap •"));
     let edited_view = harness.state().editor().map.view();
     assert!(harness.state_mut().open_path(&saved));
@@ -206,12 +204,10 @@ fn save_as_then_open_round_trips_the_map() {
     assert!(harness.query_all_by_label("Layer 5").next().is_some());
     assert_eq!(harness.state().recent_files(), std::slice::from_ref(&saved));
     // Undo the extra edit so the Ctrl+S below leaves the file with one more Layer.
-    harness.get_by_label("Undo").click();
-    harness.run();
+    common::undo(&mut harness);
 
     // Ctrl+S saves to the open file.
-    harness.get_by_label("New Layer").click();
-    harness.run();
+    common::new_layer(&mut harness);
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::S);
     harness.run();
     assert_eq!(

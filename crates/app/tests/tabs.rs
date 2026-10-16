@@ -7,6 +7,8 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+mod common;
+
 use ssmap_app::MapMakerApp;
 use ssmap_core::file::MapFile;
 use ssmap_core::{Canvas, DistanceUnit, Map, Scale};
@@ -43,8 +45,7 @@ fn layers(harness: &Harness<'_, MapMakerApp>, tab: usize) -> usize {
 }
 
 fn new_layer(harness: &mut Harness<'_, MapMakerApp>) {
-    harness.get_by_label("New Layer").click();
-    harness.run();
+    common::new_layer(harness);
 }
 
 fn request_close(harness: &mut Harness<'_, MapMakerApp>) {
@@ -118,8 +119,7 @@ fn each_tab_keeps_its_own_undo_history() {
     assert_eq!((layers(&harness, 1), layers(&harness, 2)), (2, 1));
 
     // Undo in the tab being shown touches only that tab.
-    harness.get_by_label("Undo").click();
-    harness.run();
+    common::undo(&mut harness);
     assert_eq!((layers(&harness, 1), layers(&harness, 2)), (1, 1));
     assert!(harness.state().tabs()[2].editor().can_undo());
     harness.state_mut().focus_tab(2);
