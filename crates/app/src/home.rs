@@ -904,12 +904,7 @@ fn map_card(
 
     // The footer: file-type icon, name, and when it was edited.
     let footer_top = preview.max.y + 1.0;
-    let icon_rect = Rect::from_center_size(
-        egui::pos2(rect.min.x + 22.0, footer_top + FOOTER_HEIGHT / 2.0),
-        vec2(16.0, 16.0),
-    );
-    icons::paint(ui, icon_rect, Icon::Landmass, 16.0, p.gold);
-    let text_x = rect.min.x + 40.0;
+    let text_x = rect.min.x + 14.0;
     let text_width = (rect.max.x - text_x - 36.0).max(0.0);
     line(
         ui,
@@ -975,12 +970,20 @@ fn map_card(
     }
     response.context_menu(|ui| card_menu(ui, entry, out));
 
-    if let Some(canvas) = entry.canvas {
-        let mut tip = size_label(canvas);
-        if entry.is_open() {
-            tip.push_str(" · Open in a tab");
+    // No tooltip over an open menu, where it would cover the items.
+    let menu_open =
+        egui::Popup::is_id_open(ui.ctx(), more_id.with("popup")) || response.context_menu_opened();
+    if !menu_open {
+        let mut parts = Vec::new();
+        if let Some(canvas) = entry.canvas {
+            parts.push(size_label(canvas));
         }
-        response.clone().on_hover_text(tip);
+        if entry.is_open() {
+            parts.push("Open in a tab".to_owned());
+        }
+        if !parts.is_empty() {
+            response.clone().on_hover_text(parts.join(" · "));
+        }
     }
     if response.clicked() && !removed && !entry.missing {
         match (entry.tab, &entry.path) {

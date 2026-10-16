@@ -1123,15 +1123,17 @@ impl MapMakerApp {
         }
         if delete {
             self.delete_prompt = None;
-            if let Some(index) = self.tab_for(&path) {
-                self.remove_tab(index);
-            }
-            match file_actions::move_to_trash(&path) {
-                Ok(()) => {
-                    self.recent.remove(&path);
-                    self.home.forget(&path);
+            // Trash first: if it fails, the open tab and its unsaved edits stay.
+            let trashed = file_actions::move_to_trash(&path);
+            let result = after_trash(trashed, || {
+                if let Some(index) = open_tab {
+                    self.remove_tab(index);
                 }
-                Err(err) => self.notify_error(format!("Couldn’t delete “{name}”: {err}")),
+                self.recent.remove(&path);
+                self.home.forget(&path);
+            });
+            if let Err(err) = result {
+                self.notify_error(format!("Couldn’t delete “{name}”: {err}"));
             }
         } else if cancel {
             self.delete_prompt = None;
@@ -2144,9 +2146,29 @@ fn layers_panel(
     tab.layer_tree.show(ui, &mut tab.editor, footer);
 }
 
+/// Runs `on_deleted` (closing the tab, forgetting the file) only if the Trash move succeeded.
+fn after_trash(trashed: Result<(), String>, on_deleted: impl FnOnce()) -> Result<(), String> {
+    trashed.map(|()| on_deleted())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_trash_keeps_the_tab_and_recent_entry() {
+        let mut cleaned = false;
+        let result = after_trash(Err("denied".into()), || cleaned = true);
+        assert_eq!(result, Err("denied".to_owned()));
+        assert!(!cleaned);
+    }
+
+    #[test]
+    fn confirmed_delete_closes_the_tab_and_forgets_the_file() {
+        let mut cleaned = false;
+        assert_eq!(after_trash(Ok(()), || cleaned = true), Ok(()));
+        assert!(cleaned);
+    }
 
     fn args(args: &[&str]) -> Vec<OsString> {
         args.iter().map(OsString::from).collect()
