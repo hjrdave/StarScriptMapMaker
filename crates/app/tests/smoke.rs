@@ -34,8 +34,8 @@ fn launches_and_creates_a_layer() {
     harness.run();
     let map = &harness.state().editor().map;
     assert_eq!(map.children(None).len(), 5);
-    // The new Layer shows in the tree and is selected.
-    harness.get_by_label("Layer 5");
+    // The new Layer shows in the tree (and in the Properties breadcrumb) and is selected.
+    assert!(harness.query_all_by_label("Layer 5").next().is_some());
     assert_eq!(
         harness.state().editor().selection(),
         &map.children(None)[4..]
@@ -86,28 +86,37 @@ fn the_theme_is_installed_dark_by_default() {
     assert_eq!(style.text_styles[&egui::TextStyle::Body].size, 12.0);
 }
 
+/// The Layers panel's row for `label`. The Properties panel on the right names the active Layer
+/// too, so the same label can match twice; the Layers panel is the leftmost.
+fn layers_row<'h>(harness: &'h Harness<'_, MapMakerApp>, label: &'h str) -> egui_kittest::Node<'h> {
+    harness
+        .query_all_by_label(label)
+        .min_by(|a, b| a.rect().min.x.total_cmp(&b.rect().min.x))
+        .unwrap_or_else(|| panic!("no node labelled {label:?}"))
+}
+
 #[test]
 fn a_locked_layer_refuses_edits_with_a_visible_message() {
     let mut harness = app();
     harness.get_by_label("New Layer").click();
     harness.run();
     // Lock and eye show on hover; the Layers panel lists the new, topmost Layer first.
-    harness.get_by_label("Layer 5").hover();
+    layers_row(&harness, "Layer 5").hover();
     harness.run();
     harness.query_all_by_label("Lock").next().unwrap().click();
     harness.run();
     let layer = *harness.state().editor().map.children(None).last().unwrap();
     assert!(harness.state().editor().map.node(layer).unwrap().locked());
 
-    // The hide toggle is refused, and the reason shows in the status bar.
-    harness.get_by_label("Layer 5").hover();
+    // The hide toggle is refused, and the reason shows as a toast.
+    layers_row(&harness, "Layer 5").hover();
     harness.run();
     harness.query_all_by_label("Hide").next().unwrap().click();
     harness.run();
     let editor = harness.state().editor();
     let message = "“Layer 5” is locked";
     assert_eq!(editor.notice().map(|n| n.text.as_str()), Some(message));
-    harness.get_by_label(message);
+    harness.get_by_label(&format!("Error: {message}"));
     assert!(matches!(
         editor.map.node(layer),
         Some(ssmap_core::Node::Layer(l)) if l.visible
@@ -194,7 +203,7 @@ fn save_as_then_open_round_trips_the_map() {
     assert_eq!(harness.state().editor().map.view(), edited_view);
     assert!(harness.state().editor().can_undo());
     assert_ne!(edited_view, saved_view);
-    harness.get_by_label("Layer 5");
+    assert!(harness.query_all_by_label("Layer 5").next().is_some());
     assert_eq!(harness.state().recent_files(), std::slice::from_ref(&saved));
     // Undo the extra edit so the Ctrl+S below leaves the file with one more Layer.
     harness.get_by_label("Undo").click();
@@ -235,7 +244,7 @@ fn a_file_that_fails_to_open_shows_why() {
         harness.state().editor().notice().map(|n| n.text.as_str()),
         Some(message)
     );
-    harness.get_by_label(message);
+    harness.get_by_label(&format!("Error: {message}"));
     assert!(harness.state().document().path().is_none());
 }
 
@@ -517,13 +526,13 @@ fn a_landmass_gets_its_own_roughness_in_one_undo_step() {
     assert_eq!(harness.state().editor().selection(), [island]);
     assert_eq!(roughness(&harness), None);
 
-    // Unticking "Use the Map default" gives the island its own copy of the default.
-    harness.get_by_label("Use the Map default").click();
+    // Re-rolling gives the island its own copy of the default, with another seed.
+    harness.get_by_label("Re-roll").click();
     harness.run();
-    assert_eq!(
-        roughness(&harness).as_ref(),
-        Some(&harness.state().editor().map.defaults().roughness)
-    );
+    let default = harness.state().editor().map.defaults().roughness.clone();
+    let own = roughness(&harness).expect("an override");
+    assert_eq!((own.amount, own.scale), (default.amount, default.scale));
+    assert_ne!(own.seed, default.seed);
     assert_eq!(
         harness.state().editor().undo_label(),
         Some("Change Roughness")
@@ -651,12 +660,23 @@ fn a_landmass_gets_its_own_shore_style_in_one_undo_step() {
     assert_eq!(harness.state().editor().selection(), [island]);
     assert_eq!(shore(&harness), None);
 
-    harness.get_by_label("Use the Map style").click();
+    // Typing a new outline width gives the island its own copy of the default style.
+    let default = harness.state().editor().map.defaults().shore.clone();
+    let shown = format!("{:.1} u", default.outline.width);
+    harness
+        .get_all_by_value(&shown)
+        .next()
+        .expect("a field")
+        .click();
     harness.run();
-    assert_eq!(
-        shore(&harness).as_ref(),
-        Some(&harness.state().editor().map.defaults().shore)
-    );
+    // The field being typed in has focus.
+    harness.event(egui::Event::Text("+8.5".to_owned()));
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    let own = shore(&harness).expect("an override");
+    assert_eq!(own.outline.width, default.outline.width + 8.5);
+    assert_eq!(own.ripples, default.ripples);
     assert_eq!(
         harness.state().editor().undo_label(),
         Some("Change Shore Style")

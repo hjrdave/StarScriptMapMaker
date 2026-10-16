@@ -9,18 +9,16 @@ use ssmap_render::{
     Quality, RgbaImage, SpriteStore, Suitability, TessellationCache, View, render_to_image,
 };
 
+use crate::canvas_controls::{self, BannerAction};
 use crate::editor::Editor;
 use crate::handles::{self, Bounds};
 use crate::tessellation::BackgroundTessellation;
-use crate::tools::{self, CanvasInput, ToolState};
+use crate::tools::{self, CanvasInput, ToolId, ToolState};
+use crate::zoom::{self, FRAME_MARGIN as FIT_MARGIN, MAX_ZOOM, MIN_ZOOM, Zoom};
 
-/// Space left around the Canvas when it is first fitted, in points.
-const FIT_MARGIN: f64 = 32.0;
 /// How long the view must hold still, in seconds, before a pan or zoom counts as finished and
 /// the Canvas redraws at full quality.
 const GESTURE_SETTLE: f64 = 0.15;
-const MIN_ZOOM: f64 = 0.01;
-const MAX_ZOOM: f64 = 64.0;
 
 /// GPU state shared with egui's renderer, created once at startup.
 struct CanvasResources {
@@ -136,6 +134,10 @@ pub struct CanvasView {
     last_view: Option<([f64; 2], f64)>,
     /// Until this time (egui's clock, in seconds) a pan or zoom is still in progress.
     gesture_until: f64,
+    /// A zoom asked for by a shortcut, applied on the next frame.
+    pending_zoom: Option<Zoom>,
+    /// The zoom menu's percentage text.
+    zoom_field: String,
 }
 
 impl CanvasView {
@@ -150,7 +152,14 @@ impl CanvasView {
             panel: None,
             last_view: None,
             gesture_until: 0.0,
+            pending_zoom: None,
+            zoom_field: String::new(),
         }
+    }
+
+    /// Zooms on the next frame, as from a shortcut.
+    pub fn request_zoom(&mut self, zoom: Zoom) {
+        self.pending_zoom = Some(zoom);
     }
 
     /// This tab's tessellation cache; `None` without a wgpu device.
@@ -207,6 +216,26 @@ impl CanvasView {
             View::fit(canvas, size, FIT_MARGIN * ppp)
         });
         resize_keeping_centre(view, size);
+
+        // Before the tools, so a click on the control is not also a click on the Canvas.
+        let requested = canvas_controls::zoom_control(
+            ui.ctx(),
+            rect,
+            view.zoom / ppp * 100.0,
+            !editor.selection().is_empty(),
+            &mut self.zoom_field,
+        )
+        .or(self.pending_zoom.take());
+        if let Some(requested) = requested {
+            let canvas = &editor.map.canvas;
+            let canvas = [f64::from(canvas.width), f64::from(canvas.height)];
+            let bounds = if requested == Zoom::Selection {
+                Bounds::of_selection(editor)
+            } else {
+                None
+            };
+            zoom::apply(view, requested, ppp, canvas, bounds);
+        }
 
         tools::canvas_input(
             editor,
@@ -277,7 +306,8 @@ impl CanvasView {
             && let Some(bounds) = Bounds::of_selection(editor)
         {
             let rotatable = tools::selection_has_label(editor);
-            handles::paint(&painter, &bounds, &view, rect.min, ppp, rotatable);
+            let select = crate::theme::palette(ui.ctx()).select;
+            handles::paint(&painter, &bounds, &view, rect.min, ppp, rotatable, select);
         }
         tools::paint_overlay(
             &painter,
@@ -288,7 +318,36 @@ impl CanvasView {
             response.hover_pos(),
             ppp,
         );
+        self.node_banner(ui, editor, rect);
         self.text_box(ui, editor, &view, rect.min, ppp);
+    }
+
+    /// The banner shown while nodes are edited. Cancel drops a gesture in progress or else
+    /// leaves node editing, as Escape does; Done leaves it, as Return does.
+    fn node_banner(&mut self, ui: &egui::Ui, editor: &mut Editor, rect: egui::Rect) {
+        if editor.active_tool != ToolId::Select {
+            return;
+        }
+        let Some(edit) = editor.node_edit() else {
+            return;
+        };
+        let selected = edit.nodes.len();
+        let total = editor.edited_shape().iter().sum();
+        match canvas_controls::node_banner(ui.ctx(), rect, selected, total) {
+            Some(BannerAction::Cancel) => {
+                if editor.gesture_open() {
+                    editor.cancel_gesture();
+                } else {
+                    editor.leave_node_edit();
+                }
+                self.tools.clear_node_gestures();
+            }
+            Some(BannerAction::Done) => {
+                editor.leave_node_edit();
+                self.tools.clear_node_gestures();
+            }
+            None => {}
+        }
     }
 
     /// The box a Label's text is typed in, just below the Label so its real render shows
@@ -438,6 +497,9 @@ impl egui_wgpu::CallbackTrait for CanvasCallback {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    use ssmap_core::{Canvas, DistanceUnit, Id, Map, MultiPolygon, NodeRef, Polygon, Scale};
 
     fn centre(view: &View) -> [f64; 2] {
         view.to_canvas([f64::from(view.size[0]) / 2.0, f64::from(view.size[1]) / 2.0])
@@ -462,5 +524,93 @@ mod tests {
         let after = centre(&view);
         assert!((before[0] - after[0]).abs() < 1e-9 && (before[1] - after[1]).abs() < 1e-9);
         assert_eq!(view.size[0], pixels(width_without));
+    }
+
+    /// A Canvas view and an Editor holding one square Landmass in node-edit mode with its
+    /// first node selected.
+    fn harness() -> Harness<'static, (CanvasView, Editor)> {
+        let mut editor = Editor::new(Map::new(Canvas::new(
+            100,
+            100,
+            Scale::new(1.0, DistanceUnit::Miles),
+        )));
+        let layer = editor.new_layer().unwrap();
+        let id = Id::new();
+        editor.run(Command::CreateLandmass {
+            id,
+            parent: layer,
+            index: None,
+            geometry: MultiPolygon(vec![Polygon {
+                exterior: vec![[10.0, 10.0], [60.0, 10.0], [60.0, 60.0], [10.0, 60.0]],
+                holes: Vec::new(),
+            }]),
+            fill: None,
+        });
+        editor.enter_node_edit(id);
+        editor.select_nodes(vec![NodeRef {
+            part: 0,
+            ring: 0,
+            index: 0,
+        }]);
+        let mut harness = Harness::new_ui_state(
+            |ui, (view, editor)| view.show(ui, editor),
+            (CanvasView::new(None), editor),
+        );
+        harness.run();
+        harness
+    }
+
+    #[test]
+    fn the_banner_counts_the_selected_nodes() {
+        let harness = harness();
+        harness.get_by_label("Editing nodes · 1 of 4 selected");
+    }
+
+    #[test]
+    fn done_leaves_node_edit() {
+        let mut harness = harness();
+        harness.get_by_label("Done").click();
+        harness.run();
+        assert!(harness.state().1.node_edit().is_none());
+        assert!(harness.query_by_label("Done").is_none());
+    }
+
+    #[test]
+    fn cancel_drops_a_gesture_then_leaves_node_edit() {
+        let mut harness = harness();
+        harness.state_mut().1.begin_gesture("Move Nodes");
+        harness.get_by_label("Cancel").click();
+        harness.run();
+        assert!(!harness.state().1.gesture_open());
+        assert!(harness.state().1.node_edit().is_some());
+        harness.get_by_label("Cancel").click();
+        harness.run();
+        assert!(harness.state().1.node_edit().is_none());
+    }
+
+    #[test]
+    fn overlays_do_not_change_what_an_export_draws() {
+        // Selection, handles and the node-edit banner are egui shapes over the Canvas; the
+        // scene an export renders is built from the Map alone and stays the same build.
+        let mut harness = harness();
+        let editing = harness.state_mut().1.scene_content();
+        harness.state_mut().1.leave_node_edit();
+        harness.state_mut().1.select(Vec::new());
+        harness.run();
+        let plain = harness.state_mut().1.scene_content();
+        assert_eq!(format!("{editing:?}"), format!("{plain:?}"));
+    }
+
+    #[test]
+    fn the_zoom_buttons_step_the_zoom() {
+        let mut harness = harness();
+        let before = harness.state().0.view.unwrap().zoom;
+        harness.get_by_label("+").click();
+        harness.run();
+        let after = harness.state().0.view.unwrap().zoom;
+        assert!((after / before - zoom::STEP).abs() < 1e-9);
+        harness.get_by_label("−").click();
+        harness.run();
+        assert!((harness.state().0.view.unwrap().zoom - before).abs() < 1e-9);
     }
 }
