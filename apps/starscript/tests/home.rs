@@ -185,8 +185,7 @@ fn a_missing_file_can_be_removed_from_the_list() {
     harness.state_mut().open_path(&path);
     harness.state_mut().close_tab(0);
     std::fs::remove_file(&path).unwrap();
-    // `run` would give up while the worker still holds the page in a repaint loop.
-    harness.step();
+    harness.run();
     assert_eq!(harness.state().recent_files().len(), 1);
 
     // The file is read on a worker thread, so the card learns it is missing a little later.
