@@ -293,6 +293,8 @@ pub enum Action {
     AddPack,
     /// Install this pack folder.
     AddPackFolder(PathBuf),
+    /// Ask to move the Asset pack with this id to the Trash.
+    DeletePack(String),
     /// Close the message about the last Add pack.
     DismissPackStatus,
 }
@@ -594,6 +596,7 @@ impl Home {
                     pack_page::Action::Credits => out.push(Action::Credits),
                     pack_page::Action::AddPack => out.push(Action::AddPack),
                     pack_page::Action::AddFolder(path) => out.push(Action::AddPackFolder(path)),
+                    pack_page::Action::Delete(id) => out.push(Action::DeletePack(id)),
                     pack_page::Action::DismissStatus => out.push(Action::DismissPackStatus),
                 }
             }

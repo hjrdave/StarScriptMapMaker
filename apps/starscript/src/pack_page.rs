@@ -12,6 +12,7 @@ use ssmap_core::asset::{Asset, AssetRef, Pack};
 use ssmap_render::SpriteStore;
 
 use crate::asset_browser::{self, ThumbArt, Thumbnail};
+use crate::icons::{self, Icon};
 use crate::pack_install::{self, Status};
 use crate::theme;
 
@@ -33,6 +34,8 @@ pub enum Action {
     AddPack,
     /// Install this dropped folder.
     AddFolder(PathBuf),
+    /// Ask to move the pack with this id to the Trash.
+    Delete(String),
     /// Close the message about the last install.
     DismissStatus,
 }
@@ -52,6 +55,21 @@ pub fn asset_count_label(pack: &Pack) -> String {
         1 => "1 Asset".into(),
         n => format!("{n} Assets"),
     }
+}
+
+/// What the delete confirmation says about the Stamps that use the pack.
+pub fn stamp_usage_label(stamps: usize) -> String {
+    match stamps {
+        0 => "No Stamps in the open Maps use it.".into(),
+        1 => "1 Stamp in the open Maps uses it; it will show as a placeholder.".into(),
+        n => format!("{n} Stamps in the open Maps use it; they will show as placeholders."),
+    }
+}
+
+/// Why a card's Delete is unavailable, or `None` when the pack can be deleted.
+pub fn delete_blocked_reason(pack: &Pack) -> Option<&'static str> {
+    pack.is_built_in()
+        .then_some("Built-in packs ship with the app and can’t be deleted")
 }
 
 /// The authors of a pack's Assets, sorted and without repeats: "A", "A and B" or "A, B and 3
@@ -170,7 +188,7 @@ impl PackPage {
         }
         match self.open.clone().and_then(|id| library.pack(&id).cloned()) {
             Some(pack) => self.pack_detail(ui, sprites, &pack, &mut actions),
-            None => self.pack_list(ui, sprites, library.packs()),
+            None => self.pack_list(ui, sprites, library.packs(), &mut actions),
         }
         if dragging {
             let painter = ui.painter();
@@ -191,7 +209,13 @@ impl PackPage {
         actions
     }
 
-    fn pack_list(&mut self, ui: &mut egui::Ui, sprites: &SpriteStore, packs: &[Pack]) {
+    fn pack_list(
+        &mut self,
+        ui: &mut egui::Ui,
+        sprites: &SpriteStore,
+        packs: &[Pack],
+        actions: &mut Vec<Action>,
+    ) {
         let p = theme::palette(ui.ctx());
         egui::ScrollArea::vertical()
             .id_salt("pack list")
@@ -216,7 +240,7 @@ impl PackPage {
                         for row in packs.chunks(CARD_COLUMNS) {
                             ui.horizontal_top(|ui| {
                                 for pack in row {
-                                    if self.pack_card(ui, sprites, pack, width) {
+                                    if self.pack_card(ui, sprites, pack, width, actions) {
                                         self.open = Some(pack.id.clone());
                                     }
                                 }
@@ -233,6 +257,7 @@ impl PackPage {
         sprites: &SpriteStore,
         pack: &Pack,
         width: f32,
+        actions: &mut Vec<Action>,
     ) -> bool {
         let p = theme::palette(ui.ctx());
         let size = vec2(width, PREVIEW_HEIGHT + 1.0 + CARD_FOOTER);
@@ -357,7 +382,40 @@ impl PackPage {
             painter.galley(chip.min + vec2(5.0, 2.0), galley, color);
             badge_x = chip.max.x + 6.0;
         }
-        response.clicked()
+        // The "…" button, shown while the card is hovered or its menu is open.
+        let more_id = response.id.with("more");
+        let button = Rect::from_center_size(
+            egui::pos2(rect.max.x - 20.0, preview.min.y + 20.0),
+            vec2(24.0, 24.0),
+        );
+        let more = ui.interact(button, more_id, egui::Sense::click());
+        more.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Pack menu"));
+        let menu_open = egui::Popup::is_id_open(ui.ctx(), more_id.with("popup"));
+        if response.hovered() || more.hovered() || more.has_focus() || menu_open {
+            if more.hovered() {
+                painter.rect_filled(button, theme::RADIUS_BUTTON, p.hover_fill);
+            }
+            icons::paint(ui, button, Icon::More, 16.0, p.text_secondary);
+        }
+        egui::Popup::menu(&more)
+            .id(more_id.with("popup"))
+            .show(|ui| {
+                let danger = theme::palette(ui.ctx()).danger;
+                let blocked = delete_blocked_reason(pack);
+                let item = ui.add_enabled(
+                    blocked.is_none(),
+                    egui::Button::new(egui::RichText::new("Delete…").color(danger)),
+                );
+                let item = match blocked {
+                    Some(reason) => item.on_disabled_hover_text(reason),
+                    None => item,
+                };
+                if item.clicked() {
+                    actions.push(Action::Delete(pack.id.clone()));
+                    ui.close();
+                }
+            });
+        response.clicked() && !more.clicked()
     }
 
     fn pack_detail(
@@ -595,6 +653,19 @@ mod tests {
             origin_label(&pack(PackSource::User, vec![])),
             "Added by you"
         );
+    }
+
+    #[test]
+    fn only_user_packs_can_be_deleted() {
+        assert!(delete_blocked_reason(&pack(PackSource::BuiltIn, vec![])).is_some());
+        assert!(delete_blocked_reason(&pack(PackSource::User, vec![])).is_none());
+    }
+
+    #[test]
+    fn the_confirmation_counts_stamps() {
+        assert!(stamp_usage_label(0).starts_with("No Stamps"));
+        assert!(stamp_usage_label(1).starts_with("1 Stamp "));
+        assert!(stamp_usage_label(3).starts_with("3 Stamps"));
     }
 
     #[test]
