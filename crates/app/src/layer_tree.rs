@@ -177,8 +177,6 @@ enum Action {
 
 impl LayerTree {
     pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
-        ui.heading("Layers");
-        ui.separator();
         let revision = editor.map.revision();
         let rows = match self.cache.take() {
             Some((r, g, rows)) if r == revision && g == self.collapse_generation => rows,
