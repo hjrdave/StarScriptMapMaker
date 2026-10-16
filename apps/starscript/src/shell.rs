@@ -77,8 +77,9 @@ pub struct Shell {
     properties_width: f32,
     /// The user collapsed Layers to its rail.
     layers_collapsed: bool,
-    /// The user hid Properties.
-    properties_hidden: bool,
+    /// The user collapsed Properties to its icon strip.
+    #[serde(alias = "properties_hidden")]
+    properties_collapsed: bool,
     /// ⇥ hid both panels. Kept apart from the two flags above so that showing them again
     /// restores exactly what the user had collapsed.
     panels_hidden: bool,
@@ -156,7 +157,7 @@ impl Default for Shell {
             layers_width: metrics::LAYERS_PANEL_DEFAULT,
             properties_width: metrics::PROPERTIES_PANEL_DEFAULT,
             layers_collapsed: false,
-            properties_hidden: false,
+            properties_collapsed: false,
             panels_hidden: false,
             window_width: FULL_WIDTH,
             layers_overlay: false,
@@ -244,8 +245,14 @@ impl Shell {
         self.layers_collapsed
     }
 
+    /// Whether the Properties column shows, as the full panel or as the icon strip.
     pub fn properties_shown(&self) -> bool {
-        !self.panels_hidden && !self.properties_hidden
+        !self.panels_hidden
+    }
+
+    /// Whether Properties is collapsed to its icon strip.
+    pub fn properties_collapsed(&self) -> bool {
+        self.properties_collapsed
     }
 
     pub fn panels_hidden(&self) -> bool {
@@ -272,11 +279,11 @@ impl Shell {
     pub fn toggle_properties(&mut self) {
         if self.panels_hidden {
             self.panels_hidden = false;
-            self.properties_hidden = false;
+            self.properties_collapsed = false;
         } else if self.auto_rail(Side::Right) {
             self.set_properties_overlay(!self.properties_overlay);
         } else {
-            self.properties_hidden = !self.properties_hidden;
+            self.properties_collapsed = !self.properties_collapsed;
         }
     }
 
@@ -299,9 +306,7 @@ impl Shell {
             } else {
                 PanelMode::Full(self.layers_width)
             };
-            let properties = if self.properties_hidden {
-                PanelMode::Hidden
-            } else if window_width < MINIMUM_WIDTH {
+            let properties = if self.properties_collapsed || window_width < MINIMUM_WIDTH {
                 PanelMode::Rail
             } else {
                 PanelMode::Full(self.properties_width)
@@ -374,6 +379,18 @@ impl Shell {
         }
     }
 
+    /// The Properties strip was clicked. If the user collapsed Properties and the window has
+    /// room, that expands it; otherwise the window is too narrow and it opens over the Canvas.
+    pub fn click_properties_rail(&mut self) {
+        let mut expanded = self.clone();
+        expanded.properties_collapsed = false;
+        if expanded.layout(self.window_width).properties == PanelMode::Rail {
+            self.set_properties_overlay(!self.properties_overlay);
+        } else {
+            self.properties_collapsed = false;
+        }
+    }
+
     pub fn close_overlays(&mut self) {
         self.layers_overlay = false;
         self.properties_overlay = false;
@@ -388,7 +405,7 @@ impl Shell {
         let layout = self.current_layout();
         match side {
             Side::Left => !self.layers_collapsed && layout.layers == PanelMode::Rail,
-            Side::Right => !self.properties_hidden && layout.properties == PanelMode::Rail,
+            Side::Right => !self.properties_collapsed && layout.properties == PanelMode::Rail,
         }
     }
 }
@@ -481,6 +498,17 @@ pub fn collapse_button(ui: &mut egui::Ui, collapsed: bool) -> egui::Response {
     icons::icon_button_flipped(ui, Icon::CollapseDouble, label, collapsed)
 }
 
+/// The Properties collapse control: the Layers double chevron mirrored, so it points right
+/// while the panel is expanded and left once `collapsed`.
+pub fn properties_collapse_button(ui: &mut egui::Ui, collapsed: bool) -> egui::Response {
+    let label = if collapsed {
+        "Expand Properties (⌘⌥2)"
+    } else {
+        "Collapse Properties (⌘⌥2)"
+    };
+    icons::icon_button_flipped(ui, Icon::CollapseDouble, label, !collapsed)
+}
+
 /// The 40 pt rail Layers collapses to: only the section icons, with the expand control pinned
 /// to the bottom. Returns what was clicked, which expands the sidebar.
 pub fn layers_rail(
@@ -560,12 +588,18 @@ pub fn layers_rail(
     clicked
 }
 
-/// The 40 pt rail Properties narrows to at the smallest window. Returns true when clicked,
-/// which opens the floating inspector.
+/// The 40 pt icon strip Properties collapses to, or narrows to at the smallest window: the
+/// Properties icon with the expand control pinned to the bottom, as on the Layers rail.
+/// Returns true when either is clicked.
 pub fn properties_rail(ui: &mut egui::Ui) -> bool {
     let palette = theme::palette(ui.ctx());
     let rect = ui.max_rect();
-    let response = ui.interact(rect, ui.id().with("properties rail"), egui::Sense::click());
+    let mut clicked = false;
+    let slot = egui::Rect::from_center_size(
+        egui::pos2(rect.center().x, rect.top() + metrics::PANEL_HEADER / 2.0),
+        egui::Vec2::splat(icons::GRID + 8.0),
+    );
+    let response = ui.interact(slot, ui.id().with("properties rail"), egui::Sense::click());
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Open Properties (⌘⌥2)")
     });
@@ -574,17 +608,31 @@ pub fn properties_rail(ui: &mut egui::Ui) -> bool {
     } else {
         palette.text_secondary
     };
-    let top = rect.top() + metrics::PANEL_HEADER / 2.0;
-    for (i, icon) in [Icon::CollapseLeft, Icon::Shape].into_iter().enumerate() {
-        let slot = egui::Rect::from_center_size(
-            egui::pos2(rect.center().x, top + i as f32 * metrics::PANEL_HEADER),
-            egui::Vec2::splat(icons::GRID + 8.0),
-        );
-        icons::paint(ui, slot, icon, icons::GRID, tint);
-    }
-    response
+    icons::paint(ui, slot, Icon::Shape, icons::GRID, tint);
+    if response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
+    {
+        clicked = true;
+    }
+    let bar = egui::Rect::from_min_max(
+        egui::pos2(
+            rect.left(),
+            rect.bottom() - crate::layer_tree::FOOTER_HEIGHT,
+        ),
+        rect.right_bottom(),
+    );
+    let mut bottom =
+        ui.new_child(egui::UiBuilder::new().max_rect(bar).layout(
+            egui::Layout::top_down(egui::Align::Center).with_main_align(egui::Align::Center),
+        ));
+    if properties_collapse_button(&mut bottom, true)
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+    {
+        clicked = true;
+    }
+    clicked
 }
 
 /// The Selection's names from its Layer down, for the rail. Empty when nothing is selected;
@@ -750,7 +798,7 @@ mod tests {
         assert!(!shell.layers_shown() && !shell.properties_shown());
         shell.toggle_panels();
         assert!(shell.layers_collapsed());
-        assert!(shell.layers_shown() && !shell.properties_shown());
+        assert!(shell.layers_shown() && shell.properties_collapsed());
     }
 
     fn full(width: f32) -> PanelMode {
@@ -820,7 +868,7 @@ mod tests {
         for width in [1024.0, 1250.0, 1400.0, 3000.0] {
             let layout = shell.layout(width);
             assert_eq!(layout.layers, PanelMode::Rail, "{width}");
-            assert_eq!(layout.properties, PanelMode::Hidden, "{width}");
+            assert_eq!(layout.properties, PanelMode::Rail, "{width}");
         }
         shell.toggle_panels();
         assert_eq!(shell.layout(1500.0).layers, PanelMode::Hidden);
