@@ -274,5 +274,5 @@ jobs:
                their results. State plainly anything you could not run.
           claude_args: |
             --max-turns 80
-            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git fetch:*),Bash(git switch:*),Bash(git checkout:*),Bash(git add:*),Bash(git mv:*),Bash(git rm:*),Bash(git commit:*),Bash(git push:*),Bash(cargo:*),Bash(./scripts/check-core-deps.sh:*),Bash(npm:*),Bash(npx:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh pr create:*),Bash(gh pr list:*)"
+            --allowedTools "Read,Glob,Grep,Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git fetch:*),Bash(git switch:*),Bash(git checkout:*),Bash(git add:*),Bash(git mv:*),Bash(git rm:*),Bash(git commit:*),Bash(git push:*),Bash(cargo:*),Bash(./scripts/check-core-deps.sh:*),Bash(npm:*),Bash(npx:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh pr create:*),Bash(gh pr list:*),Bash(curl -fsSLO https://raw.githubusercontent.com/google/fonts/66928797f271fed5ee428544e7229685e2d90127/ofl/:*)"
             --disallowedTools "Bash(git push --force:*),Bash(git push -f:*),Bash(git push --force-with-lease:*)"
