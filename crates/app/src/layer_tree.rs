@@ -254,6 +254,8 @@ enum Action {
     Run(Command),
     Toggle(Id),
     StartRename(Id),
+    /// Duplicates the row, or the whole selection if the row is part of it.
+    Duplicate(Id),
     FinishRename,
     CancelRename,
 }
@@ -317,6 +319,12 @@ impl LayerTree {
                         self.collapsed.insert(id);
                     }
                     self.collapse_generation += 1;
+                }
+                Action::Duplicate(id) => {
+                    if !editor.is_selected(id) {
+                        editor.select(vec![id]);
+                    }
+                    editor.duplicate_selection();
                 }
                 Action::StartRename(id) => {
                     self.renaming = Some((id, node_name(&editor.map, id)));
@@ -588,6 +596,15 @@ impl LayerTree {
         response.context_menu(|ui| {
             if ui.button("Rename").clicked() {
                 actions.push(Action::StartRename(row.id));
+                ui.close();
+            }
+            let duplicate = if layer.is_some() {
+                "Duplicate Layer"
+            } else {
+                "Duplicate"
+            };
+            if ui.button(duplicate).clicked() {
+                actions.push(Action::Duplicate(row.id));
                 ui.close();
             }
             if let Some(layer) = layer {

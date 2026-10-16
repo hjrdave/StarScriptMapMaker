@@ -993,6 +993,9 @@ impl MapMakerApp {
             C::Undo => editor.undo(),
             C::Redo => editor.redo(),
             C::Delete => editor.delete_selection(),
+            C::Duplicate => {
+                editor.duplicate_selection();
+            }
             C::SelectAll => editor.select_all(),
             C::Deselect => editor.deselect(),
             C::DeleteNodes => editor.delete_selected_nodes(),
@@ -1567,6 +1570,9 @@ impl MapMakerApp {
             } else if consume(input, &off, menu::Command::Undo) {
                 editor.undo();
             }
+            if consume(input, &off, menu::Command::Duplicate) {
+                editor.duplicate_selection();
+            }
             if consume(input, &off, menu::Command::NewLayer) {
                 editor.new_layer();
             }
@@ -1780,6 +1786,7 @@ fn egui_key(key: menu::Key) -> egui::Key {
     match key {
         K::A => egui::Key::A,
         K::E => egui::Key::E,
+        K::J => egui::Key::J,
         K::N => egui::Key::N,
         K::O => egui::Key::O,
         K::S => egui::Key::S,

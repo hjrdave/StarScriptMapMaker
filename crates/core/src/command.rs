@@ -3,7 +3,7 @@
 //! A Command checks the Map's user-level rules (Lock, references, value ranges), compiles to
 //! primitive Ops, and applies them all or none.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -240,6 +240,18 @@ pub enum Command {
         parent: Id,
         stamps: Vec<PlacedStamp>,
     },
+    /// Copies Layers and Objects, each with everything inside it, to just above the original.
+    /// Ids that sit inside another listed id come with it. `new_ids` names every copied node:
+    /// the listed ids in order, each followed by its descendants in tree order. Copies are
+    /// named "... copy", are unlocked, and keep every other setting (a Landmass keeps its
+    /// Roughness, so its coast is identical). A Clip to a copied Landmass follows the copy.
+    /// `offset` moves the copies by that many Canvas units, as an Option-drag does.
+    Duplicate {
+        ids: Vec<Id>,
+        new_ids: Vec<Id>,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        offset: [f64; 2],
+    },
     /// Embeds Assets and font files in the Map (ADR 0005), as saving does for everything the
     /// Map uses. Files are stored once per content hash. An Asset or font file already
     /// embedded is left as it is: the embedded copy wins.
@@ -252,6 +264,10 @@ pub enum Command {
     UpdateFromPack {
         assets: Vec<EmbedAsset>,
     },
+}
+
+fn is_zero(offset: &[f64; 2]) -> bool {
+    *offset == [0.0, 0.0]
 }
 
 /// One Stamp of a [`Command::PlaceStamps`], with the id it gets.
@@ -321,6 +337,8 @@ pub enum CommandError {
     InvalidEmbed(String),
     #[error("invalid Stamp: {0}")]
     InvalidStamp(&'static str),
+    #[error("Duplicate copies {expected} nodes, so it needs {expected} new ids, not {got}")]
+    DuplicateIds { expected: usize, got: usize },
     #[error(transparent)]
     Op(#[from] OpError),
 }
@@ -368,6 +386,7 @@ impl Command {
             Command::CreateStamp { .. } => "Add Stamp",
             Command::SetStamp { .. } => "Edit Stamp",
             Command::PlaceStamps { .. } => "Place Stamps",
+            Command::Duplicate { .. } => "Duplicate",
             Command::EmbedAssets { .. } => "Embed Assets",
             Command::UpdateFromPack { .. } => "Update from Pack",
         }
@@ -503,6 +522,11 @@ impl Command {
                 };
                 create_object(map, *id, *parent, *index, ObjectKind::Lake(lake))
             }
+            Command::Duplicate {
+                ids,
+                new_ids,
+                offset,
+            } => duplicate(map, ids, new_ids, *offset),
             Command::Translate { ids, offset } => transform(map, ids, &Affine::translate(*offset)),
             Command::Transform { ids, transform: t } => transform(map, ids, t),
             Command::AddRegion { id, region } => {
@@ -1013,6 +1037,176 @@ fn transform(map: &Map, ids: &[Id], transform: &Affine) -> Result<Vec<Op>, Comma
         ops.push(Op::ReplaceGeometry { id, geometry });
     }
     Ok(ops)
+}
+
+/// The name a copy of `name` gets: "Pine copy", then "Pine copy 2", the first not in `taken`.
+fn copy_name(name: &str, taken: &HashSet<String>) -> String {
+    let base = match name.rsplit_once(" copy") {
+        Some((base, "")) => base,
+        Some((base, n))
+            if n.strip_prefix(' ')
+                .is_some_and(|n| n.parse::<u32>().is_ok()) =>
+        {
+            base
+        }
+        _ => name,
+    };
+    let first = format!("{base} copy");
+    if !taken.contains(&first) {
+        return first;
+    }
+    (2..)
+        .map(|n| format!("{base} copy {n}"))
+        .find(|candidate| !taken.contains(candidate))
+        .expect("an unused number exists")
+}
+
+/// The name a node shows in its Layer, if it has one.
+fn own_name(node: &Node) -> Option<&str> {
+    match node {
+        Node::Layer(layer) => Some(&layer.name),
+        Node::Object(object) => object.name.as_deref(),
+    }
+}
+
+fn duplicate(
+    map: &Map,
+    ids: &[Id],
+    new_ids: &[Id],
+    offset: [f64; 2],
+) -> Result<Vec<Op>, CommandError> {
+    if !offset.iter().all(|v| v.is_finite()) {
+        return Err(CommandError::InvalidTransform(Affine::translate(offset).0));
+    }
+    let translate = Affine::translate(offset);
+    let listed: HashSet<Id> = ids.iter().copied().collect();
+    let mut sources = Vec::with_capacity(ids.len());
+    let mut seen = HashSet::new();
+    for &id in ids {
+        existing(map, id)?;
+        let mut above = map.parent(id);
+        let mut inside = false;
+        while let Some(ancestor) = above {
+            inside |= listed.contains(&ancestor);
+            above = map.parent(ancestor);
+        }
+        if !inside && seen.insert(id) {
+            sources.push(id);
+        }
+    }
+    // Every copied node, in the order `new_ids` names them.
+    let mut order = Vec::new();
+    for &root in &sources {
+        let mut pending = vec![root];
+        while let Some(id) = pending.pop() {
+            order.push(id);
+            pending.extend(map.children(Some(id)).iter().rev());
+        }
+    }
+    if new_ids.len() != order.len() {
+        return Err(CommandError::DuplicateIds {
+            expected: order.len(),
+            got: new_ids.len(),
+        });
+    }
+    let mut fresh = HashSet::new();
+    for &id in new_ids {
+        if map.contains(id) || !fresh.insert(id) {
+            return Err(CommandError::IdInUse(id));
+        }
+    }
+    let renamed: HashMap<Id, Id> = order.iter().copied().zip(new_ids.iter().copied()).collect();
+
+    // The children of each parent as the copies go in, so each lands just above its original.
+    let mut siblings: HashMap<Option<Id>, Vec<Id>> = HashMap::new();
+    let mut names: HashMap<Option<Id>, HashSet<String>> = HashMap::new();
+    let mut ops = Vec::with_capacity(sources.len());
+    for source in sources {
+        let parent = map.parent(source);
+        if let Some(parent) = parent {
+            unlocked(map, parent)?;
+        }
+        let children = siblings
+            .entry(parent)
+            .or_insert_with(|| map.children(parent).to_vec());
+        let taken = names.entry(parent).or_insert_with(|| {
+            children
+                .iter()
+                .filter_map(|&id| map.node(id).and_then(own_name).map(str::to_owned))
+                .collect()
+        });
+        let position = children
+            .iter()
+            .position(|&id| id == source)
+            .expect("a node is listed by its parent");
+        let mut subtree = copied_subtree(map, source, &renamed, &translate, offset)?;
+        match &mut subtree.node {
+            Node::Layer(layer) => {
+                layer.locked = false;
+                layer.name = copy_name(&layer.name, taken);
+                taken.insert(layer.name.clone());
+            }
+            Node::Object(object) => {
+                object.locked = false;
+                if let Some(name) = &object.name {
+                    let name = copy_name(name, taken);
+                    taken.insert(name.clone());
+                    object.name = Some(name);
+                }
+            }
+        }
+        children.insert(position + 1, subtree.id);
+        ops.push(Op::Insert {
+            parent,
+            index: position + 1,
+            subtree,
+        });
+    }
+    Ok(ops)
+}
+
+/// A copy of the subtree at `id` with new ids, its outlines and positions moved by `offset`.
+fn copied_subtree(
+    map: &Map,
+    id: Id,
+    renamed: &HashMap<Id, Id>,
+    translate: &Affine,
+    offset: [f64; 2],
+) -> Result<Subtree, CommandError> {
+    let mut node = map.node(id).expect("listed ids exist").clone();
+    match &mut node {
+        Node::Layer(layer) => {
+            if let Some(clip) = layer.clip {
+                layer.clip = Some(renamed.get(&clip).copied().unwrap_or(clip));
+            }
+        }
+        Node::Object(object) if !is_zero(&offset) => match &mut object.kind {
+            ObjectKind::Landmass(Landmass { geometry, .. })
+            | ObjectKind::Lake(Lake { geometry, .. }) => {
+                *geometry = geometry.transformed(translate);
+                if let Some(problem) = geometry.problem() {
+                    return Err(CommandError::InvalidGeometry { id, problem });
+                }
+            }
+            ObjectKind::Stamp(stamp) => {
+                stamp.position = [stamp.position[0] + offset[0], stamp.position[1] + offset[1]];
+            }
+            ObjectKind::Label(label) => {
+                label.position = [label.position[0] + offset[0], label.position[1] + offset[1]];
+            }
+        },
+        Node::Object(_) => {}
+    }
+    let children = map
+        .children(Some(id))
+        .iter()
+        .map(|&child| copied_subtree(map, child, renamed, translate, offset))
+        .collect::<Result<_, _>>()?;
+    Ok(Subtree {
+        id: renamed[&id],
+        node,
+        children,
+    })
 }
 
 /// The distinct, unlocked Landmasses among `ids`, topmost first.
