@@ -161,6 +161,7 @@ The Layers panel is where every Layer action happens. There is no separate layer
 - Every state has a non-colour cue. Text ≥ 11 px.
 - User-collapsed panel state persists and wins over auto-collapse.
 - Interactions stay smooth with heavy content: dragging, zooming and panning must not recompute expensive generated detail (e.g. rough Coastlines) every frame.
+- **Frame budget:** every editing interaction (brush strokes, dragging, slider changes, pan, zoom) stays under 16.6 ms per frame at p95, ideally under 8.3 ms on 120 Hz displays, with no run of frames over about 33 ms, measured on a large high-roughness Map (see #245). A feature that misses the budget isn't done.
 
 ## Decisions since the handoff
 
@@ -189,6 +190,7 @@ Changes the owner has decided after the handoff. The sections above already refl
 | Multiple map templates (background looks) with a template picker in New Map | Handoff had one starter template and a template stack only | #241 | Open |
 | Ranged numeric settings are sliders with a small number box instead of wide number fields | Handoff had separate numeric fields and sliders, with fields as the default | #242 | Open |
 | Land Brush shows the rough shoreline live while painting and erasing | Handoff showed a gold dashed outline of the smooth brush shape | #243 | Open |
+| Editing interactions must meet a frame-time budget (buttery smooth), measured by benchmarks | Handoff only asked for a frame-time readout in the status bar | #245 | Open |
 | New tab opens a start page (last 6 Maps by most recently updated, Create new map, Open a file) instead of the New Map dialog | Handoff: `+` = New Map | #223 | Open |
 | One Stamp tool: click places, drag scatters; no separate Scatter Brush | Handoff had Stamp and Scatter Brush as separate tools | #219 | Open |
 
