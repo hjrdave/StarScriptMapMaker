@@ -102,6 +102,16 @@ _Avoid_: Freeze, protect
 The Objects the user currently has picked in the editor. It is part of the editor, not of the Map, and Commands never refer to it.
 _Avoid_: Focus, active objects
 
+### Tabs
+
+**Tab**:
+One open Map in the window, with its own editor, unsaved-changes state and view. Asset packs, Recent files and the export dialog are shared by all tabs and act on the active one.
+_Avoid_: Document, window, project
+
+**Home tab**:
+The tab that shows the map browser. It is not a Map and has no Canvas.
+_Avoid_: Start page, launcher
+
 ### Saving
 
 **Map file**:
