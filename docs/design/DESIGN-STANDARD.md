@@ -144,7 +144,7 @@ The Layers panel is where every Layer action happens. There is no separate layer
 ## Properties panel
 
 - **Active tool section** (tinted `bg.toolSection`, tool icon + shortcut in the header) only for tools with settings.
-- **Land Brush** (and Water Brush): Paint adds land to a landmass, Erase takes land away (⌥ flips the mode). While the stroke is in progress the shoreline is shown **rough, live**, with the landmass's Roughness settings, and matches the result on release.
+- **Land Brush** (and Water Brush): Paint adds land to a landmass, Erase takes land away (⌥ flips the mode). While the stroke is in progress the shoreline is shown **rough, live**, with the landmass's Roughness settings, and matches the result on release. There is no gold dashed outline around the stroke; the live rough land is the preview, and untouched shore keeps its exact pattern.
 - **Stamp tool** (one tool for placing and scattering):
   - A **click** places one Stamp; a **drag** scatters Stamps along the path. There is no separate Scatter tool.
   - Settings: Asset picker (search, category, 4-column thumbnail grid, pack · author · licence), Place on (Land / Water / Any), Density, Spacing, Size jitter, Rotation jitter, Random flip, Variant (Random / Cycle / Fixed).
