@@ -189,3 +189,40 @@ fn a_missing_file_can_be_removed_from_the_list() {
     harness.run();
     assert!(harness.state().recent_files().is_empty());
 }
+
+#[test]
+fn delete_from_a_cards_menu_asks_first_and_cancel_keeps_the_map() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = saved_map(dir.path(), "Isle.ssmap");
+    let mut harness = app();
+    harness.state_mut().open_path(&path);
+    harness.state_mut().close_tab(0);
+    harness.run();
+
+    harness.get_by_label("Open Isle").click_secondary();
+    harness.run();
+    harness.get_by_label("Delete…").click();
+    harness.run();
+    harness.get_by_label("Delete “Isle”?");
+    harness.get_by_label("Delete");
+
+    harness.get_by_label("Cancel").click();
+    harness.run();
+    assert!(harness.query_by_label("Delete “Isle”?").is_none());
+    assert!(path.exists());
+    assert_eq!(harness.state().recent_files().len(), 1);
+}
+
+#[test]
+fn the_card_menu_offers_show_in_the_file_manager() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = saved_map(dir.path(), "Isle.ssmap");
+    let mut harness = app();
+    harness.state_mut().open_path(&path);
+    harness.state_mut().close_tab(0);
+    harness.run();
+
+    harness.get_by_label("Open Isle").click_secondary();
+    harness.run();
+    harness.get_by_label_contains("Show in ");
+}

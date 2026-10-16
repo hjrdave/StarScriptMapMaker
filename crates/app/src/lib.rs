@@ -11,6 +11,7 @@ pub mod editor;
 pub mod export_dialog;
 pub mod export_region;
 pub mod export_run;
+mod file_actions;
 pub mod frame_time;
 pub mod handles;
 pub mod home;
@@ -136,6 +137,8 @@ pub struct MapMakerApp {
     unsaved_found: Vec<Found>,
     /// The journal of a Map never saved being offered now; recovering it opens a new tab.
     unsaved_prompt: Option<Found>,
+    /// The Map file a Home card's Delete asked about; the dialog confirms before it is trashed.
+    delete_prompt: Option<PathBuf>,
     /// A tab's unsaved-changes question was answered Save for a Map never saved: what to do
     /// once the Save As dialog saves it. Closing that dialog instead cancels.
     awaiting_save: Option<(usize, Pending)>,
@@ -226,6 +229,7 @@ impl MapMakerApp {
             gpu,
             awaiting_save: None,
             unsaved_prompt: None,
+            delete_prompt: None,
             sprites,
             credits,
             recent: RecentFiles::load(cc.storage),
@@ -660,6 +664,7 @@ impl MapMakerApp {
             || self.tabs.iter().any(|tab| tab.pending.is_some())
             || self.awaiting_save.is_some()
             || self.unsaved_prompt.is_some()
+            || self.delete_prompt.is_some()
             || self.new_map_dialog.open
             || self.export_dialog.open
             || self.export_run.is_some()
@@ -1068,6 +1073,68 @@ impl MapMakerApp {
         self.export_progress(ctx);
         self.recovery_dialog(ctx);
         self.unsaved_dialog(ctx);
+        self.delete_dialog(ctx);
+    }
+
+    /// Confirms moving a Map file to the Trash. Cancel is the default: Enter and Esc cancel.
+    fn delete_dialog(&mut self, ctx: &egui::Context) {
+        let Some(path) = self.delete_prompt.clone() else {
+            return;
+        };
+        let name = path.file_stem().map_or_else(
+            || path.display().to_string(),
+            |name| name.to_string_lossy().into_owned(),
+        );
+        let open_tab = self.tab_for(&path);
+        let mut delete = false;
+        let mut cancel = false;
+        let shown = dialog::show(
+            ctx,
+            "delete_map",
+            &format!("Delete “{name}”?"),
+            380.0,
+            |ui| {
+                ui.label(format!(
+                    "The file is moved to the {}, so you can put it back from there.",
+                    file_actions::TRASH_NAME
+                ));
+                if open_tab.is_some() {
+                    ui.add_space(6.0);
+                    ui.label("It is open in a tab, which closes without saving.");
+                }
+                dialog::buttons(ui, |ui| {
+                    let danger = theme::palette(ui.ctx()).danger;
+                    let button =
+                        egui::Button::new(egui::RichText::new("Delete").strong()).fill(danger);
+                    if ui.add(button).clicked() {
+                        delete = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                });
+            },
+        );
+        if shown.cancelled || dialog::enter_confirms(ctx) {
+            cancel = true;
+        }
+        if delete {
+            self.delete_prompt = None;
+            // Trash first: if it fails, the open tab and its unsaved edits stay.
+            let trashed = file_actions::move_to_trash(&path);
+            let result = after_trash(trashed, || {
+                if let Some(index) = open_tab {
+                    self.remove_tab(index);
+                }
+                self.recent.remove(&path);
+                self.home.forget(&path);
+            });
+            if let Err(err) = result {
+                self.notify_error(format!("Couldn’t delete “{name}”: {err}"));
+            }
+        } else if cancel {
+            self.delete_prompt = None;
+        }
     }
 
     /// The folder the dialog's Export button writes into: the one typed in the dialog.
@@ -1635,6 +1702,12 @@ impl MapMakerApp {
                     self.recent.remove(&path);
                     self.home.forget(&path);
                 }
+                home::Action::Reveal(path) => {
+                    if let Err(err) = file_actions::reveal(&path) {
+                        self.notify_error(format!("Couldn’t show the file: {err}"));
+                    }
+                }
+                home::Action::Delete(path) => self.delete_prompt = Some(path),
                 home::Action::Credits => self.credits.open = true,
             }
         }
@@ -2070,9 +2143,29 @@ fn layers_panel(
     tab.layer_tree.show(ui, &mut tab.editor, footer);
 }
 
+/// Runs `on_deleted` (closing the tab, forgetting the file) only if the Trash move succeeded.
+fn after_trash(trashed: Result<(), String>, on_deleted: impl FnOnce()) -> Result<(), String> {
+    trashed.map(|()| on_deleted())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_trash_keeps_the_tab_and_recent_entry() {
+        let mut cleaned = false;
+        let result = after_trash(Err("denied".into()), || cleaned = true);
+        assert_eq!(result, Err("denied".to_owned()));
+        assert!(!cleaned);
+    }
+
+    #[test]
+    fn confirmed_delete_closes_the_tab_and_forgets_the_file() {
+        let mut cleaned = false;
+        assert_eq!(after_trash(Ok(()), || cleaned = true), Ok(()));
+        assert!(cleaned);
+    }
 
     fn args(args: &[&str]) -> Vec<OsString> {
         args.iter().map(OsString::from).collect()
