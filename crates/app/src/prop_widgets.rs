@@ -190,7 +190,7 @@ pub struct Edit {
 }
 
 impl Edit {
-    fn instant() -> Self {
+    pub fn instant() -> Self {
         Edit {
             began: true,
             changed: true,
@@ -299,6 +299,14 @@ fn trailing_width(provenance: Provenance) -> f32 {
     }
 }
 
+/// What the trailing glyph or reset arrow takes from the row, with the gap before it.
+fn gap_before_trailing(ui: &egui::Ui, provenance: Provenance) -> f32 {
+    match trailing_width(provenance) {
+        0.0 => 0.0,
+        width => width + ui.spacing().item_spacing.x,
+    }
+}
+
 /// The trailing part of a row: the link glyph when inherited, the reset arrow when
 /// overridden (its accessible name says what it resets). Returns whether reset was clicked.
 fn trailing(ui: &mut egui::Ui, label: &str, provenance: Provenance) -> bool {
@@ -363,6 +371,13 @@ fn section_id(kind: &str) -> egui::Id {
 /// Whether the section of this kind is open. Remembered per kind, not per Map.
 pub fn section_open(ctx: &egui::Context, kind: &str) -> bool {
     ctx.data_mut(|d| *d.get_persisted_mut_or(section_id(kind), true))
+}
+
+/// Makes the section of this kind start collapsed, until the user opens it.
+pub fn default_closed(ctx: &egui::Context, kind: &str) {
+    ctx.data_mut(|d| {
+        d.get_persisted_mut_or(section_id(kind), false);
+    });
 }
 
 /// What a section header offers.
@@ -580,7 +595,7 @@ pub fn scrub_field(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> 
             edit.finished = true;
         }
 
-        let field_w = (ui.available_width() - trailing_width(spec.provenance)).max(40.0);
+        let field_w = (ui.available_width() - gap_before_trailing(ui, spec.provenance)).max(40.0);
         let (field_rect, field) =
             ui.allocate_exact_size(Vec2::new(field_w, spec.height), Sense::click());
         ui.painter().rect(
@@ -656,8 +671,11 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
         paint_label(ui, label_rect, spec.label, spec.provenance);
 
         let readout_w = 48.0;
-        let track_w =
-            (ui.available_width() - readout_w - trailing_width(spec.provenance) - 8.0).max(40.0);
+        let track_w = (ui.available_width()
+            - readout_w
+            - ui.spacing().item_spacing.x
+            - gap_before_trailing(ui, spec.provenance))
+        .max(40.0);
         let (rect, response) = ui.allocate_exact_size(
             Vec2::new(track_w, spec.height),
             if enabled {
