@@ -263,15 +263,27 @@ pub fn snapped_rect(container: egui::Rect, size: f32, pixels_per_point: f32) -> 
 /// Paints `icon` centred in `container` at `size` points (use [`GRID`] for the native size),
 /// tinted with `tint`.
 pub fn paint(ui: &egui::Ui, container: egui::Rect, icon: Icon, size: f32, tint: egui::Color32) {
+    paint_flipped(ui, container, icon, size, tint, false);
+}
+
+/// Like [`paint`], optionally mirrored left to right (a left chevron from the right one).
+pub fn paint_flipped(
+    ui: &egui::Ui,
+    container: egui::Rect,
+    icon: Icon,
+    size: f32,
+    tint: egui::Color32,
+    flip: bool,
+) {
     let ppp = ui.ctx().pixels_per_point();
     let texture = texture(ui.ctx(), Scale::for_pixels_per_point(ppp));
     let (handle, atlas) = &*texture.0;
-    ui.painter().image(
-        handle.id(),
-        snapped_rect(container, size, ppp),
-        atlas.uv(icon),
-        tint,
-    );
+    let mut uv = atlas.uv(icon);
+    if flip {
+        std::mem::swap(&mut uv.min.x, &mut uv.max.x);
+    }
+    ui.painter()
+        .image(handle.id(), snapped_rect(container, size, ppp), uv, tint);
 }
 
 /// A square button showing only `icon`. `label` is required: it is the accessible name (the

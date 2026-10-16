@@ -19,6 +19,7 @@ mod properties;
 mod recent;
 pub mod recovery;
 pub mod tab;
+mod tab_strip;
 mod tessellation;
 pub mod theme;
 pub mod tools;
@@ -65,12 +66,39 @@ pub fn launch_file(args: impl IntoIterator<Item = OsString>) -> Option<PathBuf> 
     Some(std::path::absolute(&path).unwrap_or(path))
 }
 
+/// On macOS the tabs are drawn in the title bar, behind the window's own buttons, which they
+/// leave room for. Elsewhere the native title bar stays and the strip sits below it.
+const CUSTOM_CHROME: bool = cfg!(target_os = "macos");
+const CHROME_INSET: f32 = if CUSTOM_CHROME {
+    theme::metrics::TRAFFIC_LIGHTS_INSET
+} else {
+    0.0
+};
+
+/// The window options for the title bar: on macOS the content runs under a transparent title
+/// bar with no title text, so the tab strip is drawn there.
+pub fn window_chrome(viewport: egui::ViewportBuilder) -> egui::ViewportBuilder {
+    if CUSTOM_CHROME {
+        viewport
+            .with_fullsize_content_view(true)
+            .with_title_shown(false)
+            .with_titlebar_shown(false)
+    } else {
+        viewport
+    }
+}
+
 pub struct MapMakerApp {
     /// The open Maps, one per tab, in the order of the tab row. May be empty.
     tabs: Vec<MapTab>,
     /// The index of the active tab: the one whose Map the window shows and every command acts
     /// on, reached through [`Self::tab`]. Meaningless while `tabs` is empty.
     active: usize,
+    /// Whether the Home tab shows instead of the active tab's Map. Always the case while no
+    /// Map is open.
+    home_active: bool,
+    /// The tab strip's scroll position and the like.
+    strip: tab_strip::State,
     /// Where journals of Maps never saved go; `None` turns them off.
     recovery_dir: Option<PathBuf>,
     /// Whether the Canvas renderer is installed, so new tabs get a tessellation cache.
@@ -168,6 +196,8 @@ impl MapMakerApp {
         Self {
             tabs: vec![tab],
             active: 0,
+            home_active: false,
+            strip: tab_strip::State::default(),
             recovery_dir,
             gpu,
             awaiting_save: None,
@@ -237,6 +267,35 @@ impl MapMakerApp {
     pub fn focus_tab(&mut self, index: usize) {
         if index < self.tabs.len() {
             self.active = index;
+            self.home_active = false;
+        }
+    }
+
+    /// Whether the Home tab is showing: chosen, or because no Map is open.
+    pub fn home_active(&self) -> bool {
+        self.home_active || self.tabs.is_empty()
+    }
+
+    /// The tab being shown.
+    fn current_slot(&self) -> tab_strip::Slot {
+        if self.home_active() {
+            tab_strip::Slot::Home
+        } else {
+            tab_strip::Slot::Map(self.active)
+        }
+    }
+
+    fn show_slot(&mut self, slot: tab_strip::Slot) {
+        match slot {
+            tab_strip::Slot::Home => self.home_active = true,
+            tab_strip::Slot::Map(index) => self.focus_tab(index),
+        }
+    }
+
+    /// Shows the tab ⌘`n` reaches (1 is Home, 9 the last tab); `n` out of range does nothing.
+    pub fn show_tab_number(&mut self, n: u8) {
+        if let Some(slot) = tab_strip::slot_for_number(n, self.tabs.len()) {
+            self.show_slot(slot);
         }
     }
 
@@ -249,6 +308,7 @@ impl MapMakerApp {
         if tab.has_unsaved_changes() {
             tab.pending = Some(Pending::CloseTab);
             self.active = index;
+            self.home_active = false;
         } else {
             self.remove_tab(index);
         }
@@ -287,6 +347,7 @@ impl MapMakerApp {
     fn push_tab(&mut self, tab: MapTab) {
         self.tabs.push(tab);
         self.active = self.tabs.len() - 1;
+        self.home_active = false;
     }
 
     /// Shows a message on the active tab's status bar, or on stderr when no Map is open.
@@ -484,6 +545,7 @@ impl MapMakerApp {
         match next {
             Some(index) => {
                 self.active = index;
+                self.home_active = false;
                 self.tabs[index].pending = Some(Pending::Quit);
             }
             None => self.close(ctx),
@@ -655,7 +717,7 @@ impl MapMakerApp {
                 }
             });
             ui.separator();
-            let has_tab = !self.tabs.is_empty();
+            let has_tab = !self.home_active();
             if ui.add_enabled(has_tab, egui::Button::new("Save")).clicked() {
                 self.save();
             }
@@ -1072,6 +1134,45 @@ impl MapMakerApp {
         }
         use egui::{Key, KeyboardShortcut, Modifiers};
         let shortcut = |modifiers, key| KeyboardShortcut::new(modifiers, key);
+        let (new_map, number, step) = ctx.input_mut(|input| {
+            let new_map = input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::T));
+            let number = [
+                Key::Num1,
+                Key::Num2,
+                Key::Num3,
+                Key::Num4,
+                Key::Num5,
+                Key::Num6,
+                Key::Num7,
+                Key::Num8,
+                Key::Num9,
+            ]
+            .iter()
+            .zip(1u8..)
+            .find(|(key, _)| input.consume_shortcut(&shortcut(Modifiers::COMMAND, **key)))
+            .map(|(_, n)| n);
+            // Shift first: plain Ctrl+Tab would also match it.
+            let step = if input
+                .consume_shortcut(&shortcut(Modifiers::CTRL | Modifiers::SHIFT, Key::Tab))
+            {
+                Some(false)
+            } else if input.consume_shortcut(&shortcut(Modifiers::CTRL, Key::Tab)) {
+                Some(true)
+            } else {
+                None
+            };
+            (new_map, number, step)
+        });
+        if new_map {
+            self.new_map_dialog.open = true;
+        }
+        if let Some(n) = number {
+            self.show_tab_number(n);
+        }
+        if let Some(forward) = step {
+            let slot = tab_strip::cycle(self.current_slot(), self.tabs.len(), forward);
+            self.show_slot(slot);
+        }
         let (open, save, save_as, close_tab) = ctx.input_mut(|input| {
             // Shift+S first: plain Cmd+S would also match it.
             let save_as =
@@ -1084,11 +1185,12 @@ impl MapMakerApp {
         if open {
             self.show_open_dialog();
         }
-        if self.tabs.is_empty() {
+        if close_tab && self.current_slot().can_close() {
+            self.close_tab(self.active);
             return;
         }
-        if close_tab {
-            self.close_tab(self.active);
+        // Home has no Map to save or edit.
+        if self.home_active() {
             return;
         }
         if save_as {
@@ -1151,6 +1253,9 @@ impl MapMakerApp {
         ui.horizontal(|ui| {
             self.file_menu(ui);
             ui.separator();
+            if self.home_active() {
+                return;
+            }
             let Some(tab) = self.tabs.get_mut(self.active) else {
                 return;
             };
@@ -1236,36 +1341,36 @@ impl MapMakerApp {
         });
     }
 
-    /// The row of tabs, one per open Map; clicking one shows it, its ✕ closes it.
+    /// The strip of tabs in the title-bar area: Home, one tab per open Map, and a +.
     fn tab_strip(&mut self, ui: &mut egui::Ui, enabled: bool) {
-        let mut show = None;
-        let mut close = None;
-        ui.add_enabled_ui(enabled, |ui| {
-            ui.horizontal(|ui| {
-                for (index, tab) in self.tabs.iter().enumerate() {
-                    let dirty = if tab.has_unsaved_changes() {
-                        " •"
-                    } else {
-                        ""
-                    };
-                    ui.push_id(index, |ui| {
-                        let label = format!("{}{dirty}", tab.document.name());
-                        if ui.selectable_label(index == self.active, label).clicked() {
-                            show = Some(index);
-                        }
-                        if ui.small_button("✕").on_hover_text("Close Tab").clicked() {
-                            close = Some(index);
-                        }
-                    });
-                    ui.separator();
-                }
-            });
-        });
-        if let Some(index) = show {
-            self.focus_tab(index);
-        }
-        if let Some(index) = close {
-            self.close_tab(index);
+        let infos: Vec<_> = self
+            .tabs
+            .iter()
+            .map(|tab| tab_strip::TabInfo {
+                name: tab.document.name(),
+                path: tab.document.path().map(|path| path.display().to_string()),
+                unsaved: tab.has_unsaved_changes(),
+            })
+            .collect();
+        let current = self.current_slot();
+        let actions = ui
+            .add_enabled_ui(enabled, |ui| {
+                tab_strip::show(
+                    ui,
+                    &infos,
+                    current,
+                    &mut self.strip,
+                    CHROME_INSET,
+                    CUSTOM_CHROME,
+                )
+            })
+            .inner;
+        for action in actions {
+            match action {
+                tab_strip::Action::Show(slot) => self.show_slot(slot),
+                tab_strip::Action::Close(index) => self.close_tab(index),
+                tab_strip::Action::NewMap => self.new_map_dialog.open = true,
+            }
         }
     }
 
@@ -1366,14 +1471,21 @@ impl eframe::App for MapMakerApp {
         }
         self.dialogs(&ctx);
         self.update_title(&ctx);
-        egui::Panel::top("tabs").show(ui, |ui| self.tab_strip(ui, !dialog_open));
+        let strip = egui::Frame::NONE.fill(theme::palette(&ctx).bg_chrome);
+        egui::Panel::top("tabs")
+            .exact_size(theme::metrics::TITLE_BAR_WITH_TABS)
+            .frame(strip)
+            .show(ui, |ui| self.tab_strip(ui, !dialog_open));
         egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
-        if self.tabs.is_empty() {
+        if self.home_active() {
+            // Until the Home screen exists this is a placeholder.
             self.updates.show(&ctx);
             egui::CentralPanel::default().show(ui, |ui| {
-                ui.centered_and_justified(|ui| {
-                    ui.weak("No Map is open. Use File → New Map… or Open…");
-                });
+                if self.tabs.is_empty() {
+                    ui.centered_and_justified(|ui| {
+                        ui.weak("No Map is open. Use File → New Map… or Open…");
+                    });
+                }
             });
             return;
         }
