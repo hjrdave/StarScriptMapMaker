@@ -26,6 +26,7 @@ pub mod tab;
 mod tab_strip;
 mod tessellation;
 pub mod theme;
+pub mod toast;
 mod tool_section;
 pub mod tools;
 pub mod update;
@@ -1485,25 +1486,6 @@ impl MapMakerApp {
                 ui.separator();
                 ui.label(text(summary));
             }
-            // Notices move out of the status bar in #166.
-            if let Some(notice) = tab.editor.notice() {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add_space(theme::SPACING[3]);
-                    let color = if notice.is_error {
-                        ui.visuals().error_fg_color
-                    } else {
-                        palette.text_primary
-                    };
-                    ui.label(
-                        egui::RichText::new(&notice.text)
-                            .size(theme::CAPTION)
-                            .color(color),
-                    );
-                });
-                ctx.request_repaint_after(
-                    editor::NOTICE_DURATION.saturating_sub(notice.shown_at.elapsed()),
-                );
-            }
         });
     }
 }
@@ -1651,9 +1633,12 @@ impl eframe::App for MapMakerApp {
             }
             properties_divider = Some(panel.response.rect);
         }
-        egui::CentralPanel::default()
+        let canvas = egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ui, |ui| tab.canvas_view.show(ui, &mut tab.editor));
+        if let Some(action) = toast::show(&ctx, canvas.response.rect, tab.editor.toasts_mut()) {
+            tab.editor.run_toast_action(action);
+        }
         // After the Canvas, so the strips on its edges win the pointer over it.
         for (side, rect) in [
             (shell::Side::Left, layers_divider),

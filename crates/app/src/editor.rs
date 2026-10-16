@@ -2,7 +2,7 @@
 //! message bar. Every change to the Map goes through a Command here.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use ssmap_core::asset::{AssetRef, credit_lines};
 use ssmap_core::land::{self, BrushStroke};
@@ -20,13 +20,11 @@ use ssmap_render::{
 };
 
 use crate::layer_tree::node_name;
+use crate::toast::{Toast, ToastAction, ToastKind, Toasts};
 use crate::tools::ToolId;
 
 /// The land brush's starting diameter, in Canvas units.
 pub const DEFAULT_BRUSH_SIZE: f64 = 48.0;
-
-/// How long a message stays in the status bar.
-pub const NOTICE_DURATION: Duration = Duration::from_secs(5);
 
 pub struct Editor {
     pub map: Map,
@@ -49,7 +47,7 @@ pub struct Editor {
     pub tool_busy: bool,
     /// Set by Escape for the busy tool to act on.
     pub cancel_tool: bool,
-    notice: Option<Notice>,
+    toasts: Toasts,
     /// Set while a gesture's transaction is open.
     gesture_open: bool,
     /// The Selection when the open gesture began, restored if it is cancelled.
@@ -117,13 +115,6 @@ pub struct NodeEdit {
     pub nodes: Vec<NodeRef>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Notice {
-    pub text: String,
-    pub is_error: bool,
-    pub shown_at: Instant,
-}
-
 impl Editor {
     pub fn new(map: Map) -> Self {
         let mut history = History::default();
@@ -142,7 +133,7 @@ impl Editor {
             node_edit: None,
             tool_busy: false,
             cancel_tool: false,
-            notice: None,
+            toasts: Toasts::default(),
             gesture_open: false,
             gesture_selection: Vec::new(),
             pick_index: None,
@@ -301,12 +292,17 @@ impl Editor {
         if edit.nodes.is_empty() {
             return;
         }
+        let count = edit.nodes.len();
         let command = Command::DeleteNodes {
             id: edit.id,
             nodes: edit.nodes,
         };
         if self.run(command) {
             self.select_nodes(Vec::new());
+            self.info_with_undo(match count {
+                1 => "Deleted 1 node".to_string(),
+                n => format!("Deleted {n} nodes"),
+            });
         }
     }
 
@@ -786,29 +782,58 @@ impl Editor {
             return;
         }
         let ids = self.selection.clone();
-        self.run_selecting(Command::Delete { ids }, Vec::new());
+        let count = ids.len();
+        if self.run_selecting(Command::Delete { ids }, Vec::new()) {
+            self.info_with_undo(match count {
+                1 => "Deleted 1 item".to_string(),
+                n => format!("Deleted {n} items"),
+            });
+        }
     }
 
-    pub fn notice(&self) -> Option<&Notice> {
-        self.notice
-            .as_ref()
-            .filter(|notice| notice.shown_at.elapsed() < NOTICE_DURATION)
+    /// The newest toast still showing.
+    pub fn notice(&self) -> Option<&Toast> {
+        self.toasts.items().last()
+    }
+
+    /// This tab's toasts, for drawing and expiring. Actions the history has moved past are
+    /// dropped first.
+    pub fn toasts_mut(&mut self) -> &mut Toasts {
+        let (open, depth) = (self.gesture_open, self.history.undo_len());
+        self.toasts.retain_actions(|action| match action {
+            ToastAction::Undo { steps } => !open && depth == steps,
+        });
+        &mut self.toasts
     }
 
     pub fn info(&mut self, text: impl Into<String>) {
-        self.notice = Some(Notice {
-            text: text.into(),
-            is_error: false,
-            shown_at: Instant::now(),
-        });
+        self.toasts
+            .push(text, ToastKind::Info, None, Instant::now());
     }
 
     pub fn error(&mut self, text: impl Into<String>) {
-        self.notice = Some(Notice {
-            text: text.into(),
-            is_error: true,
-            shown_at: Instant::now(),
-        });
+        self.toasts
+            .push(text, ToastKind::Error, None, Instant::now());
+    }
+
+    /// Tells the user about a Command they might regret, with an Undo on the toast.
+    fn info_with_undo(&mut self, text: impl Into<String>) {
+        let action = ToastAction::Undo {
+            steps: self.history.undo_len(),
+        };
+        self.toasts
+            .push(text, ToastKind::Info, Some(action), Instant::now());
+    }
+
+    /// Runs the action a toast carried, if it still applies.
+    pub fn run_toast_action(&mut self, action: ToastAction) {
+        match action {
+            ToastAction::Undo { steps } => {
+                if self.history.undo_len() == steps {
+                    self.undo();
+                }
+            }
+        }
     }
 
     /// Shows why a Command was refused, naming Layers and Objects the way the tree does.
@@ -1233,7 +1258,7 @@ mod tests {
         }));
         assert_eq!(editor.map.view(), before);
         let notice = editor.notice().expect("a visible message");
-        assert!(notice.is_error);
+        assert!(notice.is_error());
         assert_eq!(notice.text, "“Layer 1” is locked");
     }
 
@@ -1383,13 +1408,53 @@ mod tests {
     }
 
     #[test]
+    fn deleting_offers_an_undo_that_undoes_it() {
+        let (mut editor, id) = editor_with_square();
+        editor.select(vec![id]);
+        let before = editor.map.view();
+        editor.delete_selection();
+        assert_ne!(editor.map.view(), before);
+        let toast = editor.notice().expect("a toast").clone();
+        assert!(!toast.is_error());
+        let action = toast.action.expect("an Undo action");
+        let live = editor.toasts_mut().items()[0].action;
+        assert_eq!(live, Some(action));
+        editor.run_toast_action(action);
+        assert_eq!(editor.map.view(), before);
+    }
+
+    #[test]
+    fn the_undo_action_goes_once_the_history_moves_on() {
+        let (mut editor, id) = editor_with_square();
+        editor.select(vec![id]);
+        editor.delete_selection();
+        let action = editor.notice().unwrap().action.unwrap();
+        editor.new_layer();
+        assert!(editor.toasts_mut().items()[0].action.is_none());
+        let after = editor.map.view();
+        editor.run_toast_action(action);
+        assert_eq!(editor.map.view(), after);
+    }
+
+    #[test]
+    fn deleting_nodes_offers_an_undo() {
+        let (mut editor, id) = editor_with_square();
+        editor.enter_node_edit(id);
+        editor.select_nodes(vec![node(0)]);
+        editor.delete_selected_nodes();
+        let toast = editor.notice().expect("a toast");
+        assert_eq!(toast.text, "Deleted 1 node");
+        assert!(toast.action.is_some());
+    }
+
+    #[test]
     fn deleting_nodes_that_would_leave_fewer_than_three_is_refused() {
         let (mut editor, id) = editor_with_square();
         editor.enter_node_edit(id);
         editor.select_nodes(vec![node(0), node(1)]);
         editor.delete_selected_nodes();
         assert_eq!(editor.edited_shape(), vec![4]);
-        assert!(editor.notice().is_some_and(|notice| notice.is_error));
+        assert!(editor.notice().is_some_and(|notice| notice.is_error()));
     }
 
     #[test]
