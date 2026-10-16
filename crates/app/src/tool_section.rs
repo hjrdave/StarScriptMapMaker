@@ -18,7 +18,7 @@ pub struct ToolSection {
 }
 
 /// The icon of a tool.
-fn icon(tool: ToolId) -> Icon {
+pub fn icon(tool: ToolId) -> Icon {
     match tool {
         ToolId::Select => Icon::Select,
         ToolId::Pan => Icon::Pan,
@@ -92,7 +92,7 @@ fn header(ui: &mut egui::Ui, tool: ToolId) {
         );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(
-                egui::RichText::new(format!("{:?}", tool.shortcut()))
+                egui::RichText::new(tool.shortcut_text())
                     .size(theme::CAPTION)
                     .family(theme::mono_family())
                     .color(palette.text_tertiary),

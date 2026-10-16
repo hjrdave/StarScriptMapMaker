@@ -27,6 +27,7 @@ mod tab_strip;
 mod tessellation;
 pub mod theme;
 pub mod toast;
+mod tool_dock;
 mod tool_section;
 pub mod tools;
 pub mod update;
@@ -1302,8 +1303,12 @@ impl MapMakerApp {
                     editor.select(Vec::new());
                 }
             }
-            for tool in ToolId::ALL {
-                if input.consume_key(Modifiers::NONE, tool.shortcut()) {
+            // Shifted shortcuts first: egui ignores an extra Shift, so ⇧S would also read as S.
+            let mut tools = ToolId::ALL;
+            tools.sort_by_key(|tool| !tool.shortcut().0.shift);
+            for tool in tools {
+                let (modifiers, key) = tool.shortcut();
+                if input.consume_key(modifiers, key) {
                     editor.active_tool = tool;
                 }
             }
@@ -1332,16 +1337,6 @@ impl MapMakerApp {
                 return;
             };
             let editor = &mut tab.editor;
-            for tool in ToolId::ALL {
-                let selected = editor.active_tool == tool;
-                if ui
-                    .selectable_label(selected, tool.label())
-                    .on_hover_text(format!("{} ({:?})", tool.label(), tool.shortcut()))
-                    .clicked()
-                {
-                    editor.active_tool = tool;
-                }
-            }
             ui.toggle_value(&mut tab.label_styles.open, "Label styles");
             ui.separator();
             let undo_hint = editor.undo_label().map(|l| format!("Undo {l}"));
@@ -1636,6 +1631,7 @@ impl eframe::App for MapMakerApp {
         let canvas = egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ui, |ui| tab.canvas_view.show(ui, &mut tab.editor));
+        tool_dock::show(&ctx, canvas.response.rect, &mut tab.editor.active_tool);
         if let Some(action) = toast::show(&ctx, canvas.response.rect, tab.editor.toasts_mut()) {
             tab.editor.run_toast_action(action);
         }
