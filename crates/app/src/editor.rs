@@ -26,6 +26,9 @@ use crate::tools::ToolId;
 /// The land brush's starting diameter, in Canvas units.
 pub const DEFAULT_BRUSH_SIZE: f64 = 48.0;
 
+/// The name of the Layer the water brush paints into.
+pub const WATER_LAYER: &str = "Water";
+
 pub struct Editor {
     pub map: Map,
     /// What the Canvas draws, derived from the Map, and the Label layouts that picking and
@@ -527,6 +530,75 @@ impl Editor {
                 let mut chars = text.chars();
                 let first = chars.next().map(|c| c.to_uppercase().to_string());
                 self.error(first.unwrap_or_default() + chars.as_str());
+            }
+        }
+    }
+
+    /// What a water brush stroke would be called in the undo history.
+    pub fn water_label(erase: bool) -> &'static str {
+        if erase { "Erase Water" } else { "Paint Water" }
+    }
+
+    /// The top-level Layer the water brush paints into: the Map's "Water" Layer, if it has one.
+    fn water_layer(&self) -> Option<Id> {
+        self.map.children(None).iter().copied().find(|&id| {
+            matches!(self.map.node(id), Some(Node::Layer(layer)) if layer.name == WATER_LAYER)
+        })
+    }
+
+    /// Finishes the water brush stroke whose gesture is open, as [`Self::finish_brush_stroke`]
+    /// does for land: one Command ([`land::water_command`]) as the gesture's Undo step. The
+    /// first stroke that needs it also creates the "Water" Layer, in the same Undo step, so
+    /// water has its own Layer to rename, lock, hide and reorder. A new Lake becomes the
+    /// Selection, so the next stroke extends it.
+    pub fn finish_water_stroke(&mut self, stroke: BrushStroke) {
+        let new_id = Id::new();
+        let existing = self.water_layer();
+        let mut planned = land::water_command(
+            &self.map,
+            &mut self.roughness,
+            &self.selection,
+            existing,
+            stroke.clone(),
+            new_id,
+        );
+        if planned == Err(land::BrushError::NoLayer) {
+            let id = Id::new();
+            let created = self.gesture(Command::CreateLayer {
+                id,
+                parent: None,
+                index: None,
+                name: WATER_LAYER.to_owned(),
+            });
+            if !created {
+                self.cancel_gesture();
+                return;
+            }
+            planned = land::water_command(
+                &self.map,
+                &mut self.roughness,
+                &self.selection,
+                Some(id),
+                stroke,
+                new_id,
+            );
+        }
+        match planned {
+            Ok(Some(command)) => {
+                let creates = matches!(command, Command::CreateLake { .. });
+                if self.gesture(command) {
+                    if creates {
+                        self.select(vec![new_id]);
+                    }
+                    self.end_gesture();
+                } else {
+                    self.cancel_gesture();
+                }
+            }
+            Ok(None) => self.cancel_gesture(),
+            Err(err) => {
+                self.cancel_gesture();
+                self.error(err.to_string());
             }
         }
     }
@@ -1263,6 +1335,35 @@ mod tests {
         assert_eq!(editor.map.children(None), &[first, third, second]);
         assert_eq!(editor.selection(), &[third]);
         assert_eq!(editor.active_layer(), Some(third));
+    }
+
+    #[test]
+    fn a_water_stroke_makes_a_lake_in_a_water_layer_in_one_undo_step() {
+        let mut editor = editor();
+        let stroke = |erase| BrushStroke {
+            region: land::stroke_region(&[[10.0, 10.0], [60.0, 10.0]], 5.0),
+            start: [10.0, 10.0],
+            erase,
+        };
+        editor.begin_gesture(Editor::water_label(false));
+        editor.finish_water_stroke(stroke(false));
+        assert_eq!(editor.undo_label(), Some("Paint Water"));
+        let layer = editor.water_layer().expect("a Water layer");
+        let lakes = editor.map.children(Some(layer)).to_vec();
+        assert_eq!(lakes.len(), 1);
+        assert_eq!(editor.selection(), lakes);
+
+        // A second stroke extends the Lake and reuses the Layer.
+        editor.begin_gesture(Editor::water_label(false));
+        editor.finish_water_stroke(stroke(false));
+        assert_eq!(editor.map.children(Some(layer)), lakes);
+        assert_eq!(editor.map.children(None), &[layer]);
+
+        // Undoing both steps removes the Lake and the Layer it created.
+        editor.undo();
+        assert!(editor.map.contains(lakes[0]));
+        editor.undo();
+        assert!(!editor.map.contains(layer));
     }
 
     #[test]

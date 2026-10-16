@@ -20,9 +20,11 @@ pub const ERROR_DURATION: Duration = Duration::from_secs(10);
 pub const MAX_TOASTS: usize = 4;
 /// The toast width, from the mockup.
 const WIDTH: f32 = 420.0;
-/// Gap between the Canvas's bottom edge and the lowest toast: above the tool dock.
-const BOTTOM_OFFSET: f32 =
-    theme::metrics::TOOL_DOCK_BOTTOM_OFFSET + theme::metrics::TOOL_BUTTON[1] + 16.0;
+/// Gap between the Canvas's top edge (just under the menu bar) and the highest toast.
+const TOP_OFFSET: f32 = 16.0;
+/// How far above its resting place a new toast starts, and how long it takes to slide down.
+const SLIDE_DISTANCE: f32 = 24.0;
+const SLIDE_SECONDS: f32 = 0.15;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ToastKind {
@@ -48,6 +50,11 @@ pub struct Toast {
     pub kind: ToastKind,
     pub action: Option<ToastAction>,
     expires: Instant,
+}
+
+/// How far above its resting place a toast is drawn `age` seconds after it first showed.
+fn slide_offset(age: f32) -> f32 {
+    (1.0 - (age / SLIDE_SECONDS).clamp(0.0, 1.0)) * SLIDE_DISTANCE
 }
 
 impl Toast {
@@ -119,7 +126,7 @@ impl Toasts {
         }
     }
 
-    /// The toasts to show, oldest first (the newest is drawn at the bottom).
+    /// The toasts to show, oldest first (the newest is drawn lowest).
     pub fn items(&self) -> &[Toast] {
         &self.items
     }
@@ -130,7 +137,7 @@ impl Toasts {
     }
 }
 
-/// Draws `toasts` bottom-centre over `canvas` and returns the action clicked, if any. Removes
+/// Draws `toasts` top-centre over `canvas` and returns the action clicked, if any. Removes
 /// expired toasts first, keeps hovered ones, and schedules the repaint that expires the rest.
 pub fn show(ctx: &egui::Context, canvas: egui::Rect, toasts: &mut Toasts) -> Option<ToastAction> {
     let now = Instant::now();
@@ -139,17 +146,25 @@ pub fn show(ctx: &egui::Context, canvas: egui::Rect, toasts: &mut Toasts) -> Opt
     let mut clicked = None;
     let mut dismissed = Vec::new();
     let mut held = Vec::new();
-    // Newest at the bottom: lay the newest out first and stack the older ones above it.
-    let mut bottom = canvas.bottom() - BOTTOM_OFFSET;
-    for toast in toasts.items().iter().rev() {
+    // Stack downward from the top, oldest first, so the newest is lowest.
+    let mut top = canvas.top() + TOP_OFFSET;
+    let mut sliding = false;
+    for toast in toasts.items() {
+        // Egui's own clock, so the slide follows frame time; the first frame fixes the start.
+        let time = ctx.input(|i| i.time);
+        let first_seen = ctx.data_mut(|d| {
+            *d.get_temp_mut_or_insert_with(egui::Id::new(("toast_seen", toast.id)), || time)
+        });
+        let slide = slide_offset((time - first_seen) as f32);
+        sliding |= slide > 0.0;
         let (color, icon, border) = match toast.kind {
             ToastKind::Info => (palette.ok, Icon::Check, palette.border_strong),
             ToastKind::Error => (palette.danger, Icon::Warning, palette.danger),
         };
         let area = egui::Area::new(egui::Id::new(("toast", toast.id)))
             .order(egui::Order::Foreground)
-            .pivot(egui::Align2::CENTER_BOTTOM)
-            .fixed_pos(egui::pos2(canvas.center().x, bottom))
+            .pivot(egui::Align2::CENTER_TOP)
+            .fixed_pos(egui::pos2(canvas.center().x, top - slide))
             .show(ctx, |ui| {
                 egui::Frame::NONE
                     .fill(palette.bg_raised)
@@ -207,13 +222,16 @@ pub fn show(ctx: &egui::Context, canvas: egui::Rect, toasts: &mut Toasts) -> Opt
         if ctx.pointer_hover_pos().is_some_and(|p| rect.contains(p)) {
             held.push(toast.id);
         }
-        bottom = rect.top() - theme::SPACING[3];
+        top = rect.bottom() + slide + theme::SPACING[3];
     }
     for id in held {
         toasts.hold(id, now);
     }
     for id in dismissed {
         toasts.dismiss(id);
+    }
+    if sliding {
+        ctx.request_repaint_after(Duration::from_millis(16));
     }
     if let Some(expiry) = toasts.next_expiry() {
         ctx.request_repaint_after(expiry.saturating_duration_since(now));
@@ -237,6 +255,14 @@ mod tests {
         toasts.push("second", ToastKind::Info, None, t0);
         let texts: Vec<_> = toasts.items().iter().map(|t| t.text.as_str()).collect();
         assert_eq!(texts, ["first", "second"]);
+    }
+
+    #[test]
+    fn a_new_toast_slides_down_from_above_to_its_place() {
+        assert_eq!(slide_offset(0.0), SLIDE_DISTANCE);
+        assert!(slide_offset(SLIDE_SECONDS / 2.0) < SLIDE_DISTANCE);
+        assert_eq!(slide_offset(SLIDE_SECONDS), 0.0);
+        assert_eq!(slide_offset(10.0), 0.0);
     }
 
     #[test]

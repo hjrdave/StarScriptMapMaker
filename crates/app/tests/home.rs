@@ -91,6 +91,80 @@ fn the_new_map_card_opens_the_new_map_dialog() {
 }
 
 #[test]
+fn a_new_tab_shows_a_start_page_that_is_not_a_map() {
+    let mut harness = app();
+    harness.state_mut().new_blank_tab();
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 1);
+    assert!(harness.state().tabs()[0].is_blank());
+    assert!(!harness.state().home_active());
+    harness.get_by_label("New Map: blank or from template");
+    harness.get_by_label("Open…");
+    // Neither the rail nor the Map's panels.
+    assert!(harness.query_by_label("Credits & licences").is_none());
+    assert!(harness.query_by_label("New Layer").is_none());
+    // Nothing to save, so closing asks nothing.
+    harness.state_mut().close_tab(0);
+    harness.run();
+    assert!(harness.state().tabs().is_empty());
+}
+
+#[test]
+fn command_t_opens_a_blank_tab() {
+    let mut harness = app();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::T);
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 1);
+    assert!(harness.state().tabs()[0].is_blank());
+}
+
+#[test]
+fn a_recent_map_opens_in_the_blank_tab_and_an_open_one_is_focused() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = saved_map(dir.path(), "first.ssmap");
+    let second = saved_map(dir.path(), "second.ssmap");
+    let mut harness = app();
+    harness.state_mut().open_path(&first);
+    harness.state_mut().open_path(&second);
+    harness.state_mut().close_tab(1);
+    harness.state_mut().new_blank_tab();
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 2);
+
+    harness.get_by_label("Open second").click();
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 2);
+    assert!(!harness.state().tabs()[1].is_blank());
+    assert_eq!(harness.state().tabs()[1].document().name(), "second.ssmap");
+    assert_eq!(harness.state().active_tab(), 1);
+
+    // Already open elsewhere: that tab is focused and the blank one stays.
+    harness.state_mut().new_blank_tab();
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 3);
+    harness.get_by_label("Open first").click();
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 3);
+    assert_eq!(harness.state().active_tab(), 0);
+    assert!(harness.state().tabs()[2].is_blank());
+}
+
+#[test]
+fn a_map_created_from_the_start_page_opens_in_that_tab() {
+    let mut harness = app();
+    harness.state_mut().new_blank_tab();
+    harness.run();
+    harness
+        .get_by_label("New Map: blank or from template")
+        .click();
+    harness.run();
+    harness.get_by_label("Create").click();
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 1);
+    assert!(!harness.state().tabs()[0].is_blank());
+}
+
+#[test]
 fn a_missing_file_can_be_removed_from_the_list() {
     let dir = tempfile::tempdir().unwrap();
     let path = saved_map(dir.path(), "gone.ssmap");
@@ -114,4 +188,41 @@ fn a_missing_file_can_be_removed_from_the_list() {
     harness.get_by_label("Remove from list").click();
     harness.run();
     assert!(harness.state().recent_files().is_empty());
+}
+
+#[test]
+fn delete_from_a_cards_menu_asks_first_and_cancel_keeps_the_map() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = saved_map(dir.path(), "Isle.ssmap");
+    let mut harness = app();
+    harness.state_mut().open_path(&path);
+    harness.state_mut().close_tab(0);
+    harness.run();
+
+    harness.get_by_label("Open Isle").click_secondary();
+    harness.run();
+    harness.get_by_label("Delete…").click();
+    harness.run();
+    harness.get_by_label("Delete “Isle”?");
+    harness.get_by_label("Delete");
+
+    harness.get_by_label("Cancel").click();
+    harness.run();
+    assert!(harness.query_by_label("Delete “Isle”?").is_none());
+    assert!(path.exists());
+    assert_eq!(harness.state().recent_files().len(), 1);
+}
+
+#[test]
+fn the_card_menu_offers_show_in_the_file_manager() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = saved_map(dir.path(), "Isle.ssmap");
+    let mut harness = app();
+    harness.state_mut().open_path(&path);
+    harness.state_mut().close_tab(0);
+    harness.run();
+
+    harness.get_by_label("Open Isle").click_secondary();
+    harness.run();
+    harness.get_by_label_contains("Show in ");
 }

@@ -16,7 +16,12 @@ const TOOLTIP_GAP: f32 = 6.0;
 /// The tool groups, split by dividers.
 const GROUPS: [&[ToolId]; 4] = [
     &[ToolId::Select, ToolId::Pan],
-    &[ToolId::LandBrush, ToolId::Lasso, ToolId::Label],
+    &[
+        ToolId::LandBrush,
+        ToolId::WaterBrush,
+        ToolId::Lasso,
+        ToolId::Label,
+    ],
     &[ToolId::Stamp, ToolId::Scatter, ToolId::StampEraser],
     &[ToolId::ExportRegion],
 ];
@@ -43,7 +48,7 @@ pub fn show(ctx: &egui::Context, canvas: egui::Rect, active: &mut ToolId) {
                 .stroke(egui::Stroke::new(1.0, palette.border_subtle))
                 .corner_radius(theme::RADIUS_DOCK)
                 .shadow(theme::shadow_e2())
-                .inner_margin(egui::Margin::same(4))
+                .inner_margin(egui::Margin::same(theme::metrics::TOOL_DOCK_MARGIN as i8))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 2.0;
@@ -151,10 +156,15 @@ fn tooltip(ui: &egui::Ui, palette: &Palette, response: &egui::Response, text: &s
                 .shadow(theme::shadow_e1())
                 .inner_margin(egui::Margin::symmetric(8, 4))
                 .show(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new(text)
-                            .size(theme::CAPTION)
-                            .color(palette.text_primary),
+                    // Never wrap: the Area is pinned beside the button, so its
+                    // available width is small and would break the label.
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(text)
+                                .size(theme::CAPTION)
+                                .color(palette.text_primary),
+                        )
+                        .wrap_mode(egui::TextWrapMode::Extend),
                     );
                 });
         });

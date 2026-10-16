@@ -56,7 +56,7 @@ Never: project, element, symbol, folder (except real filesystem folders on the H
   - Hover: bg `#1D2025`, shows close × (18 px hit area).
   - Active: bg `#23272E`, text `#ECE6D8` 500 weight, 2 px gold `#D4A84A` bottom inset line.
   - Unsaved: 7 px gold dot where the × sits (× replaces it on hover).
-- **+** (40 px) = New Map (⌘T).
+- **+** (40 px) = New Tab (⌘T): opens a blank tab with a start page (New Map card, recent Maps, Open…). A Map opened or created there takes that tab. New Map is ⌘N.
 - Overflow: tabs shrink 220 → 120 pt, then the strip scrolls with chevrons.
 - Opening a Map that's already open focuses its tab. Closing a dirty tab shows the Save prompt (Components.html → Dialog).
 

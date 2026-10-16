@@ -11,6 +11,7 @@ pub mod editor;
 pub mod export_dialog;
 pub mod export_region;
 pub mod export_run;
+mod file_actions;
 pub mod frame_time;
 pub mod handles;
 pub mod home;
@@ -18,6 +19,7 @@ pub mod icons;
 mod label_styles;
 mod layer_tree;
 pub mod menu;
+pub mod native_dialog;
 pub mod native_menu;
 pub mod new_map;
 pub mod prop_widgets;
@@ -37,7 +39,7 @@ pub mod update;
 pub mod zoom;
 
 use eframe::{egui, egui_wgpu};
-use egui_file_dialog::{DialogState, FileDialog, Filter};
+use native_dialog::{Pick, Polled};
 use ssmap_core::asset::{PackLibrary, PackRoots};
 use ssmap_core::file::{JournalBase, MapFile, PREVIEW_SIZE, remove_journal};
 use ssmap_core::{CREDITS_CHUNK_KEYWORD, Canvas, Map};
@@ -129,12 +131,14 @@ pub struct MapMakerApp {
     export_dialog: ExportDialog,
     /// The PNG export in progress, stepped once per frame behind a modal dialog.
     export_run: Option<ExportRun>,
-    open_dialog: FileDialog,
-    save_dialog: FileDialog,
+    open_dialog: Pick,
+    save_dialog: Pick,
     /// Journals of Maps never saved left by a crash, oldest first, offered one at a time.
     unsaved_found: Vec<Found>,
     /// The journal of a Map never saved being offered now; recovering it opens a new tab.
     unsaved_prompt: Option<Found>,
+    /// The Map file a Home card's Delete asked about; the dialog confirms before it is trashed.
+    delete_prompt: Option<PathBuf>,
     /// A tab's unsaved-changes question was answered Save for a Map never saved: what to do
     /// once the Save As dialog saves it. Closing that dialog instead cancels.
     awaiting_save: Option<(usize, Pending)>,
@@ -195,19 +199,6 @@ impl MapMakerApp {
             Some(render_state) => canvas_view::install(render_state, sprites.clone()),
             None => false,
         };
-        let map_files = || -> FileDialog {
-            FileDialog::new()
-                .add_file_filter(
-                    "Map files",
-                    Filter::new(|path: &Path| {
-                        path.extension()
-                            .is_some_and(|ext| ext == document::EXTENSION)
-                    }),
-                )
-                .default_file_filter("Map files")
-                .add_save_extension("Map file", document::EXTENSION)
-                .default_save_extension("Map file")
-        };
         let mut unsaved_found = Recovery::new(recovery_dir.clone()).find_unsaved();
         unsaved_found.reverse();
         let tabs: Vec<MapTab> = map
@@ -238,6 +229,7 @@ impl MapMakerApp {
             gpu,
             awaiting_save: None,
             unsaved_prompt: None,
+            delete_prompt: None,
             sprites,
             credits,
             recent: RecentFiles::load(cc.storage),
@@ -255,8 +247,16 @@ impl MapMakerApp {
             new_map_dialog: NewMapDialog::default(),
             export_dialog: ExportDialog::default(),
             export_run: None,
-            open_dialog: map_files().title("Open Map"),
-            save_dialog: map_files().title("Save Map As"),
+            open_dialog: if gpu {
+                Pick::default()
+            } else {
+                Pick::headless()
+            },
+            save_dialog: if gpu {
+                Pick::default()
+            } else {
+                Pick::headless()
+            },
             unsaved_found,
             close_allowed: false,
             render_state: cc.wgpu_render_state.clone(),
@@ -276,6 +276,11 @@ impl MapMakerApp {
 
     pub fn document(&self) -> &Document {
         self.tab().document()
+    }
+
+    /// Whether the system Save As dialog is showing.
+    pub fn save_dialog_open(&self) -> bool {
+        self.save_dialog.is_open()
     }
 
     /// Recently opened or saved Map files, newest first.
@@ -393,11 +398,42 @@ impl MapMakerApp {
         tab
     }
 
-    /// Adds `tab` after the others and shows it.
+    /// Adds `tab` after the others and shows it. A blank tab on show takes it instead, so a
+    /// Map opened or created from the start page opens in that tab.
     fn push_tab(&mut self, tab: MapTab) {
+        if self.start_page_showing() {
+            let mut blank = std::mem::replace(&mut self.tabs[self.active], tab);
+            blank.recovery.reset();
+        } else {
+            self.tabs.push(tab);
+            self.active = self.tabs.len() - 1;
+        }
+        self.home_active = false;
+    }
+
+    /// Opens a blank tab with the start page and shows it.
+    pub fn new_blank_tab(&mut self) {
+        let recovery = Recovery::new(self.recovery_dir.clone());
+        self.push_blank(MapTab::blank(
+            self.gpu.then(TessellationCache::new),
+            recovery,
+        ));
+    }
+
+    fn push_blank(&mut self, tab: MapTab) {
         self.tabs.push(tab);
         self.active = self.tabs.len() - 1;
         self.home_active = false;
+    }
+
+    /// Whether the start page of a blank tab is what the window shows.
+    fn start_page_showing(&self) -> bool {
+        !self.home_active() && self.tabs.get(self.active).is_some_and(MapTab::is_blank)
+    }
+
+    /// Whether a Map's editor is what the window shows: neither Home nor a start page.
+    fn map_showing(&self) -> bool {
+        !self.home_active() && !self.start_page_showing()
     }
 
     /// Shows a message on the active tab's status bar, or on stderr when no Map is open.
@@ -628,11 +664,12 @@ impl MapMakerApp {
             || self.tabs.iter().any(|tab| tab.pending.is_some())
             || self.awaiting_save.is_some()
             || self.unsaved_prompt.is_some()
+            || self.delete_prompt.is_some()
             || self.new_map_dialog.open
             || self.export_dialog.open
             || self.export_run.is_some()
-            || *self.open_dialog.state() == DialogState::Open
-            || *self.save_dialog.state() == DialogState::Open
+            || self.open_dialog.is_open()
+            || self.save_dialog.is_open()
     }
 
     /// Opens each `.ssmap` file dropped onto the window in a tab of its own.
@@ -706,25 +743,19 @@ impl MapMakerApp {
     }
 
     fn show_open_dialog(&mut self) {
-        if let Some(dir) = self
+        let directory = self
             .tabs
             .get(self.active)
             .and_then(|tab| tab.document.path())
-            .and_then(Path::parent)
-        {
-            self.open_dialog.config_mut().initial_directory = dir.to_path_buf();
-        }
-        self.open_dialog.pick_file();
+            .and_then(Path::parent);
+        self.open_dialog.open_map(&self.egui_ctx, directory);
     }
 
     fn show_save_dialog(&mut self) {
-        let config = self.save_dialog.config_mut();
         let tab = &self.tabs[self.active];
-        if let Some(dir) = tab.document.path().and_then(Path::parent) {
-            config.initial_directory = dir.to_path_buf();
-        }
-        config.default_file_name = tab.document.name();
-        self.save_dialog.save_file();
+        let directory = tab.document.path().and_then(Path::parent);
+        self.save_dialog
+            .save_map(&self.egui_ctx, directory, &tab.document.name());
     }
 
     /// The preview PNG stored with each save, rendered like the screen.
@@ -760,7 +791,7 @@ impl MapMakerApp {
 
     /// The Editor of the Map showing, for tests; `None` on Home.
     pub fn active_editor_mut(&mut self) -> Option<&mut Editor> {
-        if self.home_active() {
+        if !self.map_showing() {
             return None;
         }
         self.tabs.get_mut(self.active).map(|tab| &mut tab.editor)
@@ -776,13 +807,13 @@ impl MapMakerApp {
                 .iter()
                 .enumerate()
                 .map(|(index, tab)| menu::TabState {
-                    name: tab.document.name(),
+                    name: tab.name(),
                     active: !self.home_active() && index == self.active,
                 })
                 .collect(),
             ..menu::State::default()
         };
-        if self.home_active() {
+        if !self.map_showing() {
             return state;
         }
         let editor = &self.tab().editor;
@@ -916,7 +947,8 @@ impl MapMakerApp {
     pub fn run_command(&mut self, command: menu::Command) {
         use menu::Command as C;
         match command {
-            C::NewMap | C::NewTab => self.new_map_dialog.open = true,
+            C::NewMap => self.new_map_dialog.open = true,
+            C::NewTab => self.new_blank_tab(),
             C::Open => self.show_open_dialog(),
             C::Home => self.show_slot(tab_strip::Slot::Home),
             C::ToggleLayers => self.shell.toggle_layers(),
@@ -939,10 +971,10 @@ impl MapMakerApp {
         }
     }
 
-    /// The commands that act on the Map showing; they do nothing on Home.
+    /// The commands that act on the Map showing; they do nothing on Home or a start page.
     fn run_map_command(&mut self, command: menu::Command) {
         use menu::Command as C;
-        if self.home_active() {
+        if !self.map_showing() {
             return;
         }
         match command {
@@ -999,24 +1031,26 @@ impl MapMakerApp {
 
     /// File dialogs and the unsaved-changes question.
     fn dialogs(&mut self, ctx: &egui::Context) {
-        self.open_dialog.update(ctx);
-        if let Some(path) = self.open_dialog.take_picked() {
+        if let Polled::Chosen(path) = self.open_dialog.poll() {
             self.open_path(&path);
         }
-        self.save_dialog.update(ctx);
-        if let Some(path) = self.save_dialog.take_picked() {
-            let saved = self.save_as_path(&path);
-            match self.awaiting_save.take() {
-                Some((index, pending)) if saved && index == self.active => {
-                    self.finish(pending, ctx);
+        match self.save_dialog.poll() {
+            Polled::Chosen(path) => {
+                let saved = self.save_as_path(&path);
+                match self.awaiting_save.take() {
+                    Some((index, pending)) if saved && index == self.active => {
+                        self.finish(pending, ctx);
+                    }
+                    Some(_) => self.cancel_quit(),
+                    None => {}
                 }
-                Some(_) => self.cancel_quit(),
-                None => {}
             }
-        } else if self.awaiting_save.is_some() && *self.save_dialog.state() != DialogState::Open {
-            // The Save As dialog was closed without saving: the question is cancelled.
-            self.awaiting_save = None;
-            self.cancel_quit();
+            Polled::Cancelled if self.awaiting_save.is_some() => {
+                // The Save As dialog was closed without saving: the question is cancelled.
+                self.awaiting_save = None;
+                self.cancel_quit();
+            }
+            _ => {}
         }
 
         if let Some(canvas) = self.new_map_dialog.show(ctx) {
@@ -1039,6 +1073,68 @@ impl MapMakerApp {
         self.export_progress(ctx);
         self.recovery_dialog(ctx);
         self.unsaved_dialog(ctx);
+        self.delete_dialog(ctx);
+    }
+
+    /// Confirms moving a Map file to the Trash. Cancel is the default: Enter and Esc cancel.
+    fn delete_dialog(&mut self, ctx: &egui::Context) {
+        let Some(path) = self.delete_prompt.clone() else {
+            return;
+        };
+        let name = path.file_stem().map_or_else(
+            || path.display().to_string(),
+            |name| name.to_string_lossy().into_owned(),
+        );
+        let open_tab = self.tab_for(&path);
+        let mut delete = false;
+        let mut cancel = false;
+        let shown = dialog::show(
+            ctx,
+            "delete_map",
+            &format!("Delete “{name}”?"),
+            380.0,
+            |ui| {
+                ui.label(format!(
+                    "The file is moved to the {}, so you can put it back from there.",
+                    file_actions::TRASH_NAME
+                ));
+                if open_tab.is_some() {
+                    ui.add_space(6.0);
+                    ui.label("It is open in a tab, which closes without saving.");
+                }
+                dialog::buttons(ui, |ui| {
+                    let danger = theme::palette(ui.ctx()).danger;
+                    let button =
+                        egui::Button::new(egui::RichText::new("Delete").strong()).fill(danger);
+                    if ui.add(button).clicked() {
+                        delete = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                });
+            },
+        );
+        if shown.cancelled || dialog::enter_confirms(ctx) {
+            cancel = true;
+        }
+        if delete {
+            self.delete_prompt = None;
+            // Trash first: if it fails, the open tab and its unsaved edits stay.
+            let trashed = file_actions::move_to_trash(&path);
+            let result = after_trash(trashed, || {
+                if let Some(index) = open_tab {
+                    self.remove_tab(index);
+                }
+                self.recent.remove(&path);
+                self.home.forget(&path);
+            });
+            if let Err(err) = result {
+                self.notify_error(format!("Couldn’t delete “{name}”: {err}"));
+            }
+        } else if cancel {
+            self.delete_prompt = None;
+        }
     }
 
     /// The folder the dialog's Export button writes into: the one typed in the dialog.
@@ -1332,7 +1428,7 @@ impl MapMakerApp {
                 } else {
                     ""
                 };
-                format!("{}{dirty} — StarScript Map Maker", tab.document.name())
+                format!("{}{dirty} — StarScript Map Maker", tab.name())
             }
             None => "StarScript Map Maker".to_owned(),
         };
@@ -1394,7 +1490,7 @@ impl MapMakerApp {
             (new_map, number, step)
         });
         if new_map {
-            self.new_map_dialog.open = true;
+            self.new_blank_tab();
         }
         if let Some(n) = number {
             self.show_tab_number(n);
@@ -1423,8 +1519,8 @@ impl MapMakerApp {
             self.close_tab(self.active);
             return;
         }
-        // Home has no Map to save or edit.
-        if self.home_active() {
+        // Home and a start page have no Map to save or edit.
+        if !self.map_showing() {
             return;
         }
         if save_as {
@@ -1450,12 +1546,10 @@ impl MapMakerApp {
                     commands.push(command);
                 }
             }
-            // ⌘= is the same key as ⌘+ on most keyboards.
-            if !off.contains(&menu::Command::ZoomIn)
-                && input.consume_key(Modifiers::COMMAND, Key::Equals)
-            {
-                commands.push(menu::Command::ZoomIn);
-            }
+            // ⌘= is the same key as ⌘+ on most keyboards. The native menu only matches ⌘⇧=
+            // for Zoom In, so the app takes the bare keys itself, menu or not. When the
+            // menu does take a key it never reaches here, so nothing zooms twice.
+            commands.extend(canvas_zoom_keys(input));
             commands
         });
         for command in commands {
@@ -1526,7 +1620,7 @@ impl MapMakerApp {
             .tabs
             .iter()
             .map(|tab| tab_strip::TabInfo {
-                name: tab.document.name(),
+                name: tab.name(),
                 path: tab.document.path().map(|path| path.display().to_string()),
                 unsaved: tab.has_unsaved_changes(),
             })
@@ -1548,13 +1642,14 @@ impl MapMakerApp {
             match action {
                 tab_strip::Action::Show(slot) => self.show_slot(slot),
                 tab_strip::Action::Close(index) => self.close_tab(index),
-                tab_strip::Action::NewMap => self.new_map_dialog.open = true,
+                tab_strip::Action::NewMap => self.new_blank_tab(),
             }
         }
     }
 
-    /// The Home tab: the Maps the app knows of, and what the user does with them.
-    fn home_screen(&mut self, ui: &mut egui::Ui) {
+    /// The Home tab: the Maps the app knows of, and what the user does with them. With
+    /// `start_page` it is the lighter start page of a blank tab, where a Map opens in that tab.
+    fn home_screen(&mut self, ui: &mut egui::Ui, start_page: bool) {
         let ctx = ui.ctx().clone();
         let tabs: Vec<home::OpenTab> = self
             .tabs
@@ -1563,6 +1658,7 @@ impl MapMakerApp {
                 path: tab.document.path().map(Path::to_path_buf),
                 name: tab.document.name(),
                 canvas: (tab.editor.map.canvas.width, tab.editor.map.canvas.height),
+                blank: tab.is_blank(),
             })
             .collect();
         self.home.entered();
@@ -1584,7 +1680,11 @@ impl MapMakerApp {
         };
         self.credits.show(&ctx, None);
         self.updates.show(&ctx);
-        let actions = self.home.show(ui, &data, &mut self.updates);
+        let actions = if start_page {
+            self.home.start_page(ui, &data)
+        } else {
+            self.home.show(ui, &data, &mut self.updates)
+        };
         if self.home.loading() {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
@@ -1600,6 +1700,12 @@ impl MapMakerApp {
                     self.recent.remove(&path);
                     self.home.forget(&path);
                 }
+                home::Action::Reveal(path) => {
+                    if let Err(err) = file_actions::reveal(&path) {
+                        self.notify_error(format!("Couldn’t show the file: {err}"));
+                    }
+                }
+                home::Action::Delete(path) => self.delete_prompt = Some(path),
                 home::Action::Credits => self.credits.open = true,
             }
         }
@@ -1696,6 +1802,20 @@ fn egui_key(key: menu::Key) -> egui::Key {
         K::Enter => egui::Key::Enter,
         K::Escape => egui::Key::Escape,
         K::Backspace => egui::Key::Backspace,
+    }
+}
+
+/// The Canvas zoom keys the native menu does not match: ⌘= and ⌘+ in, ⌘− out.
+fn canvas_zoom_keys(input: &mut egui::InputState) -> Option<menu::Command> {
+    use egui::{Key, Modifiers};
+    if input.consume_key(Modifiers::COMMAND, Key::Equals)
+        || input.consume_key(Modifiers::COMMAND, Key::Plus)
+    {
+        Some(menu::Command::ZoomIn)
+    } else if input.consume_key(Modifiers::COMMAND, Key::Minus) {
+        Some(menu::Command::ZoomOut)
+    } else {
+        None
     }
 }
 
@@ -1821,6 +1941,11 @@ impl MapMakerApp {
     /// One frame of the editor.
     fn show(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        // ⌘+ and ⌘− zoom the Canvas only: keep egui's whole-UI zoom off and the scale at 1.
+        ctx.options_mut(|o| o.zoom_with_keyboard = false);
+        if ctx.zoom_factor() != 1.0 {
+            ctx.set_zoom_factor(1.0);
+        }
         // Dialogs take the keyboard while they are open.
         self.handle_close(&ctx);
         let dialog_open = self.dialog_open();
@@ -1855,8 +1980,8 @@ impl MapMakerApp {
         if !self.native_menu_shown() {
             egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui));
         }
-        if self.home_active() {
-            self.home_screen(ui);
+        if self.home_active() || self.start_page_showing() {
+            self.home_screen(ui, !self.home_active());
             self.journal(&ctx);
             return;
         }
@@ -2035,12 +2160,57 @@ fn layers_panel(
     tab.layer_tree.show(ui, &mut tab.editor, footer);
 }
 
+/// Runs `on_deleted` (closing the tab, forgetting the file) only if the Trash move succeeded.
+fn after_trash(trashed: Result<(), String>, on_deleted: impl FnOnce()) -> Result<(), String> {
+    trashed.map(|()| on_deleted())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn failed_trash_keeps_the_tab_and_recent_entry() {
+        let mut cleaned = false;
+        let result = after_trash(Err("denied".into()), || cleaned = true);
+        assert_eq!(result, Err("denied".to_owned()));
+        assert!(!cleaned);
+    }
+
+    #[test]
+    fn confirmed_delete_closes_the_tab_and_forgets_the_file() {
+        let mut cleaned = false;
+        assert_eq!(after_trash(Ok(()), || cleaned = true), Ok(()));
+        assert!(cleaned);
+    }
+
     fn args(args: &[&str]) -> Vec<OsString> {
         args.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn command_equals_minus_and_plus_zoom_the_canvas() {
+        let press = |key| {
+            let ctx = egui::Context::default();
+            let mut raw = egui::RawInput::default();
+            raw.events.push(egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::COMMAND,
+            });
+            let mut found = None;
+            let mut output = ctx.run_ui(raw, |ui| {
+                found = ui.ctx().input_mut(canvas_zoom_keys);
+            });
+            output.textures_delta.clear();
+            found
+        };
+        assert_eq!(press(egui::Key::Equals), Some(menu::Command::ZoomIn));
+        assert_eq!(press(egui::Key::Plus), Some(menu::Command::ZoomIn));
+        assert_eq!(press(egui::Key::Minus), Some(menu::Command::ZoomOut));
+        assert_eq!(press(egui::Key::A), None);
     }
 
     #[test]

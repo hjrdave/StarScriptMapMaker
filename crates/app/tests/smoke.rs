@@ -224,7 +224,7 @@ fn saving_an_untitled_map_asks_where() {
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::S);
     harness.run();
     assert!(harness.state().document().path().is_none());
-    harness.get_by_label("Save Map As");
+    assert!(harness.state().save_dialog_open());
 }
 
 #[test]

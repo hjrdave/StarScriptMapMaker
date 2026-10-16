@@ -72,7 +72,7 @@ fn shift_s_selects_scatter_brush_and_c_no_longer_does() {
 }
 
 #[test]
-fn all_nine_tools_show_at_the_minimum_window_size() {
+fn all_ten_tools_show_at_the_minimum_window_size() {
     let harness = app(egui::vec2(1024.0, 640.0));
     for tool in ToolId::ALL {
         assert!(harness.query_by_label(&button_label(tool)).is_some());

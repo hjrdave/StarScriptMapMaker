@@ -23,6 +23,7 @@ pub enum ToolId {
     Select,
     Pan,
     LandBrush,
+    WaterBrush,
     Lasso,
     Label,
     Stamp,
@@ -32,10 +33,11 @@ pub enum ToolId {
 }
 
 impl ToolId {
-    pub const ALL: [ToolId; 9] = [
+    pub const ALL: [ToolId; 10] = [
         ToolId::Select,
         ToolId::Pan,
         ToolId::LandBrush,
+        ToolId::WaterBrush,
         ToolId::Lasso,
         ToolId::Label,
         ToolId::Stamp,
@@ -49,6 +51,7 @@ impl ToolId {
             ToolId::Select => "Select",
             ToolId::Pan => "Pan",
             ToolId::LandBrush => "Land Brush",
+            ToolId::WaterBrush => "Water Brush",
             ToolId::Lasso => "Lasso",
             ToolId::Label => "Label",
             ToolId::Stamp => "Stamp",
@@ -66,6 +69,7 @@ impl ToolId {
             ToolId::Select => (none, egui::Key::V),
             ToolId::Pan => (none, egui::Key::H),
             ToolId::LandBrush => (none, egui::Key::B),
+            ToolId::WaterBrush => (none, egui::Key::W),
             ToolId::Lasso => (none, egui::Key::L),
             ToolId::Label => (none, egui::Key::T),
             ToolId::Stamp => (none, egui::Key::S),
@@ -97,7 +101,7 @@ pub const BRUSH_SIZES: std::ops::RangeInclusive<f64> = 2.0..=2000.0;
 pub fn uses_brush_size(tool: ToolId) -> bool {
     matches!(
         tool,
-        ToolId::LandBrush | ToolId::Scatter | ToolId::StampEraser
+        ToolId::LandBrush | ToolId::WaterBrush | ToolId::Scatter | ToolId::StampEraser
     )
 }
 
@@ -260,7 +264,8 @@ pub fn canvas_input(
         ToolId::Select if editor.node_edit().is_some() => {
             node_edit_tool(editor, view, state, input);
         }
-        ToolId::LandBrush => land_brush(editor, view, state, input),
+        ToolId::LandBrush => land_brush(editor, view, state, input, false),
+        ToolId::WaterBrush => land_brush(editor, view, state, input, true),
         ToolId::Lasso => lasso_tool(editor, view, state, input),
         ToolId::Select => {
             let bounds = Bounds::of_selection(editor);
@@ -358,7 +363,7 @@ pub fn canvas_input(
         state.lasso = None;
     }
     let scattering = matches!(editor.active_tool, ToolId::Scatter | ToolId::StampEraser);
-    if !scattering && editor.active_tool != ToolId::LandBrush {
+    if !scattering && !matches!(editor.active_tool, ToolId::LandBrush | ToolId::WaterBrush) {
         state.stroke = None;
     }
     editor.tool_busy = state.lasso.is_some()
@@ -456,8 +461,15 @@ fn export_region_tool(
 
 /// Paint land by dragging, or erase with the erase modifier held. Each stroke is one Undo
 /// step, made on release; Escape drops a stroke in progress. The brush rules (what merges,
-/// what is created, what is erased) live in [`land::brush_command`].
-fn land_brush(editor: &mut Editor, view: &View, state: &mut ToolState, input: &CanvasInput<'_>) {
+/// what is created, what is erased) live in [`land::brush_command`], or with `water`, in
+/// [`land::water_command`].
+fn land_brush(
+    editor: &mut Editor,
+    view: &View,
+    state: &mut ToolState,
+    input: &CanvasInput<'_>,
+    water: bool,
+) {
     let response = input.response;
     let radius = editor.brush_size / 2.0;
     let erase_held = response.ctx.input(|i| i.modifiers.alt) != editor.erase_default;
@@ -471,7 +483,12 @@ fn land_brush(editor: &mut Editor, view: &View, state: &mut ToolState, input: &C
     if pressed && state.stroke.is_none() && !editor.gesture_open() {
         let origin = response.ctx.input(|i| i.pointer.press_origin());
         if let Some(origin) = origin.or(response.interact_pointer_pos()) {
-            editor.begin_gesture(editor.brush_label(erase_held));
+            let label = if water {
+                Editor::water_label(erase_held)
+            } else {
+                editor.brush_label(erase_held)
+            };
+            editor.begin_gesture(label);
             state.stroke = Some(Stroke {
                 points: vec![input.canvas_point(view, origin)],
                 erase: erase_held,
@@ -501,11 +518,16 @@ fn land_brush(editor: &mut Editor, view: &View, state: &mut ToolState, input: &C
     let released = response.drag_stopped() || response.clicked();
     if released && let Some(stroke) = state.stroke.take() {
         let tolerance = land::simplify_tolerance(radius, 1.0 / view.zoom);
-        editor.finish_brush_stroke(BrushStroke {
+        let finished = BrushStroke {
             region: land::brush_region(&stroke.points, radius, tolerance),
             start: stroke.points[0],
             erase: stroke.erase,
-        });
+        };
+        if water {
+            editor.finish_water_stroke(finished);
+        } else {
+            editor.finish_brush_stroke(finished);
+        }
     }
 }
 
@@ -1052,7 +1074,7 @@ pub fn paint_overlay(
         paint_scatter_cursor(painter, editor, view, state, origin, hover, ppp);
         return;
     }
-    if editor.active_tool != ToolId::LandBrush {
+    if !matches!(editor.active_tool, ToolId::LandBrush | ToolId::WaterBrush) {
         return;
     }
     let palette = crate::theme::palette(painter.ctx());

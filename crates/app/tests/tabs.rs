@@ -180,7 +180,7 @@ fn saving_a_map_never_saved_from_the_close_question_goes_through_save_as() {
     harness.run();
     harness.get_by_label("Save").click();
     harness.run();
-    harness.get_by_label("Save Map As");
+    assert!(harness.state().save_dialog_open());
     assert_eq!(harness.state().tabs().len(), 1, "closes only once saved");
 }
 
@@ -402,16 +402,18 @@ fn close_tab_shortcut_closes_a_map_but_never_home() {
 }
 
 #[test]
-fn new_map_shortcut_and_plus_open_the_dialog() {
+fn new_map_shortcut_opens_the_dialog_and_plus_opens_a_blank_tab() {
     let mut harness = app(None);
-    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::T);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::N);
     harness.run();
     harness.get_by_label("Cancel").click();
     harness.run();
     assert!(harness.query_by_label("Cancel").is_none());
-    harness.get_by_label("New Map").click();
+    let tabs = harness.state().tabs().len();
+    harness.get_by_label("New Tab").click();
     harness.run();
-    harness.get_by_label("Cancel");
+    assert_eq!(harness.state().tabs().len(), tabs + 1);
+    assert!(harness.state().tabs()[tabs].is_blank());
 }
 
 #[test]

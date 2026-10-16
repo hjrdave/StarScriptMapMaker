@@ -48,6 +48,7 @@ icons! {
     Select, "Select", "select";
     Pan, "Pan", "pan";
     LandBrush, "Land Brush", "land-brush";
+    WaterBrush, "Water Brush", "water-brush";
     Lasso, "Lasso", "lasso";
     Label, "Label", "label";
     Stamp, "Stamp", "stamp";
@@ -395,6 +396,16 @@ mod tests {
         names.sort_unstable();
         names.dedup();
         assert_eq!(names.len(), Icon::ALL.len());
+    }
+
+    #[test]
+    fn the_stamp_and_land_brush_icons_are_distinct() {
+        let atlas = Atlas::build(Scale::X2);
+        assert_ne!(
+            atlas.cell_pixels(Icon::Stamp),
+            atlas.cell_pixels(Icon::LandBrush)
+        );
+        assert_ne!(Icon::Stamp.svg(), Icon::LandBrush.svg());
     }
 
     #[test]

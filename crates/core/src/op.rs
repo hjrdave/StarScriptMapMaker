@@ -65,7 +65,7 @@ pub enum Op {
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "name", content = "value", rename_all = "snake_case")]
 pub enum Property {
-    /// Layers only.
+    /// Layers and Objects. An Object's empty name means it has none.
     Name(String),
     /// Layers only.
     Visible(bool),
@@ -309,10 +309,10 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
             _ => Err("stamp"),
         },
         (Node::Layer(_), _)
-        | (Node::Object(_), Property::Locked(_) | Property::Roughness(_) | Property::Shore(_)) => {
-            Ok(())
-        }
-        (Node::Object(_), Property::Name(_)) => Err("name"),
+        | (
+            Node::Object(_),
+            Property::Name(_) | Property::Locked(_) | Property::Roughness(_) | Property::Shore(_),
+        ) => Ok(()),
         (Node::Object(_), Property::Visible(_)) => Err("visible"),
         (Node::Object(_), Property::Opacity(_)) => Err("opacity"),
         (Node::Object(_), Property::Clip(_)) => Err("clip"),
@@ -341,6 +341,10 @@ fn set_property(node: &mut Node, property: Property) -> Property {
         }
         (Node::Layer(layer), Property::DepthSort(on)) => {
             Property::DepthSort(std::mem::replace(&mut layer.depth_sort, on))
+        }
+        (Node::Object(object), Property::Name(name)) => {
+            let new = (!name.is_empty()).then_some(name);
+            Property::Name(std::mem::replace(&mut object.name, new).unwrap_or_default())
         }
         (Node::Object(object), Property::Locked(locked)) => {
             Property::Locked(std::mem::replace(&mut object.locked, locked))

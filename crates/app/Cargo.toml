@@ -20,13 +20,14 @@ ssmap-render.workspace = true
 directories.workspace = true
 ssmap-fonts.workspace = true
 eframe.workspace = true
-egui-file-dialog.workspace = true
 image.workspace = true
 lyon.workspace = true
+rfd.workspace = true
 rustls.workspace = true
 rustls-native-certs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+trash.workspace = true
 ureq.workspace = true
 uuid.workspace = true
 

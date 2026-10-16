@@ -69,6 +69,9 @@ impl Layer {
 /// A single thing placed on a Map.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Object {
+    /// A name the user gave it; `None` shows the kind's default name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub locked: bool,
     pub kind: ObjectKind,
     #[serde(flatten)]
@@ -78,6 +81,7 @@ pub struct Object {
 impl Object {
     pub fn new(kind: ObjectKind) -> Self {
         Self {
+            name: None,
             locked: false,
             kind,
             extra: Extra::new(),
