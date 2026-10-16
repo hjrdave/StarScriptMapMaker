@@ -148,6 +148,7 @@ The Layers panel is where every Layer action happens. There is no separate layer
 - **Selection sections** start with a breadcrumb (`Layer › Object`), then collapsible sections.
 - **Landmass:** Name, Fill, Roughness (Amount, Scale, Seed, Re-roll), Shore style (Outline, Ripples, Inner shade), Transform, Combine.
 - **Label / text:** Text, Label style, Font, Size, Tracking, Kerning, Line height, Arch, All caps, Align, Rotation, Fill, Opacity, Halo.
+- **Numeric settings with a range** (roughness amount and scale, shore widths, spacing, fade, brush size, smoothing, jitter, opacity) use a **slider with a small number box** at its right (optionally with up/down steppers), on one compact row: drag the slider for live changes, type an exact value in the box. Seeds, integer counts, colours, names and the real-world scale stay as plain fields. One slider drag is one undo step.
 - Multi-selection: shared fields show **Mixed**; scrubbing offsets all relatively, typing sets all.
 
 ## Behaviour rules
@@ -185,6 +186,7 @@ Changes the owner has decided after the handoff. The sections above already refl
 | The crop button is the Art board tool (select, resize, move boards); Export Region moves into the Export dialog | Handoff: the dock's last tool was Export Region (X) | #240 | Open |
 | A Map can have multiple art boards; only the primary board is exported | Handoff had one Canvas per Map | #239 | Open |
 | Multiple map templates (background looks) with a template picker in New Map | Handoff had one starter template and a template stack only | #241 | Open |
+| Ranged numeric settings are sliders with a small number box instead of wide number fields | Handoff had separate numeric fields and sliders, with fields as the default | #242 | Open |
 | New tab opens a start page (last 6 Maps by most recently updated, Create new map, Open a file) instead of the New Map dialog | Handoff: `+` = New Map | #223 | Open |
 | One Stamp tool: click places, drag scatters; no separate Scatter Brush | Handoff had Stamp and Scatter Brush as separate tools | #219 | Open |
 
