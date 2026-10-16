@@ -207,7 +207,7 @@ pub const SCRIM: Color32 = Color32::from_rgba_unmultiplied_const(8, 9, 11, 140);
 
 /// Layout metrics (px) from `tokens.json`.
 pub mod metrics {
-    pub const TITLE_BAR_WITH_TABS: f32 = 38.0;
+    pub const TITLE_BAR_WITH_TABS: f32 = 30.0;
     pub const TRAFFIC_LIGHTS_INSET: f32 = 84.0;
     pub const HOME_TAB: f32 = 44.0;
     pub const MAP_TAB_WIDTH: f32 = 220.0;

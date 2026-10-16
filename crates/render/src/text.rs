@@ -206,6 +206,7 @@ pub struct LayoutKey {
     size: f64,
     letter_spacing: f64,
     line_height: f64,
+    arch: f64,
     align: Align,
 }
 
@@ -219,6 +220,7 @@ impl LayoutKey {
             size: label.size,
             letter_spacing: label.letter_spacing,
             line_height: label.line_height,
+            arch: label.arch,
             align: label.align,
         }
     }
@@ -268,12 +270,42 @@ impl LabelLayout {
                 Align::Centre => -width / 2.0,
                 Align::Right => -width,
             };
-            let line = Box2D::new(
-                point(dx, run.line_top + dy),
-                point(dx + width, run.line_top + run.line_height + dy),
-            );
-            bounds = Some(bounds.map_or(line, |b| b.union(&line)));
+            // The arc's radius: the line's width spans `arch` half circles. Its sign is the
+            // side of the line the circle's centre is on (below for an arch up, y down).
+            let radius = (label.arch != 0.0 && width > 0.0)
+                .then(|| f64::from(width) / (label.arch * std::f64::consts::PI))
+                .map(|r| r as f32);
+            let centre = dx + width / 2.0;
+            let baseline = run.line_y + dy;
+            let (top, bottom) = (run.line_top + dy, run.line_top + run.line_height + dy);
+            if radius.is_none() {
+                let line = Box2D::new(point(dx, top), point(dx + width, bottom));
+                bounds = Some(bounds.map_or(line, |b| b.union(&line)));
+            }
             for glyph in run.glyphs {
+                // Where the glyph's middle falls on the straight line, and the turn that
+                // takes it onto the arc.
+                let mid = glyph.x + dx + glyph.w / 2.0;
+                let (pivot, sin, cos) = match radius {
+                    Some(r) => {
+                        let angle = (mid - centre) / r;
+                        let (sin, cos) = angle.sin_cos();
+                        (point(centre + r * sin, baseline + r - r * cos), sin, cos)
+                    }
+                    None => (point(mid, baseline), 0.0, 1.0),
+                };
+                if radius.is_some() {
+                    let half = glyph.w / 2.0;
+                    for (x, y) in [(-half, top), (half, top), (half, bottom), (-half, bottom)] {
+                        let (x, y) = (x, y - baseline);
+                        let corner =
+                            point(pivot.x + x * cos - y * sin, pivot.y + x * sin + y * cos);
+                        // Not `union`: it ignores boxes with no area.
+                        bounds = Some(bounds.map_or(Box2D::new(corner, corner), |b| {
+                            Box2D::new(b.min.min(corner), b.max.max(corner))
+                        }));
+                    }
+                }
                 if glyph.glyph_id == 0 {
                     // Never draw the missing-glyph box.
                     missing_glyphs += 1;
@@ -288,7 +320,13 @@ impl LabelLayout {
                 } else {
                     0.0
                 };
-                draw_glyph(system, glyph, origin, slant, &mut builder);
+                let placement = Placement {
+                    pivot,
+                    offset: point(origin.x - mid, origin.y - baseline),
+                    sin,
+                    cos,
+                };
+                draw_glyph(system, glyph, placement, slant, &mut builder);
             }
         }
         Self {
@@ -393,11 +431,21 @@ pub fn to_local(label: &ResolvedLabel, canvas: [f64; 2]) -> [f64; 2] {
     [dx * cos + dy * sin, -dx * sin + dy * cos]
 }
 
-/// Adds one glyph's outline with its origin (on the baseline) at `origin`.
+/// Where a glyph goes: its origin is `offset` from `pivot` (the middle of its advance on the
+/// baseline), and the whole glyph is turned clockwise about `pivot` by the angle `sin`/`cos`.
+#[derive(Clone, Copy)]
+struct Placement {
+    pivot: Point,
+    offset: Point,
+    sin: f32,
+    cos: f32,
+}
+
+/// Adds one glyph's outline, placed as `placement` says.
 fn draw_glyph(
     system: &mut FontSystem,
     glyph: &cosmic_text::LayoutGlyph,
-    origin: Point,
+    placement: Placement,
     slant: f32,
     builder: &mut NoAttributes<BuilderImpl>,
 ) {
@@ -422,7 +470,7 @@ fn draw_glyph(
         .location([(Tag::new(b"wght"), f32::from(glyph.font_weight.0))]);
     let mut pen = Pen {
         builder,
-        origin,
+        placement,
         slant,
         open: false,
     };
@@ -435,14 +483,21 @@ fn draw_glyph(
 /// Turns font outlines (y up, from the glyph origin) into Label-frame paths (y down).
 struct Pen<'a> {
     builder: &'a mut NoAttributes<BuilderImpl>,
-    origin: Point,
+    placement: Placement,
     slant: f32,
     open: bool,
 }
 
 impl Pen<'_> {
     fn at(&self, x: f32, y: f32) -> Point {
-        point(self.origin.x + x + y * self.slant, self.origin.y - y)
+        let Placement {
+            pivot,
+            offset,
+            sin,
+            cos,
+        } = self.placement;
+        let (x, y) = (offset.x + x + y * self.slant, offset.y - y);
+        point(pivot.x + x * cos - y * sin, pivot.y + x * sin + y * cos)
     }
 }
 
@@ -629,6 +684,35 @@ mod tests {
             (left[1][0] + right[0][0]).abs() < 1e-3,
             "same width either way"
         );
+    }
+
+    #[test]
+    fn arch_bends_lines_up_or_down_and_zero_leaves_them_straight() {
+        let mut fonts = Fonts::bundled();
+        let mut text = label("Sea of Storms", "Cinzel");
+        let flat = LabelLayout::shape(&mut fonts, &text);
+        text.arch = 0.5;
+        let up = LabelLayout::shape(&mut fonts, &text);
+        text.arch = -0.5;
+        let down = LabelLayout::shape(&mut fonts, &text);
+        let height = |l: &LabelLayout| l.bounds()[1][1] - l.bounds()[0][1];
+        assert!(
+            height(&up) > height(&flat) + 10.0,
+            "bending adds height {} {}",
+            height(&up),
+            height(&flat)
+        );
+        // The line box isn't symmetric about the baseline, so the two aren't exact mirrors.
+        assert!(
+            (height(&up) - height(&down)).abs() < height(&up) * 0.1,
+            "alike either way {} {}",
+            height(&up),
+            height(&down)
+        );
+        // An arch up lowers the ends below the middle; a sag raises them.
+        let [flat_min, flat_max] = flat.bounds();
+        assert!(up.bounds()[1][1] > flat_max[1] + 10.0);
+        assert!(down.bounds()[0][1] < flat_min[1] - 10.0);
     }
 
     #[test]

@@ -4,6 +4,7 @@
 mod asset_browser;
 mod canvas_controls;
 mod canvas_view;
+pub mod clipboard;
 pub mod credits;
 pub mod dialog;
 pub mod document;
@@ -829,6 +830,7 @@ impl MapMakerApp {
         state.can_redo = editor.can_redo();
         state.redo_label = editor.redo_label().map(str::to_owned);
         state.has_selection = !editor.selection().is_empty();
+        state.can_paste = editor.has_clipboard();
         state.can_select_all = !editor.active_layer_objects().is_empty();
         state.has_active_layer = editor
             .active_layer()
@@ -994,6 +996,16 @@ impl MapMakerApp {
             C::Undo => editor.undo(),
             C::Redo => editor.redo(),
             C::Delete => editor.delete_selection(),
+            C::Copy => {
+                editor.copy_selection();
+            }
+            C::Cut => editor.cut_selection(),
+            C::Paste => {
+                let pointer = self.egui_ctx.input(|i| i.pointer.latest_pos());
+                if let Some(at) = tab.canvas_view.paste_point(pointer) {
+                    editor.paste(at);
+                }
+            }
             C::Duplicate => {
                 editor.duplicate_selection();
             }
@@ -1554,6 +1566,7 @@ impl MapMakerApp {
             // for Zoom In, so the app takes the bare keys itself, menu or not. When the
             // menu does take a key it never reaches here, so nothing zooms twice.
             commands.extend(canvas_zoom_keys(input));
+            commands.extend(clipboard_keys(input, &off));
             commands
         });
         for command in commands {
@@ -1787,6 +1800,9 @@ fn egui_key(key: menu::Key) -> egui::Key {
     use menu::Key as K;
     match key {
         K::A => egui::Key::A,
+        K::C => egui::Key::C,
+        K::V => egui::Key::V,
+        K::X => egui::Key::X,
         K::E => egui::Key::E,
         K::J => egui::Key::J,
         K::N => egui::Key::N,
@@ -1826,6 +1842,34 @@ fn canvas_zoom_keys(input: &mut egui::InputState) -> Option<menu::Command> {
     } else {
         None
     }
+}
+
+/// The Copy, Cut and Paste presses. egui also reports ⌘C, ⌘X and ⌘V as events of their own,
+/// which are taken here too (unless the native menu owns the key) so one press runs once.
+fn clipboard_keys(
+    input: &mut egui::InputState,
+    off: &HashSet<menu::Command>,
+) -> Vec<menu::Command> {
+    use egui::Event;
+    use menu::Command as C;
+    let mut pressed = Vec::new();
+    for command in [C::Copy, C::Cut, C::Paste] {
+        let mut hit = consume(input, off, command);
+        if !off.contains(&command) {
+            let before = input.events.len();
+            input.events.retain(|event| {
+                !matches!(
+                    (command, event),
+                    (C::Copy, Event::Copy) | (C::Cut, Event::Cut) | (C::Paste, Event::Paste(_))
+                )
+            });
+            hit |= input.events.len() != before;
+        }
+        if hit {
+            pressed.push(command);
+        }
+    }
+    pressed
 }
 
 /// Takes the key press that runs `command`, unless its shortcut is switched off. The key is
@@ -1954,6 +1998,14 @@ impl MapMakerApp {
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
         if ctx.zoom_factor() != 1.0 {
             ctx.set_zoom_factor(1.0);
+        }
+        // What Copy or Cut took last frame goes to the system clipboard as text.
+        if let Some(text) = self
+            .tabs
+            .get_mut(self.active)
+            .and_then(|tab| tab.editor.take_clipboard_text())
+        {
+            ctx.copy_text(text);
         }
         // Dialogs take the keyboard while they are open.
         self.handle_close(&ctx);

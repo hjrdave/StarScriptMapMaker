@@ -34,6 +34,9 @@ pub struct Label {
     pub letter_spacing: Option<f64>,
     /// The distance from one baseline to the next, as a multiple of `size`.
     pub line_height: Option<f64>,
+    /// Bends each line along an arc: from -1 to 1, where the sign is the direction (positive
+    /// arches up, negative sags down) and 1 sweeps half a circle.
+    pub arch: Option<f64>,
     /// Shows the text in capitals without changing what is stored.
     pub all_caps: Option<bool>,
     pub fill: Option<Color>,
@@ -57,6 +60,7 @@ impl Default for Label {
             size: None,
             letter_spacing: None,
             line_height: None,
+            arch: None,
             all_caps: None,
             fill: None,
             opacity: None,
@@ -81,6 +85,7 @@ impl Label {
             size: self.size.unwrap_or(style.size),
             letter_spacing: self.letter_spacing.unwrap_or(style.letter_spacing),
             line_height: self.line_height.unwrap_or(style.line_height),
+            arch: self.arch.unwrap_or(style.arch),
             all_caps: self.all_caps.unwrap_or(style.all_caps),
             fill: self.fill.unwrap_or(style.fill),
             opacity: self.opacity.unwrap_or(style.opacity),
@@ -114,6 +119,7 @@ impl Label {
                 &edited.letter_spacing,
             ),
             line_height: pick(&self.line_height, &was.line_height, &edited.line_height),
+            arch: pick(&self.arch, &was.arch, &edited.arch),
             all_caps: pick(&self.all_caps, &was.all_caps, &edited.all_caps),
             fill: pick(&self.fill, &was.fill, &edited.fill),
             opacity: pick(&self.opacity, &was.opacity, &edited.opacity),
@@ -129,6 +135,7 @@ impl Label {
         self.size.get_or_insert(style.size);
         self.letter_spacing.get_or_insert(style.letter_spacing);
         self.line_height.get_or_insert(style.line_height);
+        self.arch.get_or_insert(style.arch);
         self.all_caps.get_or_insert(style.all_caps);
         self.fill.get_or_insert(style.fill);
         self.opacity.get_or_insert(style.opacity);
@@ -148,6 +155,7 @@ impl Label {
             self.size,
             self.letter_spacing,
             self.line_height,
+            self.arch,
             self.font.as_ref().map(|font| font.weight),
             self.halo.as_ref().map(|halo| halo.width),
             self.opacity,
@@ -166,6 +174,7 @@ pub struct ResolvedLabel {
     pub size: f64,
     pub letter_spacing: f64,
     pub line_height: f64,
+    pub arch: f64,
     pub all_caps: bool,
     pub fill: Color,
     pub opacity: f32,
@@ -203,6 +212,9 @@ pub struct LabelStyle {
     pub letter_spacing: f64,
     /// The distance from one baseline to the next, as a multiple of `size`.
     pub line_height: f64,
+    /// Bends each line along an arc: from -1 to 1, where the sign is the direction (positive
+    /// arches up, negative sags down) and 1 sweeps half a circle.
+    pub arch: f64,
     pub all_caps: bool,
     pub fill: Color,
     /// From 0 (transparent) to 1 (opaque), for fill and halo alike.
@@ -234,6 +246,7 @@ impl LabelStyle {
             Some(self.size),
             Some(self.letter_spacing),
             Some(self.line_height),
+            Some(self.arch),
             Some(self.font.weight),
             Some(self.halo.width),
             Some(self.opacity),
@@ -251,6 +264,7 @@ impl Default for LabelStyle {
             size: 48.0,
             letter_spacing: 0.0,
             line_height: 1.2,
+            arch: 0.0,
             all_caps: false,
             fill: Color::rgb(0x2b, 0x21, 0x18),
             opacity: 1.0,
@@ -265,6 +279,7 @@ fn typography_problem(
     size: Option<f64>,
     letter_spacing: Option<f64>,
     line_height: Option<f64>,
+    arch: Option<f64>,
     weight: Option<u16>,
     halo_width: Option<f64>,
     opacity: Option<f32>,
@@ -277,6 +292,9 @@ fn typography_problem(
     }
     if line_height.is_some_and(|v| !(v.is_finite() && v > 0.0)) {
         return Some("the line height must be greater than 0");
+    }
+    if arch.is_some_and(|v| !(-1.0..=1.0).contains(&v)) {
+        return Some("the arch must be from -1 to 1");
     }
     if weight.is_some_and(|v| !(1..=1000).contains(&v)) {
         return Some("the font weight must be from 1 to 1000");

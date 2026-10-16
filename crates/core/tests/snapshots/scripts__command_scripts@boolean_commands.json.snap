@@ -59,6 +59,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
             "label_styles": [
               {
                 "all_caps": false,
+                "arch": 0.0,
                 "fill": "#2b2118",
                 "font": {
                   "family": "Cinzel",
@@ -344,6 +345,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
             "label_styles": [
               {
                 "all_caps": false,
+                "arch": 0.0,
                 "fill": "#2b2118",
                 "font": {
                   "family": "Cinzel",
@@ -629,6 +631,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
             "label_styles": [
               {
                 "all_caps": false,
+                "arch": 0.0,
                 "fill": "#2b2118",
                 "font": {
                   "family": "Cinzel",
@@ -975,6 +978,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
             "label_styles": [
               {
                 "all_caps": false,
+                "arch": 0.0,
                 "fill": "#2b2118",
                 "font": {
                   "family": "Cinzel",
@@ -1355,6 +1359,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
             "label_styles": [
               {
                 "all_caps": false,
+                "arch": 0.0,
                 "fill": "#2b2118",
                 "font": {
                   "family": "Cinzel",
@@ -1723,6 +1728,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
       "label_styles": [
         {
           "all_caps": false,
+          "arch": 0.0,
           "fill": "#2b2118",
           "font": {
             "family": "Cinzel",

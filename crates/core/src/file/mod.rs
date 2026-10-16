@@ -14,7 +14,8 @@
 //!   embeds (see `embed.rs`). Added in format 1.1; a 1.0 file gains them on its next save.
 //!   Format 1.2 adds the Label styles to the Map defaults; older files get the default style.
 //!   Format 1.3 adds the `export_settings` meta key (JSON); older files get the defaults.
-//!   Format 1.4 stores Groups: Layers nested inside Layers, with `parent` pointing at the
+//!   Format 1.4 adds the optional `arch` to Labels and Label styles; older files get no arch.
+//!   Format 1.5 stores Groups: Layers nested inside Layers, with `parent` pointing at the
 //!   enclosing Layer. There is no compatibility with older files.
 //!
 //! Saves are incremental: only rows whose node changed are written, inside one SQLite
@@ -53,7 +54,7 @@ use crate::node::{Node, Object};
 
 /// The format this version writes. A minor bump only adds optional fields; a major bump is
 /// anything else, and needs a migration.
-pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 4 };
+pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 5 };
 
 /// The longer side of the preview image stored in every save, in pixels.
 pub const PREVIEW_SIZE: u32 = 512;
