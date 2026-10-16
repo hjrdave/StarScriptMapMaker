@@ -145,6 +145,15 @@ pub struct MapMakerApp {
     awaiting_save: Option<(usize, Pending)>,
     /// Set once the user has chosen to close despite unsaved changes.
     close_allowed: bool,
+    /// Closing the window only hides it and leaves the app running (macOS); elsewhere closing
+    /// the window quits.
+    close_hides_window: bool,
+    /// What the close or quit in progress is for.
+    leaving: Leaving,
+    /// Quit was asked for (⌘Q) and is handled next frame.
+    quit_requested: bool,
+    /// The window was closed but the app keeps running, with no Map open.
+    window_hidden: bool,
     /// `None` without a GPU, as in UI tests; saves then store no preview.
     render_state: Option<egui_wgpu::RenderState>,
     /// Asked for a repaint as background work finishes.
@@ -260,6 +269,10 @@ impl MapMakerApp {
             },
             unsaved_found,
             close_allowed: false,
+            close_hides_window: cfg!(target_os = "macos"),
+            leaving: Leaving::Quit,
+            quit_requested: false,
+            window_hidden: false,
             render_state: cc.wgpu_render_state.clone(),
             egui_ctx: cc.egui_ctx.clone(),
             title: String::new(),
@@ -603,25 +616,67 @@ impl MapMakerApp {
         }
     }
 
-    /// Closing the window with unsaved changes asks about each tab that has some, in turn; a
-    /// clean close deletes every Recovery journal.
+    /// Closing the window or quitting with unsaved changes asks about each tab that has some, in
+    /// turn; a clean close deletes every Recovery journal. Where closing the window leaves the
+    /// app running, only a quit request exits.
     fn handle_close(&mut self, ctx: &egui::Context) {
-        if !ctx.input(|input| input.viewport().close_requested()) || self.close_allowed {
+        let quit = std::mem::take(&mut self.quit_requested);
+        let window = ctx.input(|input| input.viewport().close_requested());
+        if (!quit && !window) || self.close_allowed {
             return;
         }
-        if self.tabs.iter().any(MapTab::has_unsaved_changes) {
+        // A question already on screen is the close in progress.
+        let asking = self.awaiting_save.is_some() || self.tabs.iter().any(|t| t.pending.is_some());
+        if quit {
+            self.leaving = Leaving::Quit;
+        } else if !asking {
+            self.leaving = if self.close_hides_window {
+                Leaving::Window
+            } else {
+                Leaving::Quit
+            };
+        }
+        let unsaved = self.tabs.iter().any(MapTab::has_unsaved_changes);
+        if window && (unsaved || self.leaving == Leaving::Window) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            // A question already on screen is the quit in progress.
-            let asking =
-                self.awaiting_save.is_some() || self.tabs.iter().any(|t| t.pending.is_some());
+        }
+        if unsaved {
             if !asking {
                 self.advance_quit(ctx);
             }
+        } else if quit || self.leaving == Leaving::Window {
+            self.close(ctx);
         } else {
             for tab in &mut self.tabs {
                 tab.recovery.reset();
             }
         }
+    }
+
+    /// Asks to quit the app, as ⌘Q does. Unsaved Maps are asked about first.
+    pub fn request_quit(&mut self) {
+        self.quit_requested = true;
+    }
+
+    /// Whether the window was closed while the app keeps running.
+    pub fn window_hidden(&self) -> bool {
+        self.window_hidden
+    }
+
+    /// Shows the window again after it was closed, with only the Home tab.
+    pub fn reopen_window(&mut self, ctx: &egui::Context) {
+        if !self.window_hidden {
+            return;
+        }
+        self.window_hidden = false;
+        self.home_active = true;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+    }
+
+    /// Test hook: whether closing the window leaves the app running, as on macOS.
+    pub fn set_close_hides_window(&mut self, hides: bool) {
+        self.close_hides_window = hides;
     }
 
     /// Quitting: shows the next tab with unsaved changes that has not been decided about and
@@ -648,13 +703,26 @@ impl MapMakerApp {
         }
     }
 
-    /// Closes the window, discarding unsaved changes and their Recovery journals.
+    /// Leaves, discarding unsaved changes and their Recovery journals: quits the app, or closes
+    /// the window and its tabs and leaves the app running.
     fn close(&mut self, ctx: &egui::Context) {
-        self.close_allowed = true;
         for tab in &mut self.tabs {
             tab.recovery.reset();
         }
-        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        match self.leaving {
+            Leaving::Quit => {
+                self.close_allowed = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            Leaving::Window => {
+                // The Maps' memory is released, not kept loaded behind a hidden window.
+                self.tabs.clear();
+                self.active = 0;
+                self.home_active = true;
+                self.window_hidden = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            }
+        }
     }
 
     /// Whether a dialog has the keyboard, so shortcuts and the tab row wait.
@@ -894,8 +962,7 @@ impl MapMakerApp {
         let dialog_open = self.dialog_open();
         for action in native.take_actions() {
             match action {
-                // The window's close request asks about unsaved Maps.
-                Action::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                Action::Quit => self.request_quit(),
                 // A dialog has the keyboard, as it does for the shortcuts.
                 _ if dialog_open => {}
                 Action::Command(command) => self.run_command(command),
@@ -1872,6 +1939,15 @@ fn find_recovery(tab: &mut MapTab, path: &Path) {
             tab.document.name()
         )),
     }
+}
+
+/// What a close in progress ends in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Leaving {
+    /// The app exits.
+    Quit,
+    /// The window closes and the app keeps running.
+    Window,
 }
 
 /// What happens to a tab once the user has decided about its unsaved changes.

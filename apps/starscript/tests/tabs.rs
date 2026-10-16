@@ -247,6 +247,55 @@ fn quitting_with_two_dirty_tabs_asks_about_each_and_cancel_stops_the_quit() {
     assert_eq!(saved.children(None).len(), 0);
 }
 
+#[test]
+fn closing_the_window_where_it_keeps_the_app_running_empties_it_and_only_quit_exits() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = saved_map(dir.path(), "first.ssmap");
+    let mut harness = app(None);
+    harness.state_mut().set_close_hides_window(true);
+    harness.state_mut().open_path(&first);
+    harness.run();
+    new_layer(&mut harness);
+
+    // Unsaved changes are asked about; Cancel keeps the window open.
+    request_close(&mut harness);
+    harness.get_by_label("Save changes to “first.ssmap”?");
+    harness.get_by_label("Cancel").click();
+    harness.run();
+    assert!(!harness.state().window_hidden());
+    assert_eq!(harness.state().tabs().len(), 2, "every tab stays open");
+
+    request_close(&mut harness);
+    harness.get_by_label("Don’t Save").click();
+    harness.run();
+    assert!(harness.state().window_hidden());
+    assert!(!harness.state().is_closing(), "the app keeps running");
+    assert!(harness.state().tabs().is_empty());
+    assert!(harness.state().home_active());
+
+    harness.state_mut().request_quit();
+    harness.run();
+    assert!(harness.state().is_closing());
+}
+
+#[test]
+fn quitting_asks_about_unsaved_maps_and_exits() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = saved_map(dir.path(), "first.ssmap");
+    let mut harness = app(None);
+    harness.state_mut().set_close_hides_window(true);
+    harness.state_mut().open_path(&first);
+    harness.run();
+    new_layer(&mut harness);
+    harness.state_mut().request_quit();
+    harness.run();
+    harness.get_by_label("Save changes to “first.ssmap”?");
+    assert!(!harness.state().is_closing());
+    harness.get_by_label("Don’t Save").click();
+    harness.run();
+    assert!(harness.state().is_closing());
+}
+
 /// Runs frames until every tab's edits have reached its Recovery journal.
 fn wait_until_journaled(harness: &mut Harness<'_, MapMakerApp>, tabs: usize) {
     let started = Instant::now();
