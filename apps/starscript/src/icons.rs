@@ -58,6 +58,7 @@ icons! {
     Lake, "Lake", "lake";
     LabelKind, "Label kind", "label-kind";
     LayerGroup, "Layer / Group", "layer-group";
+    History, "History", "history";
     Visible, "Visible", "visible";
     Hidden, "Hidden", "hidden";
     Lock, "Lock", "lock";

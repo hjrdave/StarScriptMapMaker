@@ -1081,6 +1081,7 @@ impl MapMakerApp {
             C::Home => self.show_slot(tab_strip::Slot::Home),
             C::ToggleLayers => self.win.shell.toggle_layers(),
             C::ToggleProperties => self.win.shell.toggle_properties(),
+            C::ShowHistory => self.win.shell.show_section(shell::SidebarSection::History),
             C::HidePanels => self.win.shell.toggle_panels(),
             C::Tab(n) => self.show_tab_number(n),
             C::ShowTab(index) => self.focus_tab(index),
@@ -1611,6 +1612,7 @@ impl MapMakerApp {
             [
                 menu::Command::ToggleLayers,
                 menu::Command::ToggleProperties,
+                menu::Command::ShowHistory,
                 menu::Command::HidePanels,
             ]
             .into_iter()
@@ -2367,6 +2369,14 @@ fn layers_panel(
     footer: bool,
     overlay: bool,
 ) {
+    if shell.sidebar_section() == shell::SidebarSection::History {
+        shell::panel_header(ui, "History", |_| {});
+        let (steps, applied) = tab.editor.history_steps();
+        if let Some(target) = shell::history_list(ui, &steps, applied) {
+            tab.editor.jump_to_history(target);
+        }
+        return;
+    }
     shell::panel_header(ui, "Layers", |ui| {
         if icons::icon_button(ui, icons::Icon::Add, "New Layer (⇧⌘N)").clicked() {
             tab.editor.new_layer();

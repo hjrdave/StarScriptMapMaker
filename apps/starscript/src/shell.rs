@@ -27,21 +27,24 @@ pub enum Side {
 pub enum SidebarSection {
     #[default]
     Layers,
+    History,
 }
 
 impl SidebarSection {
     /// Every section, in the order of the icon strip.
-    pub const ALL: [Self; 1] = [Self::Layers];
+    pub const ALL: [Self; 2] = [Self::Layers, Self::History];
 
     pub fn icon(self) -> Icon {
         match self {
             Self::Layers => Icon::LayerGroup,
+            Self::History => Icon::History,
         }
     }
 
     pub fn title(self) -> &'static str {
         match self {
             Self::Layers => "Layers",
+            Self::History => "History",
         }
     }
 
@@ -49,6 +52,7 @@ impl SidebarSection {
     pub fn label(self) -> &'static str {
         match self {
             Self::Layers => "Layers (⌘⌥1)",
+            Self::History => "History (⌘⌥5)",
         }
     }
 
@@ -239,6 +243,20 @@ impl Shell {
         }
     }
 
+    /// Shows `section` in the sidebar, bringing the sidebar back first if it is collapsed or
+    /// hidden. In a window too narrow for the panel it opens over the Canvas.
+    pub fn show_section(&mut self, section: SidebarSection) {
+        self.set_sidebar_section(section);
+        if self.panels_hidden {
+            self.panels_hidden = false;
+            self.layers_collapsed = false;
+        } else if self.auto_rail(Side::Left) {
+            self.set_layers_overlay(true);
+        } else {
+            self.layers_collapsed = false;
+        }
+    }
+
     /// Whether Layers is collapsed to its rail.
     pub fn layers_collapsed(&self) -> bool {
         self.layers_collapsed
@@ -421,6 +439,39 @@ pub fn panel_header(ui: &mut egui::Ui, title: &str, trailing: impl FnOnce(&mut e
         rect.bottom(),
         egui::Stroke::new(1.0, palette.border_subtle),
     );
+}
+
+/// The undo history as a list: "Original" and then every step, oldest first. `applied` steps
+/// are in effect; the rest are dimmed and can be redone. Returns how many steps should be
+/// applied after a click on an entry.
+pub fn history_list(ui: &mut egui::Ui, steps: &[String], applied: usize) -> Option<usize> {
+    let palette = theme::palette(ui.ctx());
+    let mut clicked = None;
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            let entries = std::iter::once("Original").chain(steps.iter().map(String::as_str));
+            for (position, label) in entries.enumerate() {
+                let color = if position > applied {
+                    palette.text_secondary
+                } else {
+                    palette.text_primary
+                };
+                let text = egui::RichText::new(label).color(color);
+                let response = ui.add_sized(
+                    [ui.available_width(), metrics::PANEL_HEADER * 0.8],
+                    egui::Button::selectable(position == applied, text).frame_when_inactive(false),
+                );
+                if response
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked()
+                    && position != applied
+                {
+                    clicked = Some(position);
+                }
+            }
+        });
+    clicked
 }
 
 /// Drags the strip on a column's inner edge, resizing it; a double click resets the width.

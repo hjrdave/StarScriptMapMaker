@@ -219,6 +219,17 @@ impl History {
         self.redo.last().map(|step| step.label.as_str())
     }
 
+    /// The labels of the steps that can be undone, oldest first.
+    pub fn undo_labels(&self) -> impl Iterator<Item = &str> {
+        self.undo.iter().map(|step| step.label.as_str())
+    }
+
+    /// The labels of the undone steps that can be redone, in the order redo takes them: the
+    /// next one first.
+    pub fn redo_labels(&self) -> impl Iterator<Item = &str> {
+        self.redo.iter().rev().map(|step| step.label.as_str())
+    }
+
     pub fn undo_len(&self) -> usize {
         self.undo.len()
     }

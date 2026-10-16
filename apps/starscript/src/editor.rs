@@ -812,6 +812,42 @@ impl Editor {
         self.history.redo_label()
     }
 
+    /// Every step in the undo history, oldest first, and how many of them are applied. The
+    /// steps past that count are the ones undo moved over and redo can bring back.
+    pub fn history_steps(&self) -> (Vec<String>, usize) {
+        let applied = self.history.undo_len();
+        let steps = self
+            .history
+            .undo_labels()
+            .chain(self.history.redo_labels())
+            .map(str::to_owned)
+            .collect();
+        (steps, applied)
+    }
+
+    /// Moves the Map to the point where `applied` steps are applied, by undoing or redoing
+    /// the steps between. Later steps stay available to redo.
+    pub fn jump_to_history(&mut self, applied: usize) {
+        self.end_gesture();
+        let total = self.history.undo_len() + self.history.redo_len();
+        let applied = applied.min(total);
+        // Each pass must move the history, or something is wrong and the jump stops.
+        while self.history.undo_len() > applied {
+            let before = self.history.undo_len();
+            self.undo();
+            if self.history.undo_len() == before {
+                break;
+            }
+        }
+        while self.history.undo_len() < applied {
+            let before = self.history.undo_len();
+            self.redo();
+            if self.history.undo_len() == before {
+                break;
+            }
+        }
+    }
+
     pub fn undo(&mut self) {
         self.end_gesture();
         if let Ok(Some(selection)) = self.history.undo(&mut self.map) {
