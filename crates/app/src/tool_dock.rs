@@ -43,7 +43,7 @@ pub fn show(ctx: &egui::Context, canvas: egui::Rect, active: &mut ToolId) {
                 .stroke(egui::Stroke::new(1.0, palette.border_subtle))
                 .corner_radius(theme::RADIUS_DOCK)
                 .shadow(theme::shadow_e2())
-                .inner_margin(egui::Margin::same(4))
+                .inner_margin(egui::Margin::same(theme::metrics::TOOL_DOCK_MARGIN as i8))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 2.0;
