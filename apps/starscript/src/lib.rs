@@ -550,6 +550,8 @@ impl MapMakerApp {
             pack_dialog: pick(),
             pack_install: pack_install::PackInstall::default(),
             delete_prompt: None,
+            pack_delete_prompt: None,
+            pack_trash: self.win.pack_trash,
             paste_prompt: None,
             awaiting_save: None,
             close_allowed: false,
