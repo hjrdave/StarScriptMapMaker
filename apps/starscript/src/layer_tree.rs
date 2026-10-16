@@ -256,6 +256,8 @@ enum Action {
     StartRename(Id),
     /// Duplicates the row, or the whole selection if the row is part of it.
     Duplicate(Id),
+    /// Deletes the row, or the whole selection if the row is part of it.
+    Delete(Id),
     FinishRename,
     CancelRename,
 }
@@ -325,6 +327,12 @@ impl LayerTree {
                         editor.select(vec![id]);
                     }
                     editor.duplicate_selection();
+                }
+                Action::Delete(id) => {
+                    if !editor.is_selected(id) {
+                        editor.select(vec![id]);
+                    }
+                    editor.delete_selection();
                 }
                 Action::StartRename(id) => {
                     self.renaming = Some((id, node_name(&editor.map, id)));
@@ -605,6 +613,30 @@ impl LayerTree {
             };
             if ui.button(duplicate).clicked() {
                 actions.push(Action::Duplicate(row.id));
+                ui.close();
+            }
+            if !state.locked_by_parent {
+                let lock = if state.locked { "Unlock" } else { "Lock" };
+                if ui.button(lock).clicked() {
+                    actions.push(Action::Run(Command::SetLocked {
+                        id: row.id,
+                        locked: !state.locked,
+                    }));
+                    ui.close();
+                }
+            }
+            if let Some(layer) = layer {
+                let hide = if layer.visible { "Hide" } else { "Show" };
+                if ui.button(hide).clicked() {
+                    actions.push(Action::Run(Command::SetVisible {
+                        id: row.id,
+                        visible: !layer.visible,
+                    }));
+                    ui.close();
+                }
+            }
+            if ui.button("Delete").clicked() {
+                actions.push(Action::Delete(row.id));
                 ui.close();
             }
             if let Some(layer) = layer {
