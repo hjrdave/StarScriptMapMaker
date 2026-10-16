@@ -398,6 +398,16 @@ mod tests {
     }
 
     #[test]
+    fn the_stamp_and_land_brush_icons_are_distinct() {
+        let atlas = Atlas::build(Scale::X2);
+        assert_ne!(
+            atlas.cell_pixels(Icon::Stamp),
+            atlas.cell_pixels(Icon::LandBrush)
+        );
+        assert_ne!(Icon::Stamp.svg(), Icon::LandBrush.svg());
+    }
+
+    #[test]
     fn rects_snap_to_whole_physical_pixels() {
         let container = egui::Rect::from_min_size(egui::pos2(10.3, 20.7), egui::vec2(24.0, 24.0));
         for ppp in [1.0, 1.25, 1.5, 2.0] {
