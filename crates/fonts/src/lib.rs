@@ -65,6 +65,44 @@ fonts! {
     "Noto Serif" in "notoserif": ["NotoSerif[wdth,wght].ttf", "NotoSerif-Italic[wdth,wght].ttf"],
 }
 
+/// The family of the UI's proportional font.
+pub const UI_PROPORTIONAL_FAMILY: &str = "Inter";
+/// The family of the UI's monospace font.
+pub const UI_MONOSPACE_FAMILY: &str = "JetBrains Mono";
+
+/// The fonts the UI itself uses. Kept apart from [`FONTS`] and [`FAMILIES`] so the Label font
+/// list, the Label font database and the fonts a Map embeds stay as ADR 0006 has them.
+pub const UI_FONTS: &[BundledFont] = &[
+    BundledFont {
+        family: UI_PROPORTIONAL_FAMILY,
+        file: "static/Inter_18pt-Regular.ttf",
+        data: include_bytes!("../../../assets/fonts/Inter/static/Inter_18pt-Regular.ttf"),
+    },
+    BundledFont {
+        family: UI_MONOSPACE_FAMILY,
+        file: "static/JetBrainsMono-Regular.ttf",
+        data: include_bytes!(
+            "../../../assets/fonts/JetBrains_Mono/static/JetBrainsMono-Regular.ttf"
+        ),
+    },
+];
+
+/// The UI font families and their licences.
+pub const UI_FAMILIES: &[BundledFamily] = &[
+    BundledFamily {
+        name: UI_PROPORTIONAL_FAMILY,
+        folder: "Inter",
+        licence: include_str!("../../../assets/fonts/Inter/OFL.txt"),
+        fallback: false,
+    },
+    BundledFamily {
+        name: UI_MONOSPACE_FAMILY,
+        folder: "JetBrains_Mono",
+        licence: include_str!("../../../assets/fonts/JetBrains_Mono/OFL.txt"),
+        fallback: false,
+    },
+];
+
 /// The families offered for Labels, in menu order.
 pub const LABEL_FAMILIES: &[&str] = &[
     "Cinzel",
@@ -107,8 +145,23 @@ mod tests {
     }
 
     #[test]
+    fn ui_fonts_are_not_label_fonts() {
+        for family in UI_FAMILIES {
+            assert!(!LABEL_FAMILIES.contains(&family.name));
+            assert!(!FAMILIES.iter().any(|f| f.name == family.name));
+            assert!(!FONTS.iter().any(|f| f.family == family.name));
+            assert!(
+                family
+                    .licence
+                    .contains("licensed under the SIL Open Font License, Version 1.1")
+            );
+            assert!(UI_FONTS.iter().any(|f| f.family == family.name));
+        }
+    }
+
+    #[test]
     fn font_files_are_truetype() {
-        for font in FONTS {
+        for font in FONTS.iter().chain(UI_FONTS) {
             assert_eq!(
                 &font.data[..4],
                 b"\0\x01\0\0",

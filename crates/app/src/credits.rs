@@ -6,7 +6,7 @@ use eframe::egui;
 use crate::editor::Editor;
 use crate::theme;
 use ssmap_core::asset::{PackCredit, PackLibrary};
-use ssmap_fonts::FAMILIES;
+use ssmap_fonts::{FAMILIES, UI_FAMILIES};
 
 /// One bundled font family's entry.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -29,6 +29,7 @@ impl CreditsPage {
     pub fn new(library: &PackLibrary) -> Self {
         let fonts = FAMILIES
             .iter()
+            .chain(UI_FAMILIES)
             .map(|family| FontCredit {
                 family: family.name.into(),
                 copyright: family
@@ -196,7 +197,7 @@ mod tests {
         assert!(page.packs[0].attribution_required);
 
         let families: Vec<&str> = page.fonts.iter().map(|f| f.family.as_str()).collect();
-        let expected: Vec<&str> = FAMILIES.iter().map(|f| f.name).collect();
+        let expected: Vec<&str> = FAMILIES.iter().chain(UI_FAMILIES).map(|f| f.name).collect();
         assert_eq!(families, expected);
         for font in &page.fonts {
             assert!(
@@ -216,6 +217,6 @@ mod tests {
         });
         let page = CreditsPage::new(&library);
         assert!(page.packs.is_empty());
-        assert_eq!(page.fonts.len(), FAMILIES.len());
+        assert_eq!(page.fonts.len(), FAMILIES.len() + UI_FAMILIES.len());
     }
 }

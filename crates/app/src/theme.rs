@@ -5,8 +5,9 @@
 //! [`install`] applies the palette to egui's `Style` and `Visuals` so stock widgets match.
 //! Dark is the default; a light system theme is followed. There is no in-app switch.
 //!
-//! Fonts are egui's built-in ones. Every text style takes its family from [`ui_family`] and
-//! [`mono_family`], so bundling Inter and a mono font later (#179) changes only those.
+//! Fonts: Inter is the first `Proportional` font and JetBrains Mono the first `Monospace`
+//! one ([`font_definitions`]); egui's built-in fonts stay behind them as the fallback for
+//! glyphs they lack. Every text style takes its family from [`ui_family`] and [`mono_family`].
 
 use eframe::egui::{
     self, Color32, Context, CornerRadius, FontFamily, FontId, Margin, Shadow, Stroke, Style,
@@ -222,14 +223,35 @@ pub mod metrics {
     pub const MIN_WINDOW: [f32; 2] = [1024.0, 640.0];
 }
 
-/// The UI font family. The one place to change when Inter is bundled (#179).
+/// The UI font family: `Proportional`, which starts with Inter.
 pub fn ui_family() -> FontFamily {
     FontFamily::Proportional
 }
 
-/// The monospace font family. The one place to change when a mono font is bundled (#179).
+/// The monospace font family: `Monospace`, which starts with JetBrains Mono.
 pub fn mono_family() -> FontFamily {
     FontFamily::Monospace
+}
+
+/// egui's fonts with Inter and JetBrains Mono put first in their families. The built-in fonts
+/// stay after them, so glyphs the new fonts lack still draw.
+pub fn font_definitions() -> egui::FontDefinitions {
+    let mut fonts = egui::FontDefinitions::default();
+    for (font, family) in ssmap_fonts::UI_FONTS
+        .iter()
+        .zip([ui_family(), mono_family()])
+    {
+        fonts.font_data.insert(
+            font.family.to_owned(),
+            std::sync::Arc::new(egui::FontData::from_static(font.data)),
+        );
+        fonts
+            .families
+            .entry(family)
+            .or_default()
+            .insert(0, font.family.to_owned());
+    }
+    fonts
 }
 
 /// The title text style (15 px), for dialog and window titles.
@@ -244,6 +266,7 @@ pub fn caption_style() -> TextStyle {
 
 /// Installs the theme: dark by default, light when the system theme is light.
 pub fn install(ctx: &Context) {
+    ctx.set_fonts(font_definitions());
     ctx.set_theme(ThemePreference::System);
     // Used when the system theme is unknown.
     ctx.options_mut(|o| o.fallback_theme = Theme::Dark);
@@ -456,6 +479,33 @@ mod tests {
             for (name, font) in &style.text_styles {
                 assert!(font.size >= MIN_TEXT, "{name:?} is {} px", font.size);
             }
+        }
+    }
+
+    #[test]
+    fn text_styles_keep_their_sizes() {
+        let style = style_for(Theme::Dark);
+        let size = |s: &TextStyle| style.text_styles[s].size;
+        assert_eq!(size(&title_style()), 15.0);
+        assert_eq!(size(&TextStyle::Heading), 13.0);
+        assert_eq!(size(&TextStyle::Body), 12.0);
+        assert_eq!(size(&TextStyle::Button), 12.0);
+        assert_eq!(size(&TextStyle::Small), 11.0);
+        assert_eq!(size(&caption_style()), 11.0);
+        assert_eq!(size(&TextStyle::Monospace), 11.0);
+    }
+
+    #[test]
+    fn inter_and_jetbrains_mono_lead_their_families() {
+        let fonts = font_definitions();
+        let proportional = &fonts.families[&FontFamily::Proportional];
+        let monospace = &fonts.families[&FontFamily::Monospace];
+        assert_eq!(proportional[0], "Inter");
+        assert_eq!(monospace[0], "JetBrains Mono");
+        // egui's own fonts remain as the fallback.
+        assert!(proportional.len() > 1 && monospace.len() > 1);
+        for name in proportional.iter().chain(monospace) {
+            assert!(fonts.font_data.contains_key(name), "{name} has no data");
         }
     }
 
