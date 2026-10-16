@@ -18,6 +18,7 @@ pub mod land;
 mod map;
 mod node;
 mod op;
+mod paste_gaps;
 mod pick;
 mod roughness;
 pub mod scatter;
@@ -46,6 +47,7 @@ pub use node::{
     Align, FontFace, Halo, Lake, Landmass, Layer, Membership, Node, Object, ObjectKind, Stamp,
 };
 pub use op::{Op, OpError, Property};
+pub use paste_gaps::PasteGaps;
 pub use pick::PickIndex;
 pub use roughness::{Rebuild, Roughness, RoughnessCache, roughen};
 pub use shore::{MAX_RIPPLES, ShoreKind, ShoreOutline, ShoreRipples, ShoreShading, ShoreStyle};

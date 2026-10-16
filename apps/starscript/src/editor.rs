@@ -10,8 +10,8 @@ use ssmap_core::land::{self, BrushStroke};
 use ssmap_core::scatter::{self, ScatterBrush, ScatterStroke, Terrain};
 use ssmap_core::{
     Align, Blob, Command, CommandError, DefaultLayers, EmbedAsset, EmbedFont, ExecuteError,
-    History, Id, Label, Map, MultiPolygon, Node, NodeRef, ObjectKind, Op, PickIndex, Point, Rect,
-    ResolvedLabel, RoughnessCache, Selection, Stamp, StampIndex, Subtree,
+    History, Id, Label, Map, MultiPolygon, Node, NodeRef, ObjectKind, Op, PasteGaps, PickIndex,
+    Point, Rect, ResolvedLabel, RoughnessCache, Selection, Stamp, StampIndex, Subtree,
 };
 use ssmap_fonts::FALLBACK_FAMILY;
 use ssmap_render::wgpu;
@@ -85,6 +85,11 @@ enum Placing {
     Land,
     Stamp,
     Label,
+}
+
+/// Whether the app bundles a font family.
+fn bundled_family(family: &str) -> bool {
+    ssmap_fonts::FAMILIES.iter().any(|f| f.name == family)
 }
 
 /// A pseudo-random number below `n` (which must be above 0), unseeded: Stamp variants are
@@ -1138,6 +1143,26 @@ impl Editor {
         self.clipboard.is_some()
     }
 
+    /// Makes `clipboard` what Paste pastes: a Copy or Cut in another tab or Map.
+    pub fn set_clipboard(&mut self, clipboard: Clipboard) {
+        self.clipboard = Some(clipboard);
+    }
+
+    /// What Paste would need that this Map lacks. `None` when nothing is copied.
+    pub fn paste_gaps(&mut self) -> Option<PasteGaps> {
+        self.sync_embedded();
+        let clipboard = self.clipboard.as_ref()?;
+        Some(self.map.paste_gaps(
+            &clipboard.subtrees,
+            |asset| {
+                self.sprites
+                    .as_ref()
+                    .is_none_or(|sprites| sprites.library().asset(asset).is_some())
+            },
+            bundled_family,
+        ))
+    }
+
     /// The text to mirror to the system clipboard after a Copy or Cut, once.
     pub fn take_clipboard_text(&mut self) -> Option<String> {
         self.clipboard_text.take()
@@ -1269,8 +1294,10 @@ impl Editor {
         if self.gesture_open {
             return None;
         }
-        let clipboard = self.clipboard.clone()?;
+        let mut clipboard = self.clipboard.clone()?;
         let (parent, index) = self.paste_destination(clipboard.has_objects)?;
+        self.map
+            .fit_for_paste(&mut clipboard.subtrees, bundled_family, FALLBACK_FAMILY);
         let mut new_ids = Vec::new();
         let mut tops = Vec::new();
         for root in &clipboard.subtrees {
@@ -1900,6 +1927,126 @@ mod tests {
         let pasted = editor.paste([1.0, 1.0]).unwrap();
         assert_eq!(editor.map.parent(pasted[0]), Some(layer));
         assert_eq!(editor.map.children(Some(layer)).len(), 2);
+    }
+
+    fn add_label(editor: &mut Editor, layer: Id, mut label: Label) -> Id {
+        label.text = "Hello".into();
+        let id = Id::new();
+        assert!(editor.run(Command::CreateLabel {
+            id,
+            parent: layer,
+            index: None,
+            label: Box::new(label),
+        }));
+        id
+    }
+
+    fn label_of(editor: &Editor, id: Id) -> Label {
+        match editor.map.node(id) {
+            Some(Node::Object(object)) => match &object.kind {
+                ObjectKind::Label(label) => (**label).clone(),
+                _ => panic!("not a Label"),
+            },
+            _ => panic!("not an Object"),
+        }
+    }
+
+    /// Copies `ids` in one Map and hands the copy to a second, empty one.
+    fn copy_into_another_map(from: &mut Editor, ids: Vec<Id>) -> (Editor, Id) {
+        from.select(ids);
+        assert!(from.copy_selection());
+        let text = from.take_clipboard_text().unwrap();
+        let mut to = editor();
+        let layer = to.new_layer().unwrap();
+        to.set_clipboard(Clipboard::from_text(&text).unwrap());
+        (to, layer)
+    }
+
+    #[test]
+    fn pasting_into_another_map_needs_nothing_when_it_has_it_all() {
+        let mut from = editor();
+        let layer = from.new_layer().unwrap();
+        let label = add_label(&mut from, layer, Label::default());
+        let (mut to, target) = copy_into_another_map(&mut from, vec![label]);
+        assert_eq!(to.paste_gaps(), Some(PasteGaps::default()));
+        let pasted = to.paste([5.0, 5.0]).unwrap();
+        assert_eq!(to.map.parent(pasted[0]), Some(target));
+        // Cancelling the popup is not pasting: the Map is as it was.
+        assert_eq!(to.undo_label(), Some("Paste"));
+        to.undo();
+        assert!(to.map.children(Some(target)).is_empty());
+    }
+
+    #[test]
+    fn a_label_style_the_other_map_lacks_falls_back_to_its_default() {
+        let mut from = editor();
+        let layer = from.new_layer().unwrap();
+        let style = Id::new();
+        assert!(from.run(Command::CreateLabelStyle {
+            style: ssmap_core::LabelStyle::new(style, "Realm"),
+        }));
+        let label = add_label(
+            &mut from,
+            layer,
+            Label {
+                style,
+                size: Some(33.0),
+                ..Label::default()
+            },
+        );
+        let (mut to, _) = copy_into_another_map(&mut from, vec![label]);
+        assert_eq!(to.paste_gaps().unwrap().label_styles, 1);
+        let pasted = to.paste([0.0, 0.0]).unwrap();
+        let label = label_of(&to, pasted[0]);
+        assert_eq!(label.style, ssmap_core::LabelStyle::DEFAULT_ID);
+        assert_eq!(label.size, Some(33.0));
+        assert_eq!(to.map.label_styles().iter().count(), 1);
+    }
+
+    #[test]
+    fn a_font_the_other_map_cannot_draw_gets_the_fallback_font() {
+        let mut from = editor();
+        let layer = from.new_layer().unwrap();
+        let label = add_label(
+            &mut from,
+            layer,
+            Label {
+                font: Some(ssmap_core::FontFace {
+                    family: "Papyrus".into(),
+                    ..Default::default()
+                }),
+                ..Label::default()
+            },
+        );
+        let (mut to, _) = copy_into_another_map(&mut from, vec![label]);
+        assert_eq!(to.paste_gaps().unwrap().fonts, vec!["Papyrus".to_owned()]);
+        let pasted = to.paste([0.0, 0.0]).unwrap();
+        let font = label_of(&to, pasted[0]).font.unwrap();
+        assert_eq!(font.family, FALLBACK_FAMILY);
+    }
+
+    #[test]
+    fn an_asset_the_other_map_lacks_pastes_as_a_placeholder_and_cancel_pastes_nothing() {
+        let mut from = editor();
+        let layer = from.new_layer().unwrap();
+        let stamp = add_stamp(&mut from, layer, 1.0, 1.0);
+        let (mut to, target) = copy_into_another_map(&mut from, vec![stamp]);
+        // No pack is installed here, and nothing is embedded.
+        to.set_sprites(SpriteStore::new(Arc::new(
+            ssmap_core::asset::PackLibrary::default(),
+        )));
+        let gaps = to.paste_gaps().unwrap();
+        assert_eq!(gaps.assets, vec!["pack/asset".parse::<AssetRef>().unwrap()]);
+        // Cancelling the popup never reaches paste: the Map is untouched.
+        assert!(to.map.children(Some(target)).is_empty());
+        assert_ne!(to.undo_label(), Some("Paste"));
+        // Pasting anyway keeps the Stamp, which draws as a placeholder.
+        let pasted = to.paste([0.0, 0.0]).unwrap();
+        assert_eq!(
+            to.stamp(pasted[0]).unwrap().asset,
+            "pack/asset".parse::<AssetRef>().unwrap()
+        );
+        assert_eq!(to.undo_label(), Some("Paste"));
     }
 
     #[test]

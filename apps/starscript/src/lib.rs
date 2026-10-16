@@ -26,6 +26,7 @@ pub mod new_map;
 pub mod overlay;
 pub mod pack_install;
 mod pack_page;
+pub mod paste_dialog;
 pub mod prop_widgets;
 mod properties;
 mod recent;
@@ -137,9 +138,19 @@ struct AppState {
     /// Commands whose key the egui handler leaves alone, because something else (the native
     /// menu on macOS) owns it. Each key is then handled once.
     shortcuts_off: HashSet<menu::Command>,
+    /// What Copy or Cut last took in any tab, so Paste works in another tab or Map.
+    clipboard: Option<clipboard::Clipboard>,
     /// The native menu bar, on macOS; `None` elsewhere and in UI tests, which use the egui bar.
     #[cfg(target_os = "macos")]
     native_menu: Option<native_menu::mac::MacMenu>,
+}
+
+/// A Paste waiting on the answer to "what's missing, proceed?".
+#[derive(Clone)]
+struct PastePrompt {
+    gaps: ssmap_core::PasteGaps,
+    /// Where the paste lands, in Canvas units: the mouse when it was asked for.
+    at: [f64; 2],
 }
 
 /// What belongs to one window: its tabs, panels and the dialogs modal to it. The Home tab
@@ -173,6 +184,8 @@ struct WindowState {
     pack_install: pack_install::PackInstall,
     /// The Map file a Home card's Delete asked about; the dialog confirms before it is trashed.
     delete_prompt: Option<PathBuf>,
+    /// A Paste into a Map that lacks something the copied layers need: the popup asks first.
+    paste_prompt: Option<PastePrompt>,
     /// A tab's unsaved-changes question was answered Save for a Map never saved: what to do
     /// once the Save As dialog saves it. Closing that dialog instead cancels.
     awaiting_save: Option<(usize, Pending)>,
@@ -276,6 +289,7 @@ impl MapMakerApp {
             close_hides_window: cfg!(target_os = "macos"),
             overlay: overlay::Overlay::default(),
             quit_requested: false,
+            clipboard: None,
         };
         let win = WindowState {
             home_active: tabs.is_empty(),
@@ -285,6 +299,7 @@ impl MapMakerApp {
             home: home::Home::default(),
             awaiting_save: None,
             delete_prompt: None,
+            paste_prompt: None,
             shell: shell::Shell::load(cc.storage),
             drop_focus: false,
             new_map_dialog: NewMapDialog::default(),
@@ -782,6 +797,7 @@ impl MapMakerApp {
             || self.win.awaiting_save.is_some()
             || self.app.unsaved_prompt.is_some()
             || self.win.delete_prompt.is_some()
+            || self.win.paste_prompt.is_some()
             || self.win.new_map_dialog.open
             || self.win.export_dialog.open
             || self.win.export_run.is_some()
@@ -1002,7 +1018,7 @@ impl MapMakerApp {
         state.can_redo = editor.can_redo();
         state.redo_label = editor.redo_label().map(str::to_owned);
         state.has_selection = !editor.selection().is_empty();
-        state.can_paste = editor.has_clipboard();
+        state.can_paste = self.app.clipboard.is_some() || editor.has_clipboard();
         state.can_select_all = !editor.active_layer_objects().is_empty();
         state.has_active_layer = editor
             .active_layer()
@@ -1179,7 +1195,17 @@ impl MapMakerApp {
             C::Paste => {
                 let pointer = self.app.egui_ctx.input(|i| i.pointer.latest_pos());
                 if let Some(at) = tab.canvas_view.paste_point(pointer) {
-                    editor.paste(at);
+                    if let Some(clipboard) = self.app.clipboard.clone() {
+                        editor.set_clipboard(clipboard);
+                    }
+                    match editor.paste_gaps() {
+                        Some(gaps) if !gaps.is_empty() => {
+                            self.win.paste_prompt = Some(PastePrompt { gaps, at });
+                        }
+                        _ => {
+                            editor.paste(at);
+                        }
+                    }
                 }
             }
             C::Duplicate => {
@@ -1280,6 +1306,24 @@ impl MapMakerApp {
         self.recovery_dialog(ctx);
         self.unsaved_dialog(ctx);
         self.delete_dialog(ctx);
+        self.paste_dialog(ctx);
+    }
+
+    /// Lists what the copied layers need that this Map lacks and asks whether to paste anyway.
+    /// Esc and Cancel paste nothing.
+    fn paste_dialog(&mut self, ctx: &egui::Context) {
+        let Some(prompt) = self.win.paste_prompt.clone() else {
+            return;
+        };
+        let Some(choice) = paste_dialog::show(ctx, &prompt.gaps) else {
+            return;
+        };
+        self.win.paste_prompt = None;
+        if choice == paste_dialog::Choice::Paste
+            && let Some(tab) = self.win.tabs.get_mut(self.win.active)
+        {
+            tab.editor.paste(prompt.at);
+        }
     }
 
     /// Confirms moving a Map file to the Trash. Cancel is the default: Enter and Esc cancel.
@@ -2225,6 +2269,7 @@ impl MapMakerApp {
             .get_mut(self.win.active)
             .and_then(|tab| tab.editor.take_clipboard_text())
         {
+            self.app.clipboard = clipboard::Clipboard::from_text(&text);
             ctx.copy_text(text);
         }
         // Dialogs take the keyboard while they are open.
