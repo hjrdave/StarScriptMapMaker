@@ -92,6 +92,8 @@ On macOS, closing a window (red button) never quits the app, as in Photoshop. Th
 
 ### Art boards
 
+The last dock button (crop icon) is the **Art board tool**: it selects a board, shows resize handles, and resizes or moves it (with a live size HUD and exact size in Properties). Export Region is no longer a dock tool; it is the "Draw region on Canvas" action in the Export dialog.
+
 A Map can have several art boards in one shared workspace. One board is the **primary board** (marked with a badge and label) and is the only one exported; other boards are staging areas for assets and work in progress and are never included in the export. Objects can be moved or copied between boards. Objects can be dragged off a board onto the surrounding pasteboard and stay visible and editable there; they are never clipped, and **canvas size never affects layer position**: resizing a board or the Canvas, from any edge, never moves, clips or deletes objects (they overflow onto the pasteboard instead, and come back if the board grows again). Only the part of the primary board's area is exported. The name "board" is provisional until the glossary decision in #239 is made.
 
 ### New tab
@@ -112,7 +114,7 @@ Every Asset thumbnail (Asset picker, Asset packs page, anywhere Assets are liste
 
 ### Tool dock
 
-Floating, bottom-centre of the canvas area. Groups: Select V, Pan H │ Land Brush B, Lasso L, Label T │ Stamp S, Stamp Eraser E │ Export Region X. Active tool = gold-subtle fill + gold inset ring. Tooltip above the button after 500 ms: name + shortcut, on **one line** (no wrapping).
+Floating, bottom-centre of the canvas area. Groups: Select V, Pan H │ Land Brush B, Lasso L, Label T │ Stamp S, Stamp Eraser E │ Art board (crop icon; shortcut to be decided, see #240). Active tool = gold-subtle fill + gold inset ring. Tooltip above the button after 500 ms: name + shortcut, on **one line** (no wrapping).
 
 ### Zoom control
 
@@ -176,6 +178,7 @@ Changes the owner has decided after the handoff. The sections above already refl
 | Multi-select with context menu (copy, cut, group) and copy/paste between tabs | Handoff had no selection context menu or cross-tab paste | #235 | Open |
 | Tabs can be popped out into separate windows; Assets and layers can be dragged between windows | Handoff had a single window with tabs | #236 | Open |
 | macOS: closing the window doesn't quit the app; ⌘Q quits; Dock click reopens | Handoff didn't specify close vs quit | #238 | Open |
+| The crop button is the Art board tool (select, resize, move boards); Export Region moves into the Export dialog | Handoff: the dock's last tool was Export Region (X) | #240 | Open |
 | A Map can have multiple art boards; only the primary board is exported | Handoff had one Canvas per Map | #239 | Open |
 | New tab opens a start page (last 6 Maps by most recently updated, Create new map, Open a file) instead of the New Map dialog | Handoff: `+` = New Map | #223 | Open |
 | One Stamp tool: click places, drag scatters; no separate Scatter Brush | Handoff had Stamp and Scatter Brush as separate tools | #219 | Open |
