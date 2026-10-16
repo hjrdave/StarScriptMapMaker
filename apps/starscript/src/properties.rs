@@ -32,12 +32,41 @@ pub struct PropertiesPanel {
 /// A group of settings that may be inherited from a default: the value shown, where it
 /// comes from, how an edit is written and how it is reset.
 struct Inherit<'a, T> {
-    current: &'a T,
+    /// The value of each selected item (one for a single item or a Map default). The fields
+    /// show the first; where the others differ they show "Mixed".
+    members: &'a [T],
     provenance: Provenance,
     label: &'a str,
-    set: &'a dyn Fn(T) -> Command,
+    /// The Command that gives member `index` the new value.
+    set: &'a dyn Fn(usize, T) -> Command,
     /// Goes back to the default. `None` where there is nothing to go back to.
     reset: Option<Command>,
+}
+
+impl<T: Clone> Inherit<'_, T> {
+    fn current(&self) -> &T {
+        &self.members[0]
+    }
+
+    /// Whether the setting `field` reads differs between the members.
+    fn mixed(&self, field: impl Fn(&T) -> f64) -> bool {
+        let first = field(&self.members[0]);
+        self.members.iter().any(|m| field(m) != first)
+    }
+
+    /// One Command per member, each with `apply` done to its own value, so the other settings
+    /// of each item are kept.
+    fn commands(&self, apply: impl Fn(&mut T)) -> Vec<Command> {
+        self.members
+            .iter()
+            .enumerate()
+            .map(|(i, member)| {
+                let mut value = member.clone();
+                apply(&mut value);
+                (self.set)(i, value)
+            })
+            .collect()
+    }
 }
 
 impl PropertiesPanel {
@@ -120,6 +149,11 @@ impl PropertiesPanel {
             }
             many => {
                 heading(ui, &selection_summary(&editor.map, many));
+                // Landmasses and Lakes share Roughness and Shore style; a setting that differs
+                // between them shows "Mixed", and an edit sets all of them.
+                let many = many.to_vec();
+                self.object_roughness(ui, editor, &many);
+                self.object_shore(ui, editor, &many);
                 self.combine(ui, editor);
             }
         }
@@ -150,12 +184,8 @@ impl PropertiesPanel {
                 self.fill(ui, editor, id, fill);
             }
         });
-        if object.kind.geometry().is_some() {
-            self.object_roughness(ui, editor, id, object.kind.roughness());
-        }
-        if let Some(kind) = object.kind.shore_kind() {
-            self.object_shore(ui, editor, id, kind);
-        }
+        self.object_roughness(ui, editor, &[id]);
+        self.object_shore(ui, editor, &[id]);
         if matches!(object.kind, ObjectKind::Landmass(_)) {
             self.combine(ui, editor);
         }
@@ -221,8 +251,8 @@ impl PropertiesPanel {
         &mut self,
         editor: &mut Editor,
         edit: Edit,
-        value: &T,
         group: &Inherit<'_, T>,
+        apply: impl Fn(&mut T),
     ) {
         if edit.reset {
             if let Some(reset) = group.reset.clone() {
@@ -231,46 +261,63 @@ impl PropertiesPanel {
             return;
         }
         self.live
-            .apply(editor, edit, group.label, || (group.set)(value.clone()));
+            .apply_all(editor, edit, group.label, || group.commands(apply));
     }
 
     /// The Roughness section of a Landmass or Lake: its own settings, or the Map default.
-    fn object_roughness(
-        &mut self,
-        ui: &mut egui::Ui,
-        editor: &mut Editor,
-        id: Id,
-        own: Option<&Roughness>,
-    ) {
+    fn object_roughness(&mut self, ui: &mut egui::Ui, editor: &mut Editor, ids: &[Id]) {
+        let ids: Vec<Id> = ids
+            .iter()
+            .copied()
+            .filter(|&id| {
+                matches!(editor.map.node(id), Some(Node::Object(o)) if o.kind.geometry().is_some())
+            })
+            .collect();
+        if ids.is_empty() {
+            return;
+        }
         let default = editor.map.defaults().roughness.clone();
-        let current = own.unwrap_or(&default).clone();
-        let provenance = if own.is_some() {
+        let mut any_own = false;
+        let members: Vec<Roughness> = ids
+            .iter()
+            .map(|&id| match editor.map.node(id) {
+                Some(Node::Object(o)) => o.kind.roughness().map_or_else(
+                    || default.clone(),
+                    |own| {
+                        any_own = true;
+                        own.clone()
+                    },
+                ),
+                _ => default.clone(),
+            })
+            .collect();
+        let provenance = if any_own {
             Provenance::Overridden
         } else {
             Provenance::Inherited
         };
-        let set = |roughness| Command::SetRoughness {
-            ids: vec![id],
+        let set = |i: usize, roughness| Command::SetRoughness {
+            ids: vec![ids[i]],
             roughness: Some(roughness),
         };
         let group = Inherit {
-            current: &current,
+            members: &members,
             provenance,
             label: "Change Roughness",
             set: &set,
-            reset: own.is_some().then(|| Command::SetRoughness {
-                ids: vec![id],
+            reset: any_own.then(|| Command::SetRoughness {
+                ids: ids.clone(),
                 roughness: None,
             }),
         };
         let header = SectionHeader {
             kind: "roughness",
             title: "Roughness",
-            badge: own.is_some().then_some("overridden"),
+            badge: any_own.then_some("overridden"),
             action: None,
         };
         prop_widgets::section(ui, header, |ui| {
-            ui.push_id(("roughness", id), |ui| {
+            ui.push_id(("roughness", &ids), |ui| {
                 self.roughness_fields(ui, editor, &group);
             });
         });
@@ -284,7 +331,7 @@ impl PropertiesPanel {
         group: &Inherit<'_, Roughness>,
     ) {
         let provenance = group.provenance;
-        let mut next = group.current.clone();
+        let mut next = group.current().clone();
         let spec = |label| ScrubSpec::new(label).provenance(provenance);
         let edit = prop_widgets::slider(
             ui,
@@ -295,9 +342,11 @@ impl PropertiesPanel {
                 .slider_max(50.0)
                 .default_value(0.0)
                 .step(0.5)
-                .decimals(1),
+                .decimals(1)
+                .mixed(group.mixed(|r| r.amount)),
         );
-        self.edit(editor, edit, &next, group);
+        let amount = next.amount;
+        self.edit(editor, edit, group, |r| r.amount = amount);
         let edit = prop_widgets::slider(
             ui,
             &mut next.scale,
@@ -306,58 +355,76 @@ impl PropertiesPanel {
                 .range(0.5, 10_000.0)
                 .slider_max(200.0)
                 .step(1.0)
-                .decimals(1),
+                .decimals(1)
+                .mixed(group.mixed(|r| r.scale)),
         );
-        self.edit(editor, edit, &next, group);
+        let scale = next.scale;
+        self.edit(editor, edit, group, |r| r.scale = scale);
         let mut seed = f64::from(next.seed);
         let edit =
             prop_widgets::scrub_field(ui, &mut seed, &spec("Seed").range(0.0, f64::from(u32::MAX)));
-        next.seed = seed as u32;
-        self.edit(editor, edit, &next, group);
+        let seed = seed as u32;
+        self.edit(editor, edit, group, |r| r.seed = seed);
         let reroll = ui
             .button("Re-roll")
             .on_hover_text("Pick another coastline with the same Amount and Scale");
         if reroll.clicked() {
-            next.seed = Id::new().as_uuid().as_u128() as u32;
-            self.edit(editor, Edit::instant(), &next, group);
+            let seed = Id::new().as_uuid().as_u128() as u32;
+            self.edit(editor, Edit::instant(), group, |r| r.seed = seed);
         }
     }
 
     /// The Shore style section of a Landmass or Lake: its own settings, or the Map default.
-    fn object_shore(&mut self, ui: &mut egui::Ui, editor: &mut Editor, id: Id, kind: ShoreKind) {
-        let own = match editor.map.node(id) {
-            Some(Node::Object(object)) => object.kind.shore().cloned(),
-            _ => None,
-        };
-        let default = editor.map.defaults().shore_for(kind).clone();
-        let provenance = if own.is_some() {
+    fn object_shore(&mut self, ui: &mut egui::Ui, editor: &mut Editor, ids: &[Id]) {
+        let mut shored = Vec::new();
+        let mut members = Vec::new();
+        let mut any_own = false;
+        for &id in ids {
+            let Some(Node::Object(object)) = editor.map.node(id) else {
+                continue;
+            };
+            let Some(kind) = object.kind.shore_kind() else {
+                continue;
+            };
+            shored.push(id);
+            members.push(match object.kind.shore() {
+                Some(own) => {
+                    any_own = true;
+                    own.clone()
+                }
+                None => editor.map.defaults().shore_for(kind).clone(),
+            });
+        }
+        if shored.is_empty() {
+            return;
+        }
+        let provenance = if any_own {
             Provenance::Overridden
         } else {
             Provenance::Inherited
         };
-        let current = own.clone().unwrap_or(default);
-        let set = |shore| Command::SetShore {
-            ids: vec![id],
+        let set = |i: usize, shore| Command::SetShore {
+            ids: vec![shored[i]],
             shore: Some(shore),
         };
         let group = Inherit {
-            current: &current,
+            members: &members,
             provenance,
             label: "Change Shore Style",
             set: &set,
-            reset: own.is_some().then(|| Command::SetShore {
-                ids: vec![id],
+            reset: any_own.then(|| Command::SetShore {
+                ids: shored.clone(),
                 shore: None,
             }),
         };
         let header = SectionHeader {
             kind: "shore",
             title: "Shore style",
-            badge: own.is_some().then_some("overridden"),
+            badge: any_own.then_some("overridden"),
             action: None,
         };
         prop_widgets::section(ui, header, |ui| {
-            ui.push_id(("shore", id), |ui| {
+            ui.push_id(("shore", &shored), |ui| {
                 self.shore_fields(ui, editor, &group);
             });
         });
@@ -371,7 +438,7 @@ impl PropertiesPanel {
         group: &Inherit<'_, ShoreStyle>,
     ) {
         let provenance = group.provenance;
-        let mut style = group.current.clone();
+        let mut style = group.current().clone();
         let spec = |label| ScrubSpec::new(label).provenance(provenance);
         let length = |label, max: f64| {
             spec(label)
@@ -383,45 +450,72 @@ impl PropertiesPanel {
         };
 
         caption(ui, "Outline");
-        let edit = prop_widgets::slider(ui, &mut style.outline.width, &length("Width", 100.0));
-        self.edit(editor, edit, &style, group);
+        let edit = prop_widgets::slider(
+            ui,
+            &mut style.outline.width,
+            &length("Width", 100.0).mixed(group.mixed(|s| s.outline.width)),
+        );
+        let width = style.outline.width;
+        self.edit(editor, edit, group, |s| s.outline.width = width);
         let mut colour = Some(style.outline.color);
         let edit = prop_widgets::swatch(ui, "Colour", &mut colour, false, provenance).edit;
-        style.outline.color = colour.unwrap_or(style.outline.color);
-        self.edit(editor, edit, &style, group);
+        let colour = colour.unwrap_or(style.outline.color);
+        self.edit(editor, edit, group, |s| s.outline.color = colour);
 
         caption(ui, "Ripples");
         let mut count = f64::from(style.ripples.count);
         let edit = prop_widgets::number_field(
             ui,
             &mut count,
-            &spec("Count").range(0.0, f64::from(MAX_RIPPLES)).step(1.0),
+            &spec("Count")
+                .range(0.0, f64::from(MAX_RIPPLES))
+                .step(1.0)
+                .mixed(group.mixed(|s| f64::from(s.ripples.count))),
         );
-        style.ripples.count = count as u32;
-        self.edit(editor, edit, &style, group);
-        let edit = prop_widgets::slider(ui, &mut style.ripples.spacing, &length("Spacing", 500.0));
-        self.edit(editor, edit, &style, group);
-        let edit = prop_widgets::slider(ui, &mut style.ripples.width, &length("Line width", 50.0));
-        self.edit(editor, edit, &style, group);
+        let count = count as u32;
+        self.edit(editor, edit, group, |s| s.ripples.count = count);
+        let edit = prop_widgets::slider(
+            ui,
+            &mut style.ripples.spacing,
+            &length("Spacing", 500.0).mixed(group.mixed(|s| s.ripples.spacing)),
+        );
+        let spacing = style.ripples.spacing;
+        self.edit(editor, edit, group, |s| s.ripples.spacing = spacing);
+        let edit = prop_widgets::slider(
+            ui,
+            &mut style.ripples.width,
+            &length("Line width", 50.0).mixed(group.mixed(|s| s.ripples.width)),
+        );
+        let width = style.ripples.width;
+        self.edit(editor, edit, group, |s| s.ripples.width = width);
         let mut colour = Some(style.ripples.color);
         let edit = prop_widgets::swatch(ui, "Line colour", &mut colour, false, provenance).edit;
-        style.ripples.color = colour.unwrap_or(style.ripples.color);
-        self.edit(editor, edit, &style, group);
+        let colour = colour.unwrap_or(style.ripples.color);
+        self.edit(editor, edit, group, |s| s.ripples.color = colour);
         let edit = prop_widgets::slider(
             ui,
             &mut style.ripples.fade,
-            &spec("Fade").range(0.0, 1.0).step(0.01).decimals(2),
+            &spec("Fade")
+                .range(0.0, 1.0)
+                .step(0.01)
+                .decimals(2)
+                .mixed(group.mixed(|s| s.ripples.fade)),
         );
-        self.edit(editor, edit, &style, group);
+        let fade = style.ripples.fade;
+        self.edit(editor, edit, group, |s| s.ripples.fade = fade);
 
         caption(ui, "Inner shade");
-        let edit =
-            prop_widgets::slider(ui, &mut style.shading.width, &length("Shade width", 500.0));
-        self.edit(editor, edit, &style, group);
+        let edit = prop_widgets::slider(
+            ui,
+            &mut style.shading.width,
+            &length("Shade width", 500.0).mixed(group.mixed(|s| s.shading.width)),
+        );
+        let width = style.shading.width;
+        self.edit(editor, edit, group, |s| s.shading.width = width);
         let mut colour = Some(style.shading.color);
         let edit = prop_widgets::swatch(ui, "Shade colour", &mut colour, false, provenance).edit;
-        style.shading.color = colour.unwrap_or(style.shading.color);
-        self.edit(editor, edit, &style, group);
+        let colour = colour.unwrap_or(style.shading.color);
+        self.edit(editor, edit, group, |s| s.shading.color = colour);
     }
 
     /// Canvas width, height and the anchor they grow or shrink from. Each change is one
@@ -497,10 +591,10 @@ impl PropertiesPanel {
             });
 
             caption(ui, "Default Roughness");
-            let current = editor.map.defaults().roughness.clone();
-            let set = |roughness| Command::SetDefaultRoughness { roughness };
+            let current = [editor.map.defaults().roughness.clone()];
+            let set = |_, roughness| Command::SetDefaultRoughness { roughness };
             let group = Inherit {
-                current: &current,
+                members: &current,
                 provenance: Provenance::Plain,
                 label: "Change Default Roughness",
                 set: &set,
@@ -523,10 +617,10 @@ impl PropertiesPanel {
                 ),
             ] {
                 caption(ui, title);
-                let current = editor.map.defaults().shore_for(kind).clone();
-                let set = move |shore| Command::SetDefaultShore { kind, shore };
+                let current = [editor.map.defaults().shore_for(kind).clone()];
+                let set = move |_, shore| Command::SetDefaultShore { kind, shore };
                 let group = Inherit {
-                    current: &current,
+                    members: &current,
                     provenance: Provenance::Plain,
                     label,
                     set: &set,
