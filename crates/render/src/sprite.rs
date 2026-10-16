@@ -10,7 +10,7 @@
 //! missing and is never cached as such.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 
 use ssmap_core::asset::{AssetRef, PackLibrary};
 use ssmap_core::{Embedded, SpriteShape};
@@ -63,7 +63,8 @@ pub struct SpriteStore {
 }
 
 struct Inner {
-    library: Arc<PackLibrary>,
+    /// Swapped whole when packs are installed or deleted.
+    library: RwLock<Arc<PackLibrary>>,
     /// Whether [`SpriteStore::poll`] rasterises on a thread of its own rather than inline.
     background: bool,
     state: Mutex<State>,
@@ -91,6 +92,8 @@ struct State {
     embedded: Embedded,
     /// Counts changes to `embedded`, so what was uploaded from older art can be dropped.
     generation: u64,
+    /// Counts swaps of the library, so installed art built from an older one is dropped.
+    library_generation: u64,
     /// Counts finished jobs, so a renderer can tell new art has landed.
     completed: u64,
     embedded_sprites: Cache,
@@ -136,11 +139,12 @@ impl SpriteStore {
     fn with(library: Arc<PackLibrary>, background: bool) -> Self {
         Self {
             inner: Arc::new(Inner {
-                library,
+                library: RwLock::new(library),
                 background,
                 state: Mutex::new(State {
                     embedded: Embedded::default(),
                     generation: 0,
+                    library_generation: 0,
                     completed: 0,
                     embedded_sprites: HashMap::new(),
                     installed_sprites: HashMap::new(),
@@ -151,8 +155,27 @@ impl SpriteStore {
         }
     }
 
-    pub fn library(&self) -> &Arc<PackLibrary> {
-        &self.inner.library
+    /// The installed packs as of now. A later [`SpriteStore::set_library`] does not change the
+    /// returned library.
+    pub fn library(&self) -> Arc<PackLibrary> {
+        self.inner.library.read().expect("library lock").clone()
+    }
+
+    /// Swaps the installed packs, for after one is installed or deleted. Installed art is
+    /// forgotten and built again on demand; the open Map's embedded art is kept.
+    /// [`SpriteStore::generation`] moves on, so renderers upload again.
+    pub fn set_library(&self, library: Arc<PackLibrary>) {
+        let mut state = self.state();
+        *self.inner.library.write().expect("library lock") = library;
+        // Jobs still running for the old library see the generation move and drop their result.
+        state.installed_sprites.clear();
+        state.library_generation += 1;
+        drop(state);
+        self.inner.finished.notify_all();
+        let repaint = self.inner.repaint.lock().expect("repaint lock").clone();
+        if let Some(repaint) = repaint {
+            repaint();
+        }
     }
 
     /// Sets what to call each time a raster finishes, from the thread that built it.
@@ -179,9 +202,11 @@ impl SpriteStore {
         true
     }
 
-    /// Changes whenever the embedded Assets do.
+    /// Changes whenever the embedded Assets or the library do. Both counters only increase, so
+    /// the sum is only meant for equality checks, not as a count of anything.
     pub fn generation(&self) -> u64 {
-        self.state().generation
+        let state = self.state();
+        state.generation + state.library_generation
     }
 
     /// How many rasters have finished. A renderer that skipped a pending sprite draws again
@@ -298,7 +323,7 @@ impl SpriteStore {
         let job: Job = match origin {
             Origin::Embedded => embedded_job(&state.embedded, asset),
             Origin::Installed => {
-                let library = self.inner.library.clone();
+                let library = self.library();
                 let asset = asset.clone();
                 Box::new(move || load_installed(&library, &asset))
             }
@@ -308,6 +333,7 @@ impl SpriteStore {
             asset: asset.clone(),
             origin,
             generation: state.generation,
+            library_generation: state.library_generation,
             job,
         };
         (Slot::Pending, Some(claimed))
@@ -333,6 +359,8 @@ struct Claimed {
     origin: Origin,
     /// The embedded generation the job was started under.
     generation: u64,
+    /// The library generation the job was started under.
+    library_generation: u64,
     job: Job,
 }
 
@@ -344,7 +372,11 @@ impl Claimed {
         {
             let mut state = store.state();
             state.completed += 1;
-            if self.origin == Origin::Installed || state.generation == self.generation {
+            let current = match self.origin {
+                Origin::Embedded => state.generation == self.generation,
+                Origin::Installed => state.library_generation == self.library_generation,
+            };
+            if current {
                 state
                     .cache(self.origin)
                     .insert(self.asset, Slot::Ready(sprite));
@@ -355,6 +387,45 @@ impl Claimed {
         if let Some(repaint) = repaint {
             repaint();
         }
+    }
+}
+
+/// The size, in Canvas units, of the box drawn for a Stamp whose Asset is not installed.
+pub const PLACEHOLDER_SIZE: [f64; 2] = [64.0, 40.0];
+/// The box's border, in pixels.
+const PLACEHOLDER_BORDER: u32 = 2;
+
+/// The plain box a Stamp shows when its Asset is not installed, centred on the Anchor. It
+/// carries no name: the app writes that over it.
+pub fn placeholder() -> Sprite {
+    let width = (PLACEHOLDER_SIZE[0] * PIXELS_PER_UNIT) as u32;
+    let height = (PLACEHOLDER_SIZE[1] * PIXELS_PER_UNIT) as u32;
+    let mut art = Raster::new(width, height);
+    let mut silhouette = Raster::new(width, height);
+    for y in 0..height {
+        for x in 0..width {
+            let i = ((y * width + x) * 4) as usize;
+            let edge = x < PLACEHOLDER_BORDER
+                || y < PLACEHOLDER_BORDER
+                || x >= width - PLACEHOLDER_BORDER
+                || y >= height - PLACEHOLDER_BORDER;
+            // Premultiplied: a translucent grey fill inside an opaque dark border.
+            let pixel = if edge {
+                [90, 90, 90, 255]
+            } else {
+                [32, 32, 32, 90]
+            };
+            art.pixels[i..i + 4].copy_from_slice(&pixel);
+            silhouette.pixels[i..i + 4].copy_from_slice(&[255; 4]);
+        }
+    }
+    Sprite {
+        art,
+        silhouette,
+        shape: SpriteShape {
+            size: PLACEHOLDER_SIZE,
+            anchor: [0.5, 0.5],
+        },
     }
 }
 

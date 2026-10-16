@@ -965,14 +965,26 @@ fn clipped_stamps_stop_at_the_coast_and_the_lake() {
     }
 }
 
-/// Stamps of an Asset no pack has draw nothing, and the rest of the Map still draws.
+/// Stamps of an Asset no pack has draw a placeholder box where they sit, and nothing else changes.
 #[test]
-fn missing_art_draws_nothing() {
+fn missing_art_draws_placeholder() {
     let Some(gpu) = gpu() else { return };
     let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
     let empty = render_stamps(headless, Vec::new());
     let ghost = render_stamps(headless, vec![stamp("no-such/asset", [240.0, 160.0])]);
-    assert_eq!(empty.pixels, ghost.pixels);
+    assert_ne!(empty.pixels, ghost.pixels, "the placeholder box is drawn");
+    let (width, height) = (empty.width, empty.height);
+    let differing: Vec<(u32, u32)> = (0..height)
+        .flat_map(|y| (0..width).map(move |x| (x, y)))
+        .filter(|&(x, y)| pixel(&empty, x, y) != pixel(&ghost, x, y))
+        .collect();
+    assert!(
+        differing
+            .iter()
+            .all(|&(x, y)| x.abs_diff(width / 2) < width / 4 && y.abs_diff(height / 2) < height / 4),
+        "the placeholder is drawn around the Stamp, not elsewhere"
+    );
+    assert_eq!(pixel(&empty, 0, 0), pixel(&ghost, 0, 0));
 }
 
 /// 10k Stamps: renders panned and zoomed frames and reports the time per frame and per pick.

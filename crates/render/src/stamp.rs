@@ -118,6 +118,8 @@ pub(crate) struct StampRenderer {
     /// `None` records an Asset that has no usable art. An Asset whose art is still being
     /// rasterised is not recorded.
     uploaded: HashMap<AssetRef, Option<Uploaded>>,
+    /// The stand-in box for Assets with no art, once uploaded.
+    placeholder: Option<Option<Uploaded>>,
     /// The store's finished-raster count when the Stamps were last prepared.
     completed: u64,
     /// Whether the last prepare skipped a Stamp for art that was not ready.
@@ -209,6 +211,7 @@ impl StampRenderer {
             store: None,
             generation: 0,
             uploaded: HashMap::new(),
+            placeholder: None,
             completed: 0,
             skipped_pending: false,
             bind_groups: HashMap::new(),
@@ -248,6 +251,7 @@ impl StampRenderer {
     fn forget_uploads(&mut self) {
         self.atlas = Atlas::new(self.atlas.page_size());
         self.uploaded.clear();
+        self.placeholder = None;
         self.bind_groups.clear();
     }
 
@@ -422,10 +426,32 @@ impl StampRenderer {
                 self.skipped_pending = true;
                 return None;
             }
-            Some(SpriteState::Missing) | None => None,
+            // The Asset is not installed (a pack was deleted, say): a plain box stands in.
+            Some(SpriteState::Missing) => self.upload_placeholder(device, queue),
+            None => None,
         };
         self.uploaded.insert(asset.clone(), uploaded);
         uploaded
+    }
+
+    /// The box drawn for a Stamp with no art, uploaded once and shared.
+    fn upload_placeholder(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<Uploaded> {
+        if self.placeholder.is_none() {
+            let sprite = crate::sprite::placeholder();
+            self.placeholder = Some((|| {
+                Some(Uploaded {
+                    art: self.atlas.insert(device, queue, &sprite.art).ok()?,
+                    silhouette: self.atlas.insert(device, queue, &sprite.silhouette).ok()?,
+                    size: sprite.shape.size,
+                    anchor: sprite.shape.anchor,
+                })
+            })());
+        }
+        self.placeholder.flatten()
     }
 
     fn bind_group(&mut self, device: &wgpu::Device, pages: (u32, u32)) {
