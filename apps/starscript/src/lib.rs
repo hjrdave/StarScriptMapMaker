@@ -1,6 +1,7 @@
 //! StarScript Map Maker's editor. The binary in `main.rs` only opens a window around
 //! [`MapMakerApp`], so UI tests can drive the same app headlessly.
 
+mod art_board;
 mod asset_browser;
 mod canvas_controls;
 mod canvas_view;
@@ -1855,9 +1856,15 @@ impl MapMakerApp {
             }
             // Shifted shortcuts first: egui ignores an extra Shift, so ⇧S would also read as S.
             let mut tools = ToolId::ALL;
-            tools.sort_by_key(|tool| !tool.shortcut().0.shift);
+            tools.sort_by_key(|tool| {
+                !tool
+                    .shortcut()
+                    .is_some_and(|(modifiers, _)| modifiers.shift)
+            });
             for tool in tools {
-                let (modifiers, key) = tool.shortcut();
+                let Some((modifiers, key)) = tool.shortcut() else {
+                    continue;
+                };
                 if input.consume_key(modifiers, key) {
                     editor.active_tool = tool;
                 }

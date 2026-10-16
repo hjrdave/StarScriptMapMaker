@@ -220,6 +220,36 @@ fn esc_cancels_the_export_dialog() {
 }
 
 #[test]
+fn draw_region_on_canvas_hands_the_settings_to_the_region_tool() {
+    use ssmap_app::export_dialog::DialogAction;
+    use ssmap_core::{ExportRegion, Rect};
+
+    let settings = ExportSettings {
+        region: ExportRegion::Custom {
+            rect: Rect {
+                min: [10.0, 10.0],
+                max: [60.0, 60.0],
+            },
+        },
+        ..ExportSettings::default()
+    };
+    let mut dialog = ExportDialog::default();
+    dialog.open_with(&settings, None);
+    let mut harness = dialog_harness(
+        |ui, (dialog, action): &mut (ExportDialog, Option<DialogAction>)| {
+            if let Some(chosen) = dialog.show(ui.ctx(), &canvas()) {
+                *action = Some(chosen);
+            }
+        },
+        (dialog, None),
+    );
+    harness.run();
+    harness.get_by_label("Draw region on Canvas").click();
+    harness.run();
+    assert_eq!(harness.state().1, Some(DialogAction::DrawRegion(settings)));
+}
+
+#[test]
 fn export_disables_scale_options_over_the_cap() {
     let wide = Canvas::new(16384, 12288, Scale::new(1.0, DistanceUnit::Miles));
     let mut dialog = ExportDialog::default();

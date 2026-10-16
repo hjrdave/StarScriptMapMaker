@@ -15,6 +15,7 @@ use ssmap_core::{
 };
 use ssmap_render::View;
 
+use crate::art_board::{self, BoardDrag};
 use crate::editor::Editor;
 use crate::export_region::{self, RegionDrag};
 use crate::handles::{self, Bounds, Grip};
@@ -29,6 +30,8 @@ pub enum ToolId {
     Label,
     Stamp,
     StampEraser,
+    ArtBoard,
+    /// Drawing the custom export region; started from the Export dialog, not the dock.
     ExportRegion,
 }
 
@@ -42,7 +45,7 @@ impl ToolId {
         ToolId::Label,
         ToolId::Stamp,
         ToolId::StampEraser,
-        ToolId::ExportRegion,
+        ToolId::ArtBoard,
     ];
 
     pub fn label(self) -> &'static str {
@@ -55,14 +58,15 @@ impl ToolId {
             ToolId::Label => "Label",
             ToolId::Stamp => "Stamp",
             ToolId::StampEraser => "Stamp Eraser",
+            ToolId::ArtBoard => "Art board",
             ToolId::ExportRegion => "Export Region",
         }
     }
 
-    /// The key and modifiers that select the tool.
-    pub fn shortcut(self) -> (egui::Modifiers, egui::Key) {
+    /// The key and modifiers that select the tool, if it has a shortcut.
+    pub fn shortcut(self) -> Option<(egui::Modifiers, egui::Key)> {
         let none = egui::Modifiers::NONE;
-        match self {
+        Some(match self {
             ToolId::Select => (none, egui::Key::V),
             ToolId::Pan => (none, egui::Key::H),
             ToolId::LandBrush => (none, egui::Key::B),
@@ -71,13 +75,16 @@ impl ToolId {
             ToolId::Label => (none, egui::Key::T),
             ToolId::Stamp => (none, egui::Key::S),
             ToolId::StampEraser => (none, egui::Key::E),
-            ToolId::ExportRegion => (none, egui::Key::X),
-        }
+            ToolId::ArtBoard => (none, egui::Key::A),
+            ToolId::ExportRegion => return None,
+        })
     }
 
     /// The shortcut as shown in the UI, such as "V" or "⇧S".
     pub fn shortcut_text(self) -> String {
-        let (modifiers, key) = self.shortcut();
+        let Some((modifiers, key)) = self.shortcut() else {
+            return String::new();
+        };
         let shift = if modifiers.shift { "⇧" } else { "" };
         format!("{shift}{}", key.name())
     }
@@ -131,6 +138,10 @@ pub struct ToolState {
     lasso: Option<Lasso>,
     /// An Export Region drag in progress, with the region as it was before the drag.
     region_drag: Option<(RegionDrag, ExportRegion)>,
+    /// An Art board resize in progress.
+    board_drag: Option<BoardDrag>,
+    /// Where the board's label was last drawn, in screen points, for clicking it.
+    board_label: Option<egui::Rect>,
     /// A box-select in node-edit mode: where it began and where the pointer is, in Canvas units.
     marquee: Option<(Point, Point)>,
     /// A box-select dragged from empty Canvas with the Select tool.
@@ -243,6 +254,13 @@ impl ToolState {
     pub fn dragging(&self) -> bool {
         self.drag.is_some()
     }
+
+    /// The cursor HUD while the Art board is being resized, such as "Board · 4096 × 2560".
+    pub fn board_hud(&self, editor: &Editor) -> Option<String> {
+        self.board_drag?;
+        let canvas = &editor.map.canvas;
+        Some(art_board::hud_text(canvas.width, canvas.height))
+    }
 }
 
 /// Lets the active tool handle Canvas input. Panning with the middle button, or with Space
@@ -257,6 +275,13 @@ pub fn canvas_input(
     let ppp = input.pixels_per_point;
     if editor.active_tool != ToolId::Select {
         editor.leave_node_edit();
+    }
+    if editor.active_tool != ToolId::ArtBoard {
+        if state.board_drag.take().is_some() {
+            editor.end_gesture();
+        }
+        state.board_label = None;
+        editor.select_board(false);
     }
     let space_held = response.ctx.input(|i| i.key_down(egui::Key::Space));
     let temporary_pan = response.dragged_by(egui::PointerButton::Middle)
@@ -390,6 +415,7 @@ pub fn canvas_input(
         ToolId::Pan => {}
         ToolId::Stamp => scatter_tool(editor, view, state, input, false),
         ToolId::ExportRegion => export_region_tool(editor, view, state, input),
+        ToolId::ArtBoard => art_board_tool(editor, view, state, input),
         ToolId::StampEraser => scatter_tool(editor, view, state, input, true),
         ToolId::Label => {
             if response.clicked()
@@ -419,6 +445,127 @@ pub fn canvas_input(
     editor.tool_busy = state.lasso.is_some()
         || state.region_drag.is_some()
         || (scattering && state.stroke.is_some());
+}
+
+/// The Canvas's box in screen points.
+fn board_screen_rect(editor: &Editor, view: &View, origin: egui::Pos2, ppp: f64) -> egui::Rect {
+    let rect = editor.map.canvas.rect();
+    egui::Rect::from_two_pos(
+        handles::to_screen(view, origin, ppp, rect.min),
+        handles::to_screen(view, origin, ppp, rect.max),
+    )
+}
+
+/// Select the Canvas by clicking its edge or its label (not its inside, so Objects on it are
+/// not selected by accident), then resize it from its handles. Shift keeps the aspect ratio
+/// and Alt resizes from the centre. Each resize is one `ResizeCanvas` Undo step and never
+/// touches an Object.
+fn art_board_tool(
+    editor: &mut Editor,
+    view: &View,
+    state: &mut ToolState,
+    input: &CanvasInput<'_>,
+) {
+    let response = input.response;
+    let ppp = input.pixels_per_point;
+    let canvas = editor.map.canvas.clone();
+    let bounds = Bounds {
+        min: canvas.origin,
+        max: canvas.rect().max,
+    };
+    let selected = editor.board_selected();
+    let grip_at =
+        |pos: egui::Pos2| match handles::hit(&bounds, view, response.rect.min, ppp, pos, false) {
+            Some(Grip::Resize(handle)) if selected => Some(handle),
+            _ => None,
+        };
+    let screen = board_screen_rect(editor, view, response.rect.min, ppp);
+    let on_edge = |pos: egui::Pos2| {
+        screen.expand(EDGE_GRAB as f32).contains(pos)
+            && !screen.shrink(EDGE_GRAB as f32).contains(pos)
+    };
+    let on_label = |pos: egui::Pos2| state.board_label.is_some_and(|label| label.contains(pos));
+    if state.board_drag.is_none()
+        && let Some(pos) = response.hover_pos()
+    {
+        if let Some(handle) = grip_at(pos) {
+            response.ctx.set_cursor_icon(handle.cursor());
+        } else if on_edge(pos) || on_label(pos) {
+            response.ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+    }
+    if response.drag_started_by(egui::PointerButton::Primary)
+        && !editor.gesture_open()
+        && let Some(pos) = response.ctx.input(|i| i.pointer.press_origin())
+        && let Some(handle) = grip_at(pos)
+    {
+        editor.begin_gesture("Resize Canvas");
+        state.board_drag = Some(BoardDrag {
+            handle,
+            start: input.canvas_point(view, pos),
+            origin: canvas.origin,
+            size: [canvas.width, canvas.height],
+        });
+    }
+    if let Some(drag) = state.board_drag {
+        // Escape or undo ended the gesture under the drag.
+        if !editor.gesture_open() {
+            state.board_drag = None;
+        } else if response.dragged_by(egui::PointerButton::Primary)
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            let (shift, alt) = response.ctx.input(|i| (i.modifiers.shift, i.modifiers.alt));
+            let (origin, width, height) = drag.resized(input.canvas_point(view, pos), shift, alt);
+            editor.gesture_replace(Command::ResizeCanvas {
+                origin,
+                width,
+                height,
+            });
+        }
+    }
+    if response.drag_stopped() && state.board_drag.take().is_some() {
+        editor.end_gesture();
+    }
+    if response.clicked()
+        && let Some(pos) = response.interact_pointer_pos()
+        && grip_at(pos).is_none()
+    {
+        editor.select_board(on_edge(pos) || on_label(pos));
+    }
+}
+
+/// Draws the board's label above its top-left corner, and its handles when it is selected.
+fn paint_board(
+    painter: &egui::Painter,
+    editor: &Editor,
+    view: &View,
+    state: &mut ToolState,
+    origin: egui::Pos2,
+    ppp: f64,
+) {
+    let palette = crate::theme::palette(painter.ctx());
+    let screen = board_screen_rect(editor, view, origin, ppp);
+    let selected = editor.board_selected();
+    let color = if selected {
+        palette.select
+    } else {
+        palette.text_secondary
+    };
+    let text = painter.text(
+        screen.left_top() - egui::vec2(0.0, 4.0),
+        egui::Align2::LEFT_BOTTOM,
+        "Board",
+        egui::FontId::proportional(crate::theme::CAPTION),
+        color,
+    );
+    state.board_label = Some(text.expand(3.0));
+    if selected {
+        let bounds = Bounds {
+            min: editor.map.canvas.origin,
+            max: editor.map.canvas.rect().max,
+        };
+        handles::paint(painter, &bounds, view, origin, ppp, false, palette.select);
+    }
 }
 
 /// The custom export region, if the Map has one.
@@ -1131,6 +1278,9 @@ pub fn paint_overlay(
     hover: Option<egui::Pos2>,
     ppp: f64,
 ) {
+    if editor.active_tool == ToolId::ArtBoard {
+        paint_board(painter, editor, view, state, origin, ppp);
+    }
     if editor.active_tool == ToolId::Select {
         paint_nodes(painter, editor, view, state, origin, hover, ppp);
         if let Some(select_box) = &state.select_box {

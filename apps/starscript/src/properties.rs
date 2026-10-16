@@ -86,6 +86,11 @@ impl PropertiesPanel {
 
     fn selection(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         match editor.selection() {
+            [] if editor.board_selected() => {
+                let canvas = editor.map.canvas.clone();
+                heading(ui, "Board");
+                self.canvas_fields(ui, editor, &canvas);
+            }
             [] => {
                 if let Some(layer) = editor.active_layer().filter(|&id| editor.map.contains(id))
                     && let Some(Node::Layer(data)) = editor.map.node(layer).cloned()
