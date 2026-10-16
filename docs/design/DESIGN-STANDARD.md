@@ -92,7 +92,7 @@ On macOS, closing a window (red button) never quits the app, as in Photoshop. Th
 
 ### Art boards
 
-A Map can have several art boards in one shared workspace. One board is the **primary board** (marked with a badge and label) and is the only one exported; other boards are staging areas for assets and work in progress and are never included in the export. Objects can be moved or copied between boards. Objects can be dragged off a board onto the surrounding pasteboard and stay visible and editable there; they are never clipped, and resizing a board or the Canvas never makes objects disappear (they overflow instead). Only the part of the primary board's area is exported. The name "board" is provisional until the glossary decision in #239 is made.
+A Map can have several art boards in one shared workspace. One board is the **primary board** (marked with a badge and label) and is the only one exported; other boards are staging areas for assets and work in progress and are never included in the export. Objects can be moved or copied between boards. Objects can be dragged off a board onto the surrounding pasteboard and stay visible and editable there; they are never clipped, and **canvas size never affects layer position**: resizing a board or the Canvas, from any edge, never moves, clips or deletes objects (they overflow onto the pasteboard instead, and come back if the board grows again). Only the part of the primary board's area is exported. The name "board" is provisional until the glossary decision in #239 is made.
 
 ### New tab
 
