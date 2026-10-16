@@ -118,6 +118,7 @@ The Layers panel is where every Layer action happens. There is no separate layer
 - **Groups:** Layers nest; a Group is a nested Layer. Groups are collapsible, can be dragged into and out of, and can be renamed, locked, hidden, deleted and reordered like any Layer. Locking or hiding a Group applies to everything inside it.
 - **Linking:** layers can be linked so a move or transform of one applies to the others. Linked rows show a link glyph. Linking is separate from grouping.
 - **Row states:** selected (gold-subtle fill + inset ring), hover, hidden (slashed eye + italic dim name), locked (filled padlock), locked by parent (dashed padlock, dim name, not toggleable), renaming (inline field), drag-reorder (gold line between rows), drag-reparent (gold ring around the target row).
+- **Multi-select:** drag a marquee on the Canvas, or ⌘-click / Shift-click rows. Canvas and panel selection stay in sync. Right-clicking a multi-selection (Canvas or panel) opens a context menu with Copy, Cut, Group, Paste and Delete, matching the menu-bar shortcuts. Layers can be copied and pasted between tabs, keeping structure, names, visibility and lock state; each paste and each cut is one undo step.
 - Rows show the kind icon of the Object they hold. Large Stamp sets collapse into summary rows grouped by Asset.
 
 ## Properties panel
@@ -160,6 +161,7 @@ Changes the owner has decided after the handoff. The sections above already refl
 | Home tab gets an Asset packs page: browse, add via GUI, delete user packs; built-in packs can't be deleted | Handoff listed Asset packs in the Library rail without a page spec | #229 | Open |
 | Asset thumbnails use a white background, off-white for white Assets | Handoff used the dark panel as the thumbnail background | #231 | Open |
 | Tabs are shorter so the macOS window buttons are vertically centered, like Figma's | Handoff gave the bar height but not the button alignment | #232 | Open |
+| Multi-select with context menu (copy, cut, group) and copy/paste between tabs | Handoff had no selection context menu or cross-tab paste | #235 | Open |
 | New tab opens a start page (last 6 Maps by most recently updated, Create new map, Open a file) instead of the New Map dialog | Handoff: `+` = New Map | #223 | Open |
 | One Stamp tool: click places, drag scatters; no separate Scatter Brush | Handoff had Stamp and Scatter Brush as separate tools | #219 | Open |
 
