@@ -112,6 +112,10 @@ The Home tab's Library section has an **Asset packs** page. It lists every insta
 
 Every Asset thumbnail (Asset picker, Asset packs page, anywhere Assets are listed) sits on a **white** background so the Asset is easy to see. If the Asset itself is white or very light, use an **off-white** background instead. The background is chosen from the Asset's pixels and cached with the thumbnail, and both colours are named tokens, not literals. Gold selection rings and badges must stay readable on top of it. Placed Stamps on the Canvas are unaffected.
 
+### Templates (New Map)
+
+The New Map dialog has a **template picker**: thumbnail cards with a name (same card style as map cards, without the delete and Show in Finder actions) and a live preview. Each template sets the background look (procedural ocean or flat colour), land fill, shore styles and starter Label styles; everything can be changed afterward. The reorderable template stack (backdrop, land, assets, labels) still applies on top of the chosen template. Built-in templates cannot be deleted.
+
 ### Tool dock
 
 Floating, bottom-centre of the canvas area. Groups: Select V, Pan H │ Land Brush B, Lasso L, Label T │ Stamp S, Stamp Eraser E │ Art board (crop icon; shortcut to be decided, see #240). Active tool = gold-subtle fill + gold inset ring. Tooltip above the button after 500 ms: name + shortcut, on **one line** (no wrapping).
@@ -180,6 +184,7 @@ Changes the owner has decided after the handoff. The sections above already refl
 | macOS: closing the window doesn't quit the app; ⌘Q quits; Dock click reopens | Handoff didn't specify close vs quit | #238 | Open |
 | The crop button is the Art board tool (select, resize, move boards); Export Region moves into the Export dialog | Handoff: the dock's last tool was Export Region (X) | #240 | Open |
 | A Map can have multiple art boards; only the primary board is exported | Handoff had one Canvas per Map | #239 | Open |
+| Multiple map templates (background looks) with a template picker in New Map | Handoff had one starter template and a template stack only | #241 | Open |
 | New tab opens a start page (last 6 Maps by most recently updated, Create new map, Open a file) instead of the New Map dialog | Handoff: `+` = New Map | #223 | Open |
 | One Stamp tool: click places, drag scatters; no separate Scatter Brush | Handoff had Stamp and Scatter Brush as separate tools | #219 | Open |
 
