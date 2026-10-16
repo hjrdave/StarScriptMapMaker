@@ -1479,12 +1479,10 @@ impl MapMakerApp {
                     commands.push(command);
                 }
             }
-            // ⌘= is the same key as ⌘+ on most keyboards.
-            if !off.contains(&menu::Command::ZoomIn)
-                && input.consume_key(Modifiers::COMMAND, Key::Equals)
-            {
-                commands.push(menu::Command::ZoomIn);
-            }
+            // ⌘= is the same key as ⌘+ on most keyboards. The native menu only matches ⌘⇧=
+            // for Zoom In, so the app takes the bare keys itself, menu or not. When the
+            // menu does take a key it never reaches here, so nothing zooms twice.
+            commands.extend(canvas_zoom_keys(input));
             commands
         });
         for command in commands {
@@ -1736,6 +1734,20 @@ fn egui_key(key: menu::Key) -> egui::Key {
 
 /// Takes the key press that runs `command`, unless its shortcut is switched off. The key is
 /// read from the menu model, so the label and the handling are one binding.
+/// The Canvas zoom keys the native menu does not match: ⌘= and ⌘+ in, ⌘− out.
+fn canvas_zoom_keys(input: &mut egui::InputState) -> Option<menu::Command> {
+    use egui::{Key, Modifiers};
+    if input.consume_key(Modifiers::COMMAND, Key::Equals)
+        || input.consume_key(Modifiers::COMMAND, Key::Plus)
+    {
+        Some(menu::Command::ZoomIn)
+    } else if input.consume_key(Modifiers::COMMAND, Key::Minus) {
+        Some(menu::Command::ZoomOut)
+    } else {
+        None
+    }
+}
+
 fn consume(
     input: &mut egui::InputState,
     off: &HashSet<menu::Command>,
@@ -1856,6 +1868,11 @@ impl MapMakerApp {
     /// One frame of the editor.
     fn show(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        // ⌘+ and ⌘− zoom the Canvas only: keep egui's whole-UI zoom off and the scale at 1.
+        ctx.options_mut(|o| o.zoom_with_keyboard = false);
+        if ctx.zoom_factor() != 1.0 {
+            ctx.set_zoom_factor(1.0);
+        }
         // Dialogs take the keyboard while they are open.
         self.handle_close(&ctx);
         let dialog_open = self.dialog_open();
@@ -2076,6 +2093,31 @@ mod tests {
 
     fn args(args: &[&str]) -> Vec<OsString> {
         args.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn command_equals_minus_and_plus_zoom_the_canvas() {
+        let press = |key| {
+            let ctx = egui::Context::default();
+            let mut raw = egui::RawInput::default();
+            raw.events.push(egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::COMMAND,
+            });
+            let mut found = None;
+            let mut output = ctx.run_ui(raw, |ui| {
+                found = ui.ctx().input_mut(canvas_zoom_keys);
+            });
+            output.textures_delta.clear();
+            found
+        };
+        assert_eq!(press(egui::Key::Equals), Some(menu::Command::ZoomIn));
+        assert_eq!(press(egui::Key::Plus), Some(menu::Command::ZoomIn));
+        assert_eq!(press(egui::Key::Minus), Some(menu::Command::ZoomOut));
+        assert_eq!(press(egui::Key::A), None);
     }
 
     #[test]
