@@ -12,7 +12,7 @@ use crate::theme::{self, Palette, metrics as layout};
 /// Width of one scroll chevron.
 const CHEVRON: f32 = 24.0;
 /// The hit area of a tab's × and the room its dot takes.
-const CLOSE_HIT: f32 = 18.0;
+const CLOSE_HIT: f32 = 16.0;
 const DOT: f32 = 7.0;
 const TAB_PADDING: f32 = 12.0;
 const ACTIVE_LINE: f32 = 2.0;

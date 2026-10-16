@@ -36,7 +36,7 @@ Never: project, element, symbol, folder (except real filesystem folders on the H
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────┐
-│ ● ● ●  [⌂] [Isles of Valdren •] [Coast of Brannoch] [Hollowfen …] [+]     │ 38  title bar = tab bar
+│ ● ● ●  [⌂] [Isles of Valdren •] [Coast of Brannoch] [Hollowfen …] [+]     │ 30  title bar = tab bar
 ├──────────┬───────────────────────────────────────────────┬────────────────┤
 │ Layers   │                  Canvas                       │ Properties     │
 │ 232      │                                               │ 288            │
@@ -47,13 +47,13 @@ Never: project, element, symbol, folder (except real filesystem folders on the H
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Title bar with tabs (38 px)
+### Title bar with tabs (30 px)
 - Native traffic lights in the left 84 px; tabs start right after. On macOS use a transparent/full-size-content title bar so egui draws the tabs in the title-bar area (eframe `ViewportBuilder`: `with_fullsize_content_view(true)`, `with_title_shown(false)`, `with_titlebar_shown(false)` / transparent titlebar — exact API depends on eframe version). The tab strip must also act as the window drag region.
 - No window title text: the active tab identifies the file.
 - **Home tab**: 44 px, house icon, always first, can't be closed.
 - **Map tabs**: 220 px, flat, 1 px left divider `#2A2E35`. Text ellipsises.
   - Inactive: text `#9D9788`, transparent.
-  - Hover: bg `#1D2025`, shows close × (18 px hit area).
+  - Hover: bg `#1D2025`, shows close × (16 px hit area).
   - Active: bg `#23272E`, text `#ECE6D8` 500 weight, 2 px gold `#D4A84A` bottom inset line.
   - Unsaved: 7 px gold dot where the × sits (× replaces it on hover).
 - **+** (40 px) = New Tab (⌘T): opens a blank tab with a start page (New Map card, recent Maps, Open…). A Map opened or created there takes that tab. New Map is ⌘N.
