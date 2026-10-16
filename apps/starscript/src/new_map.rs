@@ -2,7 +2,9 @@
 //! itself comes from the starter template (see [`start_map`]).
 
 use eframe::egui;
-use ssmap_core::{Canvas, DefaultLayers, DistanceUnit, LabelStyles, Map, MapTemplate, Scale};
+use ssmap_core::{
+    Canvas, DefaultLayers, DistanceUnit, LabelStyles, Map, MapTemplate, Scale, TemplateError,
+};
 
 use crate::{dialog, theme};
 
@@ -17,7 +19,15 @@ const DEFAULT_DISTANCE: f64 = 0.25;
 /// first. If the template can't be read, the Map is blank apart from the starter Label styles,
 /// and the problem is returned beside it.
 pub fn start_map(canvas: Canvas) -> (Map, DefaultLayers, Option<String>) {
-    match MapTemplate::starter() {
+    start_map_from(MapTemplate::starter(), canvas)
+}
+
+/// Like [`start_map`], from any template that was loaded.
+pub fn start_map_from(
+    template: Result<MapTemplate, TemplateError>,
+    canvas: Canvas,
+) -> (Map, DefaultLayers, Option<String>) {
+    match template {
         Ok(template) => (template.new_map(canvas), template.default_layers(), None),
         Err(err) => (
             Map::new(canvas).with_label_styles(LabelStyles::starter()),

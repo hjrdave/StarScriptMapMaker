@@ -1,0 +1,129 @@
+{
+  "format_version": "1.3",
+  "name": "Winter",
+  "default_layers": {
+    "land": "00000000-0000-0000-0000-000000000102",
+    "assets": "00000000-0000-0000-0000-000000000103",
+    "labels": "00000000-0000-0000-0000-000000000104"
+  },
+  "canvas": {
+    "width": 4096,
+    "height": 3072,
+    "scale": { "distance_per_unit": 0.25, "unit": "miles" },
+    "background": {
+      "water": "#a9c4d8",
+      "texture": { "strength": 0.3, "scale": 1.2, "light": "#ffffff", "dark": "#5a7a98" }
+    }
+  },
+  "defaults": {
+    "land_fill": "#eef3f7",
+    "roughness": { "amount": 0.0, "scale": 32.0, "seed": 0 },
+    "shore": {
+      "outline": { "color": "#4a6074", "width": 1.5 },
+      "ripples": { "color": "#ffffffb0", "count": 3, "fade": 0.6, "spacing": 12.0, "width": 1.5 },
+      "shading": { "color": "#8aa8c070", "width": 18.0 }
+    },
+    "lake_shore": {
+      "outline": { "color": "#4a6074", "width": 1.0 },
+      "ripples": { "color": "#ffffff90", "count": 0, "fade": 0.6, "spacing": 12.0, "width": 1.5 },
+      "shading": { "color": "#5a7a9860", "width": 8.0 }
+    },
+    "label_styles": [
+      {
+        "id": "00000000-0000-0000-0000-000000000001",
+        "name": "Default",
+        "font": { "family": "Cinzel", "italic": false, "weight": 400 },
+        "size": 48.0,
+        "letter_spacing": 0.0,
+        "line_height": 1.2,
+        "all_caps": false,
+        "fill": "#1c2a38",
+        "opacity": 1.0,
+        "halo": { "color": "#f4f8fb", "width": 0.0 }
+      },
+      {
+        "id": "00000000-0000-0000-0000-000000000002",
+        "name": "Realm",
+        "font": { "family": "Cinzel", "italic": false, "weight": 400 },
+        "size": 120.0,
+        "letter_spacing": 0.2,
+        "line_height": 1.2,
+        "all_caps": true,
+        "fill": "#1c2a38",
+        "opacity": 1.0,
+        "halo": { "color": "#f4f8fb", "width": 6.0 }
+      },
+      {
+        "id": "00000000-0000-0000-0000-000000000003",
+        "name": "City",
+        "font": { "family": "Almendra", "italic": false, "weight": 400 },
+        "size": 40.0,
+        "letter_spacing": 0.02,
+        "line_height": 1.2,
+        "all_caps": false,
+        "fill": "#1c2a38",
+        "opacity": 1.0,
+        "halo": { "color": "#f4f8fb", "width": 0.0 }
+      },
+      {
+        "id": "00000000-0000-0000-0000-000000000004",
+        "name": "Sea",
+        "font": { "family": "IM Fell Double Pica", "italic": false, "weight": 400 },
+        "size": 56.0,
+        "letter_spacing": 0.15,
+        "line_height": 1.2,
+        "all_caps": false,
+        "fill": "#2e4a64",
+        "opacity": 1.0,
+        "halo": { "color": "#f4f8fb", "width": 0.0 }
+      },
+      {
+        "id": "00000000-0000-0000-0000-000000000005",
+        "name": "Range",
+        "font": { "family": "Uncial Antiqua", "italic": false, "weight": 400 },
+        "size": 64.0,
+        "letter_spacing": 0.3,
+        "line_height": 1.2,
+        "all_caps": true,
+        "fill": "#1c2a38",
+        "opacity": 1.0,
+        "halo": { "color": "#f4f8fb", "width": 0.0 }
+      }
+    ]
+  },
+  "layers": [
+    {
+      "id": "00000000-0000-0000-0000-000000000101",
+      "type": "layer",
+      "name": "Backdrop",
+      "visible": true,
+      "locked": false,
+      "opacity": 1.0
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000102",
+      "type": "layer",
+      "name": "Land",
+      "visible": true,
+      "locked": false,
+      "opacity": 1.0
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000103",
+      "type": "layer",
+      "name": "Assets",
+      "visible": true,
+      "locked": false,
+      "opacity": 1.0,
+      "depth_sort": true
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000104",
+      "type": "layer",
+      "name": "Labels",
+      "visible": true,
+      "locked": false,
+      "opacity": 1.0
+    }
+  ]
+}
