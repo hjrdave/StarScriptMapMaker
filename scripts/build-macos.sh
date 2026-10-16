@@ -26,7 +26,7 @@ if [[ $installed != *"$packager_version"* ]]; then
   cargo install cargo-packager --version "$packager_version" --locked
 fi
 
-(cd crates/app && cargo packager --release --formats dmg)
+(cd apps/starscript && cargo packager --release --formats dmg)
 
 packages=$root/target/packages
 echo

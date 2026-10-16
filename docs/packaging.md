@@ -1,14 +1,14 @@
 # Packaging
 
 How the installable packages are built and laid out (ADR 0008). The config is
-`[package.metadata.packager]` in `crates/app/Cargo.toml`. Files it uses are in
-`crates/app/packaging/`.
+`[package.metadata.packager]` in `apps/starscript/Cargo.toml`. Files it uses are in
+`apps/starscript/packaging/`.
 
 ## Building
 
 ```sh
 cargo install cargo-packager --version 0.11.8 --locked
-cd crates/app
+cd apps/starscript
 cargo packager --release --formats deb,appimage   # Linux
 cargo packager --release --formats nsis           # Windows
 cargo packager --release --formats dmg            # macOS (arm64)

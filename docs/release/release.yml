@@ -5,7 +5,7 @@ name: Release
 #
 # A pushed vX.Y.Z tag builds every package (ADR 0008), checksums them, and publishes a
 # GitHub Release with the packages, SHA256SUMS.txt and the latest.json update feed
-# (crates/app/src/update.rs). Nothing is signed. A tag with a suffix (v1.2.3-rc.1) is
+# (apps/starscript/src/update.rs). Nothing is signed. A tag with a suffix (v1.2.3-rc.1) is
 # published as a pre-release, which GitHub never serves as "latest", so it does not reach
 # the feed users read.
 on:
@@ -55,7 +55,7 @@ jobs:
       - name: Install cargo-packager
         run: cargo install cargo-packager --version "$CARGO_PACKAGER_VERSION" --locked
       - name: Build packages
-        working-directory: crates/app
+        working-directory: apps/starscript
         run: cargo packager --release --formats ${{ matrix.formats }}
       - name: Checksums
         working-directory: target/packages

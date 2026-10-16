@@ -2,7 +2,7 @@
 
 Status: accepted
 
-The v1 desktop app is a Cargo workspace at the repo root, split into `crates/core`, `crates/render` and `crates/app`. `core` holds the Map model, Commands, geometry and serialization, and must never depend on egui or wgpu, so the model stays UI-free and drivable by a future agent. `render` draws the Canvas and PNG exports through wgpu without the UI. `app` is the egui/eframe binary. The UI is egui on eframe, accepted after the editor-shell prototype showed custom wgpu passes, handles and nested layer-tree drag-and-drop all work without third-party crates. Vector layers render with lyon tessellation and 4x MSAA behind a `VectorRenderer` trait, not `vello_gpu`, even though the GPU research made `vello_gpu` the lead: `vello_gpu` panics on mask layers, and v1 needs Clip-to-landmass (a stencil pass in lyon). It also pins its own wgpu version, which would have to match egui-wgpu's. A later benchmark can swap renderers behind the trait.
+The v1 desktop app is a Cargo workspace at the repo root, split into `crates/core`, `crates/render` and `apps/starscript`. `core` holds the Map model, Commands, geometry and serialization, and must never depend on egui or wgpu, so the model stays UI-free and drivable by a future agent. `render` draws the Canvas and PNG exports through wgpu without the UI. `app` is the egui/eframe binary. The UI is egui on eframe, accepted after the editor-shell prototype showed custom wgpu passes, handles and nested layer-tree drag-and-drop all work without third-party crates. Vector layers render with lyon tessellation and 4x MSAA behind a `VectorRenderer` trait, not `vello_gpu`, even though the GPU research made `vello_gpu` the lead: `vello_gpu` panics on mask layers, and v1 needs Clip-to-landmass (a stencil pass in lyon). It also pins its own wgpu version, which would have to match egui-wgpu's. A later benchmark can swap renderers behind the trait.
 
 ## Stack
 
@@ -24,9 +24,11 @@ The v1 desktop app is a Cargo workspace at the repo root, split into `crates/cor
 Cargo.toml            # workspace root
 rust-toolchain.toml   # pinned stable; this is also the MSRV
 deny.toml             # cargo-deny licence policy
-crates/{core,render,app}
+crates/{core,fonts,render}   # shared libraries
+apps/starscript/      # the desktop app (egui/eframe binary)
+apps/website/         # reserved for the docs and download site, own toolchain
+apps/cli/             # reserved for a CLI / agent interface
 assets/               # default packs and fonts, shared by app and website
-website/              # reserved for the marketing/docs site, own toolchain
 docs/                 # ADRs and research
 prototypes/           # throwaway code, never a workspace member
 ```

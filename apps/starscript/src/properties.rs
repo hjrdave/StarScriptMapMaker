@@ -863,7 +863,7 @@ mod tests {
         use ssmap_render::SpriteStore;
         let roots = PackRoots {
             built_in: std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../core/tests/packs"),
+                .join("../../crates/core/tests/packs"),
             user: None,
         };
         let (library, problems) = PackLibrary::load(&roots);
@@ -915,7 +915,7 @@ mod tests {
         use ssmap_core::asset::{PackLibrary, PackSource, parse_manifest};
         use ssmap_render::SpriteStore;
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../core/tests/packs/test-pack/pack.toml");
+            .join("../../crates/core/tests/packs/test-pack/pack.toml");
         let mut text = std::fs::read_to_string(&path).unwrap();
         if attribution_required {
             text = text.replacen("[pack]\n", "[pack]\nattribution_required = true\n", 1);

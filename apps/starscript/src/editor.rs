@@ -1765,7 +1765,7 @@ mod tests {
         use ssmap_core::asset::{PackLibrary, PackRoots};
         let roots = PackRoots {
             built_in: std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../core/tests/packs"),
+                .join("../../crates/core/tests/packs"),
             user: None,
         };
         let (library, problems) = PackLibrary::load(&roots);

@@ -19,6 +19,19 @@ fn app() -> Harness<'static, MapMakerApp> {
     harness
 }
 
+/// Runs until the screen is idle. Recent cards are read on a worker thread and repaint every
+/// 50 ms until done, so on a slow machine a plain `run` can hit its step limit first.
+fn settle(harness: &mut Harness<'static, MapMakerApp>) {
+    let started = Instant::now();
+    while harness.try_run().is_err() {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the screen never settled"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
 fn saved_map(dir: &Path, name: &str) -> PathBuf {
     let path = dir.join(name);
     let canvas = Canvas::new(100, 100, Scale::new(1.0, DistanceUnit::Miles));
@@ -128,11 +141,11 @@ fn a_recent_map_opens_in_the_blank_tab_and_an_open_one_is_focused() {
     harness.state_mut().open_path(&second);
     harness.state_mut().close_tab(1);
     harness.state_mut().new_blank_tab();
-    harness.run();
+    settle(&mut harness);
     assert_eq!(harness.state().tabs().len(), 2);
 
     harness.get_by_label("Open second").click();
-    harness.run();
+    settle(&mut harness);
     assert_eq!(harness.state().tabs().len(), 2);
     assert!(!harness.state().tabs()[1].is_blank());
     assert_eq!(harness.state().tabs()[1].document().name(), "second.ssmap");
@@ -140,10 +153,10 @@ fn a_recent_map_opens_in_the_blank_tab_and_an_open_one_is_focused() {
 
     // Already open elsewhere: that tab is focused and the blank one stays.
     harness.state_mut().new_blank_tab();
-    harness.run();
+    settle(&mut harness);
     assert_eq!(harness.state().tabs().len(), 3);
     harness.get_by_label("Open first").click();
-    harness.run();
+    settle(&mut harness);
     assert_eq!(harness.state().tabs().len(), 3);
     assert_eq!(harness.state().active_tab(), 0);
     assert!(harness.state().tabs()[2].is_blank());
