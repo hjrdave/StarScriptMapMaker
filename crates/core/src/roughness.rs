@@ -18,7 +18,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::extra::Extra;
-use crate::geometry::{MultiPolygon, Point, Polygon};
+use crate::geometry::{Affine, MultiPolygon, Point, Polygon};
 use crate::id::Id;
 use crate::map::Map;
 
@@ -75,23 +75,24 @@ pub fn roughen(outline: &MultiPolygon, roughness: &Roughness) -> MultiPolygon {
     if roughness.is_smooth() {
         return outline.clone();
     }
+    let origin = origin_of(outline);
     MultiPolygon(
         outline
             .0
             .iter()
             .map(|polygon| Polygon {
-                exterior: roughen_ring(&polygon.exterior, roughness),
+                exterior: roughen_ring(&polygon.exterior, roughness, origin),
                 holes: polygon
                     .holes
                     .iter()
-                    .map(|hole| roughen_ring(hole, roughness))
+                    .map(|hole| roughen_ring(hole, roughness, origin))
                     .collect(),
             })
             .collect(),
     )
 }
 
-fn roughen_ring(ring: &[Point], roughness: &Roughness) -> Vec<Point> {
+fn roughen_ring(ring: &[Point], roughness: &Roughness, origin: Point) -> Vec<Point> {
     if ring.len() < 3 {
         return ring.to_vec();
     }
@@ -99,17 +100,18 @@ fn roughen_ring(ring: &[Point], roughness: &Roughness) -> Vec<Point> {
     for (i, &a) in ring.iter().enumerate() {
         let b = ring[(i + 1) % ring.len()];
         out.push(a);
-        roughen_edge(a, b, roughness, &mut out);
+        roughen_edge(a, b, roughness, origin, &mut out);
     }
     out
 }
 
 /// Pushes the new points strictly between `a` and `b`.
-fn roughen_edge(a: Point, b: Point, roughness: &Roughness, out: &mut Vec<Point>) {
+fn roughen_edge(a: Point, b: Point, roughness: &Roughness, origin: Point, out: &mut Vec<Point>) {
     let (a, b) = (canonical(a), canonical(b));
     // Work in one direction per edge, whichever way the ring runs, so an edge shared by two rings
     // gets the same detail in both.
-    let reversed = key(b) < key(a);
+    let (key_a, key_b) = (key(a, origin), key(b, origin));
+    let reversed = key_b < key_a;
     let (from, to) = if reversed { (b, a) } else { (a, b) };
     let (dx, dy) = (to[0] - from[0], to[1] - from[1]);
     let length = (dx * dx + dy * dy).sqrt();
@@ -127,7 +129,15 @@ fn roughen_edge(a: Point, b: Point, roughness: &Roughness, out: &mut Vec<Point>)
     let per_piece = 1usize << levels;
     let pieces = pieces as usize;
     let mut offsets = vec![0.0; pieces * per_piece + 1];
-    let mut hash = mix(mix(u64::from(roughness.seed), key_bits(from)), key_bits(to));
+    let (key_from, key_to) = if reversed {
+        (key_b, key_a)
+    } else {
+        (key_a, key_b)
+    };
+    let mut hash = mix(
+        mix(u64::from(roughness.seed), key_bits(key_from)),
+        key_bits(key_to),
+    );
     for piece in 0..pieces {
         let base = piece * per_piece;
         let mut step = per_piece;
@@ -183,12 +193,25 @@ fn canonical(p: Point) -> Point {
     [p[0] + 0.0, p[1] + 0.0]
 }
 
-fn key(p: Point) -> (u64, u64) {
-    (p[0].to_bits(), p[1].to_bits())
+/// Where the first vertex of `outline` is, which positions are measured from.
+fn origin_of(outline: &MultiPolygon) -> Point {
+    outline
+        .0
+        .iter()
+        .find_map(|polygon| polygon.exterior.first())
+        .map_or([0.0, 0.0], |&p| canonical(p))
 }
 
-fn key_bits(p: Point) -> u64 {
-    mix(p[0].to_bits(), p[1].to_bits())
+/// A point's place relative to `origin`, rounded to a millionth of a unit. Detail is seeded from
+/// it rather than from absolute coordinates, so moving a whole outline keeps its coastline (the
+/// rounding absorbs the float error a move adds).
+fn key(p: Point, origin: Point) -> (i64, i64) {
+    let q = |v: f64| (v * 1e6).round() as i64;
+    (q(p[0] - origin[0]), q(p[1] - origin[1]))
+}
+
+fn key_bits(k: (i64, i64)) -> u64 {
+    mix(k.0 as u64, k.1 as u64)
 }
 
 /// SplitMix64's finaliser over the combined state.
@@ -234,6 +257,8 @@ struct Shared {
 struct CacheEntry {
     version: u64,
     roughness: Roughness,
+    /// The stored outline `outline` was made from.
+    geometry: MultiPolygon,
     outline: Arc<MultiPolygon>,
 }
 
@@ -242,12 +267,20 @@ impl Shared {
         self.entries.lock().expect("roughness cache lock")
     }
 
-    fn store(&self, id: Id, version: u64, roughness: Roughness, outline: Arc<MultiPolygon>) {
+    fn store(
+        &self,
+        id: Id,
+        version: u64,
+        roughness: Roughness,
+        geometry: MultiPolygon,
+        outline: Arc<MultiPolygon>,
+    ) {
         self.entries().insert(
             id,
             CacheEntry {
                 version,
                 roughness,
+                geometry,
                 outline,
             },
         );
@@ -282,10 +315,37 @@ impl RoughnessCache {
         if self.is_rebuilding() {
             return Some(Arc::new(geometry.clone()));
         }
-        let outline = Arc::new(roughen(geometry, roughness));
-        self.shared
-            .store(id, version, roughness.clone(), outline.clone());
+        let outline = self
+            .moved(id, geometry, roughness)
+            .unwrap_or_else(|| Arc::new(roughen(geometry, roughness)));
+        self.shared.store(
+            id,
+            version,
+            roughness.clone(),
+            geometry.clone(),
+            outline.clone(),
+        );
         Some(outline)
+    }
+
+    /// The cached outline of `id` shifted along, when `geometry` is the outline it was made from
+    /// moved as a whole under the same settings. Roughness does not depend on position, so a drag
+    /// need not roughen the outline again on every frame.
+    fn moved(
+        &self,
+        id: Id,
+        geometry: &MultiPolygon,
+        roughness: &Roughness,
+    ) -> Option<Arc<MultiPolygon>> {
+        let entries = self.shared.entries();
+        let entry = entries.get(&id)?;
+        if entry.roughness != *roughness || roughness.is_smooth() {
+            return None;
+        }
+        let offset = translation(&entry.geometry, geometry)?;
+        Some(Arc::new(
+            entry.outline.transformed(&Affine::translate(offset)),
+        ))
     }
 
     /// Whether the roughened outline of `id` is computed for its current version and settings.
@@ -368,6 +428,27 @@ impl RoughnessCache {
     }
 }
 
+/// The shift that takes `from` onto `to`, if they have the same shape and differ only by it.
+fn translation(from: &MultiPolygon, to: &MultiPolygon) -> Option<[f64; 2]> {
+    let first = |m: &MultiPolygon| m.0.first()?.exterior.first().copied();
+    let (a, b) = (first(from)?, first(to)?);
+    let offset = [b[0] - a[0], b[1] - a[1]];
+    let same = |p: &Point, q: &Point| {
+        (q[0] - p[0] - offset[0]).abs() <= 1e-7 && (q[1] - p[1] - offset[1]).abs() <= 1e-7
+    };
+    let rings_match =
+        |x: &[Point], y: &[Point]| x.len() == y.len() && x.iter().zip(y).all(|(p, q)| same(p, q));
+    if from.0.len() != to.0.len() {
+        return None;
+    }
+    let all = from.0.iter().zip(&to.0).all(|(p, q)| {
+        p.holes.len() == q.holes.len()
+            && rings_match(&p.exterior, &q.exterior)
+            && p.holes.iter().zip(&q.holes).all(|(x, y)| rings_match(x, y))
+    });
+    all.then_some(offset)
+}
+
 #[derive(Debug)]
 struct Job {
     id: Id,
@@ -400,7 +481,7 @@ impl Rebuild {
         for job in std::mem::take(&mut self.jobs) {
             let outline = Arc::new(roughen(&job.geometry, &job.roughness));
             self.shared
-                .store(job.id, job.version, job.roughness, outline);
+                .store(job.id, job.version, job.roughness, job.geometry, outline);
             self.shared.generation.fetch_add(1, Ordering::SeqCst);
             ready();
         }
@@ -515,8 +596,8 @@ mod tests {
         ];
         let mut moved = ring.clone();
         moved[3] = [150.0, 450.0];
-        let before = roughen_ring(&ring, &settings);
-        let after = roughen_ring(&moved, &settings);
+        let before = roughen_ring(&ring, &settings, [0.0, 0.0]);
+        let after = roughen_ring(&moved, &settings, [0.0, 0.0]);
         // Up to and including [300, 300], the edges before the moved node are untouched.
         let end = before.iter().position(|p| *p == [300.0, 300.0]).unwrap();
         assert_eq!(before[..=end], after[..=end]);
@@ -548,10 +629,36 @@ mod tests {
         let settings = Roughness::new(8.0, 32.0, 4);
         let (a, b) = ([10.0, 20.0], [310.0, 95.0]);
         let mut forward = Vec::new();
-        roughen_edge(a, b, &settings, &mut forward);
+        roughen_edge(a, b, &settings, [0.0, 0.0], &mut forward);
         let mut backward = Vec::new();
-        roughen_edge(b, a, &settings, &mut backward);
+        roughen_edge(b, a, &settings, [0.0, 0.0], &mut backward);
         backward.reverse();
         assert_eq!(forward, backward);
+    }
+
+    #[test]
+    fn moving_an_outline_keeps_its_coastline() {
+        let settings = Roughness::new(8.0, 32.0, 5);
+        let outline = island();
+        let offset = [123.37, -81.91];
+        let moved = outline.transformed(&Affine::translate(offset));
+        let before = roughen(&outline, &settings);
+        let after = roughen(&moved, &settings);
+        let shifted = before.transformed(&Affine::translate(offset));
+        let (a, b) = (&shifted.0[0].exterior, &after.0[0].exterior);
+        assert_eq!(a.len(), b.len());
+        for (p, q) in a.iter().zip(b) {
+            assert!((p[0] - q[0]).abs() < 1e-6 && (p[1] - q[1]).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn translation_finds_a_whole_move_only() {
+        let outline = island();
+        let moved = outline.transformed(&Affine::translate([5.0, 7.0]));
+        assert_eq!(translation(&outline, &moved), Some([5.0, 7.0]));
+        let mut bent = moved.clone();
+        bent.0[0].exterior[2][0] += 1.0;
+        assert_eq!(translation(&outline, &bent), None);
     }
 }
