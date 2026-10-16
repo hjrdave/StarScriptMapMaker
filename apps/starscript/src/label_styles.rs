@@ -61,6 +61,7 @@ impl Preview {
             size: style.size,
             letter_spacing: style.letter_spacing,
             line_height: style.line_height,
+            arch: style.arch,
             all_caps: style.all_caps,
             fill: style.fill,
             opacity: style.opacity,
@@ -377,6 +378,14 @@ impl LabelStylesPanel {
             .step(0.01)
             .decimals(2);
         merge(scrub_field(ui, &mut next.line_height, &spec));
+        let mut percent = next.arch * 100.0;
+        let spec = ScrubSpec::new("Arch")
+            .unit("%")
+            .range(-100.0, 100.0)
+            .default_value(0.0)
+            .decimals(0);
+        merge(slider(ui, &mut percent, &spec));
+        next.arch = (percent / 100.0).clamp(-1.0, 1.0);
         if checkbox_row(ui, "All caps", &mut next.all_caps) {
             merge(instant());
         }

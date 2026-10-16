@@ -1,6 +1,6 @@
 use ssmap_core::file::MapFile;
 use ssmap_core::{
-    Canvas, Color, Command, DistanceUnit, History, Id, Label, LabelStyle, Map, Scale,
+    Canvas, Color, Command, DistanceUnit, History, Id, Label, LabelStyle, LabelStyles, Map, Scale,
 };
 
 fn map_with_layer() -> (Map, Id) {
@@ -313,4 +313,33 @@ fn labels_saved_before_styles_open_as_overrides_of_the_default_style() {
     assert!(resolved.all_caps);
     assert_eq!(resolved.halo.width, 2.0);
     assert_eq!(resolved.opacity, 0.5);
+    assert_eq!(resolved.arch, 0.0);
+}
+
+#[test]
+fn arch_overrides_its_style_round_trips_and_is_range_checked() {
+    let style = LabelStyle {
+        arch: -0.25,
+        ..LabelStyle::default()
+    };
+    let styles = LabelStyles::new(vec![style]);
+    let mut label = Label::default();
+    assert_eq!(label.resolve(&styles).arch, -0.25);
+    label.arch = Some(0.5);
+    assert_eq!(label.resolve(&styles).arch, 0.5);
+
+    let json = serde_json::to_string(&label).unwrap();
+    let back: Label = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.arch, Some(0.5));
+
+    let mut edited = label.resolve(&styles);
+    edited.arch = 0.5;
+    assert_eq!(label.with_resolved(&styles, &edited).arch, Some(0.5));
+    edited.arch = 0.75;
+    assert_eq!(label.with_resolved(&styles, &edited).arch, Some(0.75));
+
+    label.text = "x".into();
+    assert_eq!(label.problem(), None);
+    label.arch = Some(1.5);
+    assert!(label.problem().is_some());
 }
