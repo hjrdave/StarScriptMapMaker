@@ -496,14 +496,27 @@ fn land_brush(
         }
     }
 
+    let tolerance = land::simplify_tolerance(radius, 1.0 / view.zoom);
+    let finished = |stroke: &Stroke| BrushStroke {
+        region: land::brush_region(&stroke.points, radius, tolerance),
+        start: stroke.points[0],
+        erase: stroke.erase,
+    };
     let released = response.drag_stopped() || response.clicked();
+    if !released
+        && stroke
+            .preview
+            .as_ref()
+            .is_none_or(|(n, _)| *n != stroke.points.len())
+    {
+        // The shore the release would commit, rough as it will be, once per change.
+        let area = editor
+            .brush_preview(finished(stroke), water)
+            .unwrap_or_default();
+        stroke.preview = Some((stroke.points.len(), area));
+    }
     if released && let Some(stroke) = state.stroke.take() {
-        let tolerance = land::simplify_tolerance(radius, 1.0 / view.zoom);
-        let finished = BrushStroke {
-            region: land::brush_region(&stroke.points, radius, tolerance),
-            start: stroke.points[0],
-            erase: stroke.erase,
-        };
+        let finished = finished(&stroke);
         if water {
             editor.finish_water_stroke(finished);
         } else {
@@ -1080,28 +1093,19 @@ pub fn paint_overlay(
         (palette.gold.gamma_multiply(0.25), palette.gold)
     };
     let radius = editor.brush_size / 2.0;
-    if let Some(stroke) = &mut state.stroke {
-        let preview = match &stroke.preview {
-            Some((count, region)) if *count == stroke.points.len() => region,
-            _ => {
-                let region = land::stroke_region(&stroke.points, radius);
-                &stroke.preview.insert((stroke.points.len(), region)).1
-            }
-        };
+    if let Some(stroke) = &state.stroke
+        && let Some((_, preview)) = &stroke.preview
+    {
         let to_screen = |p: Point| crate::handles::to_screen(view, origin, ppp, p);
         painter.add(egui::Shape::mesh(region_mesh(preview, fill, to_screen)));
+        // A thin guide that follows the rough edge without hiding it.
+        let guide = egui::Stroke::new(1.0, line.gamma_multiply(0.7));
         for ring in preview.0.iter().flat_map(|polygon| polygon.rings()) {
             let mut points: Vec<egui::Pos2> = ring.iter().map(|&p| to_screen(p)).collect();
             if let Some(&first) = points.first() {
                 points.push(first);
             }
-            painter.add(egui::Shape::line(points.clone(), HALO));
-            painter.extend(egui::Shape::dashed_line(
-                &points,
-                egui::Stroke::new(1.5, line),
-                DASH,
-                GAP,
-            ));
+            painter.add(egui::Shape::line(points, guide));
         }
     }
     if let Some(pos) = hover {

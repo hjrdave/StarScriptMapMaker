@@ -534,6 +534,52 @@ impl Editor {
         }
     }
 
+    /// The area, with its rough shoreline, that finishing `stroke` now would add or cut away,
+    /// for the live preview. It plans the same Command a release would run
+    /// ([`land::brush_command`], or [`land::water_command`]), so the two can't disagree. `None`
+    /// when the stroke changes nothing.
+    pub fn brush_preview(&mut self, stroke: BrushStroke, water: bool) -> Option<MultiPolygon> {
+        let new_id = Id::new();
+        let (add, region) = (!stroke.erase, stroke.region.clone());
+        let planned = if water {
+            let layer = self.water_layer();
+            land::water_command(
+                &self.map,
+                &mut self.roughness,
+                &self.selection,
+                layer,
+                stroke,
+                new_id,
+            )
+        } else {
+            let layer = self.target_layer(Placing::Land);
+            land::brush_command(
+                &self.map,
+                &mut self.roughness,
+                &self.selection,
+                layer,
+                stroke,
+                new_id,
+            )
+        };
+        match planned {
+            Ok(Some(command)) => land::preview_area(&self.map, &mut self.roughness, &command),
+            // A first water stroke has no Layer yet; it will create one and a Lake in it.
+            Err(_) if add => land::preview_area(
+                &self.map,
+                &mut self.roughness,
+                &Command::CreateLake {
+                    id: new_id,
+                    parent: new_id,
+                    index: None,
+                    geometry: region,
+                    fill: None,
+                },
+            ),
+            _ => None,
+        }
+    }
+
     /// What a water brush stroke would be called in the undo history.
     pub fn water_label(erase: bool) -> &'static str {
         if erase { "Erase Water" } else { "Paint Water" }
