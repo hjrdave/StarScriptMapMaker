@@ -16,8 +16,6 @@ use crate::tool_section::ToolSection;
 
 #[derive(Default)]
 pub struct PropertiesPanel {
-    /// The name being typed for a Layer, committed when the field loses focus.
-    name_edit: Option<(Id, String)>,
     /// The text being typed for a Label, committed when the field loses focus.
     text_edit: Option<(Id, String)>,
     /// Turns the scrubs, sliders and swatches into one Undo step each.
@@ -481,35 +479,6 @@ impl PropertiesPanel {
             action: None,
         };
         prop_widgets::section(ui, header, |ui| {
-            row(ui, "Name", |ui| {
-                let text = match &mut self.name_edit {
-                    Some((editing, text)) if *editing == id => text,
-                    _ => {
-                        self.name_edit = Some((id, layer.name.clone()));
-                        &mut self.name_edit.as_mut().expect("just set").1
-                    }
-                };
-                let field = ui.add(egui::TextEdit::singleline(text).desired_width(f32::INFINITY));
-                if field.lost_focus() && *text != layer.name {
-                    let name = text.clone();
-                    if !editor.run(Command::RenameLayer { id, name }) {
-                        self.name_edit = None;
-                    }
-                } else if !field.has_focus() && *text != layer.name {
-                    // Changed elsewhere (undo, the tree): show the Map's value.
-                    *text = layer.name.clone();
-                }
-            });
-
-            let mut visible = layer.visible;
-            if prop_widgets::checkbox_row(ui, "Visible", &mut visible) {
-                editor.run(Command::SetVisible { id, visible });
-            }
-            let mut locked = layer.locked;
-            if prop_widgets::checkbox_row(ui, "Locked", &mut locked) {
-                editor.run(Command::SetLocked { id, locked });
-            }
-
             // Dragging the slider is one gesture: live updates, one Undo step.
             let mut percent = f64::from(layer.opacity) * 100.0;
             let edit = prop_widgets::slider(
@@ -708,11 +677,20 @@ mod tests {
     }
 
     #[test]
+    fn layer_name_visibility_and_lock_are_managed_in_the_layers_panel() {
+        let (fixture, _, _) = fixture();
+        let harness = harness(fixture);
+        for label in ["Name", "Visible", "Locked"] {
+            assert!(harness.query_by_label(label).is_none(), "{label}");
+        }
+    }
+
+    #[test]
     fn nothing_selected_shows_the_active_layer_and_a_collapsed_map_section() {
         let (fixture, _, _) = fixture();
         let harness = harness(fixture);
         // The active Layer's fields.
-        for label in ["Visible", "Locked", "Depth sort", "Opacity", "Clip to"] {
+        for label in ["Depth sort", "Opacity", "Clip to"] {
             assert!(harness.query_by_label(label).is_some(), "{label}");
         }
         // The Map section is there, closed: its fields are not.
