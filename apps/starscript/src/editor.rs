@@ -87,13 +87,13 @@ enum Placing {
     Label,
 }
 
-/// A pseudo-random number below `n` (which must be above 0), unseeded: Stamp variants are
-/// chosen when placed and then stored, so nothing needs to replay them.
 /// Whether the app bundles a font family.
 fn bundled_family(family: &str) -> bool {
     ssmap_fonts::FAMILIES.iter().any(|f| f.name == family)
 }
 
+/// A pseudo-random number below `n` (which must be above 0), unseeded: Stamp variants are
+/// chosen when placed and then stored, so nothing needs to replay them.
 fn random_below(n: usize) -> usize {
     use std::hash::{BuildHasher as _, Hasher as _};
     (std::collections::hash_map::RandomState::new()
