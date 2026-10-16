@@ -30,8 +30,7 @@ impl PropertiesPanel {
             self.fill_gesture = false;
             editor.end_gesture();
         }
-        ui.heading("Properties");
-        ui.separator();
+        crate::shell::panel_header(ui, "Properties", |_| {});
         match editor.selection() {
             [] => self.map_properties(ui, editor),
             [id] => {

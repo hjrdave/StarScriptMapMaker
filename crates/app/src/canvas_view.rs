@@ -160,6 +160,20 @@ impl CanvasView {
         ))
     }
 
+    /// The Canvas point under `pointer` (screen points), when it is over the Canvas as last
+    /// drawn.
+    pub fn canvas_point(&self, pointer: egui::Pos2) -> Option<[f64; 2]> {
+        let (rect, ppp) = self.panel?;
+        if !rect.contains(pointer) {
+            return None;
+        }
+        let local = pointer - rect.min;
+        Some(
+            self.view?
+                .to_canvas([f64::from(local.x) * ppp, f64::from(local.y) * ppp]),
+        )
+    }
+
     /// Zoom as a share of 1:1, in points rather than physical pixels.
     pub fn zoom(&self, pixels_per_point: f64) -> Option<f64> {
         self.view.map(|view| view.zoom / pixels_per_point)
