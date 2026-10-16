@@ -6,6 +6,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::background::Background;
 use crate::color::Color;
 use crate::embedded::Embedded;
 use crate::export::ExportSettings;
@@ -24,6 +25,10 @@ pub struct Canvas {
     /// Height in nominal pixels (Canvas units).
     pub height: u32,
     pub scale: Scale,
+    /// The water colour and texture behind the Objects. Files saved before it existed get
+    /// the default.
+    #[serde(default, skip_serializing_if = "Background::is_default")]
+    pub background: Background,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -34,6 +39,7 @@ impl Canvas {
             width,
             height,
             scale,
+            background: Background::default(),
             extra: Extra::new(),
         }
     }
