@@ -153,10 +153,7 @@ impl ExportSettings {
     /// The region in Canvas units.
     pub fn region_rect(&self, canvas: &Canvas) -> Rect {
         match &self.region {
-            ExportRegion::Canvas => Rect {
-                min: [0.0, 0.0],
-                max: [f64::from(canvas.width), f64::from(canvas.height)],
-            },
+            ExportRegion::Canvas => canvas.rect(),
             ExportRegion::Custom { rect } => *rect,
         }
     }

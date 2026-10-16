@@ -37,6 +37,8 @@ pub struct PlacedStamp {
     pub after: usize,
     /// The index of the content's Clip scope it shows inside, if any.
     pub clip: Option<usize>,
+    /// The Stamp is on the pasteboard: drawn in full, not clipped at the Canvas edge.
+    pub pasteboard: bool,
     pub draw: StampDraw,
 }
 
@@ -100,6 +102,7 @@ pub(crate) struct Batch {
 struct Run {
     after: usize,
     clip: Option<usize>,
+    pasteboard: bool,
     batches: Vec<Batch>,
 }
 
@@ -301,13 +304,14 @@ impl StampRenderer {
             });
             let index = instances.len() as u32 - 1;
             let pages = (uploaded.art.page, uploaded.silhouette.page);
-            if runs
-                .last()
-                .is_none_or(|run| (run.after, run.clip) != (placed.after, placed.clip))
-            {
+            if runs.last().is_none_or(|run| {
+                (run.after, run.clip, run.pasteboard)
+                    != (placed.after, placed.clip, placed.pasteboard)
+            }) {
                 runs.push(Run {
                     after: placed.after,
                     clip: placed.clip,
+                    pasteboard: placed.pasteboard,
                     batches: Vec::new(),
                 });
             }
@@ -338,15 +342,15 @@ impl StampRenderer {
     }
 
     /// The Stamps placed after `after` vector groups, in draw order: for each Clip scope
-    /// they show inside, its batches.
+    /// they show inside, whether they are on the pasteboard, and its batches.
     pub(crate) fn runs_after(
         &self,
         after: usize,
-    ) -> impl Iterator<Item = (Option<usize>, &[Batch])> + '_ {
+    ) -> impl Iterator<Item = (Option<usize>, bool, &[Batch])> + '_ {
         self.runs
             .iter()
             .filter(move |run| run.after == after)
-            .map(|run| (run.clip, run.batches.as_slice()))
+            .map(|run| (run.clip, run.pasteboard, run.batches.as_slice()))
     }
 
     /// Draws batches from [`StampRenderer::runs_after`], only inside the active Clip if

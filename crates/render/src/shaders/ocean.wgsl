@@ -6,6 +6,7 @@ struct Ocean {
     canvas_size: vec2<f32>,
     strength: f32,
     scale: f32,
+    origin: vec2<f32>,
     light: vec4<f32>,
     dark: vec4<f32>,
 };
@@ -24,7 +25,7 @@ fn vs_main(@builtin(vertex_index) i: u32) -> VertexOut {
         vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(0.0, 1.0),
         vec2(0.0, 1.0), vec2(1.0, 0.0), vec2(1.0, 1.0),
     );
-    let canvas = corners[i] * ocean.canvas_size;
+    let canvas = ocean.origin + corners[i] * ocean.canvas_size;
     var out: VertexOut;
     out.position = to_clip(canvas);
     out.canvas = canvas;

@@ -163,22 +163,28 @@ pub enum Quality {
 pub struct CanvasScene {
     /// Canvas size in Canvas units.
     pub canvas_size: [f64; 2],
+    /// The Canvas's top-left corner in workspace coordinates.
+    pub canvas_origin: [f64; 2],
     pub backdrop: Backdrop,
     /// The area around the Canvas. Editor-only; export never shows it.
     pub pasteboard: Color,
     /// Drawn over the backdrop.
     pub content: Content,
     pub quality: Quality,
+    /// Whether Objects on the pasteboard are drawn. Export turns it off.
+    pub pasteboard_objects: bool,
 }
 
 impl CanvasScene {
     pub fn new(canvas: &ssmap_core::Canvas) -> Self {
         Self {
             canvas_size: [f64::from(canvas.width), f64::from(canvas.height)],
+            canvas_origin: canvas.origin,
             backdrop: Backdrop::from(&canvas.background),
             pasteboard: Color::rgb(0x1c, 0x1c, 0x1f),
             content: Content::default(),
             quality: Quality::Full,
+            pasteboard_objects: true,
         }
     }
 
@@ -197,6 +203,7 @@ impl CanvasScene {
 #[derive(Clone, PartialEq, Debug)]
 struct BackdropKey {
     canvas_size: [f64; 2],
+    canvas_origin: [f64; 2],
     backdrop: Backdrop,
 }
 
@@ -364,6 +371,7 @@ impl CanvasRenderer {
     ) -> &wgpu::Texture {
         let backdrop = BackdropKey {
             canvas_size: scene.canvas_size,
+            canvas_origin: scene.canvas_origin,
             backdrop: scene.backdrop,
         };
         if self.drawn_backdrop.as_ref() != Some(&backdrop) {
@@ -385,6 +393,11 @@ impl CanvasRenderer {
                     .cuts()
                     .chain(clips.iter().flat_map(|c| [c.groups.start, c.groups.end]))
                     .collect();
+                // Pasteboard Objects draw unscissored, so a run never mixes them with members.
+                let groups = scene.content.groups();
+                cuts.extend(
+                    (1..groups.len()).filter(|&i| groups[i].pasteboard != groups[i - 1].pasteboard),
+                );
                 cuts.sort_unstable();
                 cuts.dedup();
                 cuts
@@ -459,21 +472,31 @@ impl CanvasRenderer {
             bounds: view.visible(),
             effects: scene.quality == Quality::Full,
         };
+        let mut scissor = Scissor::new(scene, view);
         let mut active = None;
         let mut start = 0;
         for run in 0..=self.content_cuts.len() {
             // A run lies inside one Clip scope or outside them all, as scope edges are cuts.
             let scope = clips.iter().position(|clip| clip.groups.contains(&start));
-            self.enter(&mut pass, &mut active, scope);
-            self.content
-                .draw_run(&mut pass, run, scope.is_some(), &filter);
+            let pasteboard = scene
+                .content
+                .groups()
+                .get(start)
+                .is_some_and(|group| group.pasteboard);
+            self.enter(&mut pass, &mut scissor, &mut active, scope);
+            if scissor.set(&mut pass, pasteboard) {
+                self.content
+                    .draw_run(&mut pass, run, scope.is_some(), &filter);
+            }
             let Some(&cut) = self.content_cuts.get(run) else {
                 break;
             };
-            for (clip, batches) in self.stamps.runs_after(cut) {
-                self.enter(&mut pass, &mut active, clip);
-                self.stamps
-                    .draw(&mut pass, batches, clip.is_some(), filter.bounds);
+            for (clip, pasteboard, batches) in self.stamps.runs_after(cut) {
+                self.enter(&mut pass, &mut scissor, &mut active, clip);
+                if scissor.set(&mut pass, pasteboard) {
+                    self.stamps
+                        .draw(&mut pass, batches, clip.is_some(), filter.bounds);
+                }
             }
             start = cut;
         }
@@ -482,16 +505,19 @@ impl CanvasRenderer {
     }
 
     /// Makes `scope` the active Clip: removes the previous one's shape from the stencil and
-    /// writes the new one's.
+    /// writes the new one's. The shapes are written across the whole target, so a run on the
+    /// pasteboard in the same scope still finds them outside the Canvas.
     fn enter(
         &self,
         pass: &mut wgpu::RenderPass<'_>,
+        scissor: &mut Scissor,
         active: &mut Option<usize>,
         scope: Option<usize>,
     ) {
         if *active == scope {
             return;
         }
+        scissor.set(pass, true);
         if let Some(old) = *active {
             self.masks.draw_mask(pass, 2 * old, 0);
         }
@@ -504,9 +530,10 @@ impl CanvasRenderer {
 
     fn set_backdrop(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, scene: BackdropKey) {
         let [w, h] = scene.canvas_size.map(|v| v as f32);
+        let [x, y] = scene.canvas_origin.map(|v| v as f32);
         let mut builder = Path::builder();
         builder.add_rectangle(
-            &Box2D::new((0.0, 0.0).into(), (w, h).into()),
+            &Box2D::new((x, y).into(), (x + w, y + h).into()),
             Winding::Positive,
         );
         self.backdrop.set_groups(
@@ -521,6 +548,8 @@ impl CanvasRenderer {
             queue,
             OceanUniform {
                 canvas_size: [w, h],
+                origin: [x, y],
+                _pad: [0.0; 2],
                 strength: scene.backdrop.texture_strength.clamp(0.0, 1.0),
                 // Keeps the shader's division finite.
                 scale: scene.backdrop.texture_scale.max(0.01),
@@ -589,6 +618,59 @@ impl CanvasRenderer {
             resolved_view,
             stencil,
         });
+    }
+}
+
+/// Keeps Objects that belong to the Canvas inside it by scissoring their draws to the Canvas
+/// rectangle in target pixels. Pasteboard Objects draw across the whole target.
+struct Scissor {
+    /// The Canvas rectangle as `[x, y, width, height]` clamped to the target; `None` when none
+    /// of it is in view.
+    canvas: Option<[u32; 4]>,
+    size: [u32; 2],
+    pasteboard_objects: bool,
+    /// The kind of draw the pass is currently set up for.
+    current: Option<bool>,
+}
+
+impl Scissor {
+    fn new(scene: &CanvasScene, view: &View) -> Self {
+        let size = view.size.map(|v| v.max(1));
+        let pixel = |axis: usize, canvas: f64| (canvas - view.origin[axis]) * view.zoom;
+        let clamp = |axis: usize, v: f64| v.round().clamp(0.0, f64::from(size[axis])) as u32;
+        let min = [0, 1].map(|axis| clamp(axis, pixel(axis, scene.canvas_origin[axis])));
+        let max = [0, 1].map(|axis| {
+            let edge = scene.canvas_origin[axis] + scene.canvas_size[axis];
+            clamp(axis, pixel(axis, edge))
+        });
+        Self {
+            canvas: (max[0] > min[0] && max[1] > min[1]).then_some([
+                min[0],
+                min[1],
+                max[0] - min[0],
+                max[1] - min[1],
+            ]),
+            size,
+            pasteboard_objects: scene.pasteboard_objects,
+            current: None,
+        }
+    }
+
+    /// Sets the scissor for a draw of a pasteboard Object or of a Canvas member, and says
+    /// whether the draw can show anything.
+    fn set(&mut self, pass: &mut wgpu::RenderPass<'_>, pasteboard: bool) -> bool {
+        if self.current != Some(pasteboard) {
+            self.current = Some(pasteboard);
+            match self.canvas.filter(|_| !pasteboard) {
+                Some([x, y, w, h]) => pass.set_scissor_rect(x, y, w, h),
+                None => pass.set_scissor_rect(0, 0, self.size[0], self.size[1]),
+            }
+        }
+        if pasteboard {
+            self.pasteboard_objects
+        } else {
+            self.canvas.is_some()
+        }
     }
 }
 

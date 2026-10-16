@@ -142,6 +142,9 @@ impl ExportJob {
                 let mut scene = CanvasScene::new(&cx.map.canvas).with_content(content.clone());
                 // A region reaching past the Canvas shows water, not the editor's pasteboard.
                 scene.pasteboard = scene.backdrop.water;
+                // Only the Canvas is exported: its members are clipped at the edge and
+                // pasteboard Objects are left out.
+                scene.pasteboard_objects = false;
                 let region = self.settings.region_rect(&cx.map.canvas);
                 let max_side = self
                     .max_tile_side

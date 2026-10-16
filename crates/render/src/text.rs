@@ -405,6 +405,7 @@ impl LabelLayout {
             shapes,
             effect: false,
             object: None,
+            pasteboard: false,
         }
     }
 }

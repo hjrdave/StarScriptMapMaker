@@ -71,8 +71,10 @@ pub fn render_whole_canvas(
     if let Some(cache) = cache {
         resources.renderer.use_tessellation_cache(cache);
     }
-    let scene = CanvasScene::new(&editor.map.canvas).with_content(editor.scene_content());
-    let view = View::whole_canvas(scene.canvas_size, longest_side);
+    let mut scene = CanvasScene::new(&editor.map.canvas).with_content(editor.scene_content());
+    // The preview is of the Canvas alone, so pasteboard Objects stay out of it.
+    scene.pasteboard_objects = false;
+    let view = View::whole_canvas_at(scene.canvas_origin, scene.canvas_size, longest_side);
     Some(render_to_image(
         &render_state.device,
         &render_state.queue,
@@ -226,7 +228,7 @@ impl CanvasView {
         let view = self.view.get_or_insert_with(|| {
             let canvas = &editor.map.canvas;
             let canvas = [f64::from(canvas.width), f64::from(canvas.height)];
-            View::fit(canvas, size, FIT_MARGIN * ppp)
+            View::fit_at(editor.map.canvas.origin, canvas, size, FIT_MARGIN * ppp)
         });
         resize_keeping_centre(view, size);
 
@@ -457,7 +459,13 @@ fn paint_placeholder(
                 ((p[1] - view.origin[1]) * view.zoom / ppp) as f32,
             )
     };
-    let canvas = egui::Rect::from_two_pos(corner([0.0, 0.0]), corner(scene.canvas_size));
+    let canvas = egui::Rect::from_two_pos(
+        corner(scene.canvas_origin),
+        corner([
+            scene.canvas_origin[0] + scene.canvas_size[0],
+            scene.canvas_origin[1] + scene.canvas_size[1],
+        ]),
+    );
     painter.rect_filled(canvas, 0.0, color(scene.backdrop.water));
 }
 
