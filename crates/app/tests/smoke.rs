@@ -433,7 +433,15 @@ fn select_move_and_resize_landmasses_and_lakes() {
         );
     }
 
-    // Dragging the island's body moves it by the pointer's Canvas distance.
+    // Dragging the island's body moves it by the pointer's Canvas distance. The island is
+    // selected first: the toolbar is wider than this window once something is selected, which
+    // resizes the Canvas, and the Canvas keeps its centre through a resize.
+    let at = screen(&harness, [50.0, 300.0]);
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.drop_at(at);
+    harness.run();
     let from = screen(&harness, [50.0, 300.0]);
     let to = screen(&harness, [150.0, 350.0]);
     drag(&mut harness, from, to, true);

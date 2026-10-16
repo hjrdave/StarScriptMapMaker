@@ -18,7 +18,8 @@ fn main() -> eframe::Result {
         viewport: ssmap_app::window_chrome(
             egui::ViewportBuilder::default()
                 .with_title("StarScript Map Maker")
-                .with_inner_size([1280.0, 800.0]),
+                .with_inner_size([1280.0, 800.0])
+                .with_min_inner_size(ssmap_app::theme::metrics::MIN_WINDOW),
         ),
         renderer: eframe::Renderer::Wgpu,
         ..Default::default()

@@ -106,6 +106,20 @@ pub fn step_export(
     ))
 }
 
+/// Gives `view` a new target size, keeping the Canvas point at the middle of the target where
+/// it is, so the Map does not jump when a panel opens, closes or resizes beside it.
+fn resize_keeping_centre(view: &mut View, size: [u32; 2]) {
+    if view.size == size {
+        return;
+    }
+    let centre = view.to_canvas([f64::from(view.size[0]) / 2.0, f64::from(view.size[1]) / 2.0]);
+    view.size = size;
+    view.origin = [
+        centre[0] - f64::from(size[0]) / (2.0 * view.zoom),
+        centre[1] - f64::from(size[1]) / (2.0 * view.zoom),
+    ];
+}
+
 pub struct CanvasView {
     /// `None` until the first frame, which fits the Canvas to the panel.
     view: Option<View>,
@@ -192,7 +206,7 @@ impl CanvasView {
             let canvas = [f64::from(canvas.width), f64::from(canvas.height)];
             View::fit(canvas, size, FIT_MARGIN * ppp)
         });
-        view.size = size;
+        resize_keeping_centre(view, size);
 
         tools::canvas_input(
             editor,
@@ -418,5 +432,35 @@ impl egui_wgpu::CallbackTrait for CanvasCallback {
     ) {
         let resources: &CanvasResources = resources.get().expect("installed at startup");
         resources.presenter.draw(pass);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn centre(view: &View) -> [f64; 2] {
+        view.to_canvas([f64::from(view.size[0]) / 2.0, f64::from(view.size[1]) / 2.0])
+    }
+
+    #[test]
+    fn the_canvas_centre_is_unchanged_when_the_layers_panel_collapses() {
+        let ppp = 2.0;
+        let window = 1440.0_f32;
+        let shell = crate::shell::Shell::default();
+        let width_with = shell.layout(window).canvas_width(window);
+        let mut collapsed = shell.clone();
+        collapsed.set_layers_collapsed(true);
+        let width_without = collapsed.layout(window).canvas_width(window);
+        assert_ne!(width_with, width_without);
+
+        let pixels = |points: f32| (f64::from(points) * ppp) as u32;
+        let mut view = View::fit([4096.0, 3072.0], [pixels(width_with), 1200], 64.0);
+        view.zoom_at([300.0, 200.0], 2.5);
+        let before = centre(&view);
+        resize_keeping_centre(&mut view, [pixels(width_without), 1200]);
+        let after = centre(&view);
+        assert!((before[0] - after[0]).abs() < 1e-9 && (before[1] - after[1]).abs() < 1e-9);
+        assert_eq!(view.size[0], pixels(width_without));
     }
 }

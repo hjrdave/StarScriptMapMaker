@@ -9,14 +9,21 @@ use ssmap_app::shell::Side;
 use ssmap_app::theme::metrics;
 use ssmap_core::{Canvas, DistanceUnit, Scale};
 
+/// Wide enough for both panels in full.
+const WIDTH: f32 = 1440.0;
+
 fn app() -> Harness<'static, MapMakerApp> {
     app_with_step(0.25)
 }
 
 fn app_with_step(step_dt: f32) -> Harness<'static, MapMakerApp> {
+    app_sized(step_dt, WIDTH)
+}
+
+fn app_sized(step_dt: f32, width: f32) -> Harness<'static, MapMakerApp> {
     let mut harness = Harness::builder()
         .with_step_dt(step_dt)
-        .with_size(egui::vec2(1280.0, 800.0))
+        .with_size(egui::vec2(width, 800.0))
         .build_eframe(|cc| MapMakerApp::with_recovery_dir(cc, None));
     harness.run();
     // The app starts on Home with no Map; these tests need one open for the panels.
@@ -109,8 +116,8 @@ fn dragging_a_divider_resizes_within_its_range() {
         harness.state().shell().width(Side::Left),
         metrics::LAYERS_PANEL_MIN
     );
-    // Properties is anchored to the right edge of the 1280 pt window.
-    let edge = 1280.0 - metrics::PROPERTIES_PANEL_DEFAULT;
+    // Properties is anchored to the right edge of the window.
+    let edge = WIDTH - metrics::PROPERTIES_PANEL_DEFAULT;
     drag(&mut harness, edge, 0.0, y);
     assert_eq!(
         harness.state().shell().width(Side::Right),
@@ -166,6 +173,60 @@ fn the_status_bar_shows_the_cursor_in_pixels_and_real_world_units() {
     let node = harness.get_by_label_contains(" px · ");
     let label = node.accesskit_node().value().unwrap();
     assert!(label.starts_with("X ") && label.ends_with(" mi"), "{label}");
+}
+
+#[test]
+fn a_narrow_window_shows_layers_as_a_rail_that_opens_over_the_canvas() {
+    let mut harness = app_sized(0.25, 1100.0);
+    assert!(harness.query_by_label("Collapse Layers (⌘⌥1)").is_none());
+    harness.get_by_label("Expand Layers (⌘⌥1)").click();
+    harness.run();
+    // Open over the Canvas; the user's own choice is untouched.
+    assert!(harness.state().shell().layers_overlay());
+    assert!(!harness.state().shell().layers_collapsed());
+    assert!(harness.query_by_label("Collapse Layers (⌘⌥1)").is_some());
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    assert!(!harness.state().shell().layers_overlay());
+    assert!(harness.query_by_label("Collapse Layers (⌘⌥1)").is_none());
+}
+
+#[test]
+fn a_press_outside_the_overlay_closes_it() {
+    let mut harness = app_sized(0.25, 1100.0);
+    harness.get_by_label("Expand Layers (⌘⌥1)").click();
+    harness.run();
+    assert!(harness.state().shell().layers_overlay());
+    harness.hover_at(egui::pos2(800.0, 500.0));
+    harness.run();
+    harness.drag_at(egui::pos2(800.0, 500.0));
+    harness.run();
+    harness.drop_at(egui::pos2(800.0, 500.0));
+    harness.run();
+    assert!(!harness.state().shell().layers_overlay());
+}
+
+#[test]
+fn at_the_minimum_properties_is_a_rail_that_opens_a_floating_inspector() {
+    let mut harness = app_sized(0.25, 1024.0);
+    assert!(harness.query_by_label("Properties").is_none());
+    harness.get_by_label("Open Properties (⌘⌥2)").click();
+    harness.run();
+    assert!(harness.state().shell().properties_overlay());
+    assert!(harness.query_by_label("Properties").is_some());
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    assert!(!harness.state().shell().properties_overlay());
+}
+
+#[test]
+fn the_status_bar_drops_real_world_units_below_1180() {
+    let mut harness = app_sized(0.25, 1100.0);
+    harness.hover_at(egui::pos2(640.0, 400.0));
+    harness.run();
+    let node = harness.get_by_label_contains(" px");
+    let label = node.accesskit_node().value().unwrap();
+    assert!(label.starts_with("X ") && label.ends_with(" px"), "{label}");
 }
 
 #[test]

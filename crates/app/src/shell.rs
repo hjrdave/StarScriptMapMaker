@@ -33,6 +33,71 @@ pub struct Shell {
     /// ⇥ hid both panels. Kept apart from the two flags above so that showing them again
     /// restores exactly what the user had collapsed.
     panels_hidden: bool,
+    /// The window's width, in points, as of the last frame.
+    #[serde(skip, default = "default_window_width")]
+    window_width: f32,
+    /// A rail was clicked and its panel shows over the Canvas. Closes on an outside click
+    /// or Esc.
+    #[serde(skip)]
+    layers_overlay: bool,
+    #[serde(skip)]
+    properties_overlay: bool,
+}
+
+fn default_window_width() -> f32 {
+    FULL_WIDTH
+}
+
+/// The window width, in points, from which both panels show in full.
+pub const FULL_WIDTH: f32 = 1360.0;
+/// From here Layers narrows; below it, Layers is the rail.
+pub const NARROW_WIDTH: f32 = 1180.0;
+/// Below this Properties is a rail too, opening as a floating inspector. The window cannot be
+/// made smaller than `theme::metrics::MIN_WINDOW`.
+pub const MINIMUM_WIDTH: f32 = 1100.0;
+/// The Canvas is never narrower than this, in points.
+pub const CANVAS_MIN_WIDTH: f32 = 480.0;
+/// The Layers width in the 1180–1359 band.
+const LAYERS_NARROW: f32 = 200.0;
+
+/// How a panel takes part in the layout.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PanelMode {
+    /// A column of this width.
+    Full(f32),
+    /// The 40 pt rail.
+    Rail,
+    /// Not shown at all.
+    Hidden,
+}
+
+impl PanelMode {
+    /// The width the panel takes from the Canvas.
+    pub fn width(self) -> f32 {
+        match self {
+            Self::Full(width) => width,
+            Self::Rail => metrics::LAYERS_PANEL_RAIL,
+            Self::Hidden => 0.0,
+        }
+    }
+}
+
+/// What the window shows at a given width.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Layout {
+    pub layers: PanelMode,
+    pub properties: PanelMode,
+    /// The Object and Layer counts under the Layers list.
+    pub layers_footer: bool,
+    /// Real-world distances in the status bar.
+    pub real_world_coordinates: bool,
+}
+
+impl Layout {
+    /// The width left to the Canvas in a window `window_width` wide.
+    pub fn canvas_width(&self, window_width: f32) -> f32 {
+        window_width - self.layers.width() - self.properties.width()
+    }
 }
 
 impl Default for Shell {
@@ -43,6 +108,9 @@ impl Default for Shell {
             layers_collapsed: false,
             properties_hidden: false,
             panels_hidden: false,
+            window_width: FULL_WIDTH,
+            layers_overlay: false,
+            properties_overlay: false,
         }
     }
 }
@@ -131,6 +199,9 @@ impl Shell {
             // Asking for a panel while both are hidden shows them, with Layers expanded.
             self.panels_hidden = false;
             self.layers_collapsed = false;
+        } else if self.auto_rail(Side::Left) {
+            // The window is too narrow for the panel: the shortcut opens it over the Canvas.
+            self.set_layers_overlay(!self.layers_overlay);
         } else {
             self.layers_collapsed = !self.layers_collapsed;
         }
@@ -140,6 +211,8 @@ impl Shell {
         if self.panels_hidden {
             self.panels_hidden = false;
             self.properties_hidden = false;
+        } else if self.auto_rail(Side::Right) {
+            self.set_properties_overlay(!self.properties_overlay);
         } else {
             self.properties_hidden = !self.properties_hidden;
         }
@@ -149,12 +222,108 @@ impl Shell {
         self.panels_hidden = !self.panels_hidden;
     }
 
-    /// The width a column takes in the layout, given its current state.
-    pub fn layers_layout_width(&self) -> f32 {
-        if self.layers_collapsed {
-            metrics::LAYERS_PANEL_RAIL
+    /// What the window shows at `window_width`: a pure function of the width and of what the
+    /// user chose. A panel the user collapsed stays collapsed at every width; the narrower
+    /// bands collapse panels only in the layout, never in the user's state, so growing the
+    /// window brings back exactly what they had.
+    pub fn layout(&self, window_width: f32) -> Layout {
+        let (mut layers, mut properties) = if self.panels_hidden {
+            (PanelMode::Hidden, PanelMode::Hidden)
         } else {
-            self.layers_width
+            let layers = if self.layers_collapsed || window_width < NARROW_WIDTH {
+                PanelMode::Rail
+            } else if window_width < FULL_WIDTH {
+                PanelMode::Full(LAYERS_NARROW)
+            } else {
+                PanelMode::Full(self.layers_width)
+            };
+            let properties = if self.properties_hidden {
+                PanelMode::Hidden
+            } else if window_width < MINIMUM_WIDTH {
+                PanelMode::Rail
+            } else {
+                PanelMode::Full(self.properties_width)
+            };
+            (layers, properties)
+        };
+        // The Canvas keeps its room: Properties gives way first, then Layers.
+        let canvas = |layers: PanelMode, properties: PanelMode| {
+            window_width - layers.width() - properties.width()
+        };
+        if canvas(layers, properties) < CANVAS_MIN_WIDTH && matches!(properties, PanelMode::Full(_))
+        {
+            properties = PanelMode::Rail;
+        }
+        if canvas(layers, properties) < CANVAS_MIN_WIDTH && matches!(layers, PanelMode::Full(_)) {
+            layers = PanelMode::Rail;
+        }
+        Layout {
+            layers,
+            properties,
+            layers_footer: window_width >= FULL_WIDTH,
+            real_world_coordinates: window_width >= NARROW_WIDTH,
+        }
+    }
+
+    /// Records the window's width at the start of a frame.
+    pub fn set_window_width(&mut self, width: f32) {
+        self.window_width = width;
+    }
+
+    /// The layout at the window's current width.
+    pub fn current_layout(&self) -> Layout {
+        self.layout(self.window_width)
+    }
+
+    pub fn layers_overlay(&self) -> bool {
+        self.layers_overlay
+    }
+
+    pub fn properties_overlay(&self) -> bool {
+        self.properties_overlay
+    }
+
+    pub fn set_layers_overlay(&mut self, open: bool) {
+        self.layers_overlay = open;
+        if open {
+            self.properties_overlay = false;
+        }
+    }
+
+    pub fn set_properties_overlay(&mut self, open: bool) {
+        self.properties_overlay = open;
+        if open {
+            self.layers_overlay = false;
+        }
+    }
+
+    /// The Layers rail was clicked. If the user collapsed Layers and the window has room, that
+    /// expands it; otherwise the window is too narrow and Layers opens over the Canvas.
+    pub fn click_layers_rail(&mut self) {
+        let mut expanded = self.clone();
+        expanded.layers_collapsed = false;
+        if expanded.layout(self.window_width).layers == PanelMode::Rail {
+            self.set_layers_overlay(!self.layers_overlay);
+        } else {
+            self.layers_collapsed = false;
+        }
+    }
+
+    pub fn close_overlays(&mut self) {
+        self.layers_overlay = false;
+        self.properties_overlay = false;
+    }
+
+    pub fn overlay_open(&self) -> bool {
+        self.layers_overlay || self.properties_overlay
+    }
+
+    /// Whether the window's width, not the user, makes the panel on `side` a rail.
+    fn auto_rail(&self, side: Side) -> bool {
+        let layout = self.current_layout();
+        match side {
+            Side::Left => !self.layers_collapsed && layout.layers == PanelMode::Rail,
+            Side::Right => !self.properties_hidden && layout.properties == PanelMode::Rail,
         }
     }
 }
@@ -281,6 +450,33 @@ pub fn layers_rail(ui: &mut egui::Ui, path: &[String]) -> bool {
         .clicked()
 }
 
+/// The 40 pt rail Properties narrows to at the smallest window. Returns true when clicked,
+/// which opens the floating inspector.
+pub fn properties_rail(ui: &mut egui::Ui) -> bool {
+    let palette = theme::palette(ui.ctx());
+    let rect = ui.max_rect();
+    let response = ui.interact(rect, ui.id().with("properties rail"), egui::Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Open Properties (⌘⌥2)")
+    });
+    let tint = if response.hovered() {
+        palette.text_primary
+    } else {
+        palette.text_secondary
+    };
+    let top = rect.top() + metrics::PANEL_HEADER / 2.0;
+    for (i, icon) in [Icon::CollapseLeft, Icon::Shape].into_iter().enumerate() {
+        let slot = egui::Rect::from_center_size(
+            egui::pos2(rect.center().x, top + i as f32 * metrics::PANEL_HEADER),
+            egui::Vec2::splat(icons::GRID + 8.0),
+        );
+        icons::paint(ui, slot, icon, icons::GRID, tint);
+    }
+    response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+}
+
 /// The Selection's names from its Layer down, for the rail. Empty when nothing is selected;
 /// several Objects show the count.
 pub fn selection_path(map: &Map, selection: &[Id]) -> Vec<String> {
@@ -375,14 +571,17 @@ fn grouped(value: i64) -> String {
 }
 
 /// A Canvas point in pixels and in the Map's real-world units:
-/// "X 3,118 Y 1,886 px · 779 × 471 mi".
-pub fn cursor_text(canvas: &Canvas, point: [f64; 2]) -> String {
+/// "X 3,118 Y 1,886 px · 779 × 471 mi". Without `real_world` only the pixels are given.
+pub fn cursor_text(canvas: &Canvas, point: [f64; 2], real_world: bool) -> String {
     let unit = match canvas.scale.unit {
         DistanceUnit::Miles => "mi",
         DistanceUnit::Kilometres => "km",
     };
     let per_unit = canvas.scale.distance_per_unit;
     let whole = |value: f64| grouped(value.floor() as i64);
+    if !real_world {
+        return format!("X {} Y {} px", whole(point[0]), whole(point[1]));
+    }
     format!(
         "X {} Y {} px · {} × {} {unit}",
         whole(point[0]),
@@ -436,16 +635,127 @@ mod tests {
         assert!(shell.layers_shown() && !shell.properties_shown());
     }
 
+    fn full(width: f32) -> PanelMode {
+        PanelMode::Full(width)
+    }
+
+    #[test]
+    fn at_1360_and_wider_both_panels_show_in_full() {
+        let layout = Shell::default().layout(1360.0);
+        assert_eq!(layout.layers, full(232.0));
+        assert_eq!(layout.properties, full(288.0));
+        assert!(layout.layers_footer && layout.real_world_coordinates);
+        assert_eq!(Shell::default().layout(2400.0).layers, full(232.0));
+    }
+
+    #[test]
+    fn from_1180_to_1359_layers_narrows_and_loses_its_footer() {
+        for width in [1180.0, 1359.0] {
+            let layout = Shell::default().layout(width);
+            assert_eq!(layout.layers, full(200.0));
+            assert_eq!(layout.properties, full(288.0));
+            assert!(!layout.layers_footer && layout.real_world_coordinates);
+        }
+    }
+
+    #[test]
+    fn from_1024_to_1179_layers_is_the_rail_and_the_status_bar_drops_distances() {
+        for width in [1100.0, 1179.0] {
+            let layout = Shell::default().layout(width);
+            assert_eq!(layout.layers, PanelMode::Rail);
+            assert_eq!(layout.properties, full(288.0));
+            assert!(!layout.real_world_coordinates);
+        }
+    }
+
+    #[test]
+    fn at_the_minimum_both_panels_are_rails() {
+        let layout = Shell::default().layout(1024.0);
+        assert_eq!(layout.layers, PanelMode::Rail);
+        assert_eq!(layout.properties, PanelMode::Rail);
+        assert_eq!(layout.canvas_width(1024.0), 944.0);
+    }
+
+    #[test]
+    fn the_canvas_keeps_480_points() {
+        let mut shell = Shell::default();
+        shell.set_width(Side::Right, 360.0);
+        for width in [600.0, 700.0, 900.0, 1024.0, 1250.0, 1500.0] {
+            let layout = shell.layout(width);
+            assert!(layout.canvas_width(width) >= CANVAS_MIN_WIDTH, "{width}");
+        }
+        // Properties gives way before Layers.
+        let layout = shell.layout(1360.0);
+        assert_eq!(
+            (layout.layers, layout.properties),
+            (full(232.0), full(360.0))
+        );
+        let layout = Shell::default().layout(700.0);
+        assert_eq!(layout.layers, PanelMode::Rail);
+    }
+
+    #[test]
+    fn a_panel_the_user_collapsed_stays_collapsed_when_the_window_grows() {
+        let mut shell = Shell::default();
+        shell.toggle_layers();
+        shell.toggle_properties();
+        for width in [1024.0, 1250.0, 1400.0, 3000.0] {
+            let layout = shell.layout(width);
+            assert_eq!(layout.layers, PanelMode::Rail, "{width}");
+            assert_eq!(layout.properties, PanelMode::Hidden, "{width}");
+        }
+        shell.toggle_panels();
+        assert_eq!(shell.layout(1500.0).layers, PanelMode::Hidden);
+    }
+
+    #[test]
+    fn narrowing_the_window_leaves_the_users_state_alone() {
+        let shell = Shell::default();
+        let before = shell.clone();
+        let _ = shell.layout(1024.0);
+        assert_eq!(shell, before);
+        // And growing back restores the full layout.
+        assert_eq!(shell.layout(1024.0).layers, PanelMode::Rail);
+        assert_eq!(shell.layout(1400.0).layers, full(232.0));
+    }
+
+    #[test]
+    fn the_layers_shortcut_opens_the_overlay_when_the_window_is_too_narrow() {
+        let mut shell = Shell::default();
+        shell.set_window_width(1100.0);
+        shell.toggle_layers();
+        assert!(shell.layers_overlay() && !shell.layers_collapsed());
+        shell.toggle_layers();
+        assert!(!shell.layers_overlay());
+        shell.set_window_width(1400.0);
+        shell.toggle_layers();
+        assert!(shell.layers_collapsed() && !shell.layers_overlay());
+    }
+
+    #[test]
+    fn only_one_overlay_is_open_at_a_time() {
+        let mut shell = Shell::default();
+        shell.set_layers_overlay(true);
+        shell.set_properties_overlay(true);
+        assert!(shell.properties_overlay() && !shell.layers_overlay());
+        shell.close_overlays();
+        assert!(!shell.overlay_open());
+    }
+
     #[test]
     fn the_status_bar_gives_real_world_units_for_a_known_scale() {
         let canvas = Canvas::new(4096, 3072, Scale::new(0.25, DistanceUnit::Miles));
         assert_eq!(
-            cursor_text(&canvas, [3118.4, 1886.9]),
+            cursor_text(&canvas, [3118.4, 1886.9], true),
             "X 3,118 Y 1,886 px · 779 × 471 mi"
+        );
+        assert_eq!(
+            cursor_text(&canvas, [3118.4, 1886.9], false),
+            "X 3,118 Y 1,886 px"
         );
         let canvas = Canvas::new(100, 100, Scale::new(2.0, DistanceUnit::Kilometres));
         assert_eq!(
-            cursor_text(&canvas, [-5.0, 12.0]),
+            cursor_text(&canvas, [-5.0, 12.0], true),
             "X -5 Y 12 px · -10 × 24 km"
         );
     }
