@@ -269,6 +269,10 @@ enum Action {
     Group,
     /// Dissolves the selected Groups.
     Ungroup,
+    /// Links the selection so it moves and transforms together.
+    Link,
+    /// Takes the selection out of its Link sets.
+    Unlink,
     FinishRename,
     CancelRename,
 }
@@ -394,6 +398,12 @@ impl LayerTree {
                 }
                 Action::Ungroup => {
                     editor.ungroup_selection();
+                }
+                Action::Link => {
+                    editor.link_selection();
+                }
+                Action::Unlink => {
+                    editor.unlink_selection();
                 }
                 Action::StartRename(id) => {
                     self.renaming = Some((id, node_name(&editor.map, id)));
@@ -527,6 +537,10 @@ impl LayerTree {
                     locked: !state.locked,
                 }));
             }
+            trailing_left = trailing.min_rect().left();
+        }
+        if map.is_linked(row.id) {
+            indicator(&mut trailing, Icon::Link, palette.text_secondary, "Linked");
             trailing_left = trailing.min_rect().left();
         }
         if let Some(layer) = layer {
@@ -726,6 +740,25 @@ impl LayerTree {
                     actions.push(Action::Select(row.id, false));
                 }
                 actions.push(Action::Ungroup);
+                ui.close();
+            }
+            if ui
+                .add_enabled(selected && editor.can_link(), egui::Button::new("Link"))
+                .on_disabled_hover_text("Select two or more layers to link")
+                .clicked()
+            {
+                actions.push(Action::Link);
+                ui.close();
+            }
+            if ui
+                .add_enabled(map.is_linked(row.id), egui::Button::new("Unlink"))
+                .on_disabled_hover_text("This layer is not linked")
+                .clicked()
+            {
+                if !selected {
+                    actions.push(Action::Select(row.id, false));
+                }
+                actions.push(Action::Unlink);
                 ui.close();
             }
             if ui.button("Copy").clicked() {
@@ -1206,6 +1239,37 @@ mod tests {
         harness.get_by_label("Depth-sorted");
         assert!(harness.query_by_label("Clipped to Landmass").is_none());
         assert!(harness.query_by_label_contains("%").is_none());
+    }
+
+    #[test]
+    fn linked_rows_show_the_link_icon_and_link_and_unlink_are_undoable() {
+        let (mut editor, a, b) = editor_with_two_layers();
+        editor.select(vec![a]);
+        assert!(!editor.can_link(), "one row has nothing to link to");
+        editor.select(vec![a, b]);
+        assert!(editor.can_link() && !editor.can_unlink());
+        let plain = editor.map.view();
+        assert!(editor.link_selection());
+        assert!(editor.map.is_linked(a) && editor.map.is_linked(b));
+        assert!(editor.can_unlink());
+
+        let mut harness = harness(editor);
+        assert_eq!(harness.query_all_by_label("Linked").count(), 2);
+
+        let editor = &mut harness.state_mut().editor;
+        assert!(editor.unlink_selection());
+        harness.run();
+        assert!(harness.query_by_label("Linked").is_none());
+
+        let editor = &mut harness.state_mut().editor;
+        editor.undo();
+        harness.run();
+        assert_eq!(harness.query_all_by_label("Linked").count(), 2);
+        let editor = &mut harness.state_mut().editor;
+        editor.undo();
+        assert_eq!(editor.map.view(), plain);
+        editor.redo();
+        assert!(editor.map.is_linked(a));
     }
 
     #[test]

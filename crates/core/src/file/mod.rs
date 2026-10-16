@@ -55,7 +55,7 @@ use crate::node::{Node, Object};
 
 /// The format this version writes. A minor bump only adds optional fields; a major bump is
 /// anything else, and needs a migration.
-pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 7 };
+pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 8 };
 
 /// The longer side of the preview image stored in every save, in pixels.
 pub const PREVIEW_SIZE: u32 = 512;
@@ -604,6 +604,7 @@ fn encode_node(node: &Node) -> (&'static str, String, Option<Vec<u8>>) {
                     locked: object.locked,
                     membership: object.membership,
                     kind: object.kind.without_geometry(),
+                    link: object.link,
                     extra: object.extra.clone(),
                 });
                 let mut props = serde_json::to_value(&stripped).expect("a node serialises");

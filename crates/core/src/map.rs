@@ -199,6 +199,8 @@ pub struct Map {
     pub export_settings: ExportSettings,
     pub(crate) root: Vec<Id>,
     pub(crate) entries: HashMap<Id, Entry>,
+    /// The members of each Link set, kept in step with the nodes' `link` fields.
+    links: HashMap<Id, HashSet<Id>>,
     /// Increases with every applied Op; touched nodes take its new value as their version.
     pub(crate) revision: u64,
 }
@@ -212,6 +214,7 @@ impl Map {
             export_settings: ExportSettings::default(),
             root: Vec::new(),
             entries: HashMap::new(),
+            links: HashMap::new(),
             revision: 0,
         }
     }
@@ -423,6 +426,93 @@ impl Map {
         out.extend(lakes);
     }
 
+    /// The members of the Link set `id` belongs to, `id` included, sorted. Empty when `id`
+    /// is not linked, or is the only member of its set (a set of one links nothing).
+    pub fn linked_with(&self, id: Id) -> Vec<Id> {
+        let Some(members) = self
+            .node(id)
+            .and_then(Node::link)
+            .and_then(|set| self.links.get(&set))
+        else {
+            return Vec::new();
+        };
+        if members.len() < 2 {
+            return Vec::new();
+        }
+        let mut members: Vec<Id> = members.iter().copied().collect();
+        members.sort();
+        members
+    }
+
+    /// The members of the Link set of `id`, `id` included, when it shares the set with at
+    /// least one other node.
+    pub(crate) fn link_members(&self, id: Id) -> Option<&HashSet<Id>> {
+        let set = self.node(id).and_then(Node::link)?;
+        self.links.get(&set).filter(|members| members.len() > 1)
+    }
+
+    /// Whether `id` is linked to at least one other node.
+    pub fn is_linked(&self, id: Id) -> bool {
+        let Some(set) = self.node(id).and_then(Node::link) else {
+            return false;
+        };
+        self.links
+            .get(&set)
+            .is_some_and(|members| members.len() > 1)
+    }
+
+    /// The Objects that move or transform along with `ids` because of Links: the Objects
+    /// of every linked node (Objects inside a linked Layer, at any depth), except those in
+    /// `ids` themselves, sorted. Fails if anything in a touched set is locked, itself or
+    /// through a Layer above it, or a linked Layer holds something locked: then nothing
+    /// moves, so linked nodes never drift apart.
+    pub fn linked_movers(&self, ids: &[Id]) -> Result<Vec<Id>, crate::CommandError> {
+        let listed: HashSet<Id> = ids.iter().copied().collect();
+        let mut seen: HashSet<Id> = HashSet::new();
+        let mut movers = Vec::new();
+        for &id in ids {
+            let members = self.linked_with(id);
+            if members.is_empty() {
+                continue;
+            }
+            for member in members {
+                if let Some(locked) = self.locked_in_branch(member) {
+                    return Err(crate::CommandError::LinkedLocked { target: id, locked });
+                }
+                let mut pending = vec![member];
+                while let Some(at) = pending.pop() {
+                    match self.node(at) {
+                        Some(Node::Layer(_)) => pending.extend(self.children(Some(at))),
+                        Some(Node::Object(_)) if !listed.contains(&at) && seen.insert(at) => {
+                            movers.push(at);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        movers.sort();
+        Ok(movers)
+    }
+
+    /// The first locked node among `id`, the Layers above it and everything inside it.
+    fn locked_in_branch(&self, id: Id) -> Option<Id> {
+        if self.node(id).is_some_and(Node::locked) {
+            return Some(id);
+        }
+        if let Some(layer) = self.locked_ancestor(id) {
+            return Some(layer);
+        }
+        let mut pending = self.children(Some(id)).to_vec();
+        while let Some(at) = pending.pop() {
+            if self.node(at).is_some_and(Node::locked) {
+                return Some(at);
+            }
+            pending.extend(self.children(Some(at)));
+        }
+        None
+    }
+
     /// `id` is locked itself or through a Layer above it.
     pub fn is_locked(&self, id: Id) -> bool {
         std::iter::successors(Some(id), |&n| self.parent(n))
@@ -516,6 +606,9 @@ impl Map {
     pub(crate) fn insert_entries(&mut self, parent: Option<Id>, subtree: Subtree) {
         let Subtree { id, node, children } = subtree;
         let child_ids = children.iter().map(|child| child.id).collect();
+        if let Some(set) = node.link() {
+            self.links.entry(set).or_default().insert(id);
+        }
         self.entries.insert(
             id,
             Entry {
@@ -533,6 +626,7 @@ impl Map {
     /// Removes the entries of `id` and its descendants, returning them as a Subtree.
     pub(crate) fn remove_entries(&mut self, id: Id) -> Subtree {
         let entry = self.entries.remove(&id).expect("a known id");
+        self.relink(id, entry.node.link(), None);
         Subtree {
             id,
             node: entry.node,
@@ -548,6 +642,21 @@ impl Map {
         match parent {
             None => &mut self.root,
             Some(id) => &mut self.entries.get_mut(&id).expect("a known id").children,
+        }
+    }
+
+    /// Moves `id` in the Link index from set `was` to set `now`.
+    pub(crate) fn relink(&mut self, id: Id, was: Option<Id>, now: Option<Id>) {
+        if let Some(set) = was
+            && let Some(members) = self.links.get_mut(&set)
+        {
+            members.remove(&id);
+            if members.is_empty() {
+                self.links.remove(&set);
+            }
+        }
+        if let Some(set) = now {
+            self.links.entry(set).or_default().insert(id);
         }
     }
 

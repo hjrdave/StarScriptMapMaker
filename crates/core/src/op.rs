@@ -85,6 +85,8 @@ pub enum Property {
     Clip(Option<Id>),
     /// Layers only.
     DepthSort(bool),
+    /// Layers and Objects: the Link set, or `None` for no link.
+    Link(Option<Id>),
     /// Objects only.
     Membership(Membership),
     /// Landmasses and Lakes only.
@@ -156,6 +158,10 @@ impl Map {
                     &mut self.entries.get_mut(&id).expect("checked").node,
                     property,
                 );
+                if let Property::Link(was) = &old {
+                    let now = self.node(id).and_then(Node::link);
+                    self.relink(id, *was, now);
+                }
                 self.touch(Some(id));
                 Op::SetProperty { id, property: old }
             }
@@ -340,6 +346,7 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
             Node::Object(_),
             Property::Name(_)
             | Property::Locked(_)
+            | Property::Link(_)
             | Property::Membership(_)
             | Property::Roughness(_)
             | Property::Shore(_),
@@ -372,6 +379,12 @@ fn set_property(node: &mut Node, property: Property) -> Property {
         }
         (Node::Layer(layer), Property::DepthSort(on)) => {
             Property::DepthSort(std::mem::replace(&mut layer.depth_sort, on))
+        }
+        (Node::Layer(layer), Property::Link(link)) => {
+            Property::Link(std::mem::replace(&mut layer.link, link))
+        }
+        (Node::Object(object), Property::Link(link)) => {
+            Property::Link(std::mem::replace(&mut object.link, link))
         }
         (Node::Object(object), Property::Name(name)) => {
             let new = (!name.is_empty()).then_some(name);

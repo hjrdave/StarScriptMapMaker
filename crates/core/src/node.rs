@@ -32,6 +32,21 @@ impl Node {
             Node::Object(object) => object.locked,
         }
     }
+
+    pub(crate) fn set_link(&mut self, link: Option<Id>) {
+        match self {
+            Node::Layer(layer) => layer.link = link,
+            Node::Object(object) => object.link = link,
+        }
+    }
+
+    /// The Link set this node belongs to, if any.
+    pub fn link(&self) -> Option<Id> {
+        match self {
+            Node::Layer(layer) => layer.link,
+            Node::Object(object) => object.link,
+        }
+    }
 }
 
 /// A container of Objects and other Layers. A Group is just a nested Layer.
@@ -48,6 +63,10 @@ pub struct Layer {
     /// Draws the Stamps directly inside by Anchor height, lower in front (ADR 0003).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub depth_sort: bool,
+    /// The Link set this Layer belongs to: Layers and Objects with the same id move and
+    /// transform together. A set of one links nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<Id>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -61,6 +80,7 @@ impl Layer {
             opacity: 1.0,
             clip: None,
             depth_sort: false,
+            link: None,
             extra: Extra::new(),
         }
     }
@@ -78,6 +98,9 @@ pub struct Object {
     #[serde(default, skip_serializing_if = "Membership::is_default")]
     pub membership: Membership,
     pub kind: ObjectKind,
+    /// The Link set this Object belongs to, as on a [`Layer`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<Id>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -89,6 +112,7 @@ impl Object {
             locked: false,
             membership: Membership::default(),
             kind,
+            link: None,
             extra: Extra::new(),
         }
     }
