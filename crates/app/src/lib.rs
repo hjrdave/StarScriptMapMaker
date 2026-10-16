@@ -11,6 +11,7 @@ pub mod export_region;
 pub mod export_run;
 pub mod frame_time;
 pub mod handles;
+pub mod icons;
 mod label_styles;
 mod layer_tree;
 pub mod new_map;
