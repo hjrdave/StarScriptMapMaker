@@ -9,6 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::background::Background;
 use crate::color::Color;
 use crate::embedded::{Blob, ContentHash, EmbedAsset, EmbedFont, EmbeddedFont};
 use crate::geometry::{Affine, MultiPolygon, NodeRef, Point};
@@ -210,6 +211,11 @@ pub enum Command {
         ids: Vec<Id>,
         roughness: Option<Roughness>,
     },
+    /// Replaces the Canvas's background: the water colour and the texture over it. The
+    /// template the Map was made from is left as it is.
+    SetBackground {
+        background: Background,
+    },
     /// Sets the Roughness of every Landmass and Lake without its own.
     SetDefaultRoughness {
         roughness: Roughness,
@@ -403,6 +409,8 @@ pub enum CommandError {
     InvalidCanvasSize { width: u32, height: u32 },
     #[error("the Canvas origin {0:?} is not finite")]
     InvalidCanvasOrigin(Point),
+    #[error("the background's texture strength must be 0 to 1 and its scale above 0")]
+    InvalidBackground,
     #[error("cannot embed: {0}")]
     InvalidEmbed(String),
     #[error("invalid Stamp: {0}")]
@@ -450,6 +458,7 @@ impl Command {
             Command::SetMembership { .. } => "Change Board",
             Command::SetFill { .. } => "Change Fill",
             Command::SetRoughness { .. } => "Change Roughness",
+            Command::SetBackground { .. } => "Change Background",
             Command::SetDefaultRoughness { .. } => "Change Default Roughness",
             Command::SetShore { .. } => "Change Shore Style",
             Command::SetDefaultShore { .. } => "Change Default Shore Style",
@@ -735,6 +744,18 @@ impl Command {
                     ShoreKind::Lake => defaults.lake_shore = shore.clone(),
                 }
                 Ok(vec![Op::SetDefaults { defaults }])
+            }
+            Command::SetBackground { background } => {
+                let texture = &background.texture;
+                if !(0.0..=1.0).contains(&texture.strength)
+                    || !texture.scale.is_finite()
+                    || texture.scale <= 0.0
+                {
+                    return Err(CommandError::InvalidBackground);
+                }
+                Ok(vec![Op::SetBackground {
+                    background: background.clone(),
+                }])
             }
             Command::SetDefaultRoughness { roughness } => {
                 valid_roughness(roughness)?;

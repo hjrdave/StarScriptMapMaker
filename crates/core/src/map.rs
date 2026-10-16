@@ -36,6 +36,10 @@ pub struct Canvas {
     /// the default.
     #[serde(default, skip_serializing_if = "Background::is_default")]
     pub background: Background,
+    /// The name of the template the Map was made from, kept as it was then. Changing the
+    /// background later does not change it. Maps not made from a template have none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -63,6 +67,7 @@ impl Canvas {
             origin: [0.0, 0.0],
             scale,
             background: Background::default(),
+            template: None,
             extra: Extra::new(),
         }
     }
