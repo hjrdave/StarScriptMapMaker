@@ -11,9 +11,10 @@ use serde::Deserialize;
 use thiserror::Error;
 
 use crate::asset::assets_dir;
+use crate::background::Background;
 use crate::file::{FORMAT_VERSION, FormatVersion};
 use crate::id::Id;
-use crate::map::{Canvas, InvariantError, Map, MapView};
+use crate::map::{Canvas, InvariantError, Map, MapDefaults, MapView};
 
 /// The starter template's file, inside the assets folder.
 pub const STARTER_TEMPLATE: &str = "templates/starter.json";
@@ -109,6 +110,16 @@ impl MapTemplate {
     /// The name the template is listed under.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// The background new Maps from this template get.
+    pub fn background(&self) -> &Background {
+        &self.view.canvas.background
+    }
+
+    /// The Map-wide defaults new Maps from this template get.
+    pub fn defaults(&self) -> &MapDefaults {
+        &self.view.defaults
     }
 
     pub fn load(path: impl AsRef<Path>) -> Result<Self, TemplateError> {

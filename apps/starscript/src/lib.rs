@@ -44,7 +44,7 @@ use eframe::{egui, egui_wgpu};
 use native_dialog::{Pick, Polled};
 use ssmap_core::asset::{PackLibrary, PackRoots};
 use ssmap_core::file::{JournalBase, MapFile, PREVIEW_SIZE, remove_journal};
-use ssmap_core::{CREDITS_CHUNK_KEYWORD, Canvas, Map};
+use ssmap_core::{CREDITS_CHUNK_KEYWORD, Canvas, Map, MapTemplate, TemplateError};
 use ssmap_render::{ExportJob, PngMeta, SpriteStore, TessellationCache};
 use std::collections::HashSet;
 use std::ffi::OsString;
@@ -521,7 +521,12 @@ impl MapMakerApp {
 
     /// Opens a new Map from the starter template in a new tab and shows it.
     pub fn new_map(&mut self, canvas: Canvas) {
-        let (map, layers, problem) = new_map::start_map(canvas);
+        self.new_map_from(MapTemplate::starter(), canvas);
+    }
+
+    /// Opens a new Map from `template` in a new tab and shows it.
+    pub fn new_map_from(&mut self, template: Result<MapTemplate, TemplateError>, canvas: Canvas) {
+        let (map, layers, problem) = new_map::start_map_from(template, canvas);
         let mut tab = self.new_tab(map, Document::default());
         tab.editor.default_layers = layers;
         match problem {
@@ -1195,7 +1200,8 @@ impl MapMakerApp {
         }
 
         if let Some(canvas) = self.win.new_map_dialog.show(ctx) {
-            self.new_map(canvas);
+            let template = self.win.new_map_dialog.chosen_template();
+            self.new_map_from(template, canvas);
         }
         if let Some(tab) = self.win.tabs.get_mut(self.win.active) {
             match self.win.export_dialog.show(ctx, &tab.editor.map.canvas) {
