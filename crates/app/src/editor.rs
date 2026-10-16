@@ -1,6 +1,7 @@
 //! Editor state around one Map: history, Selection, the active Layer and tool, and the
 //! message bar. Every change to the Map goes through a Command here.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -909,6 +910,64 @@ impl Editor {
         }
     }
 
+    /// A Duplicate of `ids` with fresh ids, and the ids of the copies at the top of each
+    /// duplicated item. Ids inside another listed id come with it.
+    pub fn duplicate_command(&self, ids: &[Id], offset: [f64; 2]) -> (Command, Vec<Id>) {
+        let listed: HashSet<Id> = ids.iter().copied().collect();
+        let mut seen = HashSet::new();
+        let mut new_ids = Vec::new();
+        let mut tops = Vec::new();
+        for &id in ids {
+            let mut inside = false;
+            let mut above = self.map.parent(id);
+            while let Some(ancestor) = above {
+                inside |= listed.contains(&ancestor);
+                above = self.map.parent(ancestor);
+            }
+            if inside || !seen.insert(id) {
+                continue;
+            }
+            tops.push(Id::new());
+            new_ids.push(tops[tops.len() - 1]);
+            let mut pending = self.map.children(Some(id)).to_vec();
+            while let Some(child) = pending.pop() {
+                new_ids.push(Id::new());
+                pending.extend(self.map.children(Some(child)));
+            }
+        }
+        let command = Command::Duplicate {
+            ids: ids.to_vec(),
+            new_ids,
+            offset,
+        };
+        (command, tops)
+    }
+
+    /// Duplicates the selection in place, just above the originals, and selects the copies.
+    /// One Undo step. Returns the copies' ids.
+    pub fn duplicate_selection(&mut self) -> Option<Vec<Id>> {
+        if self.selection.is_empty() || self.gesture_open {
+            return None;
+        }
+        let ids = self.selection.clone();
+        let only_layers = ids
+            .iter()
+            .all(|&id| self.map.node(id).is_some_and(Node::is_layer));
+        let (command, copies) = self.duplicate_command(&ids, [0.0, 0.0]);
+        self.begin_gesture(if only_layers {
+            "Duplicate Layer"
+        } else {
+            "Duplicate Objects"
+        });
+        if !self.gesture(command) {
+            self.cancel_gesture();
+            return None;
+        }
+        self.select(copies.clone());
+        self.end_gesture();
+        Some(copies)
+    }
+
     /// The Objects directly on the active Layer.
     pub fn active_layer_objects(&self) -> Vec<Id> {
         let Some(layer) = self.active_layer.filter(|&id| self.map.contains(id)) else {
@@ -1381,6 +1440,28 @@ mod tests {
         assert_eq!(editor.map.children(None), &[first, third, second]);
         assert_eq!(editor.selection(), &[third]);
         assert_eq!(editor.active_layer(), Some(third));
+    }
+
+    #[test]
+    fn duplicating_selects_the_copy_and_is_one_named_undo_step() {
+        let mut editor = editor();
+        let first = editor.new_layer().unwrap();
+        let second = editor.new_layer().unwrap();
+        editor.select(vec![first]);
+        let copy = editor.duplicate_selection().unwrap();
+        assert_eq!(editor.map.children(None), &[first, copy[0], second]);
+        assert_eq!(editor.selection(), &copy[..]);
+        assert_eq!(editor.undo_label(), Some("Duplicate Layer"));
+        editor.undo();
+        assert_eq!(editor.map.children(None), &[first, second]);
+    }
+
+    #[test]
+    fn a_duplicate_with_nothing_selected_does_nothing() {
+        let mut editor = editor();
+        editor.new_layer().unwrap();
+        editor.deselect();
+        assert!(editor.duplicate_selection().is_none());
     }
 
     #[test]

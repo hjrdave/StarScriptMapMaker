@@ -206,6 +206,8 @@ struct Drag {
     styles: LabelStyles,
     /// The selected Stamps as they were, for the same reason.
     stamps: Vec<(Id, Stamp)>,
+    /// An Option-drag: the originals that stay put, and the ids their copies took.
+    copies: Option<(Vec<Id>, Vec<Id>)>,
 }
 
 impl ToolState {
@@ -279,7 +281,30 @@ pub fn canvas_input(
                 && !editor.gesture_open()
                 && let Some(pos) = response.ctx.input(|i| i.pointer.press_origin())
             {
-                start_drag(editor, state, bounds, grip_at(pos), to_canvas(pos));
+                let duplicate = response.ctx.input(|i| i.modifiers.alt);
+                start_drag(
+                    editor,
+                    state,
+                    bounds,
+                    grip_at(pos),
+                    to_canvas(pos),
+                    duplicate,
+                );
+            }
+            let over_selection = || {
+                let pos = response.hover_pos()?;
+                let inside =
+                    grip_at(pos).is_none() && bounds.is_some_and(|b| b.contains(to_canvas(pos)));
+                inside.then_some(())
+            };
+            let option_held = response.ctx.input(|i| i.modifiers.alt);
+            if state
+                .drag
+                .as_ref()
+                .is_some_and(|drag| drag.copies.is_some())
+                || (state.drag.is_none() && option_held && over_selection().is_some())
+            {
+                response.ctx.set_cursor_icon(egui::CursorIcon::Copy);
             }
             if let Some(drag) = &state.drag {
                 // Escape or undo ended the gesture under the drag.
@@ -1239,6 +1264,7 @@ fn start_drag(
     mut bounds: Option<Bounds>,
     grip: Option<Grip>,
     point: [f64; 2],
+    duplicate: bool,
 ) {
     if grip.is_none() && !bounds.is_some_and(|b| b.contains(point)) {
         let Some(id) = editor.pick(point) else {
@@ -1265,11 +1291,37 @@ fn start_drag(
     else {
         return;
     };
-    editor.begin_gesture(match grip {
-        None => "Move",
-        Some(Grip::Resize(_)) => "Resize",
-        Some(Grip::Rotate) => "Rotate",
-    });
+    // Option held as a move begins: leave the originals and drag copies of them. Locked
+    // ones can't move, so they aren't copied.
+    let mut copies = None;
+    if duplicate && grip.is_none() {
+        let sources: Vec<Id> = editor
+            .selection()
+            .iter()
+            .copied()
+            .filter(|&id| {
+                (outlines.contains(&id) || editor.label(id).is_some() || editor.stamp(id).is_some())
+                    && !editor.map.node(id).is_some_and(ssmap_core::Node::locked)
+            })
+            .collect();
+        if sources.is_empty() {
+            return;
+        }
+        editor.begin_gesture("Duplicate Objects");
+        let (command, new_ids) = editor.duplicate_command(&sources, [0.0, 0.0]);
+        if !editor.gesture(command) {
+            editor.cancel_gesture();
+            return;
+        }
+        editor.select(new_ids.clone());
+        copies = Some((sources, new_ids));
+    } else {
+        editor.begin_gesture(match grip {
+            None => "Move",
+            Some(Grip::Resize(_)) => "Resize",
+            Some(Grip::Rotate) => "Rotate",
+        });
+    }
     state.drag = Some(Drag {
         grip,
         start: point,
@@ -1278,6 +1330,7 @@ fn start_drag(
         labels,
         styles: editor.map.label_styles().clone(),
         stamps,
+        copies,
     });
 }
 
@@ -1292,6 +1345,13 @@ type StampTransform = Box<dyn Fn(&Stamp) -> Stamp>;
 /// as when a resize reaches the opposite edge and the box has no size.
 fn drag_commands(drag: &Drag, point: [f64; 2], snap: bool) -> Option<Vec<Command>> {
     let delta = [point[0] - drag.start[0], point[1] - drag.start[1]];
+    if let Some((originals, new_ids)) = &drag.copies {
+        return Some(vec![Command::Duplicate {
+            ids: originals.clone(),
+            new_ids: new_ids.clone(),
+            offset: delta,
+        }]);
+    }
     let ids = drag.outlines.clone();
     let (outlines, transform, stamp_transform): (Option<Command>, LabelTransform, StampTransform) =
         match drag.grip {
@@ -1364,7 +1424,23 @@ mod tests {
             )],
             styles: LabelStyles::default(),
             stamps: Vec::new(),
+            copies: None,
         }
+    }
+
+    #[test]
+    fn an_option_drag_re_issues_one_duplicate_with_the_pointer_offset() {
+        let (original, copy) = (Id::new(), Id::new());
+        let option_drag = Drag {
+            copies: Some((vec![original], vec![copy])),
+            ..drag(None)
+        };
+        let commands = drag_commands(&option_drag, [130.0, 20.0], false).unwrap();
+        assert!(matches!(
+            &commands[..],
+            [Command::Duplicate { ids, new_ids, offset: [30.0, 20.0] }]
+                if ids == &vec![original] && new_ids == &vec![copy]
+        ));
     }
 
     fn dragged(drag: &Drag, point: [f64; 2], snap: bool) -> Label {
