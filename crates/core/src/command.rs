@@ -88,6 +88,17 @@ pub enum Command {
     Ungroup {
         ids: Vec<Id>,
     },
+    /// Links Layers and Objects into the Link set `id`, so moving or transforming one moves
+    /// or transforms the others. Any set a listed node already belongs to joins it whole.
+    /// The nodes keep their own places in the Stacking order, in any Layer.
+    Link {
+        id: Id,
+        ids: Vec<Id>,
+    },
+    /// Takes Layers and Objects out of their Link sets.
+    Unlink {
+        ids: Vec<Id>,
+    },
     /// Deletes Layers and Objects with everything inside them, and clears Clips that pointed
     /// at anything deleted.
     Delete {
@@ -336,6 +347,10 @@ pub enum CommandError {
     InLockedLayer { target: Id, layer: Id },
     #[error("{target} contains locked {locked}")]
     ContainsLocked { target: Id, locked: Id },
+    #[error("{target} is linked to locked {locked}, so nothing linked to it can move")]
+    LinkedLocked { target: Id, locked: Id },
+    #[error("linking needs at least two different Layers or Objects")]
+    NothingToLink,
     #[error("{0} does not share a parent with the other nodes to group")]
     NotSiblings(Id),
     #[error("nothing to group")]
@@ -416,6 +431,8 @@ impl Command {
             Command::SetClip { target: None, .. } => "Clear Clip",
             Command::CreateGroup { .. } => "Group",
             Command::Ungroup { .. } => "Ungroup",
+            Command::Link { .. } => "Link",
+            Command::Unlink { .. } => "Unlink",
             Command::Delete { .. } => "Delete",
             Command::CreateLandmass { .. } => "Create Landmass",
             Command::CreateLake { .. } => "Create Lake",
@@ -557,6 +574,8 @@ impl Command {
             }
             Command::CreateGroup { id, ids, name } => create_group(map, *id, ids, name),
             Command::Ungroup { ids } => ungroup(map, ids),
+            Command::Link { id, ids } => link(map, *id, ids),
+            Command::Unlink { ids } => unlink(map, ids),
             Command::Delete { ids } => delete(map, ids),
             Command::CreateLandmass {
                 id,
@@ -1156,6 +1175,49 @@ fn ungroup(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
     Ok(ops)
 }
 
+/// Puts `ids` and every node linked to them into the Link set `link_id`.
+fn link(map: &Map, link_id: Id, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
+    let mut listed: Vec<Id> = Vec::with_capacity(ids.len());
+    for &id in ids {
+        existing(map, id)?;
+        unlocked(map, id)?;
+        if !listed.contains(&id) {
+            listed.push(id);
+        }
+    }
+    if listed.len() < 2 {
+        return Err(CommandError::NothingToLink);
+    }
+    let mut members = listed.clone();
+    for &id in &listed {
+        for member in map.linked_with(id) {
+            if !members.contains(&member) {
+                unlocked(map, member)?;
+                members.push(member);
+            }
+        }
+    }
+    Ok(members
+        .into_iter()
+        .filter(|&id| map.node(id).and_then(Node::link) != Some(link_id))
+        .map(|id| set(id, Property::Link(Some(link_id))))
+        .collect())
+}
+
+/// Takes `ids` out of their Link sets.
+fn unlink(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
+    let mut ops = Vec::new();
+    let mut seen = HashSet::new();
+    for &id in ids {
+        let node = existing(map, id)?;
+        unlocked(map, id)?;
+        if node.link().is_some() && seen.insert(id) {
+            ops.push(set(id, Property::Link(None)));
+        }
+    }
+    Ok(ops)
+}
+
 fn delete(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
     for &id in ids {
         unlocked_branch(map, id)?;
@@ -1222,7 +1284,12 @@ fn transform(map: &Map, ids: &[Id], transform: &Affine) -> Result<Vec<Op>, Comma
     if !transform.is_invertible() {
         return Err(CommandError::InvalidTransform(transform.0));
     }
-    let ids = outlined(map, ids)?;
+    let mut ids = outlined(map, ids)?;
+    // Linked nodes take the same transform; a locked one blocks it for them all.
+    let along = map.linked_movers(&ids)?;
+    ids.extend(along.into_iter().filter(
+        |&id| matches!(map.node(id), Some(Node::Object(o)) if o.kind.geometry().is_some()),
+    ));
     let mut ops = Vec::with_capacity(ids.len());
     for id in ids {
         let geometry = outline(map, id).transformed(transform);
@@ -1432,7 +1499,45 @@ fn paste(
             subtree,
         });
     }
+    let mut trees: Vec<&mut Subtree> = ops
+        .iter_mut()
+        .filter_map(|op| match op {
+            Op::Insert { subtree, .. } => Some(subtree),
+            _ => None,
+        })
+        .collect();
+    relink_pasted(&mut trees);
     Ok(ops)
+}
+
+/// Keeps Links among pasted nodes: the nodes of one Link set that were pasted together form
+/// a new set, named by the first of them; one pasted without the rest of its set is unlinked.
+fn relink_pasted(trees: &mut [&mut Subtree]) {
+    fn collect(tree: &Subtree, sets: &mut HashMap<Id, Vec<Id>>) {
+        if let Some(set) = tree.node.link() {
+            sets.entry(set).or_default().push(tree.id);
+        }
+        for child in &tree.children {
+            collect(child, sets);
+        }
+    }
+    fn apply(tree: &mut Subtree, sets: &HashMap<Id, Vec<Id>>) {
+        let link = tree.node.link().and_then(|set| {
+            let members = &sets[&set];
+            (members.len() > 1).then(|| members[0])
+        });
+        tree.node.set_link(link);
+        for child in &mut tree.children {
+            apply(child, sets);
+        }
+    }
+    let mut sets = HashMap::new();
+    for tree in trees.iter() {
+        collect(tree, &mut sets);
+    }
+    for tree in trees.iter_mut() {
+        apply(tree, &sets);
+    }
 }
 
 /// `source` with new ids, moved by `offset`, its Clips resolved against the pasted ids.
@@ -1494,6 +1599,13 @@ fn copied_subtree(
     offset: [f64; 2],
 ) -> Result<Subtree, CommandError> {
     let mut node = map.node(id).expect("listed ids exist").clone();
+    // A copy joins a Link set only when the whole set is copied, and then links to the copies.
+    node.set_link(
+        map.link_members(id)
+            .filter(|members| members.iter().all(|member| renamed.contains_key(member)))
+            .and_then(|members| members.iter().min())
+            .map(|first| renamed[first]),
+    );
     match &mut node {
         Node::Layer(layer) => {
             if let Some(clip) = layer.clip {

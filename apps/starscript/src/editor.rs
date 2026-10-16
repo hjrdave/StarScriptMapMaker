@@ -977,6 +977,54 @@ impl Editor {
         self.run_selecting(Command::Ungroup { ids }, freed)
     }
 
+    /// The Objects that move or transform with the selection because of Links. When a linked
+    /// Layer or Object is locked nothing may move, so this says so in the status bar and
+    /// returns `None`.
+    pub fn linked_movers(&mut self) -> Option<Vec<Id>> {
+        match self.map.linked_movers(&self.selection) {
+            Ok(movers) => Some(movers),
+            Err(err) => {
+                self.refused(&err.into());
+                None
+            }
+        }
+    }
+
+    /// Whether the selection holds two or more Layers or Objects to link.
+    pub fn can_link(&self) -> bool {
+        self.selection
+            .iter()
+            .filter(|&&id| self.map.contains(id))
+            .count()
+            > 1
+    }
+
+    /// Links the selected Layers and Objects so they move and transform together, wherever
+    /// they sit in the tree. One Undo step.
+    pub fn link_selection(&mut self) -> bool {
+        if !self.can_link() {
+            return false;
+        }
+        let ids = self.selection.clone();
+        self.run(Command::Link { id: Id::new(), ids })
+    }
+
+    /// Whether any selected Layer or Object is linked.
+    pub fn can_unlink(&self) -> bool {
+        self.selection.iter().any(|&id| self.map.is_linked(id))
+    }
+
+    /// Takes the selected Layers and Objects out of their Link sets. One Undo step.
+    pub fn unlink_selection(&mut self) -> bool {
+        let ids: Vec<Id> = self
+            .selection
+            .iter()
+            .copied()
+            .filter(|&id| self.map.is_linked(id))
+            .collect();
+        !ids.is_empty() && self.run(Command::Unlink { ids })
+    }
+
     pub fn delete_selection(&mut self) {
         if self.selection.is_empty() {
             return;
@@ -1330,6 +1378,11 @@ impl Editor {
             ExecuteError::Command(CommandError::ContainsLocked { target, locked }) => {
                 format!("{} contains locked {}", name(*target), name(*locked))
             }
+            ExecuteError::Command(CommandError::LinkedLocked { target, locked }) => format!(
+                "{} is linked to locked {}, so nothing linked to it can move. Unlock it or unlink it first",
+                name(*target),
+                name(*locked)
+            ),
             other => other.to_string(),
         };
         self.error(text);

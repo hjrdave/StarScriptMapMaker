@@ -1282,14 +1282,29 @@ fn start_drag(
         }
         bounds = Bounds::of_selection(editor);
     }
-    let outlines = editor.selected_outlines();
-    let labels: Vec<(Id, Label)> = editor
-        .selection()
+    // Whatever is linked to the selection moves or transforms with it, as one step. A locked
+    // linked node blocks it all. An Option-drag copies only the selection, unlinked.
+    let along = if duplicate && grip.is_none() {
+        Vec::new()
+    } else {
+        let Some(along) = editor.linked_movers() else {
+            return;
+        };
+        along
+    };
+    let moving: Vec<Id> = editor.selection().iter().copied().chain(along).collect();
+    let outlines: Vec<Id> = moving
+        .iter()
+        .copied()
+        .filter(|&id| {
+            matches!(editor.map.node(id), Some(ssmap_core::Node::Object(o)) if o.kind.geometry().is_some())
+        })
+        .collect();
+    let labels: Vec<(Id, Label)> = moving
         .iter()
         .filter_map(|&id| editor.label(id).map(|label| (id, label.clone())))
         .collect();
-    let stamps: Vec<(Id, Stamp)> = editor
-        .selection()
+    let stamps: Vec<(Id, Stamp)> = moving
         .iter()
         .filter_map(|&id| editor.stamp(id).map(|stamp| (id, stamp.clone())))
         .collect();
@@ -1584,5 +1599,138 @@ mod tests {
             false,
         );
         assert!(collapsed.is_none());
+    }
+}
+
+#[cfg(test)]
+mod link_tests {
+    use super::*;
+    use ssmap_core::{
+        Canvas, DistanceUnit, Map, MultiPolygon, Node, Polygon, Scale, Stamp as MapStamp,
+    };
+
+    fn square(x: f64) -> MultiPolygon {
+        MultiPolygon(vec![Polygon {
+            exterior: vec![[x, 0.0], [x + 10.0, 0.0], [x + 10.0, 10.0], [x, 10.0]],
+            holes: Vec::new(),
+        }])
+    }
+
+    /// Two Landmasses and a Stamp in three Layers, linked, with the first Landmass selected.
+    fn linked() -> (Editor, [Id; 3]) {
+        let mut editor = Editor::new(Map::new(Canvas::new(
+            500,
+            500,
+            Scale::new(1.0, DistanceUnit::Miles),
+        )));
+        let mut ids = [Id::new(), Id::new(), Id::new()];
+        for (n, id) in ids.iter_mut().enumerate() {
+            let layer = Id::new();
+            assert!(editor.run(Command::CreateLayer {
+                id: layer,
+                parent: None,
+                index: None,
+                name: format!("Layer {n}"),
+            }));
+            let command = if n == 2 {
+                Command::CreateStamp {
+                    id: *id,
+                    parent: layer,
+                    index: None,
+                    stamp: Box::new(MapStamp::new("pack/asset".parse().unwrap(), [200.0, 5.0])),
+                }
+            } else {
+                Command::CreateLandmass {
+                    id: *id,
+                    parent: layer,
+                    index: None,
+                    geometry: square(n as f64 * 100.0),
+                    fill: None,
+                }
+            };
+            assert!(editor.run(command));
+        }
+        editor.select(ids.to_vec());
+        assert!(editor.link_selection());
+        editor.select(vec![ids[0]]);
+        (editor, ids)
+    }
+
+    fn left(editor: &Editor, id: Id) -> f64 {
+        match editor.map.node(id) {
+            Some(Node::Object(o)) => o.kind.geometry().unwrap().0[0].exterior[0][0],
+            _ => panic!("not an Object"),
+        }
+    }
+
+    #[test]
+    fn dragging_one_linked_object_moves_the_others_in_one_undo_step() {
+        let (mut editor, [a, b, s]) = linked();
+        let undo_label = editor.undo_label().map(str::to_owned);
+        let mut state = ToolState::default();
+        let bounds = Bounds::of_selection(&mut editor);
+        start_drag(&mut editor, &mut state, bounds, None, [5.0, 5.0], false);
+        let drag = state.drag.as_ref().expect("the drag started");
+        assert_eq!(drag.outlines, vec![a, b]);
+        assert_eq!(drag.stamps.len(), 1);
+        for command in drag_commands(drag, [25.0, 5.0], false).unwrap() {
+            assert!(editor.gesture(command));
+        }
+        state.drag = None;
+        editor.end_gesture();
+        assert_eq!(left(&editor, a), 20.0);
+        assert_eq!(left(&editor, b), 120.0);
+        assert_eq!(editor.stamp(s).unwrap().position, [220.0, 5.0]);
+
+        assert_eq!(editor.undo_label(), Some("Move"));
+        editor.undo();
+        assert_eq!(left(&editor, a), 0.0);
+        assert_eq!(left(&editor, b), 100.0);
+        assert_eq!(editor.stamp(s).unwrap().position, [200.0, 5.0]);
+        assert_eq!(editor.undo_label().map(str::to_owned), undo_label);
+    }
+
+    #[test]
+    fn a_locked_linked_object_blocks_the_drag_and_the_status_names_it() {
+        let (mut editor, [a, b, _]) = linked();
+        assert!(editor.run(Command::RenameObject {
+            id: b,
+            name: "Far Isle".into()
+        }));
+        assert!(editor.run(Command::SetLocked {
+            id: b,
+            locked: true
+        }));
+        let before = editor.map.view();
+        let mut state = ToolState::default();
+        let bounds = Bounds::of_selection(&mut editor);
+        start_drag(&mut editor, &mut state, bounds, None, [5.0, 5.0], false);
+        assert!(state.drag.is_none() && !editor.gesture_open());
+        assert_eq!(editor.map.view(), before);
+        let text = &editor.notice().expect("an error toast").text;
+        assert!(
+            text.contains("Far Isle") && text.contains("locked"),
+            "{text}"
+        );
+        assert_eq!(editor.selection(), [a]);
+    }
+
+    #[test]
+    fn an_option_drag_copies_only_the_selection() {
+        let (mut editor, [a, b, _]) = linked();
+        let mut state = ToolState::default();
+        let bounds = Bounds::of_selection(&mut editor);
+        start_drag(&mut editor, &mut state, bounds, None, [5.0, 5.0], true);
+        let drag = state.drag.as_ref().expect("the drag started");
+        assert_eq!(
+            drag.copies.as_ref().map(|(from, _)| from.clone()),
+            Some(vec![a])
+        );
+        state.drag = None;
+        editor.end_gesture();
+        assert_eq!(left(&editor, b), 100.0);
+        let copy = editor.selection()[0];
+        assert_ne!(copy, a);
+        assert!(!editor.map.is_linked(copy));
     }
 }

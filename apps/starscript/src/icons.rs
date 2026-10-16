@@ -91,6 +91,7 @@ icons! {
     ActiveLayer, "Active layer", "active-layer";
     LockFilled, "Lock filled", "lock-filled";
     LockDashed, "Lock dashed", "lock-dashed";
+    Link, "Link", "link";
 }
 
 /// Hand-hinted 1x replacements, by icon. None yet: the thinned 1 px stroke is crisp enough

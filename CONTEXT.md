@@ -24,6 +24,10 @@ _Avoid_: Folder, frame
 A Layer the user creates to move, hide or clip several Objects together. Layers nest, so a Group is just a nested Layer.
 _Avoid_: Folder, collection
 
+**Link**:
+A relationship that makes Layers and Objects move and transform together while each keeps its own place in the tree, even in different Groups. A locked member blocks the move for the whole set.
+_Avoid_: Bind, attach, constraint
+
 **Stacking order**:
 The single top-to-bottom order of the Map's tree that decides what draws above what.
 _Avoid_: Z-order, depth
