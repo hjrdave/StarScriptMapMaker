@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Editor — Label editing</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&amp;family=IM+Fell+Double+Pica:ital@0;1&amp;family=Almendra:ital@0;1&amp;family=Uncial+Antiqua&amp;family=MedievalSharp&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0B0C0E}
+a{color:#E3B85A}a:hover{color:#F0CF7A}
+.w{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,sans-serif;font-size:12px;line-height:16px;color:#ECE6D8;-webkit-font-smoothing:antialiased}
+.win{position:relative;width:1440px;height:900px;box-sizing:border-box;background:#14161A;border:1px solid #30353D;border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.tools{position:absolute;left:596px;bottom:40px;transform:translateX(-50%);z-index:6;display:flex;align-items:center;gap:2px;padding:4px;background:#1B1E23;border:1px solid #3B414B;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.tsep{width:1px;height:20px;background:#2E333B;margin:0 3px}
+.tool{width:32px;height:30px;border:0;border-radius:6px;background:transparent;color:#B4AE9F;display:flex;align-items:center;justify-content:center;padding:0;position:relative;font:inherit}
+.tool.on{background:#3A311C;color:#F0CF7A;box-shadow:inset 0 0 0 1px #8A6C2C}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sm{width:14px;height:14px}
+.btn{height:26px;padding:0 10px;border-radius:6px;border:1px solid #3B414B;background:#262A31;color:#ECE6D8;font:inherit;font-weight:500;display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;white-space:nowrap}
+.btn.pri{background:#D4A84A;border-color:#D4A84A;color:#1A1406;font-weight:600}
+.seg{display:flex;background:#111317;border:1px solid #2E333B;border-radius:6px;padding:2px;gap:2px}
+.seg span{padding:1px 8px;border-radius:4px;color:#B4AE9F;line-height:16px;display:flex;align-items:center;justify-content:center;flex:1}
+.seg span.on{background:#33383F;color:#ECE6D8}
+.num{display:inline-flex;align-items:center;height:22px;background:#111317;border:1px solid #2E333B;border-radius:4px;padding:0 6px;gap:6px;font-variant-numeric:tabular-nums;color:#ECE6D8;box-sizing:border-box;min-width:56px}
+.num i{font-style:normal;color:#8F8A7C;font-size:11px}
+.num.inh{color:#B4AE9F}
+.num.ov{border-color:#8A6C2C}
+.body{flex:1;display:flex;min-height:0;position:relative}
+.side{width:40px;flex:none;background:#1B1E23;border-right:1px solid #272B32;display:flex;flex-direction:column;min-height:0}
+.insp{width:288px;flex:none;background:#1B1E23;border-left:1px solid #272B32;display:flex;flex-direction:column;overflow:hidden}
+.phead{height:34px;display:flex;align-items:center;gap:2px;padding:0 6px 0 12px;font-weight:600;border-bottom:1px solid #272B32;flex:none}
+.phead .sp{flex:1}
+.ibtn{width:22px;height:22px;border:0;border-radius:5px;background:transparent;color:#B4AE9F;display:inline-flex;align-items:center;justify-content:center;padding:0;flex:none}
+.meta{font-size:11px;color:#9D9788;font-variant-numeric:tabular-nums}
+.chip{font-size:11px;line-height:16px;padding:0 5px;border-radius:4px;background:#262A31;color:#B4AE9F;display:inline-flex;align-items:center;gap:4px}
+.chip.gold{background:#3A311C;color:#F0CF7A}
+.canvas{flex:1;position:relative;background:#0F1114;overflow:hidden}
+.status{height:24px;flex:none;display:flex;align-items:center;gap:18px;padding:0 12px;background:#17191E;border-top:1px solid #272B32;font-size:11px;color:#9D9788;font-variant-numeric:tabular-nums}
+.status b{color:#D9D3C4;font-weight:500}
+.sec{border-bottom:1px solid #272B32;padding:4px 12px 10px}
+.sech{display:flex;align-items:center;gap:6px;height:28px;font-weight:600;color:#ECE6D8}
+.sech .sp{flex:1}
+.fld{display:flex;align-items:center;gap:6px;min-height:27px}
+.fld>label{width:76px;color:#B4AE9F;flex:none;display:flex;align-items:center;gap:5px}
+.fld>label.ov{color:#F0CF7A}
+.fld .grow{flex:1;display:flex;align-items:center;gap:6px;min-width:0}
+.ovr{width:6px;height:6px;border-radius:50%;background:#E3B85A;flex:none}
+.sw{width:18px;height:18px;border-radius:4px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.25);flex:none}
+.tog{width:28px;height:16px;border-radius:8px;background:#C99D42;position:relative;flex:none}
+.tog::after{content:"";position:absolute;right:2px;top:2px;width:12px;height:12px;border-radius:50%;background:#1A1406}
+.lnk{color:#8F8A7C;display:flex}
+.titlebar{height:38px;flex:none;display:flex;align-items:stretch;background:#17191E;border-bottom:1px solid #272B32}
+.lights{display:flex;align-items:center;gap:8px;width:84px;padding-left:16px;box-sizing:border-box;flex:none}
+.lights span{width:12px;height:12px;border-radius:50%;display:block}
+.tabs{display:flex;align-items:stretch;flex:1;min-width:0}
+.tab{display:flex;align-items:center;gap:8px;width:220px;padding:0 10px 0 14px;border:0;border-left:1px solid #2A2E35;background:transparent;color:#9D9788;font:inherit;box-sizing:border-box}
+.tab .tn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
+.tab.on{background:#23272E;color:#ECE6D8;font-weight:500;box-shadow:inset 0 -2px 0 #D4A84A}
+.tab.home{width:44px;padding:0;justify-content:center}
+.tab .tdot{width:7px;height:7px;border-radius:50%;background:#E3B85A;margin-right:5px}
+.ntab{width:40px;border:0;border-left:1px solid #2A2E35;background:transparent;color:#9D9788;display:flex;align-items:center;justify-content:center;padding:0}
+</style>
+</helmet>
+<div class="w win">
+  <div class="tools" role="toolbar" aria-label="Tools">
+      <button class="tool" aria-label="Select (V)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5V13l2.8-2.6 1.8 3.6 1.8-.8-1.8-3.6 3.9-.2Z"/></svg></button>
+      <button class="tool" aria-label="Pan (H)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M6 3.5l2-2 2 2M6 12.5l2 2 2-2M3.5 6l-2 2 2 2M12.5 6l2 2-2 2"/></svg></button>
+      <div class="tsep"></div>
+      <button class="tool" aria-label="Land Brush (B)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M11.5 2 14 4.5 8 10.5 5.5 8Z"/><path d="M5.5 8C3.5 8.3 3 10 2.5 13.5 6 13 7.7 12.5 8 10.5"/></svg></button>
+      <button class="tool" aria-label="Lasso (L)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><ellipse cx="8.5" cy="6.5" rx="6" ry="3.8" stroke-dasharray="2 2"/><path d="M5 9.6c-.8 1.4-.4 3 1 3.4 1 .3 1.2 1.2.4 2"/></svg></button>
+      <button class="tool on" aria-pressed="true" aria-label="Label (T)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5V3.5h10V5M8 3.5V13M6 13h4"/></svg></button>
+      <div class="tsep"></div>
+      <button class="tool" aria-label="Stamp (S)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 13 6 5l2.5 4 2-2.5 4 6.5Z"/></svg></button>
+      <button class="tool" aria-label="Scatter Brush (Shift S)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h.01M7.5 2.5h.01M12 4.5h.01M4.5 8h.01M9 7.5h.01M13 9h.01M3 12h.01M7.5 12.5h.01M11.5 13h.01" style="stroke-width:2.6"/></svg></button>
+      <button class="tool" aria-label="Stamp Eraser (E)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 13.5h8M2.8 9.7l5.8-5.8a1.4 1.4 0 0 1 2 0l2 2a1.4 1.4 0 0 1 0 2l-5.4 5.4H5l-2.2-2.2a1 1 0 0 1 0-1.4ZM5.6 6.9l4 4"/></svg></button>
+      <div class="tsep"></div>
+      <button class="tool" aria-label="Export Region (X)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5V12h10.5M1.5 4H12v10.5"/></svg></button>
+    </div>
+    <div style="flex:1"></div>
+  <div class="titlebar">
+    <div class="lights"><span style="background:#FF5F57"></span><span style="background:#FEBC2E"></span><span style="background:#28C840"></span></div>
+    <div class="tabs" role="tablist" aria-label="Open Maps">
+    <button class="tab home" role="tab" aria-selected="false" aria-label="Home (⌘1)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 7.5 8 3l5.5 4.5V13H10V9.5H6V13H2.5Z"/></svg></button>
+    <button class="tab on" role="tab" aria-selected="true"><span class="tn">Isles of Valdren</span><span class="tdot" aria-label="Unsaved changes"></span></button>
+    <button class="tab" role="tab" aria-selected="false"><span class="tn">Coast of Brannoch</span></button>
+    <button class="tab" role="tab" aria-selected="false"><span class="tn">Hollowfen Campaign</span></button>
+    <button class="ntab" aria-label="New Map tab (⌘T)"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
+    </div>
+  </div>
+
+  <div class="body">
+    <!-- LEFT: Layers, collapsed to a rail (⌘⌥1 or click to expand) -->
+    <div class="side" style="align-items:center;padding-top:6px;gap:4px">
+      <button class="ibtn" aria-label="Expand Layers (⌘⌥1)" style="width:28px;height:28px"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 3v10M5 4.5 8.5 8 5 11.5"/></svg></button>
+      <div style="width:24px;height:1px;background:#2E333B;margin:2px 0"></div>
+      <button class="ibtn" aria-label="Layers" style="width:28px;height:28px;background:#262A31;color:#ECE6D8"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3M2 11l6 3 6-3"/></svg></button>
+      <span style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:11px;color:#9D9788;margin-top:8px;letter-spacing:.5px">Labels › Corvale / Free City</span>
+    </div>
+
+    <div class="canvas">
+      <svg viewBox="240 330 200 120" width="1110" height="666" role="img" aria-label="Zoomed map: Corvale Label in text-edit mode" style="display:block;position:absolute;left:0;top:62px">
+        <defs>
+          <path id="land" d="M150 120 L190 98 L232 104 L260 86 L300 92 L338 78 L372 96 L410 90 L446 108 L470 140 L500 150 L522 178 L516 210 L540 236 L566 240 L590 268 L582 300 L560 322 L568 352 L548 384 L512 396 L488 428 L452 440 L420 426 L392 446 L356 452 L330 432 L296 436 L270 414 L236 410 L214 384 L180 372 L170 340 L142 322 L150 290 L126 262 L132 230 L110 204 L124 172 L118 150 Z"/>
+          <clipPath id="lc"><use href="#land"/></clipPath>
+          <g id="tr"><path d="M0 2V-2" stroke="#3B2F20" stroke-width="1.1"/><circle cy="-6" r="5" fill="#9DAA76" stroke="#3B2F20" stroke-width="1"/></g>
+        </defs>
+        <rect x="200" y="300" width="300" height="200" fill="#C3C7AE"/>
+        <g fill="none" stroke-linejoin="round">
+          <use href="#land" stroke="#8F987F" stroke-width="25"/><use href="#land" stroke="#C3C7AE" stroke-width="23"/>
+          <use href="#land" stroke="#8F987F" stroke-width="15"/><use href="#land" stroke="#C3C7AE" stroke-width="13"/>
+          <use href="#land" stroke="#8F987F" stroke-width="6"/>
+        </g>
+        <use href="#land" fill="#EADCB3"/>
+        <use href="#land" fill="none" stroke="#CDB683" stroke-width="12" clip-path="url(#lc)" opacity=".7"/>
+        <use href="#land" fill="none" stroke="#3B2F20" stroke-width="1.8" stroke-linejoin="round"/>
+        <use href="#tr" x="248" y="350"/><use href="#tr" x="236" y="364"/><use href="#tr" x="262" y="334"/><use href="#tr" x="270" y="354"/><use href="#tr" x="256" y="370"/>
+        <path d="M300 342 l3 -4 3 4 3 -4 3 4 v4 h-12Z" fill="#EADCB3" stroke="#3B2F20" stroke-width=".7"/>
+        <circle cx="330" cy="374" r="3" fill="#3B2F20" stroke="#EADCB3" stroke-width="1.2"/>
+        <g transform="rotate(-4 330 400)">
+          <text x="330" y="396" text-anchor="middle" font-family="Cinzel, serif" font-weight="600" font-size="11" letter-spacing="2.4" fill="#3B2F20" stroke="#EADCB3" stroke-width="3" paint-order="stroke" stroke-linejoin="round">CORVALE</text>
+          <text x="330" y="409" text-anchor="middle" font-family="Cinzel, serif" font-weight="600" font-size="7" letter-spacing="2.4" fill="#3B2F20" stroke="#EADCB3" stroke-width="2.4" paint-order="stroke" stroke-linejoin="round">FREE CITY</text>
+          <!-- text edit box -->
+          <rect x="283" y="384" width="94" height="30" fill="none" stroke="#E3B85A" stroke-width=".45" stroke-dasharray="1.5 1"/>
+          <rect x="350" y="402.4" width="18" height="8.4" fill="#4FA3E0" opacity=".35"/>
+          <path d="M368.3 401.6v9.8" stroke="#1B1E23" stroke-width=".55"/>
+          <path d="M330 384v-6" stroke="#E3B85A" stroke-width=".4"/>
+          <circle cx="330" cy="377" r="1.4" fill="#FFFFFF" stroke="#E3B85A" stroke-width=".45"/>
+          <rect x="281.6" y="382.6" width="2.8" height="2.8" fill="#FFFFFF" stroke="#E3B85A" stroke-width=".4"/>
+          <rect x="375.6" y="382.6" width="2.8" height="2.8" fill="#FFFFFF" stroke="#E3B85A" stroke-width=".4"/>
+          <rect x="281.6" y="412.6" width="2.8" height="2.8" fill="#FFFFFF" stroke="#E3B85A" stroke-width=".4"/>
+          <rect x="375.6" y="412.6" width="2.8" height="2.8" fill="#FFFFFF" stroke="#E3B85A" stroke-width=".4"/>
+        </g>
+      </svg>
+      <!-- in-canvas mini HUD -->
+      <div style="position:absolute;left:330px;top:266px;display:flex;align-items:center;gap:4px;background:#24282F;border:1px solid #3B414B;border-radius:8px;padding:4px;box-shadow:0 8px 24px rgba(0,0,0,.5)">
+        <button class="btn" style="height:24px;border-color:#6E5626;background:#3A311C;color:#F0CF7A">City* <svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></button>
+        <button class="btn" style="height:24px;font-family:Cinzel,serif">Cinzel</button>
+        <span class="num" style="min-width:48px">44 <i>pt</i></span>
+        <div style="width:1px;height:18px;background:#3B414B;margin:0 2px"></div>
+        <button class="ibtn" aria-label="Align left"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11M2.5 8h7M2.5 12h9"/></svg></button>
+        <button class="ibtn" aria-label="Align centre" style="background:#33383F;color:#ECE6D8"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11M4.5 8h7M3.5 12h9"/></svg></button>
+        <button class="ibtn" aria-label="Align right"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11M6.5 8h7M4.5 12h9"/></svg></button>
+        <div style="width:1px;height:18px;background:#3B414B;margin:0 2px"></div>
+        <button class="btn pri" style="height:24px">Done <span style="font-size:11px;opacity:.75">⌘⏎</span></button>
+      </div>
+    </div>
+
+    <!-- Font picker popover -->
+    <div style="position:absolute;right:262px;top:262px;width:248px;background:#24282F;border:1px solid #3B414B;border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.55);padding:6px;z-index:4" role="listbox" aria-label="Font">
+      <div style="font-size:11px;color:#9D9788;padding:4px 8px 6px">Bundled · SIL Open Font License</div>
+      <div style="display:flex;align-items:center;gap:8px;height:34px;padding:0 8px;border-radius:5px;background:#3A311C" role="option" aria-selected="true"><span style="font-family:Cinzel,serif;font-size:17px;flex:1;color:#F0CF7A">Cinzel</span><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true" style="color:#F0CF7A"><path d="M3.5 8.5l3 3 6-7"/></svg></div>
+      <div style="display:flex;align-items:center;height:34px;padding:0 8px;border-radius:5px;background:#2E333B" role="option"><span style="font-family:'IM Fell Double Pica',serif;font-size:18px;flex:1">IM Fell Double Pica</span></div>
+      <div style="display:flex;align-items:center;height:34px;padding:0 8px" role="option"><span style="font-family:Almendra,serif;font-size:18px;flex:1">Almendra</span></div>
+      <div style="display:flex;align-items:center;height:34px;padding:0 8px" role="option"><span style="font-family:'Uncial Antiqua',serif;font-size:16px;flex:1">Uncial Antiqua</span></div>
+      <div style="display:flex;align-items:center;height:34px;padding:0 8px" role="option"><span style="font-family:MedievalSharp,serif;font-size:17px;flex:1">MedievalSharp</span></div>
+    </div>
+
+    <div class="insp">
+      <div class="phead"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="color:#F0CF7A;margin-right:6px"><path d="M4 4h8M8 4v8.5"/></svg>Label<span class="sp"></span><span class="meta" style="margin-right:6px">Editing text</span></div>
+      <div class="sec" style="padding-top:10px">
+        <div style="background:#111317;border:1px solid #8A6C2C;border-radius:4px;padding:6px 8px;line-height:18px;white-space:pre-line">Corvale
+Free City<span style="display:inline-block;width:1px;height:13px;background:#ECE6D8;vertical-align:-2px"></span></div>
+      </div>
+      <div class="sec">
+        <div class="fld"><label>Label style</label><div class="grow"><span class="btn" style="height:24px;flex:1;justify-content:space-between">City <svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></span></div></div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:4px;font-size:11px"><span class="chip gold"><span class="ovr"></span>3 overrides</span><span style="flex:1"></span><a href="#reset">Reset all</a><a href="#push">Update City style</a></div>
+        <div style="margin-top:4px;font-size:11px"><a href="#manage">Manage Label styles…</a></div>
+      </div>
+      <div class="sec">
+        <div class="sech">Type</div>
+        <div class="fld"><label>Font</label><div class="grow"><span class="btn" style="height:24px;flex:1;justify-content:space-between;border-color:#D4A84A;font-family:Cinzel,serif">Cinzel SemiBold <svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></span><span class="lnk" title="From City style"><svg class="ic sm" viewBox="0 0 16 16" aria-label="Inherited" role="img"><path d="M6 10 10 6M5 7.5 3.8 8.7a2.3 2.3 0 0 0 3.3 3.3L8.3 11M7.7 5l1.2-1.2a2.3 2.3 0 0 1 3.3 3.3L11 8.3"/></svg></span></div></div>
+        <div class="fld"><label>Size</label><div class="grow"><span class="num inh" style="flex:1">44 <i>pt</i></span><span class="lnk"><svg class="ic sm" viewBox="0 0 16 16" aria-label="Inherited" role="img"><path d="M6 10 10 6M5 7.5 3.8 8.7a2.3 2.3 0 0 0 3.3 3.3L8.3 11M7.7 5l1.2-1.2a2.3 2.3 0 0 1 3.3 3.3L11 8.3"/></svg></span></div></div>
+        <div class="fld"><label class="ov"><span class="ovr"></span>Tracking</label><div class="grow"><span class="num ov" style="flex:1">22 <i>%</i></span><button class="ibtn" aria-label="Reset to City style" style="color:#E3B85A"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 6H10a3 3 0 0 1 0 6H7M6 3.5 3.5 6 6 8.5"/></svg></button></div></div>
+        <div class="fld"><label>Line height</label><div class="grow"><span class="num inh" style="flex:1">1.15</span><span class="lnk"><svg class="ic sm" viewBox="0 0 16 16" aria-label="Inherited" role="img"><path d="M6 10 10 6M5 7.5 3.8 8.7a2.3 2.3 0 0 0 3.3 3.3L8.3 11M7.7 5l1.2-1.2a2.3 2.3 0 0 1 3.3 3.3L11 8.3"/></svg></span></div></div>
+        <div class="fld"><label>All caps</label><div class="grow"><span class="tog" role="switch" aria-checked="true" aria-label="All caps"></span><span style="flex:1"></span><span class="lnk"><svg class="ic sm" viewBox="0 0 16 16" aria-label="Inherited" role="img"><path d="M6 10 10 6M5 7.5 3.8 8.7a2.3 2.3 0 0 0 3.3 3.3L8.3 11M7.7 5l1.2-1.2a2.3 2.3 0 0 1 3.3 3.3L11 8.3"/></svg></span></div></div>
+        <div class="fld"><label>Align</label><div class="grow"><div class="seg" style="flex:1" role="radiogroup" aria-label="Alignment"><span>Left</span><span class="on">Centre</span><span>Right</span></div></div></div>
+        <div class="fld"><label class="ov"><span class="ovr"></span>Rotation</label><div class="grow"><span class="num ov" style="flex:1">−4°</span><button class="ibtn" aria-label="Reset to City style" style="color:#E3B85A"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 6H10a3 3 0 0 1 0 6H7M6 3.5 3.5 6 6 8.5"/></svg></button></div></div>
+      </div>
+      <div class="sec" style="border-bottom:0">
+        <div class="sech">Appearance</div>
+        <div class="fld"><label>Fill</label><div class="grow"><span class="sw" style="background:#3B2F20"></span><span class="num inh" style="flex:1">3B2F20</span><span class="num inh" style="min-width:48px">100<i>%</i></span></div></div>
+        <div class="fld"><label class="ov"><span class="ovr"></span>Halo</label><div class="grow"><span class="sw" style="background:#EADCB3"></span><span class="num ov" style="flex:1">3 <i>px</i></span><span class="num ov" style="min-width:48px">90<i>%</i></span><button class="ibtn" aria-label="Reset to City style" style="color:#E3B85A"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 6H10a3 3 0 0 1 0 6H7M6 3.5 3.5 6 6 8.5"/></svg></button></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status">
+    <span>Zoom <b>443%</b></span>
+    <span>X <b>1,788</b> Y <b>2,142</b> px · <b>447 × 536 mi</b></span>
+    <span>Selection <b>1 Label</b></span>
+    <span style="margin-left:auto">Frame <b>3.2 ms</b></span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

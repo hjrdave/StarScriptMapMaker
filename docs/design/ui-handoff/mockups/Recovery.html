@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Recover unsaved changes</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#0B0C0E}
+a{color:#E3B85A;text-decoration:none}a:hover{color:#F0CF7A}
+.w{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,sans-serif;font-size:12px;line-height:16px;color:#ECE6D8;-webkit-font-smoothing:antialiased}
+.back{width:1000px;height:760px;background:#0E1013;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.ghost{position:absolute;inset:24px;border-radius:12px;background:#14161A;border:1px solid #23262C;opacity:.55}
+.dlg{position:relative;width:760px;background:#1F2228;border:1px solid #3B414B;border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.6);display:flex;flex-direction:column}
+.btn{height:28px;padding:0 14px;border-radius:6px;border:1px solid #3B414B;background:#2A2E35;color:#ECE6D8;font:inherit;font-weight:500;display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;white-space:nowrap}
+.btn.pri{background:#D4A84A;border-color:#D4A84A;color:#1A1406;font-weight:600}
+.btn.dng{background:transparent;border-color:#6A3A33;color:#F2A093}
+.meta{font-size:11px;color:#9D9788;font-variant-numeric:tabular-nums}
+.pv{flex:1;display:flex;flex-direction:column;gap:6px}
+.pvh{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase;color:#B4AE9F}
+.frame{border-radius:6px;overflow:hidden;box-shadow:0 0 0 1px #2E333B}
+.ed{height:26px;display:flex;align-items:center;gap:10px;padding:0 10px;border-bottom:1px solid #272B32}
+.ed .n{width:18px;text-align:right;font-size:11px;color:#8F8A7C;font-variant-numeric:tabular-nums}
+.ed .t{flex:1}
+.df{display:flex;align-items:center;gap:8px;padding:14px 20px;border-top:1px solid #2E333B}
+</style>
+</helmet>
+<div class="w back">
+  <div class="ghost"></div>
+  <div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="rc-t" aria-describedby="rc-d">
+    <div style="display:flex;gap:14px;padding:20px 20px 0">
+      <svg viewBox="0 0 40 40" width="40" height="40" aria-hidden="true" style="flex:none"><circle cx="20" cy="20" r="16" fill="#3A311C" stroke="#8A6C2C"/><path d="M27 20a7 7 0 1 1-2-5M27 11v5h-5" fill="none" stroke="#F0CF7A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div>
+        <div id="rc-t" style="font-size:15px;font-weight:600;line-height:20px">Recover unsaved changes?</div>
+        <div id="rc-d" style="color:#B4AE9F;margin-top:4px">StarScript quit unexpectedly while <b style="color:#ECE6D8;font-weight:600">Isles of Valdren</b> had unsaved edits. 14 edits made after your last save (yesterday, 21:18) were autosaved at 21:42.</div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:16px;padding:18px 20px 0 74px">
+      <div class="pv">
+        <div class="pvh">Last saved</div>
+        <div class="frame">
+          <svg viewBox="80 60 560 400" width="320" height="229" role="img" aria-label="Map as last saved" style="display:block">
+            <rect x="0" y="0" width="760" height="540" fill="#C3C7AE"/>
+            <path d="M150 120 L190 98 L232 104 L260 86 L300 92 L338 78 L372 96 L410 90 L446 108 L470 140 L500 150 L522 178 L516 210 L540 236 L566 240 L590 268 L582 300 L560 322 L568 352 L548 384 L512 396 L488 428 L452 440 L420 426 L392 446 L356 452 L330 432 L296 436 L270 414 L236 410 L214 384 L180 372 L170 340 L142 322 L150 290 L126 262 L132 230 L110 204 L124 172 L118 150 Z M610 120 L640 108 L668 122 L676 150 L660 172 L630 176 L606 158 Z" fill="#EADCB3" stroke="#3B2F20" stroke-width="2" stroke-linejoin="round"/>
+            <path d="M220 230 L250 218 L280 226 L292 250 L272 272 L238 274 L218 256 Z" fill="#C3C7AE" stroke="#3B2F20" stroke-width="1.6"/>
+            <g fill="#9DAA76" stroke="#3B2F20" stroke-width="1"><circle cx="200" cy="316" r="6"/><circle cx="216" cy="326" r="6"/><circle cx="232" cy="316" r="6"/><circle cx="240" cy="334" r="6"/><circle cx="208" cy="342" r="6"/></g>
+          </svg>
+        </div>
+      </div>
+      <div class="pv">
+        <div class="pvh"><span style="width:8px;height:8px;border-radius:50%;background:#E3B85A"></span>Recovered</div>
+        <div class="frame" style="box-shadow:0 0 0 2px #8A6C2C">
+          <svg viewBox="80 60 560 400" width="320" height="229" role="img" aria-label="Map with recovered edits outlined" style="display:block">
+            <rect x="0" y="0" width="760" height="540" fill="#C3C7AE"/>
+            <path d="M150 120 L190 98 L232 104 L260 86 L300 92 L338 78 L372 96 L410 90 L446 108 L470 140 L500 150 L522 178 L516 210 L540 236 L566 240 L590 268 L582 300 L560 322 L568 352 L548 384 L512 396 L488 428 L452 440 L420 426 L392 446 L356 452 L330 432 L296 436 L270 414 L236 410 L214 384 L180 372 L170 340 L142 322 L150 290 L126 262 L132 230 L110 204 L124 172 L118 150 Z M610 120 L640 108 L668 122 L676 150 L660 172 L630 176 L606 158 Z M566 316 C596 312 624 336 614 366 C606 390 578 394 560 380 Z" fill="#EADCB3" stroke="#3B2F20" stroke-width="2" stroke-linejoin="round"/>
+            <path d="M220 230 L250 218 L280 226 L292 250 L272 272 L238 274 L218 256 Z" fill="#C3C7AE" stroke="#3B2F20" stroke-width="1.6"/>
+            <g fill="#9DAA76" stroke="#3B2F20" stroke-width="1"><circle cx="200" cy="316" r="6"/><circle cx="216" cy="326" r="6"/><circle cx="232" cy="316" r="6"/><circle cx="240" cy="334" r="6"/><circle cx="208" cy="342" r="6"/></g>
+            <g fill="#6F8A5A" stroke="#3B2F20" stroke-width="1"><path d="M360 250l6 10h-12Z"/><path d="M376 262l6 10h-12Z"/><path d="M366 278l6 10h-12Z"/><path d="M386 282l6 10h-12Z"/><path d="M392 258l6 10h-12Z"/></g>
+            <text x="330" y="402" text-anchor="middle" font-family="Georgia, serif" font-size="14" letter-spacing="2" fill="#3B2F20">CORVALE</text>
+            <g fill="none" stroke="#C99D42" stroke-width="2.5" stroke-dasharray="7 5"><rect x="548" y="300" width="80" height="102" rx="6"/><rect x="342" y="240" width="64" height="58" rx="6"/><rect x="282" y="386" width="96" height="24" rx="6"/></g>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin:16px 20px 0 74px;border:1px solid #2E333B;border-radius:8px;overflow:hidden">
+      <div class="ed" style="background:#1A1D22;font-weight:600">Recovered edits<span style="flex:1"></span><span class="meta" style="font-weight:400">14 Commands</span></div>
+      <div class="ed"><span class="n">1–3</span><span class="t">Paint Land ×3</span><span class="meta">Valdren mainland</span></div>
+      <div class="ed"><span class="n">4</span><span class="t">Override Shore style · Ripples</span><span class="meta">Valdren mainland</span></div>
+      <div class="ed"><span class="n">5</span><span class="t">Add Label “Corvale”</span><span class="meta">Labels</span></div>
+      <div class="ed"><span class="n">6–12</span><span class="t">Scatter Stamps ×7 (+212)</span><span class="meta">Vegetation › Forests</span></div>
+      <div class="ed" style="border-bottom:0"><span class="n">13–14</span><span class="t">Move 3 Nodes, Delete Node</span><span class="meta">Valdren mainland</span></div>
+    </div>
+    <div class="meta" style="margin:8px 20px 0 74px">The recovered Map opens as a copy, “Isles of Valdren (Recovered)”. Your saved .ssmap is not touched until you save.</div>
+
+    <div class="df" style="margin-top:16px">
+      <button class="btn dng">Discard Recovery…</button>
+      <span style="flex:1"></span>
+      <button class="btn">Open Last Saved</button>
+      <button class="btn pri">Recover Edits</button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1000,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

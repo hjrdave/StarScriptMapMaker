@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Export PNG dialog</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#0B0C0E}
+a{color:#E3B85A;text-decoration:none}a:hover{color:#F0CF7A}
+.w{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,sans-serif;font-size:12px;line-height:16px;color:#ECE6D8;-webkit-font-smoothing:antialiased}
+.back{width:1000px;height:820px;background:#0E1013;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.ghost{position:absolute;inset:24px;border-radius:12px;background:#14161A;border:1px solid #23262C;opacity:.55}
+.dlg{position:relative;width:820px;background:#1F2228;border:1px solid #3B414B;border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.6);display:flex;flex-direction:column}
+.dh{padding:18px 20px 0;font-size:15px;font-weight:600;line-height:20px;display:flex;align-items:center;gap:10px}
+.df{display:flex;align-items:center;gap:8px;padding:14px 20px;border-top:1px solid #2E333B}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sm{width:14px;height:14px}
+.btn{height:28px;padding:0 14px;border-radius:6px;border:1px solid #3B414B;background:#2A2E35;color:#ECE6D8;font:inherit;font-weight:500;display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;white-space:nowrap}
+.btn.pri{background:#D4A84A;border-color:#D4A84A;color:#1A1406;font-weight:600}
+.lbl{font-size:11px;font-weight:600;color:#B4AE9F;letter-spacing:.4px;text-transform:uppercase;margin-bottom:8px}
+.fld{display:flex;align-items:center;gap:8px;min-height:30px}
+.fld>label{width:96px;color:#B4AE9F;flex:none}
+.inp{height:26px;display:flex;align-items:center;gap:6px;background:#111317;border:1px solid #3B414B;border-radius:5px;padding:0 8px;box-sizing:border-box;font-variant-numeric:tabular-nums}
+.inp i{font-style:normal;color:#8F8A7C;font-size:11px}
+.seg{display:flex;background:#111317;border:1px solid #2E333B;border-radius:6px;padding:2px;gap:2px}
+.seg span{padding:3px 10px;border-radius:4px;color:#B4AE9F;line-height:16px;flex:1;text-align:center}
+.seg span.on{background:#3A3F47;color:#ECE6D8}
+.pill{height:26px;min-width:44px;border-radius:5px;border:1px solid #3B414B;background:#262A31;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums;color:#D9D3C4;box-sizing:border-box}
+.pill.on{background:#3A311C;border-color:#D4A84A;color:#F0CF7A;font-weight:600}
+.pill.dis{opacity:.4}
+.meta{font-size:11px;color:#9D9788;font-variant-numeric:tabular-nums}
+.cb{width:14px;height:14px;border-radius:3px;border:1px solid #5A5F68;box-sizing:border-box;flex:none;display:flex;align-items:center;justify-content:center}
+.cb.on{background:#D4A84A;border-color:#D4A84A;color:#1A1406}
+</style>
+</helmet>
+<div class="w back">
+  <div class="ghost"></div>
+  <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="ex-t">
+    <div class="dh" id="ex-t">Export PNG<span class="meta" style="font-weight:400">Isles of Valdren</span></div>
+    <div style="display:flex;gap:24px;padding:18px 20px 20px">
+      <!-- Preview + area -->
+      <div style="width:320px;flex:none;display:flex;flex-direction:column;gap:12px">
+        <div style="position:relative;border-radius:6px;overflow:hidden;box-shadow:0 0 0 1px #2E333B;background-color:#2A2E35;background-image:linear-gradient(45deg,#33383F 25%,transparent 25%,transparent 75%,#33383F 75%),linear-gradient(45deg,#33383F 25%,transparent 25%,transparent 75%,#33383F 75%);background-size:16px 16px;background-position:0 0,8px 8px">
+          <svg viewBox="0 0 760 540" width="320" height="227" role="img" aria-label="Export preview with transparent background" style="display:block">
+            <path d="M150 120 L190 98 L232 104 L260 86 L300 92 L338 78 L372 96 L410 90 L446 108 L470 140 L500 150 L522 178 L516 210 L540 236 L566 240 L590 268 L582 300 L560 322 L568 352 L548 384 L512 396 L488 428 L452 440 L420 426 L392 446 L356 452 L330 432 L296 436 L270 414 L236 410 L214 384 L180 372 L170 340 L142 322 L150 290 L126 262 L132 230 L110 204 L124 172 L118 150 Z M610 120 L640 108 L668 122 L676 150 L660 172 L630 176 L606 158 Z M640 400 L664 392 L682 410 L672 430 L646 432 L634 416 Z" fill="#EADCB3" stroke="#3B2F20" stroke-width="2.5" stroke-linejoin="round"/>
+            <path d="M220 230 L250 218 L280 226 L292 250 L272 272 L238 274 L218 256 Z" fill="#C3C7AE" stroke="#3B2F20" stroke-width="2"/>
+            <text x="352" y="296" text-anchor="middle" font-family="Georgia, serif" font-size="30" letter-spacing="10" fill="#3B2F20">VALDREN</text>
+          </svg>
+        </div>
+        <div class="seg"><span class="on">Whole Canvas</span><span>Custom region</span></div>
+        <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;opacity:.45" aria-disabled="true">
+          <div class="inp"><i>X</i>0</div><div class="inp"><i>Y</i>0</div>
+          <div class="inp"><i>W</i>4096</div><div class="inp"><i>H</i>2880</div>
+        </div>
+        <button class="btn" style="justify-content:center"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5V12h10.5M1.5 4H12v10.5"/></svg>Draw region on Canvas <span class="meta">X</span></button>
+      </div>
+
+      <!-- Settings -->
+      <div style="flex:1;display:flex;flex-direction:column;gap:16px;min-width:0">
+        <div>
+          <div class="lbl">Size</div>
+          <div class="seg" style="margin-bottom:10px"><span class="on">Scale</span><span>Target width</span><span>Inches × DPI</span></div>
+          <div class="fld"><label>Scale</label>
+            <div style="display:flex;gap:6px;flex:1">
+              <span class="pill">1×</span><span class="pill">2×</span><span class="pill">4×</span><span class="pill on">5×</span><span class="pill">8×</span><span class="pill dis" title="Over 32,768 px">10×</span>
+            </div>
+          </div>
+          <div class="fld"><label>Output</label><div style="flex:1;display:flex;align-items:baseline;gap:8px"><b style="font-size:15px;font-weight:600;font-variant-numeric:tabular-nums">20,480 × 14,400 px</b><span class="meta">≈ 1.2 GB while rendering</span></div></div>
+          <div style="margin-top:8px;display:flex;gap:10px;align-items:flex-start;background:#3A2A12;border:1px solid #7A5A22;border-radius:8px;padding:10px 12px" role="status">
+            <svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="color:#F2B65A;margin-top:1px"><path d="M8 2.5 14.5 13.5h-13Z M8 6.5v3M8 11.5v.01"/></svg>
+            <div><b style="font-weight:600;color:#F7D7A0">Large export — over 16,384 px.</b><div style="color:#E5CFA8">This can take several minutes and needs a lot of memory. The hard limit is 32,768 px on either side.</div></div>
+          </div>
+        </div>
+        <div>
+          <div class="lbl">Background</div>
+          <div style="display:flex;align-items:flex-start;gap:8px">
+            <span class="cb on" style="margin-top:1px"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:10px;height:10px;stroke-width:2.4"><path d="M3.5 8.5l3 3 6-7"/></svg></span>
+            <div><div>Transparent background</div><div class="meta">Leaves out the sea fill and the Background Layer. Shore ripples are kept.</div></div>
+          </div>
+        </div>
+        <div>
+          <div class="lbl">Credits</div>
+          <div style="display:flex;gap:10px;align-items:flex-start;background:#262A31;border-radius:8px;padding:10px 12px">
+            <svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="color:#E3B85A;margin-top:1px"><path d="M3.5 14V2.5M3.5 3h8.5l-2 3 2 3H3.5"/></svg>
+            <div style="flex:1"><b style="font-weight:600">3 Assets need attribution.</b> A credits file, <span style="font-family:'SF Mono',ui-monospace,Menlo,monospace;font-size:11px">Isles of Valdren-credits.txt</span>, will be saved next to the PNG.<div style="margin-top:4px"><a href="#credits">View credits</a></div></div>
+          </div>
+        </div>
+        <div>
+          <div class="lbl">Save to</div>
+          <div class="fld"><label>File name</label><div class="inp" style="flex:1">Isles of Valdren.png</div></div>
+          <div class="fld"><label>Folder</label><div class="inp" style="flex:1;color:#B4AE9F">~/Documents/Maps</div><button class="btn">Choose…</button></div>
+        </div>
+      </div>
+    </div>
+    <div class="df">
+      <span class="meta">PNG · 8-bit RGBA · sRGB</span>
+      <span style="flex:1"></span>
+      <button class="btn">Cancel</button>
+      <button class="btn pri">Export</button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1000,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

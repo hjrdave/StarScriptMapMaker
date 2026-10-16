@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Editor — Land brush</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&amp;family=IM+Fell+Double+Pica:ital@0;1&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0B0C0E}
+a{color:#E3B85A}a:hover{color:#F0CF7A}
+.w{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,sans-serif;font-size:12px;line-height:16px;color:#ECE6D8;-webkit-font-smoothing:antialiased}
+.win{position:relative;width:1440px;height:900px;box-sizing:border-box;background:#14161A;border:1px solid #30353D;border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.tools{position:absolute;left:692px;bottom:40px;transform:translateX(-50%);z-index:6;display:flex;align-items:center;gap:2px;padding:4px;background:#1B1E23;border:1px solid #3B414B;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.tsep{width:1px;height:20px;background:#2E333B;margin:0 3px}
+.tool{width:32px;height:30px;border:0;border-radius:6px;background:transparent;color:#B4AE9F;display:flex;align-items:center;justify-content:center;padding:0;position:relative;font:inherit}
+.tool.hov{background:#262A31;color:#ECE6D8}
+.tool.on{background:#3A311C;color:#F0CF7A;box-shadow:inset 0 0 0 1px #8A6C2C}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sm{width:14px;height:14px}
+.tip{position:absolute;bottom:42px;left:50%;transform:translateX(-50%);white-space:nowrap;background:#2A2E36;border:1px solid #3B414B;border-radius:6px;padding:4px 6px 4px 8px;font-size:11px;color:#ECE6D8;display:flex;gap:8px;align-items:center;box-shadow:0 4px 12px rgba(0,0,0,.45);z-index:5}
+.kbd{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:11px;color:#C9C2B2;background:#1B1E23;border:1px solid #3B414B;border-radius:4px;padding:0 4px;line-height:15px}
+.btn{height:26px;padding:0 10px;border-radius:6px;border:1px solid #3B414B;background:#262A31;color:#ECE6D8;font:inherit;font-weight:500;display:inline-flex;align-items:center;gap:6px;box-sizing:border-box}
+.seg{display:flex;background:#111317;border:1px solid #2E333B;border-radius:6px;padding:2px;gap:2px}
+.seg span{padding:1px 9px;border-radius:4px;color:#B4AE9F;line-height:16px;display:flex;align-items:center;justify-content:center;gap:5px;flex:1}
+.seg span.on{background:#33383F;color:#ECE6D8}
+.num{display:inline-flex;align-items:center;height:22px;background:#111317;border:1px solid #2E333B;border-radius:4px;padding:0 6px;gap:6px;font-variant-numeric:tabular-nums;color:#ECE6D8;box-sizing:border-box;min-width:56px}
+.num i{font-style:normal;color:#8F8A7C;font-size:11px}
+.body{flex:1;display:flex;min-height:0}
+.layers{width:232px;flex:none;background:#1B1E23;border-right:1px solid #272B32;display:flex;flex-direction:column;min-height:0}
+.props{width:288px;flex:none;background:#1B1E23;border-left:1px solid #272B32;display:flex;flex-direction:column;overflow:hidden}
+.phead{height:34px;display:flex;align-items:center;gap:2px;padding:0 6px 0 12px;font-weight:600;border-bottom:1px solid #272B32;flex:none}
+.phead .sp{flex:1}
+.ibtn{width:24px;height:24px;border:0;border-radius:5px;background:transparent;color:#B4AE9F;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.tree{padding:6px 0;flex:1;overflow:hidden}
+.row{height:26px;display:flex;align-items:center;gap:5px;padding-right:2px;color:#ECE6D8;border-radius:5px;margin:0 4px 1px}
+.row .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.row .k{color:#9D9788}
+.row.sel{background:#3A311C;box-shadow:inset 0 0 0 1px #6E5626}
+.row.sel .k{color:#F0CF7A}
+.row.hov{background:#23272E}
+.row.dim .nm{color:#8F8A7C;font-style:italic}
+.row.lk .nm{color:#9D9788}
+.row.sum .nm{color:#B4AE9F}
+.tw{width:14px;display:flex;justify-content:center;color:#8F8A7C;flex:none}
+.ra{display:flex;color:#8F8A7C}
+.ra .ibtn{width:20px;height:20px;color:#7F7A6D}
+.ra .ibtn.set{color:#ECE6D8}
+.meta{font-size:11px;color:#9D9788;font-variant-numeric:tabular-nums;white-space:nowrap}
+.chip{font-size:11px;line-height:16px;padding:0 5px;border-radius:4px;background:#262A31;color:#B4AE9F;display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
+.chip.gold{background:#3A311C;color:#F0CF7A}
+.canvas{flex:1;position:relative;background:#0F1114;overflow:hidden}
+.status{height:24px;flex:none;display:flex;align-items:center;gap:18px;padding:0 12px;background:#17191E;border-top:1px solid #272B32;font-size:11px;color:#9D9788;font-variant-numeric:tabular-nums}
+.status b{color:#D9D3C4;font-weight:500}
+.sec{border-bottom:1px solid #272B32;padding:6px 12px 10px}
+.sec.tool{background:#1F1D17}
+.sech{display:flex;align-items:center;gap:6px;height:28px;font-weight:600;color:#ECE6D8}
+.sech .sp{flex:1}
+.sech .tw{width:12px}
+.fld{display:flex;align-items:center;gap:8px;min-height:28px}
+.fld>label{width:78px;color:#B4AE9F;flex:none;display:flex;align-items:center;gap:5px}
+.fld .grow{flex:1;display:flex;align-items:center;gap:8px;min-width:0}
+.inh{color:#9D9788;font-style:italic}
+.ovr{width:6px;height:6px;border-radius:50%;background:#E3B85A;flex:none}
+.sw{width:18px;height:18px;border-radius:4px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.2);flex:none}
+.slider{flex:1;height:4px;background:#2E333B;border-radius:2px;position:relative}
+.slider b{position:absolute;left:0;top:0;bottom:0;background:#C99D42;border-radius:2px}
+.slider i{position:absolute;top:-5px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:#ECE6D8;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.txt{height:24px;flex:1;display:flex;align-items:center;background:#111317;border:1px solid #2E333B;border-radius:4px;padding:0 8px;box-sizing:border-box;min-width:0}
+.crumb{display:flex;align-items:center;gap:4px;padding:8px 12px 0;font-size:11px;color:#9D9788}
+.tips{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px;margin:2px 0 6px}
+.tp{height:36px;background:#23272E;border:1px solid #2E333B;border-radius:5px;display:flex;align-items:center;justify-content:center}
+.tp.on{background:#2E2816;box-shadow:0 0 0 2px #D4A84A}
+.titlebar{height:38px;flex:none;display:flex;align-items:stretch;background:#17191E;border-bottom:1px solid #272B32}
+.lights{display:flex;align-items:center;gap:8px;width:84px;padding-left:16px;box-sizing:border-box;flex:none}
+.lights span{width:12px;height:12px;border-radius:50%;display:block}
+.tabs{display:flex;align-items:stretch;flex:1;min-width:0}
+.tab{display:flex;align-items:center;gap:8px;width:220px;padding:0 10px 0 14px;border:0;border-left:1px solid #2A2E35;background:transparent;color:#9D9788;font:inherit;box-sizing:border-box}
+.tab .tn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
+.tab.on{background:#23272E;color:#ECE6D8;font-weight:500;box-shadow:inset 0 -2px 0 #D4A84A}
+.tab.hov{background:#1D2025;color:#D9D3C4}
+.tab.home{width:44px;padding:0;justify-content:center}
+.tab .tx{width:18px;height:18px;display:flex;align-items:center;justify-content:center;border-radius:4px;color:#B4AE9F}
+.tab .tdot{width:7px;height:7px;border-radius:50%;background:#E3B85A;margin-right:5px}
+.ntab{width:40px;border:0;border-left:1px solid #2A2E35;background:transparent;color:#9D9788;display:flex;align-items:center;justify-content:center;padding:0}
+</style>
+</helmet>
+<div class="w win">
+<div class="titlebar">
+  <div class="lights"><span style="background:#FF5F57"></span><span style="background:#FEBC2E"></span><span style="background:#28C840"></span></div>
+  <div class="tabs" role="tablist" aria-label="Open Maps">
+    <button class="tab home" role="tab" aria-selected="false" aria-label="Home (⌘1)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 7.5 8 3l5.5 4.5V13H10V9.5H6V13H2.5Z"/></svg></button>
+    <button class="tab on" role="tab" aria-selected="true"><span class="tn">Isles of Valdren</span><span class="tdot" aria-label="Unsaved changes"></span></button>
+    <button class="tab" role="tab" aria-selected="false"><span class="tn">Coast of Brannoch</span></button>
+    <button class="tab hov" role="tab" aria-selected="false"><span class="tn">Hollowfen Campaign</span><span class="tx" aria-label="Close tab (⌘W)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:12px;height:12px"><path d="M4 4l8 8M12 4l-8 8"/></svg></span></button>
+    <button class="ntab" aria-label="New Map tab (⌘T)"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
+    </div>
+  </div>
+
+  <div class="tools" role="toolbar" aria-label="Tools">
+    <button class="tool" aria-label="Select (V)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5V13l2.8-2.6 1.8 3.6 1.8-.8-1.8-3.6 3.9-.2Z"/></svg></button>
+    <button class="tool" aria-label="Pan (H)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M6 3.5l2-2 2 2M6 12.5l2 2 2-2M3.5 6l-2 2 2 2M12.5 6l2 2-2 2"/></svg></button>
+    <div class="tsep"></div>
+    <button class="tool on" aria-label="Land Brush (B)" aria-pressed="true"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M11.5 2 14 4.5 8 10.5 5.5 8Z"/><path d="M5.5 8C3.5 8.3 3 10 2.5 13.5 6 13 7.7 12.5 8 10.5"/></svg></button>
+    <button class="tool hov" aria-label="Lasso (L)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><ellipse cx="8.5" cy="6.5" rx="6" ry="3.8" stroke-dasharray="2 2"/><path d="M5 9.6c-.8 1.4-.4 3 1 3.4 1 .3 1.2 1.2.4 2"/></svg>
+      <span class="tip">Lasso / Polygon <span class="kbd">L</span></span></button>
+    <button class="tool" aria-label="Label (T)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5V3.5h10V5M8 3.5V13M6 13h4"/></svg></button>
+    <div class="tsep"></div>
+    <button class="tool" aria-label="Stamp (S)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 13 6 5l2.5 4 2-2.5 4 6.5Z"/></svg></button>
+    <button class="tool" aria-label="Scatter Brush (Shift S)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h.01M7.5 2.5h.01M12 4.5h.01M4.5 8h.01M9 7.5h.01M13 9h.01M3 12h.01M7.5 12.5h.01M11.5 13h.01" style="stroke-width:2.6"/></svg></button>
+    <button class="tool" aria-label="Stamp Eraser (E)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 13.5h8M2.8 9.7l5.8-5.8a1.4 1.4 0 0 1 2 0l2 2a1.4 1.4 0 0 1 0 2l-5.4 5.4H5l-2.2-2.2a1 1 0 0 1 0-1.4ZM5.6 6.9l4 4"/></svg></button>
+    <div class="tsep"></div>
+    <button class="tool" aria-label="Export Region (X)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5V12h10.5M1.5 4H12v10.5"/></svg></button>
+  </div>
+
+  <div class="body">
+    <!-- LEFT: Layers (always) -->
+    <div class="layers">
+      <div class="phead">Layers<span class="sp"></span>
+        <button class="ibtn" aria-label="New Layer"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
+        <button class="ibtn" aria-label="Group selection (⌘G)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3M2 11l6 3 6-3"/></svg></button>
+        <button class="ibtn" aria-label="Collapse Layers (⌘⌥1)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3v10M11 4.5 7.5 8l3.5 3.5"/></svg></button>
+      </div>
+      <div class="tree">
+        <div class="row"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3"/></svg><span class="nm">Labels</span><span class="meta">14</span></div>
+        <div class="row"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3"/></svg><span class="nm">Vegetation</span>
+          <span title="Clipped to Landmass" aria-label="Clipped to Landmass" style="color:#7FB6E6;display:flex"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v7a2 2 0 0 0 2 2h7.5M11 9l2.5 2.5L11 14"/></svg></span>
+          <span title="Depth-sorted" aria-label="Depth-sorted" style="color:#B4AE9F;display:flex"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3v10M3 11l2 2 2-2M11 13V3M9 5l2-2 2 2"/></svg></span>
+          <span class="meta">80%</span></div>
+        <div class="row sum" style="padding-left:16px"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 13 6 5l2.5 4 2-2.5 4 6.5Z"/></svg><span class="nm">Forests</span><span class="meta">1,284</span></div>
+        <div class="row sum" style="padding-left:16px"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 13 6 5l2.5 4 2-2.5 4 6.5Z"/></svg><span class="nm">Grasslands</span><span class="meta">402</span></div>
+        <div class="row"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3"/></svg><span class="nm">Mountains</span><span title="Depth-sorted" aria-label="Depth-sorted" style="color:#B4AE9F;display:flex"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3v10M3 11l2 2 2-2M11 13V3M9 5l2-2 2 2"/></svg></span><span class="meta">46</span></div>
+        <div class="row"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3"/></svg><span class="nm">Land &amp; Water</span><svg class="ic sm" viewBox="0 0 16 16" aria-label="Active layer" role="img" style="color:#E3B85A"><circle cx="8" cy="8" r="5"/><circle cx="8" cy="8" r="1.5" style="fill:currentColor"/></svg></div>
+        <div class="row sel" style="padding-left:16px"><span class="tw"></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6c0-2.5 3-3.5 5-2.5 2-1.5 5.5 0 5 3 1.5 2 0 5.5-3 5.5-2 1.8-6 1-6.5-1.5C2 9.5 2 7.5 3 6Z"/></svg><span class="nm">Valdren mainland</span><span class="ra"><button class="ibtn set" aria-label="Hide"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8C3 5 5.3 3.5 8 3.5S13 5 14.5 8C13 11 10.7 12.5 8 12.5S3 11 1.5 8Z"/><circle cx="8" cy="8" r="2"/></svg></button></span></div>
+        <div class="row hov" style="padding-left:16px"><span class="tw"></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6c0-2.5 3-3.5 5-2.5 2-1.5 5.5 0 5 3 1.5 2 0 5.5-3 5.5-2 1.8-6 1-6.5-1.5C2 9.5 2 7.5 3 6Z"/></svg><span class="nm">Isle of Mor</span><span class="ra"><button class="ibtn" aria-label="Hide"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8C3 5 5.3 3.5 8 3.5S13 5 14.5 8C13 11 10.7 12.5 8 12.5S3 11 1.5 8Z"/><circle cx="8" cy="8" r="2"/></svg></button><button class="ibtn" aria-label="Lock"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7.5h8v6H4ZM5.5 7.5v-2a2.5 2.5 0 0 1 5 0"/></svg></button></span></div>
+        <div class="row dim" style="padding-left:16px"><span class="tw"></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6c0-2.5 3-3.5 5-2.5 2-1.5 5.5 0 5 3 1.5 2 0 5.5-3 5.5-2 1.8-6 1-6.5-1.5C2 9.5 2 7.5 3 6Z"/></svg><span class="nm">Southern skerries</span><span class="ra"><button class="ibtn set" aria-label="Show (hidden)"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8C3 5 5.3 3.5 8 3.5S13 5 14.5 8C13 11 10.7 12.5 8 12.5S3 11 1.5 8ZM2.5 2.5l11 11"/></svg></button></span></div>
+        <div class="row" style="padding-left:16px"><span class="tw"></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6c2-1.5 4 1.5 6 0s4 1.5 6 0M2 10c2-1.5 4 1.5 6 0s4 1.5 6 0"/></svg><span class="nm">Mere of Ash</span></div>
+        <div class="row lk"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3"/></svg><span class="nm">Background</span><span class="ra"><button class="ibtn set" aria-label="Unlock"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 7.5v-2a2.5 2.5 0 0 1 5 0v2"/><rect x="4" y="7.5" width="8" height="6" rx="1" style="fill:currentColor"/></svg></button></span></div>
+        <div class="row lk" style="padding-left:16px"><span class="tw"></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/></svg><span class="nm">Parchment</span><span class="ra"><span class="ibtn" title="Locked by parent" aria-label="Locked by parent"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true" style="stroke-dasharray:1.6 1.6"><path d="M4 7.5h8v6H4ZM5.5 7.5v-2a2.5 2.5 0 0 1 5 0v2"/></svg></span></span></div>
+        <div class="row lk" style="padding-left:16px"><span class="tw"></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6c2-1.5 4 1.5 6 0s4 1.5 6 0M2 10c2-1.5 4 1.5 6 0s4 1.5 6 0"/></svg><span class="nm">Sea texture</span><span class="ra"><span class="ibtn" title="Locked by parent" aria-label="Locked by parent"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true" style="stroke-dasharray:1.6 1.6"><path d="M4 7.5h8v6H4ZM5.5 7.5v-2a2.5 2.5 0 0 1 5 0v2"/></svg></span></span></div>
+      </div>
+      <div style="border-top:1px solid #272B32;padding:8px 12px;font-size:11px;color:#9D9788">1,746 Objects · 9 Layers</div>
+    </div>
+
+    <!-- Canvas -->
+    <div class="canvas">
+      <div style="position:absolute;left:79px;top:100px;width:760px;height:540px;box-shadow:0 12px 32px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.6)">
+        <svg viewBox="0 0 760 540" width="760" height="540" role="img" aria-label="Map of Valdren with land brush stroke in progress" style="display:block">
+          <defs>
+            <path id="land" d="M150 120 L190 98 L232 104 L260 86 L300 92 L338 78 L372 96 L410 90 L446 108 L470 140 L500 150 L522 178 L516 210 L540 236 L566 240 L590 268 L582 300 L560 322 L568 352 L548 384 L512 396 L488 428 L452 440 L420 426 L392 446 L356 452 L330 432 L296 436 L270 414 L236 410 L214 384 L180 372 L170 340 L142 322 L150 290 L126 262 L132 230 L110 204 L124 172 L118 150 Z M610 120 L640 108 L668 122 L676 150 L660 172 L630 176 L606 158 Z M640 400 L664 392 L682 410 L672 430 L646 432 L634 416 Z M566 316 C596 312 624 336 614 366 C606 390 578 394 560 380 Z"/>
+            <clipPath id="lc"><use href="#land"/></clipPath>
+            <g id="mt"><path d="M-11 0 0-17 11 0Z" fill="#E6D5A8" stroke="#3B2F20" stroke-width="1.2" stroke-linejoin="round"/><path d="M0-17 4-7 2 0 10 0Z" fill="#3B2F20" opacity=".28"/></g>
+            <g id="tr"><path d="M0 2V-2" stroke="#3B2F20" stroke-width="1.1"/><circle cy="-6" r="5" fill="#9DAA76" stroke="#3B2F20" stroke-width="1"/></g>
+          </defs>
+          <rect width="760" height="540" fill="#C3C7AE"/>
+          <g fill="none" stroke-linejoin="round">
+            <use href="#land" stroke="#8F987F" stroke-width="25"/>
+            <use href="#land" stroke="#C3C7AE" stroke-width="23"/>
+            <use href="#land" stroke="#8F987F" stroke-width="15"/>
+            <use href="#land" stroke="#C3C7AE" stroke-width="13"/>
+            <use href="#land" stroke="#8F987F" stroke-width="6"/>
+          </g>
+          <use href="#land" fill="#EADCB3"/>
+          <use href="#land" fill="none" stroke="#CDB683" stroke-width="12" clip-path="url(#lc)" opacity=".7"/>
+          <use href="#land" fill="none" stroke="#3B2F20" stroke-width="1.8" stroke-linejoin="round"/>
+          <path d="M220 230 L250 218 L280 226 L292 250 L272 272 L238 274 L218 256 Z" fill="#C3C7AE" stroke="#3B2F20" stroke-width="1.4" stroke-linejoin="round"/>
+          <path d="M232 238 L252 230 L272 236 L280 252 L266 264 L242 265 L229 254 Z" fill="none" stroke="#8F987F" stroke-width="1"/>
+          <use href="#mt" x="430" y="168"/><use href="#mt" x="410" y="176"/><use href="#mt" x="452" y="180"/><use href="#mt" x="392" y="196"/><use href="#mt" x="416" y="198"/><use href="#mt" x="440" y="202"/><use href="#mt" x="464" y="206"/><use href="#mt" x="428" y="222"/><use href="#mt" x="452" y="226"/><use href="#mt" x="478" y="230"/>
+          <use href="#tr" x="200" y="322"/><use href="#tr" x="214" y="332"/><use href="#tr" x="228" y="320"/><use href="#tr" x="240" y="336"/><use href="#tr" x="206" y="348"/><use href="#tr" x="222" y="356"/><use href="#tr" x="248" y="350"/><use href="#tr" x="236" y="364"/><use href="#tr" x="262" y="334"/><use href="#tr" x="254" y="318"/><use href="#tr" x="190" y="338"/><use href="#tr" x="270" y="354"/><use href="#tr" x="642" y="136"/><use href="#tr" x="654" y="148"/><use href="#tr" x="634" y="154"/>
+          <circle cx="330" cy="382" r="4.5" fill="#3B2F20" stroke="#EADCB3" stroke-width="1.5"/>
+          <circle cx="486" cy="306" r="3.5" fill="#3B2F20"/>
+          <circle cx="178" cy="182" r="3.5" fill="#3B2F20"/>
+          <text x="352" y="296" text-anchor="middle" font-family="Cinzel, serif" font-weight="600" font-size="26" letter-spacing="10" fill="#3B2F20" opacity=".88">VALDREN</text>
+          <text x="330" y="402" text-anchor="middle" font-family="Cinzel, serif" font-weight="600" font-size="11" letter-spacing="2" fill="#3B2F20">CORVALE</text>
+          <text x="486" y="322" text-anchor="middle" font-family="Cinzel, serif" font-size="9.5" letter-spacing="1.5" fill="#3B2F20">HARROWGATE</text>
+          <text x="178" y="198" text-anchor="middle" font-family="Cinzel, serif" font-size="9.5" letter-spacing="1.5" fill="#3B2F20">PORT ELM</text>
+          <text x="255" y="292" text-anchor="middle" font-family="'IM Fell Double Pica', serif" font-style="italic" font-size="12" fill="#3B2F20">Mere of Ash</text>
+          <text x="436" y="150" text-anchor="middle" font-family="'IM Fell Double Pica', serif" font-style="italic" font-size="13" fill="#3B2F20" transform="rotate(-6 436 150)">Thornspire Range</text>
+          <text x="642" y="196" text-anchor="middle" font-family="'IM Fell Double Pica', serif" font-style="italic" font-size="11" fill="#3B2F20">Isle of Mor</text>
+          <text x="560" y="492" text-anchor="middle" font-family="'IM Fell Double Pica', serif" font-style="italic" font-size="19" letter-spacing="3" fill="#4D5848">The Sundering Sea</text>
+          <g transform="translate(78 470)" fill="none" stroke="#3B2F20" stroke-width="1.1"><circle r="24"/><circle r="19" stroke-dasharray="1 3"/><path d="M0-30 5-5 30 0 5 5 0 30-5 5-30 0-5-5Z" fill="#EADCB3"/><path d="M0-30 5-5 0 0Z M0 30-5 5 0 0Z" fill="#3B2F20"/></g>
+          <g transform="translate(600 516)" font-family="'IM Fell Double Pica', serif" font-size="10" fill="#3B2F20"><path d="M0 0h120" stroke="#3B2F20" stroke-width="1"/><path d="M0 0h60" stroke="#3B2F20" stroke-width="3"/><text x="0" y="-5">0</text><text x="56" y="-5">50</text><text x="104" y="-5">100 mi</text></g>
+          <rect x="8" y="8" width="744" height="524" fill="none" stroke="#3B2F20" stroke-width="1.6"/>
+          <rect x="13" y="13" width="734" height="514" fill="none" stroke="#3B2F20" stroke-width=".6"/>
+          <rect x="110" y="78" width="504" height="374" fill="none" stroke="#4FA3E0" stroke-width="1" stroke-dasharray="4 3"/>
+          <path d="M566 316 C596 312 624 336 614 366 C606 390 578 394 560 380" fill="none" stroke="#E3B85A" stroke-width="1.5" stroke-dasharray="5 4"/>
+          <circle cx="612" cy="352" r="24" fill="none" stroke="#111" stroke-width="3" opacity=".5"/>
+          <circle cx="612" cy="352" r="24" fill="none" stroke="#FFFFFF" stroke-width="1.3"/>
+          <path d="M608 352h8M612 348v8" stroke="#FFFFFF" stroke-width="1.2"/>
+        </svg>
+      </div>
+      <div style="position:absolute;left:722px;top:482px;display:flex;align-items:center;gap:8px;background:rgba(20,22,26,.92);border:1px solid #3B414B;border-radius:6px;padding:4px 8px;font-size:11px;color:#ECE6D8;box-shadow:0 4px 12px rgba(0,0,0,.4);white-space:nowrap">
+        <span style="color:#F0CF7A;font-weight:600">Paint</span><span style="color:#9D9788">48 px</span><span style="color:#9D9788">→ Valdren mainland</span>
+      </div>
+      <div role="listbox" aria-label="Zoom level" style="position:absolute;right:12px;bottom:46px;width:196px;background:#24282F;border:1px solid #3B414B;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.5);padding:5px;font-size:12px;z-index:7">
+        <div style="display:flex;align-items:center;gap:6px;padding:2px 2px 6px"><span class="num" style="flex:1;border-color:#D4A84A;box-shadow:0 0 0 3px rgba(212,168,74,.22)">84<span style="width:1px;height:12px;background:#ECE6D8"></span><span style="flex:1"></span><i>%</i></span></div>
+        <div style="height:1px;background:#3B414B;margin:0 4px 4px"></div>
+        <div role="option" style="height:24px;display:flex;align-items:center;padding:0 8px;border-radius:4px;background:#3A311C;color:#F0CF7A">Zoom to Fit<span style="margin-left:auto;font-size:11px;opacity:.8">⇧1</span></div>
+        <div role="option" style="height:24px;display:flex;align-items:center;padding:0 8px;border-radius:4px">Zoom to Selection<span class="meta" style="margin-left:auto">⇧2</span></div>
+        <div style="height:1px;background:#3B414B;margin:4px"></div>
+        <div role="option" style="height:24px;display:flex;align-items:center;padding:0 8px;border-radius:4px">25%</div>
+        <div role="option" style="height:24px;display:flex;align-items:center;padding:0 8px;border-radius:4px">50%</div>
+        <div role="option" style="height:24px;display:flex;align-items:center;padding:0 8px;border-radius:4px">100%<span class="meta" style="margin-left:auto">⇧0</span></div>
+        <div role="option" style="height:24px;display:flex;align-items:center;padding:0 8px;border-radius:4px">200%</div>
+        <div role="option" style="height:24px;display:flex;align-items:center;padding:0 8px;border-radius:4px">400%</div>
+        <div role="option" style="height:24px;display:flex;align-items:center;padding:0 8px;border-radius:4px">800%</div>
+      </div>
+      <div style="position:absolute;right:12px;bottom:12px;display:flex;gap:2px;background:#1B1E23;border:1px solid #2E333B;border-radius:6px;padding:2px">
+        <button class="ibtn" aria-label="Zoom out"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"/></svg></button>
+        <button class="ibtn" style="width:auto;padding:0 4px 0 8px;gap:4px;font:inherit;font-size:11px;color:#ECE6D8;background:#2E333B;font-variant-numeric:tabular-nums" aria-haspopup="listbox" aria-expanded="true" aria-label="Zoom level">84%<svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:12px;height:12px"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></button>
+        <button class="ibtn" aria-label="Zoom in"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
+      </div>
+    </div>
+
+    <!-- RIGHT: Properties (always) — active tool on top, then selection -->
+    <div class="props">
+      <div class="phead">Properties<span class="sp"></span><span class="meta" style="margin-right:6px">1 Landmass</span></div>
+      <div class="sec tool">
+        <div class="sech"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="color:#F0CF7A"><path d="M11.5 2 14 4.5 8 10.5 5.5 8Z"/><path d="M5.5 8C3.5 8.3 3 10 2.5 13.5 6 13 7.7 12.5 8 10.5"/></svg>Land Brush<span class="sp"></span><span class="kbd">B</span></div>
+        <div class="tips" role="radiogroup" aria-label="Brush tip">
+          <div class="tp" title="Round"><svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="#EADCB3" stroke="#3B2F20" stroke-width="1.5"/></svg></div>
+          <div class="tp on" title="Rough"><svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><path d="M16 5l4 3 5 0 1 5 3 3-2 5 1 4-5 1-3 3-4-2-5 1-2-4-4-2 2-5-2-4 4-2 2-4Z" fill="#EADCB3" stroke="#3B2F20" stroke-width="1.5" stroke-linejoin="round"/></svg></div>
+          <div class="tp" title="Crag"><svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><path d="M16 4l3 6 7-2-2 7 5 4-6 3 1 6-6-2-4 5-2-6-7 1 3-6-5-4 6-3-1-6 6 2Z" fill="#EADCB3" stroke="#3B2F20" stroke-width="1.5" stroke-linejoin="round"/></svg></div>
+          <div class="tp" title="Shoal"><svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><ellipse cx="16" cy="16" rx="13" ry="7" fill="#EADCB3" stroke="#3B2F20" stroke-width="1.5"/></svg></div>
+          <div class="tp" title="Fjord"><svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><path d="M5 9h22v3H14v3h11v3H14v3h13v3H5Z" fill="#EADCB3" stroke="#3B2F20" stroke-width="1.5" stroke-linejoin="round"/></svg></div>
+          <div class="tp" title="Soft"><svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="#EADCB3" fill-opacity=".5" stroke="#3B2F20" stroke-width="1.5" stroke-dasharray="2 2"/></svg></div>
+        </div>
+        <div class="fld"><label>Mode</label><div class="seg" role="radiogroup" aria-label="Brush mode" style="flex:1"><span class="on">Paint</span><span>Erase <span class="kbd">⌥</span></span></div></div>
+        <div class="fld"><label>Size</label><div class="grow"><div class="slider"><b style="width:35%"></b><i style="left:35%"></i></div><span class="num" style="min-width:48px">48 <i>px</i></span></div></div>
+        <div class="fld"><label>Smoothing</label><div class="grow"><div class="slider"><b style="width:35%"></b><i style="left:35%"></i></div><span class="num" style="min-width:48px">35 <i>%</i></span></div></div>
+        <div class="fld"><label>Paint into</label><div class="grow"><span class="btn" style="height:24px;flex:1;justify-content:space-between">Valdren mainland <svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></span></div></div>
+      </div>
+      <div class="crumb">Land &amp; Water <svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:10px;height:10px"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg> <span style="color:#D9D3C4">Valdren mainland</span></div>
+      <div class="sec">
+        <div class="sech"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true" style="color:#F0CF7A"><path d="M3 6c0-2.5 3-3.5 5-2.5 2-1.5 5.5 0 5 3 1.5 2 0 5.5-3 5.5-2 1.8-6 1-6.5-1.5C2 9.5 2 7.5 3 6Z"/></svg>Landmass</div>
+        <div class="fld"><label>Name</label><div class="txt">Valdren mainland</div></div>
+        <div class="fld"><label>Fill</label><div class="grow"><span class="sw" style="background:#EADCB3"></span><span class="num" style="flex:1">EADCB3</span><span class="num" style="min-width:52px">100 <i>%</i></span></div></div>
+      </div>
+      <div class="sec">
+        <div class="sech"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></span>Roughness</div>
+        <div class="fld"><label>Amount</label><div class="grow"><div class="slider"><b style="width:62%"></b><i style="left:62%"></i></div><span class="num" style="min-width:48px">0.62</span></div></div>
+        <div class="fld"><label>Scale</label><div class="grow"><div class="slider"><b style="width:40%"></b><i style="left:40%"></i></div><span class="num" style="min-width:48px">120 <i>px</i></span></div></div>
+        <div class="fld"><label>Seed</label><div class="grow"><span class="num" style="flex:1">48213</span><button class="btn" style="height:24px;padding:0 8px" aria-label="Re-roll seed"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M5.5 5.5h.01M10.5 5.5h.01M8 8h.01M5.5 10.5h.01M10.5 10.5h.01" style="stroke-width:2.2"/></svg>Re-roll</button></div></div>
+      </div>
+      <div class="sec">
+        <div class="sech"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></span>Shore style<span class="sp"></span><span class="chip gold"><span class="ovr"></span>1 override</span></div>
+        <div class="fld"><label>Outline</label><div class="grow"><span class="inh" style="flex:1">Map default · 1.8 px</span><svg class="ic sm" viewBox="0 0 16 16" aria-label="Inherited" role="img" style="color:#8F8A7C"><path d="M6 10 10 6M5 7.5 3.8 8.7a2.3 2.3 0 0 0 3.3 3.3L8.3 11M7.7 5l1.2-1.2a2.3 2.3 0 0 1 3.3 3.3L11 8.3"/></svg></div></div>
+        <div class="fld"><label style="color:#F0CF7A"><span class="ovr"></span>Ripples</label><div class="grow"><span class="num" style="flex:1;border-color:#6E5626">3 <i>lines</i></span><span class="num" style="flex:1;border-color:#6E5626">5 <i>px</i></span><button class="ibtn" aria-label="Reset to Map default" style="color:#E3B85A"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 6H10a3 3 0 0 1 0 6H7M6 3.5 3.5 6 6 8.5"/></svg></button></div></div>
+        <div class="fld"><label>Inner shade</label><div class="grow"><span class="inh" style="flex:1">Map default · 12 px</span><svg class="ic sm" viewBox="0 0 16 16" aria-label="Inherited" role="img" style="color:#8F8A7C"><path d="M6 10 10 6M5 7.5 3.8 8.7a2.3 2.3 0 0 0 3.3 3.3L8.3 11M7.7 5l1.2-1.2a2.3 2.3 0 0 1 3.3 3.3L11 8.3"/></svg></div></div>
+      </div>
+      <div class="sec" style="padding-bottom:2px">
+        <div class="sech"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg></span>Transform<span class="sp"></span><span class="meta" style="font-weight:400">2,716 × 2,016 px</span></div>
+      </div>
+      <div class="sec" style="padding-bottom:2px;border-bottom:0">
+        <div class="sech"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg></span>Combine<span class="sp"></span><span class="meta" style="font-weight:400">Union · Subtract · Split</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status">
+    <span>Zoom <b>84%</b></span>
+    <span>X <b>3,118</b> Y <b>1,886</b> px · <b>779 × 471 mi</b></span>
+    <span>Selection <b>1 Landmass</b></span>
+    <span style="margin-left:auto">Frame <b>4.1 ms</b></span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Component sheet</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#0B0C0E}
+a{color:#E3B85A;text-decoration:none}a:hover{color:#F0CF7A}
+.w{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,sans-serif;font-size:12px;line-height:16px;color:#ECE6D8;-webkit-font-smoothing:antialiased}
+.page{width:1440px;height:1760px;box-sizing:border-box;background:#121418;padding:56px 64px;display:flex;flex-direction:column;gap:24px}
+h2{margin:0 0 14px;font-size:13px;line-height:18px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:#E3B85A}
+.card{background:#1B1E23;border:1px solid #272B32;border-radius:12px;padding:20px 22px}
+.meta{font-size:11px;color:#9D9788;font-variant-numeric:tabular-nums}
+.cap{font-size:11px;color:#9D9788;margin-bottom:6px}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sm{width:14px;height:14px}
+.kbd{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:11px;color:#C9C2B2;background:#1B1E23;border:1px solid #3B414B;border-radius:4px;padding:0 4px;line-height:15px}
+.btn{height:26px;padding:0 10px;border-radius:6px;border:1px solid #3B414B;background:#262A31;color:#ECE6D8;font:inherit;font-weight:500;display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;white-space:nowrap}
+.btn.pri{background:#D4A84A;border-color:#D4A84A;color:#1A1406;font-weight:600}
+.tool{width:32px;height:30px;border:0;border-radius:6px;background:transparent;color:#B4AE9F;display:flex;align-items:center;justify-content:center;padding:0;position:relative}
+.tool.hov{background:#262A31;color:#ECE6D8}
+.tool.on{background:#3A311C;color:#F0CF7A;box-shadow:inset 0 0 0 1px #8A6C2C}
+.tool.foc{box-shadow:0 0 0 2px #14161A,0 0 0 4px #D4A84A;color:#ECE6D8}
+.tool.dis{opacity:.4}
+.sx{display:flex;flex-direction:column;align-items:center;gap:6px}
+.row{height:26px;display:flex;align-items:center;gap:6px;padding-right:4px;border-radius:5px;position:relative}
+.row .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .k{color:#9D9788}
+.row.sel{background:#3A311C;box-shadow:inset 0 0 0 1px #6E5626}
+.row.hov{background:#23272E}
+.tw{width:14px;display:flex;justify-content:center;color:#8F8A7C;flex:none}
+.ib{width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;color:#7F7A6D}
+.ib.set{color:#ECE6D8}
+.lr{display:grid;grid-template-columns:150px minmax(0,1fr);gap:12px;align-items:center;min-height:30px}
+.num{display:inline-flex;align-items:center;height:22px;background:#111317;border:1px solid #2E333B;border-radius:4px;padding:0 6px;gap:6px;font-variant-numeric:tabular-nums;color:#ECE6D8;box-sizing:border-box;width:120px}
+.num i{font-style:normal;color:#8F8A7C;font-size:11px}
+.ovr{width:6px;height:6px;border-radius:50%;background:#E3B85A;flex:none}
+.slider{width:150px;height:4px;background:#2E333B;border-radius:2px;position:relative}
+.slider b{position:absolute;left:0;top:0;bottom:0;background:#C99D42;border-radius:2px}
+.slider i{position:absolute;top:-5px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:#ECE6D8;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.sw{width:20px;height:20px;border-radius:4px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.2);flex:none}
+.th{width:84px;height:84px;background:#23272E;border-radius:6px;position:relative;display:flex;align-items:center;justify-content:center;border:1px solid #2E333B;box-sizing:border-box}
+.vb{position:absolute;right:4px;bottom:4px;font-size:11px;line-height:14px;padding:0 4px;border-radius:3px;background:#14161A;color:#D9D3C4}
+.ab{position:absolute;left:4px;top:4px;font-size:11px;line-height:14px;padding:0 4px;border-radius:3px;background:#4A3A18;color:#F0CF7A;font-weight:600}
+.sech{display:flex;align-items:center;gap:6px;height:30px;font-weight:600;padding:0 10px;border-bottom:1px solid #272B32}
+.chip{font-size:11px;line-height:16px;padding:0 5px;border-radius:4px;background:#262A31;color:#B4AE9F;display:inline-flex;align-items:center;gap:4px}
+.chip.gold{background:#3A311C;color:#F0CF7A}
+.toast{display:flex;align-items:center;gap:10px;background:#24282F;border:1px solid #3B414B;border-radius:8px;padding:8px 8px 8px 12px;box-shadow:0 8px 24px rgba(0,0,0,.5);width:420px;box-sizing:border-box}
+.fld{display:flex;align-items:center;gap:8px;min-height:28px}
+.fld>label{width:76px;color:#B4AE9F;flex:none;display:flex;align-items:center;gap:5px}
+.fld .grow{flex:1;display:flex;align-items:center;gap:6px;min-width:0}
+.panel{background:#1B1E23;border:1px solid #2E333B;border-radius:8px;width:288px;overflow:hidden}
+.tog{width:28px;height:16px;border-radius:8px;background:#C99D42;position:relative;flex:none}
+.tog::after{content:"";position:absolute;right:2px;top:2px;width:12px;height:12px;border-radius:50%;background:#1A1406}
+.tog.off{background:#33383F}
+.tog.off::after{left:2px;right:auto;background:#B4AE9F}
+.lights{display:flex;align-items:center;gap:8px;width:84px;padding-left:16px;box-sizing:border-box;flex:none}
+.lights span{width:12px;height:12px;border-radius:50%;display:block}
+.tab{display:flex;align-items:center;gap:8px;width:160px;padding:0 10px 0 14px;border:0;border-left:1px solid #2A2E35;background:transparent;color:#9D9788;font:inherit;box-sizing:border-box}
+.tab .tn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
+.tab.on{background:#23272E;color:#ECE6D8;font-weight:500;box-shadow:inset 0 -2px 0 #D4A84A}
+.tab.hov{background:#1D2025;color:#D9D3C4}
+.tab.home{width:44px;padding:0;justify-content:center}
+.tab .tx{width:18px;height:18px;display:flex;align-items:center;justify-content:center;border-radius:4px;color:#B4AE9F}
+.tab .tdot{width:7px;height:7px;border-radius:50%;background:#E3B85A;margin-right:5px}
+.ntab{width:40px;border:0;border-left:1px solid #2A2E35;background:transparent;color:#9D9788;display:flex;align-items:center;justify-content:center;padding:0}
+</style>
+</helmet>
+<div class="w page">
+  <div style="font-size:24px;font-weight:600;line-height:30px">Component sheet <span class="meta" style="font-size:13px;font-weight:400;margin-left:8px">every control at 1×, dark theme</span></div>
+
+  <div style="display:flex;gap:24px">
+    <!-- Tool buttons, dock and tabs -->
+    <div class="card" style="flex:1">
+      <h2>Tool buttons</h2>
+      <div style="display:flex;gap:22px;align-items:flex-start">
+        <div class="sx"><button class="tool" aria-label="Lasso"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8.5 2.7c3.3 0 6 1.7 6 3.8s-2.7 3.8-6 3.8-6-1.7-6-3.8 2.7-3.8 6-3.8ZM5 9.6c-.8 1.4-.4 3 1 3.4 1 .3 1.2 1.2.4 2"/></svg></button><span class="meta">Idle</span></div>
+        <div class="sx"><button class="tool hov" aria-label="Lasso"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8.5 2.7c3.3 0 6 1.7 6 3.8s-2.7 3.8-6 3.8-6-1.7-6-3.8 2.7-3.8 6-3.8ZM5 9.6c-.8 1.4-.4 3 1 3.4 1 .3 1.2 1.2.4 2"/></svg></button><span class="meta">Hover</span></div>
+        <div class="sx"><button class="tool on" aria-label="Lasso"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8.5 2.7c3.3 0 6 1.7 6 3.8s-2.7 3.8-6 3.8-6-1.7-6-3.8 2.7-3.8 6-3.8ZM5 9.6c-.8 1.4-.4 3 1 3.4 1 .3 1.2 1.2.4 2"/></svg></button><span class="meta">Active</span></div>
+        <div class="sx"><button class="tool foc" aria-label="Lasso"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8.5 2.7c3.3 0 6 1.7 6 3.8s-2.7 3.8-6 3.8-6-1.7-6-3.8 2.7-3.8 6-3.8ZM5 9.6c-.8 1.4-.4 3 1 3.4 1 .3 1.2 1.2.4 2"/></svg></button><span class="meta">Key focus</span></div>
+        <div class="sx"><button class="tool dis" aria-label="Lasso" disabled><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8.5 2.7c3.3 0 6 1.7 6 3.8s-2.7 3.8-6 3.8-6-1.7-6-3.8 2.7-3.8 6-3.8ZM5 9.6c-.8 1.4-.4 3 1 3.4 1 .3 1.2 1.2.4 2"/></svg></button><span class="meta">Disabled</span></div>
+        <div class="sx" style="margin-left:8px"><span style="display:flex;gap:8px;align-items:center;background:#2A2E36;border:1px solid #3B414B;border-radius:6px;padding:4px 6px 4px 8px;font-size:11px;box-shadow:0 4px 12px rgba(0,0,0,.45)">Lasso / Polygon <span class="kbd">L</span></span><span class="meta">Tooltip after 500 ms</span></div>
+      </div>
+      <div style="margin-top:20px;display:flex;align-items:center;gap:16px">
+        <div role="toolbar" aria-label="Tool dock sample" style="display:flex;align-items:center;gap:2px;padding:4px;background:#1B1E23;border:1px solid #3B414B;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.5)">
+          <button class="tool" aria-label="Select (V)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5V13l2.8-2.6 1.8 3.6 1.8-.8-1.8-3.6 3.9-.2Z"/></svg></button>
+          <button class="tool" aria-label="Pan (H)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M6 3.5l2-2 2 2M6 12.5l2 2 2-2M3.5 6l-2 2 2 2M12.5 6l2 2-2 2"/></svg></button>
+          <span style="width:1px;height:20px;background:#2E333B;margin:0 3px"></span>
+          <button class="tool on" aria-label="Land Brush (B)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M11.5 2 14 4.5 8 10.5 5.5 8ZM5.5 8C3.5 8.3 3 10 2.5 13.5 6 13 7.7 12.5 8 10.5"/></svg></button>
+          <button class="tool" aria-label="Label (T)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5V3.5h10V5M8 3.5V13M6 13h4"/></svg></button>
+        </div>
+        <span class="meta">Floating tool dock — bottom-centre of the canvas, e2 shadow, groups split by 1 px dividers</span>
+      </div>
+      <h2 style="margin-top:24px">Title bar tabs</h2>
+      <div style="height:38px;display:flex;align-items:stretch;background:#17191E;border:1px solid #272B32;border-radius:8px;overflow:hidden" role="tablist" aria-label="Tab states sample">
+        <div class="lights"><span style="background:#FF5F57"></span><span style="background:#FEBC2E"></span><span style="background:#28C840"></span></div>
+        <button class="tab home" role="tab" aria-label="Home"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 7.5 8 3l5.5 4.5V13H10V9.5H6V13H2.5Z"/></svg></button>
+        <button class="tab on" role="tab" aria-selected="true"><span class="tn">Isles of Valdren</span><span class="tdot" aria-label="Unsaved changes"></span></button>
+        <button class="tab" role="tab"><span class="tn">Coast of Brannoch</span></button>
+        <button class="tab hov" role="tab"><span class="tn">Hollowfen Campaign</span><span class="tx" aria-label="Close tab"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:12px;height:12px"><path d="M4 4l8 8M12 4l-8 8"/></svg></span></button>
+        <button class="ntab" aria-label="New Map tab"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
+      </div>
+      <div style="display:flex;gap:24px;margin-top:8px" class="meta"><span>Home (fixed, can’t close)</span><span>Active · gold underline · unsaved dot</span><span>Inactive</span><span>Hover · close ×</span><span>New tab ⌘T</span></div>
+    </div>
+
+    <!-- Section headers + toast -->
+    <div class="card" style="width:460px;flex:none">
+      <h2>Section header</h2>
+      <div class="panel" style="width:100%">
+        <div class="sech"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></span>Roughness<span style="flex:1"></span><span class="meta" style="font-weight:400">Expanded</span></div>
+        <div class="sech"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg></span>Transform<span style="flex:1"></span><span class="meta" style="font-weight:400">Collapsed</span></div>
+        <div class="sech"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></span>Shore style<span style="flex:1"></span><span class="chip gold"><span class="ovr"></span>1 override</span></div>
+        <div class="sech" style="border-bottom:0;background:#23272E"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></span>Halo<span style="flex:1"></span><span class="ib set" aria-label="Section actions"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h.01M8 8h.01M12.5 8h.01" style="stroke-width:2.4"/></svg></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:24px">
+    <!-- Layer rows -->
+    <div class="card" style="flex:1">
+      <h2>Layer row — all states</h2>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 32px">
+        <div class="lr"><span class="meta">Default</span><div class="row"><span class="tw"></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6c0-2.5 3-3.5 5-2.5 2-1.5 5.5 0 5 3 1.5 2 0 5.5-3 5.5-2 1.8-6 1-6.5-1.5C2 9.5 2 7.5 3 6Z"/></svg><span class="nm">Isle of Mor</span></div></div>
+        <div class="lr"><span class="meta">Hover (eye + lock reveal)</span><div class="row hov"><span class="tw"></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6c0-2.5 3-3.5 5-2.5 2-1.5 5.5 0 5 3 1.5 2 0 5.5-3 5.5-2 1.8-6 1-6.5-1.5C2 9.5 2 7.5 3 6Z"/></svg><span class="nm">Isle of Mor</span><span class="ib"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8C3 5 5.3 3.5 8 3.5S13 5 14.5 8C13 11 10.7 12.5 8 12.5S3 11 1.5 8Z"/><circle cx="8" cy="8" r="2"/></svg></span><span class="ib"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7.5h8v6H4ZM5.5 7.5v-2a2.5 2.5 0 0 1 5 0"/></svg></span></div></div>
+        <div class="lr"><span class="meta">Selected</span><div class="row sel"><span class="tw"></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true" style="color:#F0CF7A"><path d="M3 6c0-2.5 3-3.5 5-2.5 2-1.5 5.5 0 5 3 1.5 2 0 5.5-3 5.5-2 1.8-6 1-6.5-1.5C2 9.5 2 7.5 3 6Z"/></svg><span class="nm">Valdren mainland</span></div></div>
+        <div class="lr"><span class="meta">Active Layer (receives new)</span><div class="row"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3"/></svg><span class="nm">Forests</span><svg class="ic sm" viewBox="0 0 16 16" aria-label="Active layer" role="img" style="color:#E3B85A"><circle cx="8" cy="8" r="5"/><circle cx="8" cy="8" r="1.5" style="fill:currentColor"/></svg></div></div>
+        <div class="lr"><span class="meta">Hidden</span><div class="row"><span class="tw"></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6c0-2.5 3-3.5 5-2.5 2-1.5 5.5 0 5 3 1.5 2 0 5.5-3 5.5-2 1.8-6 1-6.5-1.5C2 9.5 2 7.5 3 6Z"/></svg><span class="nm" style="color:#8F8A7C;font-style:italic">Southern skerries</span><span class="ib set"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8C3 5 5.3 3.5 8 3.5S13 5 14.5 8C13 11 10.7 12.5 8 12.5S3 11 1.5 8ZM2.5 2.5l11 11"/></svg></span></div></div>
+        <div class="lr"><span class="meta">Locked</span><div class="row"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3"/></svg><span class="nm" style="color:#9D9788">Background</span><span class="ib set"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 7.5v-2a2.5 2.5 0 0 1 5 0v2"/><rect x="4" y="7.5" width="8" height="6" rx="1" style="fill:currentColor"/></svg></span></div></div>
+        <div class="lr"><span class="meta">Locked by parent</span><div class="row"><span class="tw"></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/></svg><span class="nm" style="color:#9D9788;padding-left:14px">Parchment</span><span class="ib"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true" style="stroke-dasharray:1.6 1.6"><path d="M4 7.5h8v6H4ZM5.5 7.5v-2a2.5 2.5 0 0 1 5 0v2"/></svg></span></div></div>
+        <div class="lr"><span class="meta">Clip + Depth-sort + opacity</span><div class="row"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3"/></svg><span class="nm">Vegetation</span><span style="color:#7FB6E6;display:flex"><svg class="ic sm" viewBox="0 0 16 16" aria-label="Clipped to Landmass" role="img"><path d="M4 2.5v7a2 2 0 0 0 2 2h7.5M11 9l2.5 2.5L11 14"/></svg></span><span style="color:#B4AE9F;display:flex"><svg class="ic sm" viewBox="0 0 16 16" aria-label="Depth-sorted" role="img"><path d="M5 3v10M3 11l2 2 2-2M11 13V3M9 5l2-2 2 2"/></svg></span><span class="meta">80%</span></div></div>
+        <div class="lr"><span class="meta">Summary (collapsed Stamps)</span><div class="row"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 13 6 5l2.5 4 2-2.5 4 6.5Z"/></svg><span class="nm" style="color:#B4AE9F">Pine cluster</span><span class="meta">× 822</span></div></div>
+        <div class="lr"><span class="meta">Renaming</span><div class="row"><span class="tw"></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6c2-1.5 4 1.5 6 0s4 1.5 6 0M2 10c2-1.5 4 1.5 6 0s4 1.5 6 0"/></svg><span style="flex:1;height:22px;display:flex;align-items:center;background:#111317;border:1px solid #D4A84A;border-radius:4px;padding:0 6px;box-shadow:0 0 0 3px rgba(212,168,74,.22)"><span style="background:#2E4D6B">Mere of Ash</span></span></div></div>
+        <div class="lr"><span class="meta">Drag: reorder (between)</span><div style="position:relative"><div class="row"><span class="tw"></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6c0-2.5 3-3.5 5-2.5 2-1.5 5.5 0 5 3 1.5 2 0 5.5-3 5.5-2 1.8-6 1-6.5-1.5C2 9.5 2 7.5 3 6Z"/></svg><span class="nm">Isle of Mor</span></div><div style="position:absolute;left:20px;right:0;bottom:-1px;height:2px;background:#D4A84A;border-radius:1px"></div><div style="position:absolute;left:14px;bottom:-4px;width:8px;height:8px;border-radius:50%;border:2px solid #D4A84A;box-sizing:border-box;background:#1B1E23"></div></div></div>
+        <div class="lr"><span class="meta">Drag: reparent (into)</span><div class="row" style="box-shadow:inset 0 0 0 2px #D4A84A;background:#2A2618"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3"/></svg><span class="nm">Mountains</span><span class="meta">Drop into</span></div></div>
+      </div>
+    </div>
+
+    <!-- Numeric + slider + colour -->
+    <div class="card" style="width:460px;flex:none">
+      <h2>Numeric field</h2>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px">
+        <div><div class="cap">Default</div><span class="num"><i>W</i> 2,716</span></div>
+        <div><div class="cap">Hover — label is the scrub handle ↔</div><span class="num" style="border-color:#4A505B"><i style="color:#ECE6D8;text-decoration:underline dotted">W</i> 2,716</span></div>
+        <div><div class="cap">Scrubbing (⇧ ×10, ⌥ ×0.1)</div><span class="num" style="border-color:#D4A84A;color:#F0CF7A"><i>W</i> 2,804</span></div>
+        <div><div class="cap">Typing (accepts 2716+88)</div><span class="num" style="border-color:#D4A84A;box-shadow:0 0 0 3px rgba(212,168,74,.22)"><i>W</i> 2716+88<span style="width:1px;height:12px;background:#ECE6D8"></span></span></div>
+        <div><div class="cap">Mixed</div><span class="num" style="color:#9D9788;font-style:italic"><i style="font-style:normal">X</i> Mixed</span></div>
+        <div><div class="cap">Disabled</div><span class="num" style="opacity:.45"><i>↻</i> 0°</span></div>
+        <div><div class="cap">Inherited</div><span class="num" style="color:#B4AE9F">44 <i>pt</i><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:12px;height:12px;margin-left:auto;color:#8F8A7C"><path d="M6 10 10 6M5 7.5 3.8 8.7a2.3 2.3 0 0 0 3.3 3.3L8.3 11M7.7 5l1.2-1.2a2.3 2.3 0 0 1 3.3 3.3L11 8.3"/></svg></span></div>
+        <div><div class="cap">Overridden</div><span class="num" style="border-color:#8A6C2C"><span class="ovr"></span>22 <i>%</i><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:12px;height:12px;margin-left:auto;color:#E3B85A"><path d="M3.5 6H10a3 3 0 0 1 0 6H7M6 3.5 3.5 6 6 8.5"/></svg></span></div>
+      </div>
+      <h2 style="margin-top:22px">Slider</h2>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div style="display:flex;align-items:center;gap:12px"><div class="slider"><b style="width:62%"></b><i style="left:62%"></i></div><span class="num" style="width:56px">0.62</span><span class="meta">Default</span></div>
+        <div style="display:flex;align-items:center;gap:12px"><div class="slider"><b style="width:40%;background:#E3B85A"></b><i style="left:40%;box-shadow:0 0 0 4px rgba(212,168,74,.3),0 1px 3px rgba(0,0,0,.5)"></i></div><span class="num" style="width:56px;color:#F0CF7A">0.40</span><span class="meta">Dragging</span></div>
+        <div style="display:flex;align-items:center;gap:12px;opacity:.45"><div class="slider"><b style="width:25%;background:#6E6A60"></b><i style="left:25%"></i></div><span class="num" style="width:56px">0.25</span><span class="meta">Disabled</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:24px">
+    <!-- Colour swatch + picker -->
+    <div class="card" style="width:400px;flex:none">
+      <h2>Colour swatch</h2>
+      <div style="display:flex;gap:16px;align-items:center;margin-bottom:14px">
+        <span style="display:flex;align-items:center;gap:6px"><span class="sw" style="background:#EADCB3"></span><span class="num" style="width:84px">EADCB3</span></span>
+        <span style="display:flex;align-items:center;gap:6px"><span class="sw" style="background:#3B2F20;box-shadow:0 0 0 2px #1B1E23,0 0 0 4px #D4A84A"></span><span class="meta">Open</span></span>
+        <span class="sw" style="background-color:#2A2E35;background-image:linear-gradient(135deg,transparent 45%,#F2A093 45%,#F2A093 55%,transparent 55%)" title="None"></span><span class="meta">None</span>
+      </div>
+      <div style="background:#24282F;border:1px solid #3B414B;border-radius:8px;padding:12px;box-shadow:0 8px 24px rgba(0,0,0,.5)">
+        <div style="height:120px;border-radius:5px;background:#B07A2A;position:relative;overflow:hidden">
+          <div style="position:absolute;inset:0;background:linear-gradient(90deg,#FFFFFF,rgba(255,255,255,0))"></div>
+          <div style="position:absolute;inset:0;background:linear-gradient(0deg,#000000,rgba(0,0,0,0))"></div>
+          <div style="position:absolute;left:62%;top:22%;width:12px;height:12px;margin:-6px;border-radius:50%;border:2px solid #FFFFFF;box-shadow:0 0 0 1px rgba(0,0,0,.5)"></div>
+        </div>
+        <div style="height:10px;border-radius:5px;margin-top:10px;background:linear-gradient(90deg,#FF0000,#FFFF00,#00FF00,#00FFFF,#0000FF,#FF00FF,#FF0000);position:relative"><span style="position:absolute;left:10%;top:-2px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:#FFFFFF;box-shadow:0 1px 3px rgba(0,0,0,.6)"></span></div>
+        <div style="display:flex;gap:6px;margin-top:10px"><span class="num" style="flex:1;width:auto"><i>#</i>EADCB3</span><span class="num" style="width:64px">100 <i>%</i></span><span class="num" style="width:28px;padding:0;justify-content:center" aria-label="Eyedropper"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3l3 3-7 7H3v-3ZM9 2l5 5"/></svg></span></div>
+        <div class="cap" style="margin:10px 0 6px">Map palette</div>
+        <div style="display:flex;gap:6px"><span class="sw" style="background:#EADCB3;box-shadow:0 0 0 2px #24282F,0 0 0 3px #ECE6D8"></span><span class="sw" style="background:#3B2F20"></span><span class="sw" style="background:#C3C7AE"></span><span class="sw" style="background:#8F987F"></span><span class="sw" style="background:#9DAA76"></span><span class="sw" style="background:#6F8A5A"></span><span class="sw" style="background:#A0522D"></span><span class="sw" style="background:#7A2E2E"></span><span class="sw" style="background:#2E4D6B"></span><span class="sw" style="border:1px dashed #5A5F68;box-shadow:none;display:flex;align-items:center;justify-content:center;color:#9D9788;box-sizing:border-box" aria-label="Add swatch"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:10px;height:10px"><path d="M8 3v10M3 8h10"/></svg></span></div>
+      </div>
+    </div>
+
+    <!-- Asset thumbnails -->
+    <div class="card" style="flex:1">
+      <h2>Asset thumbnail</h2>
+      <div style="display:flex;gap:16px">
+        <div><div class="th"><svg viewBox="0 0 40 40" width="54" height="54" aria-hidden="true"><path d="M20 6l8 12h-4l6 9h-7v6h-6v-6h-7l6-9h-4Z" fill="#6F8A5A" stroke="#2A2116" stroke-width="1.1"/></svg><span class="vb">3</span></div><div class="cap" style="margin-top:6px">Default</div></div>
+        <div><div class="th" style="background:#2A2E35;border-color:#4A505B"><svg viewBox="0 0 40 40" width="54" height="54" aria-hidden="true"><path d="M20 6l8 12h-4l6 9h-7v6h-6v-6h-7l6-9h-4Z" fill="#6F8A5A" stroke="#2A2116" stroke-width="1.1"/></svg><span class="vb">3</span></div><div class="cap" style="margin-top:6px">Hover</div></div>
+        <div><div class="th" style="box-shadow:0 0 0 2px #D4A84A;background:#2E2816"><svg viewBox="0 0 40 40" width="54" height="54" aria-hidden="true"><path d="M20 6l8 12h-4l6 9h-7v6h-6v-6h-7l6-9h-4Z" fill="#6F8A5A" stroke="#2A2116" stroke-width="1.1"/></svg><span class="vb">3</span></div><div class="cap" style="margin-top:6px">Armed</div></div>
+        <div><div class="th"><svg viewBox="0 0 40 40" width="54" height="54" aria-hidden="true"><path d="M2 32 15 12l7 10 5-6 11 16Z" fill="#E6D5A8" stroke="#2A2116" stroke-width="1.1" stroke-linejoin="round"/></svg><span class="ab">CC BY</span><span class="vb">6</span></div><div class="cap" style="margin-top:6px">Needs attribution</div></div>
+        <div><div class="th" style="border-style:dashed"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:22px;height:22px;color:#9D9788"><path d="M8 2.5 14.5 13.5h-13ZM8 6.5v3M8 11.5v.01"/></svg></div><div class="cap" style="margin-top:6px">Pack missing</div></div>
+        <div><div style="position:relative;width:84px;height:84px"><div class="th" style="position:absolute;left:6px;top:-6px;opacity:.5"></div><div class="th" style="position:absolute;left:3px;top:-3px;opacity:.75"></div><div class="th" style="position:absolute;left:0;top:0"><svg viewBox="0 0 40 40" width="54" height="54" aria-hidden="true"><path d="M14 8l6 9h-3l5 7h-6v4h-4v-4H6l5-7H8Z" fill="#6F8A5A" stroke="#2A2116"/><path d="M27 12l6 9h-3l4 6h-5v4h-4v-4h-5l4-6h-3Z" fill="#6F8A5A" stroke="#2A2116"/></svg><span class="vb">4</span></div></div><div class="cap" style="margin-top:6px">Variant group</div></div>
+      </div>
+      <div style="margin-top:18px;border:1px dashed #3B414B;border-radius:8px;padding:22px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center">
+        <svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:24px;height:24px;color:#9D9788"><path d="M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM10.5 10.5 14 14"/></svg>
+        <b style="font-weight:600">No Assets match “wyvern”</b>
+        <span class="meta">Searched 6 Asset packs in Trees. Try All categories or a shorter word.</span>
+        <div style="display:flex;gap:6px;margin-top:4px"><button class="btn">Search all categories</button><button class="btn">Clear search</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:24px;flex:1">
+    <!-- Dialog + toasts -->
+    <div class="card" style="flex:1;display:flex;flex-direction:column;gap:20px">
+      <h2 style="margin:0">Dialog · unsaved changes</h2>
+      <div style="width:420px;background:#1F2228;border:1px solid #3B414B;border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.6)" role="alertdialog" aria-labelledby="us-t">
+        <div style="padding:18px;display:flex;gap:14px">
+          <svg viewBox="0 0 40 40" width="40" height="40" aria-hidden="true" style="flex:none"><rect x="6" y="4" width="28" height="32" rx="3" fill="#2A2E35" stroke="#5A5F68"/><circle cx="29" cy="9" r="6" fill="#E3B85A" stroke="#1F2228" stroke-width="2"/></svg>
+          <div><div id="us-t" style="font-size:13px;font-weight:600">Save changes to “Isles of Valdren”?</div><div style="color:#B4AE9F;margin-top:4px">You have 14 unsaved edits. If you don’t save, they’ll be lost.</div></div>
+        </div>
+        <div style="display:flex;gap:8px;padding:12px 18px;border-top:1px solid #2E333B"><button class="btn" style="background:transparent;border-color:#6A3A33;color:#F2A093">Don’t Save</button><span style="flex:1"></span><button class="btn">Cancel</button><button class="btn pri">Save <span style="opacity:.7;font-size:11px">⌘S</span></button></div>
+      </div>
+      <h2 style="margin:0">Toast</h2>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="toast" role="status"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="color:#8FD49A"><path d="M3.5 8.5l3 3 6-7"/></svg><span style="flex:1">Exported Isles of Valdren.png</span><button class="btn" style="height:24px">Show in Finder</button></div>
+        <div class="toast" role="status"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="color:#B4AE9F"><path d="M3.5 6H10a3 3 0 0 1 0 6H7M6 3.5 3.5 6 6 8.5"/></svg><span style="flex:1">Deleted 3 nodes</span><button class="btn" style="height:24px">Undo <span class="kbd">⌘Z</span></button></div>
+        <div class="toast" role="alert" style="border-color:#6A3A33"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="color:#F2A093"><path d="M8 2.5 14.5 13.5h-13ZM8 6.5v3M8 11.5v.01"/></svg><span style="flex:1">Couldn’t load “Northern Woods” — 3 Stamps show placeholders</span><button class="btn" style="height:24px">Locate…</button></div>
+      </div>
+    </div>
+
+    <!-- Inspector: Stamp -->
+    <div class="card" style="width:332px;flex:none">
+      <h2>Inspector · Stamp</h2>
+      <div class="panel">
+        <div class="sech"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="color:#F0CF7A"><path d="M1.5 13 6 5l2.5 4 2-2.5 4 6.5Z"/></svg>Stamp<span style="flex:1"></span><span class="meta" style="font-weight:400">Pine cluster · v2</span></div>
+        <div style="padding:8px 12px 12px">
+          <div class="fld"><label>Scale</label><div class="grow"><span class="num" style="flex:1;width:auto">110 <i>%</i></span></div></div>
+          <div class="fld"><label>Rotation</label><div class="grow"><span class="num" style="flex:1;width:auto">−6°</span></div></div>
+          <div class="fld"><label>Flip</label><div class="grow"><span class="btn" style="height:24px;flex:1;justify-content:center;background:#3A311C;border-color:#8A6C2C;color:#F0CF7A">Horizontal</span><span class="btn" style="height:24px;flex:1;justify-content:center">Vertical</span></div></div>
+          <div class="fld"><label>Tint</label><div class="grow"><span class="sw" style="background:#6F8A5A"></span><span class="num" style="flex:1;width:auto">35 <i>%</i></span></div></div>
+          <div class="fld"><label>Silhouette</label><div class="grow"><span class="tog off" role="switch" aria-checked="false" aria-label="Silhouette fill"></span><span class="sw" style="background:#3B2F20;opacity:.4"></span></div></div>
+          <div class="fld"><label>Opacity</label><div class="grow"><div class="slider" style="width:auto;flex:1"><b style="width:100%"></b><i style="left:100%"></i></div><span class="num" style="width:52px">100<i>%</i></span></div></div>
+          <button class="btn" style="width:100%;justify-content:center;margin-top:8px"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5h3l6 6h3M2 11h3l1.5-1.5M9.5 6.5 11 5h3M12 3l2 2-2 2M12 9l2 2-2 2"/></svg>Shuffle variant</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Inspector: multi-selection -->
+    <div class="card" style="width:332px;flex:none">
+      <h2>Inspector · multi-selection</h2>
+      <div class="panel">
+        <div class="sech">2 Landmasses<span style="flex:1"></span><span class="meta" style="font-weight:400">+ 1 Lake ignored</span></div>
+        <div style="padding:8px 12px 12px">
+          <div class="fld"><label>Fill</label><div class="grow"><span class="sw" style="background:linear-gradient(135deg,#EADCB3 50%,#E3D3A5 50%)"></span><span class="num" style="flex:1;width:auto;color:#9D9788;font-style:italic">Mixed</span></div></div>
+          <div class="fld"><label>Roughness</label><div class="grow"><span class="num" style="flex:1;width:auto">0.62</span></div></div>
+          <div class="fld"><label>Seed</label><div class="grow"><span class="num" style="flex:1;width:auto;color:#9D9788;font-style:italic">Mixed</span><button class="btn" style="height:24px;padding:0 8px">Re-roll all</button></div></div>
+          <div class="fld"><label>Ripples</label><div class="grow"><span class="num" style="flex:1;width:auto;color:#9D9788;font-style:italic">Mixed (1 overridden)</span></div></div>
+          <div class="cap" style="margin-top:10px">Combine</div>
+          <div style="display:flex;gap:6px">
+            <button class="btn" style="flex:1;justify-content:center;padding:0 4px">Union</button>
+            <button class="btn" style="flex:1;justify-content:center;padding:0 4px">Subtract</button>
+            <button class="btn" style="flex:1;justify-content:center;padding:0 4px">Split apart</button>
+          </div>
+          <div class="meta" style="margin-top:6px">Subtract removes the top Landmass from the one below it.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1760}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Editor — Scatter brush</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&amp;family=IM+Fell+Double+Pica:ital@0;1&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0B0C0E}
+a{color:#E3B85A}a:hover{color:#F0CF7A}
+.w{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,sans-serif;font-size:12px;line-height:16px;color:#ECE6D8;-webkit-font-smoothing:antialiased}
+.win{position:relative;width:1440px;height:900px;box-sizing:border-box;background:#14161A;border:1px solid #30353D;border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.tools{position:absolute;left:692px;bottom:40px;transform:translateX(-50%);z-index:6;display:flex;align-items:center;gap:2px;padding:4px;background:#1B1E23;border:1px solid #3B414B;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.tsep{width:1px;height:20px;background:#2E333B;margin:0 3px}
+.tool{width:32px;height:30px;border:0;border-radius:6px;background:transparent;color:#B4AE9F;display:flex;align-items:center;justify-content:center;padding:0;position:relative;font:inherit}
+.tool.on{background:#3A311C;color:#F0CF7A;box-shadow:inset 0 0 0 1px #8A6C2C}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sm{width:14px;height:14px}
+.kbd{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:11px;color:#C9C2B2;background:#1B1E23;border:1px solid #3B414B;border-radius:4px;padding:0 4px;line-height:15px}
+.btn{height:26px;padding:0 10px;border-radius:6px;border:1px solid #3B414B;background:#262A31;color:#ECE6D8;font:inherit;font-weight:500;display:inline-flex;align-items:center;gap:6px;box-sizing:border-box}
+.seg{display:flex;background:#111317;border:1px solid #2E333B;border-radius:6px;padding:2px;gap:2px}
+.seg span{padding:1px 6px;border-radius:4px;color:#B4AE9F;line-height:16px;display:flex;align-items:center;gap:5px;flex:1;justify-content:center;white-space:nowrap}
+.seg span.on{background:#33383F;color:#ECE6D8}
+.num{display:inline-flex;align-items:center;height:22px;background:#111317;border:1px solid #2E333B;border-radius:4px;padding:0 6px;gap:6px;font-variant-numeric:tabular-nums;color:#ECE6D8;box-sizing:border-box;min-width:56px}
+.num i{font-style:normal;color:#8F8A7C;font-size:11px}
+.body{flex:1;display:flex;min-height:0}
+.layers{width:232px;flex:none;background:#1B1E23;border-right:1px solid #272B32;display:flex;flex-direction:column;min-height:0}
+.props{width:288px;flex:none;background:#1B1E23;border-left:1px solid #272B32;display:flex;flex-direction:column;overflow:hidden}
+.phead{height:34px;display:flex;align-items:center;gap:2px;padding:0 6px 0 12px;font-weight:600;border-bottom:1px solid #272B32;flex:none}
+.phead .sp{flex:1}
+.ibtn{width:24px;height:24px;border:0;border-radius:5px;background:transparent;color:#B4AE9F;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.tree{padding:6px 0;flex:1;overflow:hidden}
+.row{height:26px;display:flex;align-items:center;gap:5px;padding-right:2px;color:#ECE6D8;border-radius:5px;margin:0 4px 1px}
+.row .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.row .k{color:#9D9788}
+.row.sel{background:#3A311C;box-shadow:inset 0 0 0 1px #6E5626}
+.row.sum .nm{color:#B4AE9F}
+.row.more .nm{color:#E3B85A}
+.tw{width:14px;display:flex;justify-content:center;color:#8F8A7C;flex:none}
+.meta{font-size:11px;color:#9D9788;font-variant-numeric:tabular-nums;white-space:nowrap}
+.canvas{flex:1;position:relative;background:#0F1114;overflow:hidden}
+.status{height:24px;flex:none;display:flex;align-items:center;gap:18px;padding:0 12px;background:#17191E;border-top:1px solid #272B32;font-size:11px;color:#9D9788;font-variant-numeric:tabular-nums}
+.status b{color:#D9D3C4;font-weight:500}
+.sec{border-bottom:1px solid #272B32;padding:6px 12px 10px}
+.sec.tool{background:#1F1D17}
+.sech{display:flex;align-items:center;gap:6px;height:28px;font-weight:600;color:#ECE6D8}
+.sech .sp{flex:1}
+.sech .tw{width:12px}
+.fld{display:flex;align-items:center;gap:8px;min-height:27px}
+.fld>label{width:84px;color:#B4AE9F;flex:none;display:flex;align-items:center;gap:6px}
+.fld .grow{flex:1;display:flex;align-items:center;gap:8px;min-width:0}
+.slider{flex:1;height:4px;background:#2E333B;border-radius:2px;position:relative}
+.slider b{position:absolute;left:0;top:0;bottom:0;background:#C99D42;border-radius:2px}
+.slider i{position:absolute;top:-5px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:#ECE6D8;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.tog{width:28px;height:16px;border-radius:8px;background:#C99D42;position:relative;flex:none}
+.tog::after{content:"";position:absolute;right:2px;top:2px;width:12px;height:12px;border-radius:50%;background:#1A1406}
+.search{height:26px;display:flex;align-items:center;gap:6px;background:#111317;border:1px solid #3B414B;border-radius:6px;padding:0 8px;color:#ECE6D8;box-sizing:border-box}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+.th{background:#23272E;border-radius:5px;height:52px;position:relative;display:flex;align-items:center;justify-content:center;border:1px solid #2E333B}
+.vb{position:absolute;right:2px;bottom:2px;font-size:11px;line-height:13px;padding:0 3px;border-radius:3px;background:#14161A;color:#D9D3C4}
+.ab{position:absolute;left:3px;top:3px;width:7px;height:7px;border-radius:50%;background:#E3B85A;box-shadow:0 0 0 2px #14161A}
+.crumb{display:flex;align-items:center;gap:4px;padding:8px 12px 0;font-size:11px;color:#9D9788}
+.titlebar{height:38px;flex:none;display:flex;align-items:stretch;background:#17191E;border-bottom:1px solid #272B32}
+.lights{display:flex;align-items:center;gap:8px;width:84px;padding-left:16px;box-sizing:border-box;flex:none}
+.lights span{width:12px;height:12px;border-radius:50%;display:block}
+.tabs{display:flex;align-items:stretch;flex:1;min-width:0}
+.tab{display:flex;align-items:center;gap:8px;width:220px;padding:0 10px 0 14px;border:0;border-left:1px solid #2A2E35;background:transparent;color:#9D9788;font:inherit;box-sizing:border-box}
+.tab .tn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
+.tab.on{background:#23272E;color:#ECE6D8;font-weight:500;box-shadow:inset 0 -2px 0 #D4A84A}
+.tab.home{width:44px;padding:0;justify-content:center}
+.tab .tdot{width:7px;height:7px;border-radius:50%;background:#E3B85A;margin-right:5px}
+.ntab{width:40px;border:0;border-left:1px solid #2A2E35;background:transparent;color:#9D9788;display:flex;align-items:center;justify-content:center;padding:0}
+</style>
+</helmet>
+<div class="w win">
+<div class="titlebar">
+  <div class="lights"><span style="background:#FF5F57"></span><span style="background:#FEBC2E"></span><span style="background:#28C840"></span></div>
+  <div class="tabs" role="tablist" aria-label="Open Maps">
+    <button class="tab home" role="tab" aria-selected="false" aria-label="Home (⌘1)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 7.5 8 3l5.5 4.5V13H10V9.5H6V13H2.5Z"/></svg></button>
+    <button class="tab on" role="tab" aria-selected="true"><span class="tn">Isles of Valdren</span><span class="tdot" aria-label="Unsaved changes"></span></button>
+    <button class="tab" role="tab" aria-selected="false"><span class="tn">Coast of Brannoch</span></button>
+    <button class="tab" role="tab" aria-selected="false"><span class="tn">Hollowfen Campaign</span></button>
+    <button class="ntab" aria-label="New Map tab (⌘T)"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
+    </div>
+  </div>
+
+  <div class="tools" role="toolbar" aria-label="Tools">
+    <button class="tool" aria-label="Select (V)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5V13l2.8-2.6 1.8 3.6 1.8-.8-1.8-3.6 3.9-.2Z"/></svg></button>
+    <button class="tool" aria-label="Pan (H)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M6 3.5l2-2 2 2M6 12.5l2 2 2-2M3.5 6l-2 2 2 2M12.5 6l2 2-2 2"/></svg></button>
+    <div class="tsep"></div>
+    <button class="tool" aria-label="Land Brush (B)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M11.5 2 14 4.5 8 10.5 5.5 8Z"/><path d="M5.5 8C3.5 8.3 3 10 2.5 13.5 6 13 7.7 12.5 8 10.5"/></svg></button>
+    <button class="tool" aria-label="Lasso (L)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><ellipse cx="8.5" cy="6.5" rx="6" ry="3.8" stroke-dasharray="2 2"/><path d="M5 9.6c-.8 1.4-.4 3 1 3.4 1 .3 1.2 1.2.4 2"/></svg></button>
+    <button class="tool" aria-label="Label (T)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5V3.5h10V5M8 3.5V13M6 13h4"/></svg></button>
+    <div class="tsep"></div>
+    <button class="tool" aria-label="Stamp (S)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 13 6 5l2.5 4 2-2.5 4 6.5Z"/></svg></button>
+    <button class="tool on" aria-pressed="true" aria-label="Scatter Brush (Shift S)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h.01M7.5 2.5h.01M12 4.5h.01M4.5 8h.01M9 7.5h.01M13 9h.01M3 12h.01M7.5 12.5h.01M11.5 13h.01" style="stroke-width:2.6"/></svg></button>
+    <button class="tool" aria-label="Stamp Eraser (E)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 13.5h8M2.8 9.7l5.8-5.8a1.4 1.4 0 0 1 2 0l2 2a1.4 1.4 0 0 1 0 2l-5.4 5.4H5l-2.2-2.2a1 1 0 0 1 0-1.4ZM5.6 6.9l4 4"/></svg></button>
+    <div class="tsep"></div>
+    <button class="tool" aria-label="Export Region (X)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5V12h10.5M1.5 4H12v10.5"/></svg></button>
+  </div>
+
+  <div class="body">
+    <!-- LEFT: Layers (always) -->
+    <div class="layers">
+      <div class="phead">Layers<span class="sp"></span>
+        <button class="ibtn" aria-label="New Layer"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
+        <button class="ibtn" aria-label="Collapse Layers (⌘⌥1)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3v10M11 4.5 7.5 8l3.5 3.5"/></svg></button>
+      </div>
+      <div class="tree">
+        <div class="row"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3"/></svg><span class="nm">Labels</span><span class="meta">14</span></div>
+        <div class="row"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3"/></svg><span class="nm">Vegetation</span><span style="color:#7FB6E6;display:flex" title="Clipped to Landmass" aria-label="Clipped to Landmass"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v7a2 2 0 0 0 2 2h7.5M11 9l2.5 2.5L11 14"/></svg></span></div>
+        <div class="row sel" style="padding-left:16px"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></span><svg class="ic sm" viewBox="0 0 16 16" aria-label="Active layer" role="img" style="color:#E3B85A"><circle cx="8" cy="8" r="5"/><circle cx="8" cy="8" r="1.5" style="fill:currentColor"/></svg><span class="nm">Forests</span><span class="meta">1,496</span></div>
+        <div class="row sum" style="padding-left:34px"><svg class="ic k sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 13 6 5l2.5 4 2-2.5 4 6.5Z"/></svg><span class="nm">Pine cluster</span><span class="meta">× 822</span></div>
+        <div class="row sum" style="padding-left:34px"><svg class="ic k sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 13 6 5l2.5 4 2-2.5 4 6.5Z"/></svg><span class="nm">Oak</span><span class="meta">× 402</span></div>
+        <div class="row sum" style="padding-left:34px"><svg class="ic k sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 13 6 5l2.5 4 2-2.5 4 6.5Z"/></svg><span class="nm">Birch</span><span class="meta">× 272</span></div>
+        <div class="row more" style="padding-left:34px"><span class="nm">List all 1,496 Stamps…</span></div>
+        <div class="row" style="padding-left:16px"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3"/></svg><span class="nm">Grasslands</span><span class="meta">402</span></div>
+        <div class="row"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3"/></svg><span class="nm">Mountains</span><span class="meta">46</span></div>
+        <div class="row"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3"/></svg><span class="nm">Land &amp; Water</span><span class="meta">5</span></div>
+        <div class="row"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg></span><svg class="ic k" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3"/></svg><span class="nm" style="color:#9D9788">Background</span><svg class="ic sm" viewBox="0 0 16 16" aria-label="Locked" role="img" style="color:#ECE6D8"><path d="M5.5 7.5v-2a2.5 2.5 0 0 1 5 0v2"/><rect x="4" y="7.5" width="8" height="6" rx="1" style="fill:currentColor"/></svg></div>
+      </div>
+      <div style="border-top:1px solid #272B32;padding:8px 12px;font-size:11px;color:#9D9788">1,958 Objects · 9 Layers</div>
+    </div>
+
+    <!-- Canvas -->
+    <div class="canvas">
+      <svg viewBox="150 196 420 340" width="918" height="743" role="img" aria-label="Zoomed map with scatter brush placing pine Stamps" style="display:block;position:absolute;left:0;top:24px">
+        <defs>
+          <path id="land" d="M150 120 L190 98 L232 104 L260 86 L300 92 L338 78 L372 96 L410 90 L446 108 L470 140 L500 150 L522 178 L516 210 L540 236 L566 240 L590 268 L582 300 L560 322 L568 352 L548 384 L512 396 L488 428 L452 440 L420 426 L392 446 L356 452 L330 432 L296 436 L270 414 L236 410 L214 384 L180 372 L170 340 L142 322 L150 290 L126 262 L132 230 L110 204 L124 172 L118 150 Z M566 316 C596 312 624 336 614 366 C606 390 578 394 560 380 Z"/>
+          <clipPath id="lc"><use href="#land"/></clipPath>
+          <g id="tr"><path d="M0 2V-2" stroke="#3B2F20" stroke-width="1.1"/><circle cy="-6" r="5" fill="#9DAA76" stroke="#3B2F20" stroke-width="1"/></g>
+          <g id="pn"><path d="M0-13 5.5-5H3l4 6H1.5v3h-3V1H-7l4-6h-2.5Z" fill="#6F8A5A" stroke="#3B2F20" stroke-width=".9" stroke-linejoin="round"/></g>
+          <g id="mt"><path d="M-11 0 0-17 11 0Z" fill="#E6D5A8" stroke="#3B2F20" stroke-width="1.2" stroke-linejoin="round"/><path d="M0-17 4-7 2 0 10 0Z" fill="#3B2F20" opacity=".28"/></g>
+        </defs>
+        <rect x="0" y="0" width="760" height="540" fill="#C3C7AE"/>
+        <g fill="none" stroke-linejoin="round">
+          <use href="#land" stroke="#8F987F" stroke-width="25"/><use href="#land" stroke="#C3C7AE" stroke-width="23"/>
+          <use href="#land" stroke="#8F987F" stroke-width="15"/><use href="#land" stroke="#C3C7AE" stroke-width="13"/>
+          <use href="#land" stroke="#8F987F" stroke-width="6"/>
+        </g>
+        <use href="#land" fill="#EADCB3"/>
+        <use href="#land" fill="none" stroke="#CDB683" stroke-width="12" clip-path="url(#lc)" opacity=".7"/>
+        <use href="#land" fill="none" stroke="#3B2F20" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M220 230 L250 218 L280 226 L292 250 L272 272 L238 274 L218 256 Z" fill="#C3C7AE" stroke="#3B2F20" stroke-width="1.4" stroke-linejoin="round"/>
+        <use href="#mt" x="392" y="226"/><use href="#mt" x="428" y="222"/><use href="#mt" x="452" y="226"/><use href="#mt" x="478" y="230"/><use href="#mt" x="440" y="204"/><use href="#mt" x="416" y="200"/>
+        <use href="#tr" x="200" y="322"/><use href="#tr" x="214" y="332"/><use href="#tr" x="228" y="320"/><use href="#tr" x="240" y="336"/><use href="#tr" x="206" y="348"/><use href="#tr" x="222" y="356"/><use href="#tr" x="248" y="350"/><use href="#tr" x="236" y="364"/><use href="#tr" x="262" y="334"/><use href="#tr" x="254" y="318"/><use href="#tr" x="190" y="338"/><use href="#tr" x="270" y="354"/>
+        <use href="#pn" x="300" y="268"/><use href="#pn" x="312" y="278"/><use href="#pn" x="326" y="266"/><use href="#pn" x="306" y="292"/><use href="#pn" x="322" y="296"/><use href="#pn" x="338" y="284"/><use href="#pn" x="294" y="306"/><use href="#pn" x="350" y="300"/><use href="#pn" x="316" y="312"/><use href="#pn" x="334" y="318"/>
+        <use href="#pn" x="360" y="262"/><use href="#pn" x="374" y="276"/><use href="#pn" x="366" y="290"/><use href="#pn" x="384" y="294"/><use href="#pn" x="378" y="258"/><use href="#pn" x="392" y="276"/>
+        <circle cx="330" cy="382" r="4.5" fill="#3B2F20" stroke="#EADCB3" stroke-width="1.5"/>
+        <text x="330" y="402" text-anchor="middle" font-family="Cinzel, serif" font-weight="600" font-size="11" letter-spacing="2" fill="#3B2F20">CORVALE</text>
+        <text x="255" y="292" text-anchor="middle" font-family="'IM Fell Double Pica', serif" font-style="italic" font-size="12" fill="#3B2F20">Mere of Ash</text>
+        <circle cx="378" cy="278" r="30" fill="#E3B85A" fill-opacity=".08" stroke="#111" stroke-width="2.6" stroke-opacity=".45"/>
+        <circle cx="378" cy="278" r="30" fill="none" stroke="#FFFFFF" stroke-width="1"/>
+        <circle cx="378" cy="278" r="30" fill="none" stroke="#E3B85A" stroke-width="1" stroke-dasharray="3 4"/>
+      </svg>
+      <div style="position:absolute;left:508px;top:441px;display:flex;align-items:center;gap:8px;background:rgba(20,22,26,.92);border:1px solid #3B414B;border-radius:6px;padding:4px 8px;font-size:11px;color:#ECE6D8;box-shadow:0 4px 12px rgba(0,0,0,.4);white-space:nowrap">
+        <span style="color:#F0CF7A;font-weight:600">Scatter</span><span style="color:#B4AE9F">Pine cluster · Land only</span><span style="color:#9D9788">+212 this stroke</span>
+      </div>
+    </div>
+
+    <!-- RIGHT: Properties (always) — active tool on top, then the Layer you're in -->
+    <div class="props">
+      <div class="phead">Properties<span class="sp"></span><span class="meta" style="margin-right:6px">Nothing selected</span></div>
+      <div class="sec tool">
+        <div class="sech"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="color:#F0CF7A"><path d="M3 4h.01M7.5 2.5h.01M12 4.5h.01M4.5 8h.01M9 7.5h.01M13 9h.01M3 12h.01M7.5 12.5h.01M11.5 13h.01" style="stroke-width:2.6"/></svg>Scatter Brush<span class="sp"></span><span class="kbd">⇧S</span></div>
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <label class="search" style="flex:1"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true" style="color:#9D9788"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg><span style="flex:1">pine</span><span class="meta">9</span></label>
+          <button class="btn" style="height:26px;padding:0 8px;font-weight:400">Trees <svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></button>
+        </div>
+        <div class="grid">
+          <sc-for list="{{assets}}" as="a" hint-placeholder-count="8">
+            <div class="th" style="{{a.ring}}" title="{{a.name}}">
+              <svg viewBox="0 0 40 40" width="36" height="36" aria-hidden="true"><path d="{{a.d}}" fill="{{a.fill}}" stroke="#2A2116" stroke-width="1.1" stroke-linejoin="round"/><path d="{{a.d2}}" fill="{{a.fill}}" stroke="#2A2116" stroke-width="1.1" stroke-linejoin="round"/></svg>
+              <sc-if value="{{a.attr}}" hint-placeholder-val="{{ false }}"><span class="ab" title="Attribution required"></span></sc-if>
+              <span class="vb">{{a.v}}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="margin:8px 0 4px;display:flex;flex-direction:column;gap:3px">
+          <div style="display:flex;align-items:center;gap:6px"><b style="font-weight:600">Pine cluster</b><span class="meta">4 variants</span></div>
+          <div class="meta" style="color:#B4AE9F">Northern Woods · [AUTHOR] · CC BY 4.0</div>
+          <div style="display:flex;gap:5px;align-items:center;font-size:11px;color:#F0CF7A"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:12px;height:12px"><path d="M3.5 14V2.5M3.5 3h8.5l-2 3 2 3H3.5"/></svg>Needs attribution — credited on export</div>
+        </div>
+        <div class="fld"><label>Place on</label><div class="seg" role="radiogroup" aria-label="Placement constraint" style="flex:1"><span class="on">Land</span><span>Water</span><span>Any</span></div></div>
+        <div class="fld"><label>Density</label><div class="grow"><div class="slider"><b style="width:45%"></b><i style="left:45%"></i></div><span class="num" style="min-width:44px">18</span></div></div>
+        <div class="fld"><label>Spacing</label><div class="grow"><div class="slider"><b style="width:30%"></b><i style="left:30%"></i></div><span class="num" style="min-width:44px">22<i>px</i></span></div></div>
+        <div class="fld"><label>Size jitter</label><div class="grow"><div class="slider"><b style="width:25%"></b><i style="left:25%"></i></div><span class="num" style="min-width:44px">25<i>%</i></span></div></div>
+        <div class="fld"><label>Rotation jitter</label><div class="grow"><div class="slider"><b style="width:12%"></b><i style="left:12%"></i></div><span class="num" style="min-width:44px">8°</span></div></div>
+        <div class="fld"><label>Random flip</label><div class="grow"><span class="tog" role="switch" aria-checked="true" aria-label="Random flip"></span></div></div>
+        <div class="fld"><label>Variant</label><div class="seg" role="radiogroup" aria-label="Variant" style="flex:1"><span class="on">Random</span><span>Cycle</span><span>Fixed</span></div></div>
+      </div>
+      <div class="crumb">Vegetation <svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:10px;height:10px"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg> <span style="color:#D9D3C4">Forests</span><span class="meta" style="margin-left:auto;color:#E3B85A">● Active Layer</span></div>
+      <div class="sec">
+        <div class="sech"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true" style="color:#F0CF7A"><path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3"/></svg>Layer</div>
+        <div class="fld"><label>Opacity</label><div class="grow"><div class="slider"><b style="width:100%"></b><i style="left:100%"></i></div><span class="num" style="min-width:48px">100<i>%</i></span></div></div>
+        <div class="fld"><label><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true" style="color:#7FB6E6"><path d="M4 2.5v7a2 2 0 0 0 2 2h7.5M11 9l2.5 2.5L11 14"/></svg>Clip</label><div class="grow"><span class="tog" role="switch" aria-checked="true" aria-label="Clip to Landmass"></span><span class="meta">to Landmass</span></div></div>
+        <div class="fld"><label><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3v10M3 11l2 2 2-2M11 13V3M9 5l2-2 2 2"/></svg>Depth-sort</label><div class="grow"><span class="tog" role="switch" aria-checked="true" aria-label="Depth-sort"></span></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="status">
+    <span>Zoom <b>220%</b></span>
+    <span>X <b>1,902</b> Y <b>1,402</b> px · <b>475 × 350 mi</b></span>
+    <span>Active Layer <b>Forests</b></span>
+    <span style="margin-left:auto">Frame <b>6.8 ms</b></span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var pine = 'M20 6l8 12h-4l6 9h-7v6h-6v-6h-7l6-9h-4Z';
+    var cl1 = 'M14 8l6 9h-3l5 7h-6v4h-4v-4H6l5-7H8Z';
+    var cl2 = 'M27 12l6 9h-3l4 6h-5v4h-4v-4h-5l4-6h-3Z';
+    var tall = 'M20 4l7 10h-3l5 8h-4l5 7h-7v5h-6v-5H10l5-7h-4l5-8h-3Z';
+    var none = 'M0 0';
+    var sel = 'box-shadow:0 0 0 2px #D4A84A;background:#2E2816';
+    return { assets: [
+      { name: 'Pine cluster', d: cl1, d2: cl2, fill: '#6F8A5A', v: 4, attr: true, ring: sel },
+      { name: 'Lone pine', d: pine, d2: none, fill: '#6F8A5A', v: 3, attr: true, ring: '' },
+      { name: 'Tall pine', d: tall, d2: none, fill: '#5E7A4E', v: 2, attr: false, ring: '' },
+      { name: 'Snowy pine', d: pine, d2: none, fill: '#DDE3E0', v: 3, attr: false, ring: '' },
+      { name: 'Snowy cluster', d: cl1, d2: cl2, fill: '#DDE3E0', v: 2, attr: false, ring: '' },
+      { name: 'Larch', d: tall, d2: none, fill: '#A7A35E', v: 2, attr: true, ring: '' },
+      { name: 'Pine stand', d: cl1, d2: cl2, fill: '#506C44', v: 5, attr: false, ring: '' },
+      { name: 'Dwarf pine', d: pine, d2: none, fill: '#8C9F6A', v: 2, attr: false, ring: '' }
+    ] };
+  }
+}
+</script>
+</body>
+</html>

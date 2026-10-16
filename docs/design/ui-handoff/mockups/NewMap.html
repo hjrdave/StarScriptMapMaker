@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>New Map dialog</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#0B0C0E}
+a{color:#E3B85A;text-decoration:none}a:hover{color:#F0CF7A}
+.w{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,sans-serif;font-size:12px;line-height:16px;color:#ECE6D8;-webkit-font-smoothing:antialiased}
+.back{width:1000px;height:760px;background:#0E1013;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.ghost{position:absolute;inset:24px;border-radius:12px;background:#14161A;border:1px solid #23262C;opacity:.55}
+.dlg{position:relative;width:720px;background:#1F2228;border:1px solid #3B414B;border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.6);display:flex;flex-direction:column}
+.dh{padding:18px 20px 4px;font-size:15px;font-weight:600;line-height:20px}
+.dsub{padding:0 20px;color:#B4AE9F}
+.df{display:flex;align-items:center;gap:8px;padding:14px 20px;border-top:1px solid #2E333B}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sm{width:14px;height:14px}
+.btn{height:28px;padding:0 14px;border-radius:6px;border:1px solid #3B414B;background:#2A2E35;color:#ECE6D8;font:inherit;font-weight:500;display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;white-space:nowrap}
+.btn.pri{background:#D4A84A;border-color:#D4A84A;color:#1A1406;font-weight:600}
+.lbl{font-size:11px;font-weight:600;color:#B4AE9F;letter-spacing:.4px;text-transform:uppercase;margin-bottom:8px}
+.fld{display:flex;align-items:center;gap:8px;min-height:30px}
+.fld>label{width:92px;color:#B4AE9F;flex:none}
+.inp{height:26px;display:flex;align-items:center;gap:6px;background:#111317;border:1px solid #3B414B;border-radius:5px;padding:0 8px;box-sizing:border-box;font-variant-numeric:tabular-nums}
+.inp i{font-style:normal;color:#8F8A7C;font-size:11px}
+.inp.focus{border-color:#D4A84A;box-shadow:0 0 0 3px rgba(212,168,74,.22)}
+.sel{justify-content:space-between}
+.seg{display:flex;background:#111317;border:1px solid #2E333B;border-radius:6px;padding:2px;gap:2px}
+.seg span{padding:2px 10px;border-radius:4px;color:#B4AE9F;line-height:16px;flex:1;text-align:center}
+.seg span.on{background:#3A3F47;color:#ECE6D8}
+.meta{font-size:11px;color:#9D9788;font-variant-numeric:tabular-nums}
+.st{height:30px;display:flex;align-items:center;gap:8px;padding:0 8px;border-radius:5px}
+.st .h{color:#6E6A60}
+.st .nm{flex:1}
+.cb{width:14px;height:14px;border-radius:3px;border:1px solid #5A5F68;box-sizing:border-box;flex:none;display:flex;align-items:center;justify-content:center}
+.cb.on{background:#D4A84A;border-color:#D4A84A;color:#1A1406}
+.tag{font-size:11px;color:#9D9788;background:#262A31;border-radius:4px;padding:0 5px;line-height:16px}
+</style>
+</helmet>
+<div class="w back">
+  <div class="ghost"></div>
+  <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="nm-t">
+    <div class="dh" id="nm-t">New Map</div>
+    <div class="dsub">Everything stays editable — size and scale can be changed later from Map › Canvas.</div>
+    <div style="display:flex;gap:24px;padding:18px 20px 20px">
+      <!-- Left: size & scale -->
+      <div style="flex:1;display:flex;flex-direction:column;gap:18px;min-width:0">
+        <div>
+          <div class="fld"><label for="mapname">Name</label><div class="inp focus" style="flex:1" id="mapname">Untitled Map<span style="display:inline-block;width:1px;height:13px;background:#ECE6D8"></span></div></div>
+        </div>
+        <div>
+          <div class="lbl">Canvas</div>
+          <div class="fld"><label>Preset</label><div class="inp sel" style="flex:1">Landscape 4K · 4096 × 2880<svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></div></div>
+          <div class="fld"><label>Size</label>
+            <div style="flex:1;display:flex;align-items:center;gap:6px">
+              <div class="inp" style="flex:1"><i>W</i>4096<span style="flex:1"></span><i>px</i></div>
+              <button class="btn" style="width:28px;padding:0;justify-content:center;color:#E3B85A;border-color:#6E5626" aria-label="Lock aspect ratio" aria-pressed="true"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 10 10 6M5 7.5 3.8 8.7a2.3 2.3 0 0 0 3.3 3.3L8.3 11M7.7 5l1.2-1.2a2.3 2.3 0 0 1 3.3 3.3L11 8.3"/></svg></button>
+              <div class="inp" style="flex:1"><i>H</i>2880<span style="flex:1"></span><i>px</i></div>
+            </div>
+          </div>
+          <div class="fld"><label>Orientation</label><div class="seg" style="flex:1"><span class="on">Landscape</span><span>Portrait</span><span>Square</span></div></div>
+          <div class="meta" style="padding-left:100px;margin-top:4px">About 47 MB in memory · exports up to 32,768 px per side</div>
+        </div>
+        <div>
+          <div class="lbl">Real-world scale</div>
+          <div class="fld"><label>1 pixel =</label>
+            <div style="flex:1;display:flex;gap:6px">
+              <div class="inp" style="width:90px">0.25</div>
+              <div class="inp sel" style="flex:1">miles<svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></div>
+            </div>
+          </div>
+          <div class="fld"><label>Units</label><div class="seg" style="flex:1"><span class="on">Miles</span><span>Kilometres</span><span>Leagues</span></div></div>
+          <div style="margin:8px 0 0 100px;display:flex;align-items:center;gap:8px;background:#262A31;border-radius:6px;padding:8px 10px">
+            <svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="color:#E3B85A"><path d="M1.5 11h13M1.5 9v4M8 10v2M14.5 9v4"/></svg>
+            <span>The Map covers <b style="font-weight:600">1,024 × 720 miles</b>. Status bar and scale bars use these units.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: template stack -->
+      <div style="width:260px;flex:none;display:flex;flex-direction:column;gap:10px">
+        <div class="lbl" style="margin-bottom:0">Template stack</div>
+        <div style="border:1px solid #2E333B;border-radius:8px;padding:4px;background:#1A1D22">
+          <div class="st"><svg class="ic sm h" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01" style="stroke-width:2"/></svg><span class="cb on"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:10px;height:10px;stroke-width:2.4"><path d="M3.5 8.5l3 3 6-7"/></svg></span><span class="nm">Double-rule border</span></div>
+          <div class="st"><svg class="ic sm h" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01" style="stroke-width:2"/></svg><span class="cb"></span><span class="nm" style="color:#B4AE9F">Compass rose</span></div>
+          <div class="st"><svg class="ic sm h" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01" style="stroke-width:2"/></svg><span class="cb"></span><span class="nm" style="color:#B4AE9F">Hex grid</span></div>
+          <div class="st" style="background:#2A2E35"><svg class="ic sm h" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01" style="stroke-width:2"/></svg><span class="cb on"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:10px;height:10px;stroke-width:2.4"><path d="M3.5 8.5l3 3 6-7"/></svg></span><span class="nm">Starter Landmass</span><span class="tag">Seed 48213</span></div>
+          <div class="st"><svg class="ic sm h" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01" style="stroke-width:2"/></svg><span class="cb on"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:10px;height:10px;stroke-width:2.4"><path d="M3.5 8.5l3 3 6-7"/></svg></span><span class="nm">Ripple sea</span></div>
+          <div class="st"><svg class="ic sm h" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01" style="stroke-width:2"/></svg><span class="cb on"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:10px;height:10px;stroke-width:2.4"><path d="M3.5 8.5l3 3 6-7"/></svg></span><span class="nm">Parchment</span><span class="tag">base</span></div>
+        </div>
+        <div class="fld" style="min-height:26px"><label style="width:auto;margin-right:4px">Label styles</label><div class="inp sel" style="flex:1">Classic set<svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></div></div>
+        <div style="border-radius:6px;overflow:hidden;box-shadow:0 0 0 1px #2E333B">
+          <svg viewBox="0 0 260 183" width="260" height="183" role="img" aria-label="Template preview" style="display:block">
+            <rect width="260" height="183" fill="#C3C7AE"/>
+            <path d="M70 60 L110 44 L150 52 L190 46 L206 80 L196 118 L160 138 L110 134 L76 116 L60 86 Z" fill="none" stroke="#8F987F" stroke-width="12" stroke-linejoin="round"/>
+            <path d="M70 60 L110 44 L150 52 L190 46 L206 80 L196 118 L160 138 L110 134 L76 116 L60 86 Z" fill="none" stroke="#C3C7AE" stroke-width="9" stroke-linejoin="round"/>
+            <path d="M70 60 L110 44 L150 52 L190 46 L206 80 L196 118 L160 138 L110 134 L76 116 L60 86 Z" fill="#EADCB3" stroke="#3B2F20" stroke-width="1.4" stroke-linejoin="round"/>
+            <rect x="6" y="6" width="248" height="171" fill="none" stroke="#3B2F20" stroke-width="1.2"/>
+            <rect x="9.5" y="9.5" width="241" height="164" fill="none" stroke="#3B2F20" stroke-width=".5"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+    <div class="df">
+      <span class="cb on" style="margin-right:2px"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:10px;height:10px;stroke-width:2.4"><path d="M3.5 8.5l3 3 6-7"/></svg></span><span style="color:#B4AE9F">Use these settings next time</span>
+      <span style="flex:1"></span>
+      <button class="btn">Cancel</button>
+      <button class="btn pri">Create Map</button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1000,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

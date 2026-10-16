@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Home tab</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#0B0C0E}
+a{color:#E3B85A;text-decoration:none}a:hover{color:#F0CF7A}
+.w{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,sans-serif;font-size:12px;line-height:16px;color:#ECE6D8;-webkit-font-smoothing:antialiased}
+.win{position:relative;width:1440px;height:900px;box-sizing:border-box;background:#14161A;border:1px solid #30353D;border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sm{width:14px;height:14px}
+.btn{height:26px;padding:0 10px;border-radius:6px;border:1px solid #3B414B;background:#262A31;color:#ECE6D8;font:inherit;font-weight:500;display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;white-space:nowrap}
+.btn.pri{background:#D4A84A;border-color:#D4A84A;color:#1A1406;font-weight:600}
+.rail{width:232px;flex:none;background:#1B1E23;border-right:1px solid #272B32;display:flex;flex-direction:column;padding:14px 8px;box-sizing:border-box;gap:2px}
+.nav{height:30px;display:flex;align-items:center;gap:10px;padding:0 10px;border-radius:6px;color:#B4AE9F}
+.nav.on{background:#3A311C;color:#F0CF7A;box-shadow:inset 0 0 0 1px #6E5626}
+.nav .c{margin-left:auto;font-size:11px;color:#9D9788;font-variant-numeric:tabular-nums}
+.navh{font-size:11px;font-weight:600;color:#9D9788;letter-spacing:.4px;text-transform:uppercase;padding:14px 10px 6px}
+.card{display:flex;flex-direction:column;gap:8px;border-radius:10px;padding:8px;text-decoration:none;color:#ECE6D8;position:relative}
+.prev{height:160px;border-radius:6px;overflow:hidden;box-shadow:0 0 0 1px #2E333B;position:relative}
+.meta{font-size:11px;color:#9D9788;font-variant-numeric:tabular-nums}
+.open{position:absolute;left:8px;top:8px;font-size:11px;line-height:18px;padding:0 7px;border-radius:9px;background:rgba(20,22,26,.88);color:#D9D3C4;display:flex;align-items:center;gap:5px}
+.search{height:28px;width:260px;display:flex;align-items:center;gap:6px;background:#111317;border:1px solid #3B414B;border-radius:6px;padding:0 8px;color:#9D9788;box-sizing:border-box}
+.titlebar{height:38px;flex:none;display:flex;align-items:stretch;background:#17191E;border-bottom:1px solid #272B32}
+.lights{display:flex;align-items:center;gap:8px;width:84px;padding-left:16px;box-sizing:border-box;flex:none}
+.lights span{width:12px;height:12px;border-radius:50%;display:block}
+.tabs{display:flex;align-items:stretch;flex:1;min-width:0}
+.tab{display:flex;align-items:center;gap:8px;width:220px;padding:0 10px 0 14px;border:0;border-left:1px solid #2A2E35;background:transparent;color:#9D9788;font:inherit;box-sizing:border-box}
+.tab .tn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
+.tab.on{background:#23272E;color:#ECE6D8;font-weight:500;box-shadow:inset 0 -2px 0 #D4A84A}
+.tab.home{width:44px;padding:0;justify-content:center}
+.tab .tdot{width:7px;height:7px;border-radius:50%;background:#E3B85A;margin-right:5px}
+.ntab{width:40px;border:0;border-left:1px solid #2A2E35;background:transparent;color:#9D9788;display:flex;align-items:center;justify-content:center;padding:0}
+</style>
+</helmet>
+<div class="w win">
+<div class="titlebar">
+  <div class="lights"><span style="background:#FF5F57"></span><span style="background:#FEBC2E"></span><span style="background:#28C840"></span></div>
+  <div class="tabs" role="tablist" aria-label="Open Maps">
+    <button class="tab home on" role="tab" aria-selected="true" aria-label="Home (⌘1)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 7.5 8 3l5.5 4.5V13H10V9.5H6V13H2.5Z"/></svg></button>
+    <button class="tab" role="tab" aria-selected="false"><span class="tn">Isles of Valdren</span><span class="tdot" aria-label="Unsaved changes"></span></button>
+    <button class="tab" role="tab" aria-selected="false"><span class="tn">Coast of Brannoch</span></button>
+    <button class="tab" role="tab" aria-selected="false"><span class="tn">Hollowfen Campaign</span></button>
+    <button class="ntab" aria-label="New Map tab (⌘T)"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
+    </div>
+  </div>
+
+  <div style="flex:1;display:flex;min-height:0">
+    <div class="rail">
+      <a class="nav on" href="#all"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/></svg>All maps<span class="c">8</span></a>
+      <a class="nav" href="#recent"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>Recent<span class="c">6</span></a>
+      <a class="nav" href="#open"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5h12v8H2ZM4 3h8"/></svg>Open in tabs<span class="c">3</span></a>
+      <div class="navh">Folders</div>
+      <a class="nav" href="#f1"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h4l1.5 1.5H14v6.5H2Z"/></svg>~/Documents/Maps<span class="c">6</span></a>
+      <a class="nav" href="#f2"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h4l1.5 1.5H14v6.5H2Z"/></svg>Campaigns<span class="c">2</span></a>
+      <a class="nav" href="#addfolder" style="color:#9D9788"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>Add folder…</a>
+      <div class="navh">Library</div>
+      <a class="nav" href="#packs"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 13 6 5l2.5 4 2-2.5 4 6.5Z"/></svg>Asset packs<span class="c">6</span></a>
+      <a class="nav" href="#credits"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 14V2.5M3.5 3h8.5l-2 3 2 3H3.5"/></svg>Credits &amp; licences</a>
+      <div style="flex:1"></div>
+      <div class="meta" style="padding:0 10px">Version 0.9.2 · <a href="#whatsnew">What’s new</a></div>
+    </div>
+
+    <div style="flex:1;display:flex;flex-direction:column;min-width:0;position:relative;background:#14161A">
+      <div style="padding:24px 32px 0;display:flex;align-items:center;gap:12px">
+        <h1 style="margin:0;font-size:20px;line-height:26px;font-weight:600">All maps</h1>
+        <span class="meta">Drop a .ssmap file anywhere to open it in a new tab</span>
+        <span style="flex:1"></span>
+        <label class="search"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>Search maps</label>
+        <button class="btn" style="font-weight:400">Last edited <svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></button>
+        <button class="btn"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h4l1.5 1.5H14v6.5H2Z"/></svg>Open…</button>
+      </div>
+      <div style="padding:16px 24px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">
+        <a class="card" href="NewMap.dc.html" aria-label="New Map">
+          <div class="prev" style="box-shadow:none;border:1px dashed #4A505B;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#B4AE9F;box-sizing:border-box">
+            <svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:24px;height:24px;color:#E3B85A"><path d="M8 3v10M3 8h10"/></svg>New Map
+          </div>
+          <div style="padding:0 2px"><div style="font-weight:600;font-size:13px">Blank or from template</div><div class="meta">⌘N</div></div>
+        </a>
+        <sc-for list="{{maps}}" as="m" hint-placeholder-count="7">
+          <a class="card" href="Main.dc.html" style="{{m.hov}}" aria-label="Open {{m.title}}">
+            <div class="prev">
+              <svg viewBox="0 0 320 200" width="100%" height="160" preserveAspectRatio="xMidYMid slice" role="img" aria-label="{{m.title}} preview" style="display:block">
+                <rect width="320" height="200" fill="{{m.sea}}"/>
+                <path d="{{m.d}}" fill="none" stroke="#8F987F" stroke-width="12" stroke-linejoin="round" fill-rule="evenodd"/>
+                <path d="{{m.d}}" fill="none" stroke="{{m.sea}}" stroke-width="9" stroke-linejoin="round"/>
+                <path d="{{m.d}}" fill="{{m.land}}" stroke="#3B2F20" stroke-width="1.6" stroke-linejoin="round" fill-rule="evenodd"/>
+                <rect x="6" y="6" width="308" height="188" fill="none" stroke="#3B2F20" stroke-width="1"/>
+              </svg>
+              <sc-if value="{{m.open}}" hint-placeholder-val="{{ false }}"><span class="open"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:11px;height:11px"><path d="M2 5h12v8H2ZM4 3h8"/></svg>Open in tab</span></sc-if>
+            </div>
+            <div style="padding:0 2px">
+              <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{m.title}}</div>
+              <div class="meta">{{m.when}} · {{m.size}}</div>
+            </div>
+          </a>
+        </sc-for>
+      </div>
+
+      <div style="position:absolute;left:32px;right:32px;bottom:20px;display:flex;align-items:center;gap:14px;background:#1F2228;border:1px solid #3B414B;border-radius:10px;padding:12px 16px;box-shadow:0 8px 24px rgba(0,0,0,.35)" role="dialog" aria-label="Automatic update checks">
+        <svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:20px;height:20px;color:#E3B85A"><path d="M13.5 8A5.5 5.5 0 1 1 11.8 4M13.5 2v3h-3"/></svg>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px">Check for updates automatically?</div>
+          <div style="color:#B4AE9F;margin-top:2px">Once a day. Only the app version and platform are sent — never your maps. Change this any time in Settings.</div>
+        </div>
+        <button class="btn">Not now</button>
+        <button class="btn pri">Check automatically</button>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var hov = 'background:#1F2228;box-shadow:0 0 0 1px #8A6C2C';
+    return { maps: [
+      { title: 'Isles of Valdren', when: 'Edited today', size: '4096 × 2880', sea: '#C3C7AE', land: '#EADCB3', hov: hov, open: true,
+        d: 'M60 50 L110 30 L170 42 L220 28 L262 60 L250 110 L280 140 L230 170 L160 160 L110 176 L70 150 L50 100 Z' },
+      { title: 'Coast of Brannoch', when: 'Yesterday', size: '3508 × 2480', sea: '#C7C5AA', land: '#EDE0BC', hov: '', open: true,
+        d: 'M0 0 L200 0 L190 40 L210 70 L180 110 L150 130 L140 170 L100 200 L0 200 Z' },
+      { title: 'Hollowfen Campaign', when: '2 days ago', size: '8192 × 5760', sea: '#C3C7AE', land: '#E3D3A5', hov: '', open: true,
+        d: 'M100 30 L180 20 L230 60 L220 120 L170 170 L110 160 L70 110 Z' },
+      { title: 'The Shattered Reach', when: 'Last week', size: '6000 × 4000', sea: '#B9C3BC', land: '#E6D7AE', hov: '', open: false,
+        d: 'M40 60 L80 40 L110 70 L80 100 L45 92 Z M150 40 L190 30 L210 60 L180 80 L150 70 Z M200 110 L250 100 L280 140 L240 170 L200 150 Z M90 130 L130 120 L140 160 L100 170 Z' },
+      { title: 'Ringmere Atoll', when: 'Sep 28', size: '4096 × 4096', sea: '#BFCAC0', land: '#E8DBB4', hov: '', open: false,
+        d: 'M80 40 L240 40 L280 100 L240 160 L80 160 L40 100 Z M120 80 L200 80 L220 100 L200 120 L120 120 L100 100 Z' },
+      { title: 'Twin Thrones', when: 'Sep 12', size: '5120 × 3200', sea: '#BCC4B6', land: '#EADCB3', hov: '', open: false,
+        d: 'M30 40 L120 30 L140 90 L100 160 L40 150 Z M180 50 L270 40 L290 110 L250 170 L190 150 L170 100 Z' },
+      { title: 'Saltmarch Delta', when: 'Aug 30', size: '4096 × 2880', sea: '#C3C7AE', land: '#E6D9B2', hov: '', open: false,
+        d: 'M0 120 L80 100 L120 120 L160 90 L220 110 L320 80 L320 200 L0 200 Z' }
+    ] };
+  }
+}
+</script>
+</body>
+</html>
