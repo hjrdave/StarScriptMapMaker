@@ -368,10 +368,10 @@ impl PropertiesPanel {
 
         caption(ui, "Ripples");
         let mut count = f64::from(style.ripples.count);
-        let edit = prop_widgets::scrub_field(
+        let edit = prop_widgets::number_field(
             ui,
             &mut count,
-            &spec("Count").range(0.0, f64::from(MAX_RIPPLES)).step(0.1),
+            &spec("Count").range(0.0, f64::from(MAX_RIPPLES)).step(1.0),
         );
         style.ripples.count = count as u32;
         self.edit(editor, edit, &style, group);
