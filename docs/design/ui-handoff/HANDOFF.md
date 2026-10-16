@@ -11,6 +11,7 @@ Everything here reflects the **final** decisions; earlier iterations were remove
 | `tokens.json` | Colour (dark + light), type, spacing, radii, elevation tokens. |
 | `theme.rs` | Starter egui theme built from the tokens (adjust field names to your egui version). |
 | `mockups/*.html` | Static reference screens (1440×900 window). Read them for exact colours, sizes and copy; they are design mockups, not code to port. They need the design tool's runtime to render, so treat them as annotated source. |
+| `screens/*.png` | **Look at these.** A rendered PNG of every mockup, same name (`mockups/Main.html` → `screens/Main.png`). Added to the repo after the handoff, by `docs/design/render/render-mockups.js`. |
 
 Mockup index:
 

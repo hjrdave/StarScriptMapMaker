@@ -5,9 +5,18 @@ Phase 2 rebuilds the editor's look and layout from the design handoff in
 **Home tab**.
 
 Read `ui-handoff/HANDOFF.md` first. It is the source of truth when it disagrees with a
-mockup. The mockups in `ui-handoff/mockups/` are static HTML references for colours, sizes
-and copy. They are not code to port, and they need the design tool's runtime to render, so
-read them as annotated source.
+mockup.
+
+**To see a screen, open its PNG in [`ui-handoff/screens/`](ui-handoff/screens/)**: every
+mockup is rendered there under the same name (`mockups/Start.html` → `screens/Start.png`).
+Use the HTML in `ui-handoff/mockups/` for exact colours, sizes and copy. It is a design
+reference, not code to port.
+
+The PNGs are rendered by `render/render-mockups.js`. Re-run it if a mockup changes:
+`node docs/design/render/render-mockups.js` (needs Playwright and Chromium). Two bugs in the
+mockup source are corrected only in the renders (see `render/shim.js`): the Properties tool
+section was squashed by the dock-button style, and Label and NodeEdit had an empty spacer
+pushing the window down.
 
 ## The rule for this phase
 
