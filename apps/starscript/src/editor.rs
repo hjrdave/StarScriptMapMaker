@@ -49,6 +49,8 @@ pub struct Editor {
     /// Whether the land brush erases by default; holding the erase modifier gives the other.
     pub erase_default: bool,
     node_edit: Option<NodeEdit>,
+    /// Whether the Canvas (the board) is what's selected, rather than layers or Objects.
+    board_selected: bool,
     /// Set by a tool while it holds something Escape should drop (a lasso half drawn).
     pub tool_busy: bool,
     /// Set by Escape for the busy tool to act on.
@@ -141,6 +143,7 @@ impl Editor {
             scene: MapScene::new(Fonts::bundled()),
             history,
             selection: Vec::new(),
+            board_selected: false,
             active_layer: None,
             default_layers: DefaultLayers::default(),
             active_tool: ToolId::Select,
@@ -254,12 +257,26 @@ impl Editor {
             self.node_edit = None;
         }
         self.selection = ids;
+        self.board_selected = false;
         if let Some(&last) = self.selection.last() {
             self.active_layer = match self.map.node(last) {
                 Some(Node::Layer(_)) => Some(last),
                 _ => self.map.parent(last),
             };
         }
+    }
+
+    /// Whether the Canvas itself is selected (by the Art board tool).
+    pub fn board_selected(&self) -> bool {
+        self.board_selected
+    }
+
+    /// Selects the Canvas, which empties the Selection; `false` deselects it.
+    pub fn select_board(&mut self, selected: bool) {
+        if selected {
+            self.select(Vec::new());
+        }
+        self.board_selected = selected;
     }
 
     pub fn node_edit(&self) -> Option<&NodeEdit> {
@@ -1795,7 +1812,10 @@ impl Editor {
         // Undo and redo can renumber nodes.
         self.select_nodes(Vec::new());
         selection.retain(|&id| self.map.contains(id));
+        // A selected board stays selected through its own edits, and undo and redo of them.
+        let board = self.board_selected && selection.is_empty();
         self.select(selection);
+        self.board_selected = board;
         if self.active_layer.is_some_and(|id| !self.map.contains(id)) {
             self.active_layer = None;
         }

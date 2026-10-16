@@ -51,7 +51,7 @@ impl Handle {
     }
 
     /// Where on the box the handle sits, from (0, 0) top-left to (1, 1) bottom-right.
-    fn anchor(self) -> [f64; 2] {
+    pub fn anchor(self) -> [f64; 2] {
         match self {
             Handle::TopLeft => [0.0, 0.0],
             Handle::Top => [0.5, 0.0],

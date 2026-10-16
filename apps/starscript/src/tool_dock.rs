@@ -23,7 +23,7 @@ const GROUPS: [&[ToolId]; 4] = [
         ToolId::Label,
     ],
     &[ToolId::Stamp, ToolId::StampEraser],
-    &[ToolId::ExportRegion],
+    &[ToolId::ArtBoard],
 ];
 
 /// The accessible name of a tool's button, which is also its tooltip text.

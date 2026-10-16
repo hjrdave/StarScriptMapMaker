@@ -339,6 +339,32 @@ impl CanvasView {
             response.hover_pos(),
             ppp,
         );
+        if let Some(text) = self.tools.board_hud(editor)
+            && let Some(pointer) = ui.input(|i| i.pointer.latest_pos())
+        {
+            let palette = crate::theme::palette(ui.ctx());
+            egui::Area::new(egui::Id::new("board_hud"))
+                .order(egui::Order::Tooltip)
+                .interactable(false)
+                .fixed_pos(pointer + egui::vec2(14.0, 14.0))
+                .show(ui.ctx(), |ui| {
+                    egui::Frame::NONE
+                        .fill(palette.bg_raised)
+                        .stroke(egui::Stroke::new(1.0, palette.border_strong))
+                        .corner_radius(crate::theme::RADIUS_BUTTON)
+                        .inner_margin(egui::Margin::symmetric(8, 4))
+                        .show(ui, |ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(text)
+                                        .size(crate::theme::CAPTION)
+                                        .color(palette.text_primary),
+                                )
+                                .wrap_mode(egui::TextWrapMode::Extend),
+                            );
+                        });
+                });
+        }
         self.node_banner(ui, editor, rect);
         self.text_box(ui, editor, &view, rect.min, ppp);
     }
