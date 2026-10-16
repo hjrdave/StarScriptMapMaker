@@ -37,6 +37,7 @@ impl PropertiesPanel {
             label.size.is_some(),
             label.letter_spacing.is_some(),
             label.line_height.is_some(),
+            label.arch.is_some(),
             label.all_caps.is_some(),
             label.fill.is_some(),
             label.opacity.is_some(),
@@ -128,6 +129,7 @@ impl PropertiesPanel {
                     size: None,
                     letter_spacing: None,
                     line_height: None,
+                    arch: None,
                     all_caps: None,
                     fill: None,
                     opacity: None,
@@ -226,6 +228,22 @@ impl PropertiesPanel {
                 .provenance(provenance(label.line_height.is_some())),
         );
         self.label_apply(editor, &ctx, edit, &next, |l| l.line_height = None);
+
+        let mut percent = next.arch * 100.0;
+        let edit = prop_widgets::slider(
+            ui,
+            &mut percent,
+            &ScrubSpec::new("Arch")
+                .unit("%")
+                .range(-100.0, 100.0)
+                .default_value(0.0)
+                .decimals(0)
+                .provenance(provenance(label.arch.is_some())),
+        );
+        if edit.changed {
+            next.arch = (percent / 100.0).clamp(-1.0, 1.0);
+        }
+        self.label_apply(editor, &ctx, edit, &next, |l| l.arch = None);
 
         let mut edit = Edit::default();
         let reset =
