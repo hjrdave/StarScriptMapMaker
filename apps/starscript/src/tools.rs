@@ -92,6 +92,9 @@ pub const ERASE_MODIFIER: &str = if cfg!(target_os = "macos") {
 /// The land brush size range, as a diameter in Canvas units.
 pub const BRUSH_SIZES: std::ops::RangeInclusive<f64> = 2.0..=2000.0;
 
+/// Where the Size slider's track ends; the number box types on up to the hard maximum.
+pub const BRUSH_SIZE_SLIDER_MAX: f64 = 200.0;
+
 /// Whether the tool paints with the shared brush size.
 pub fn uses_brush_size(tool: ToolId) -> bool {
     matches!(

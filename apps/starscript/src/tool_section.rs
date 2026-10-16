@@ -102,7 +102,11 @@ fn header(ui: &mut egui::Ui, tool: ToolId) {
 
 /// The brush diameter, which `[` and `]` also change.
 fn size(ui: &mut egui::Ui, editor: &mut Editor) {
-    let spec = ScrubSpec::new("Size").range(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end());
+    let spec = ScrubSpec::new("Size")
+        .range(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end())
+        .slider_max(tools::BRUSH_SIZE_SLIDER_MAX)
+        .logarithmic()
+        .default_value(crate::editor::DEFAULT_BRUSH_SIZE);
     slider(ui, &mut editor.brush_size, &spec);
 }
 
