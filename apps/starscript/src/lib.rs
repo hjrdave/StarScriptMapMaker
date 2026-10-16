@@ -140,6 +140,9 @@ struct AppState {
     shortcuts_off: HashSet<menu::Command>,
     /// What Copy or Cut last took in any tab, so Paste works in another tab or Map.
     clipboard: Option<clipboard::Clipboard>,
+    /// Tabs sent back to the main window from a popped-out one, taken in once that window's
+    /// frame is over.
+    returning: Vec<MapTab>,
     /// The native menu bar, on macOS; `None` elsewhere and in UI tests, which use the egui bar.
     #[cfg(target_os = "macos")]
     native_menu: Option<native_menu::mac::MacMenu>,
@@ -197,12 +200,26 @@ struct WindowState {
     window_hidden: bool,
     /// The window title last sent, so it is only sent when it changes.
     title: String,
+    /// The main window, as opposed to one a tab was popped out into.
+    main: bool,
+    /// The viewport this window is shown in.
+    viewport: egui::ViewportId,
+    /// The app is quitting and this popped-out window is asked to go first.
+    quit_asked: bool,
+    /// Closing this window was asked for, as its close button does.
+    close_requested: bool,
 }
 
 pub struct MapMakerApp {
     app: AppState,
-    /// The one window, for now.
+    /// The main window.
     win: WindowState,
+    /// The windows tabs were popped out into, each with its own tabs and dialogs. While one of
+    /// them is shown its state is swapped into `win`, so everything that acts on "the window"
+    /// acts on it.
+    popped: Vec<WindowState>,
+    /// How many windows were popped out so far, for their viewport ids.
+    popped_count: u64,
 }
 
 impl MapMakerApp {
@@ -290,6 +307,7 @@ impl MapMakerApp {
             overlay: overlay::Overlay::default(),
             quit_requested: false,
             clipboard: None,
+            returning: Vec::new(),
         };
         let win = WindowState {
             home_active: tabs.is_empty(),
@@ -325,8 +343,17 @@ impl MapMakerApp {
             leaving: Leaving::Quit,
             window_hidden: false,
             title: String::new(),
+            main: true,
+            viewport: egui::ViewportId::ROOT,
+            quit_asked: false,
+            close_requested: false,
         };
-        Self { app, win }
+        Self {
+            app,
+            win,
+            popped: Vec::new(),
+            popped_count: 0,
+        }
     }
 
     pub fn editor(&self) -> &Editor {
@@ -392,7 +419,7 @@ impl MapMakerApp {
 
     /// Whether the Home tab is showing: chosen, or because no Map is open.
     pub fn home_active(&self) -> bool {
-        self.win.home_active || self.win.tabs.is_empty()
+        self.win.main && (self.win.home_active || self.win.tabs.is_empty())
     }
 
     /// The tab being shown.
@@ -406,9 +433,132 @@ impl MapMakerApp {
 
     fn show_slot(&mut self, slot: tab_strip::Slot) {
         match slot {
-            tab_strip::Slot::Home => self.win.home_active = true,
+            // Home lives only in the main window.
+            tab_strip::Slot::Home => self.win.home_active = self.win.main,
             tab_strip::Slot::Map(index) => self.focus_tab(index),
         }
+    }
+
+    fn placement(&self) -> tab_strip::Placement {
+        if self.win.main {
+            tab_strip::Placement::Main
+        } else {
+            tab_strip::Placement::Popped
+        }
+    }
+
+    /// How many windows are open: the main one and those tabs were popped out into.
+    pub fn window_count(&self) -> usize {
+        1 + self.popped.len()
+    }
+
+    /// The tabs of popped-out window `window` (0 is the first one popped out).
+    pub fn popped_tabs(&self, window: usize) -> &[MapTab] {
+        &self.popped[window].tabs
+    }
+
+    /// Runs `f` with popped-out window `window` standing in for the main one, so it acts on
+    /// that window's tabs as the menus and keys of that window do.
+    pub fn in_popped_window<R>(&mut self, window: usize, f: impl FnOnce(&mut Self) -> R) -> R {
+        std::mem::swap(&mut self.win, &mut self.popped[window]);
+        let result = f(self);
+        std::mem::swap(&mut self.win, &mut self.popped[window]);
+        result
+    }
+
+    /// Pops tab `index` out of this window into a new window of its own. Does nothing for a
+    /// tab that is still a start page, or the only tab of a popped-out window.
+    pub fn move_tab_to_new_window(&mut self, index: usize) {
+        let movable = self
+            .win
+            .tabs
+            .get(index)
+            .is_some_and(|tab| !tab.is_blank() && tab.pending.is_none())
+            && (self.win.main || self.win.tabs.len() > 1);
+        if !movable {
+            return;
+        }
+        let tab = self.take_tab(index);
+        self.popped_count += 1;
+        let mut win = self.new_window_state(egui::ViewportId::from_hash_of((
+            "popped window",
+            self.popped_count,
+        )));
+        win.shell = self.win.shell.clone();
+        win.tabs.push(tab);
+        self.popped.push(win);
+        self.app.egui_ctx.request_repaint();
+    }
+
+    /// Puts tab `index` of a popped-out window back in the main window, once this window's
+    /// frame is over. Does nothing in the main window.
+    pub fn move_tab_to_main_window(&mut self, index: usize) {
+        if self.win.main
+            || self
+                .win
+                .tabs
+                .get(index)
+                .is_none_or(|tab| tab.pending.is_some())
+        {
+            return;
+        }
+        let tab = self.take_tab(index);
+        self.app.returning.push(tab);
+        self.app.egui_ctx.request_repaint();
+    }
+
+    /// Takes tab `index` out of this window with its Recovery journal and everything else, and
+    /// keeps the same tab active if it can.
+    fn take_tab(&mut self, index: usize) -> MapTab {
+        let tab = self.win.tabs.remove(index);
+        if index < self.win.active || self.win.active >= self.win.tabs.len() {
+            self.win.active = self.win.active.saturating_sub(1);
+        }
+        tab
+    }
+
+    /// A window with no tabs and no dialogs open.
+    fn new_window_state(&self, viewport: egui::ViewportId) -> WindowState {
+        let headless = !self.app.gpu;
+        let pick = || {
+            if headless {
+                Pick::headless()
+            } else {
+                Pick::default()
+            }
+        };
+        WindowState {
+            tabs: Vec::new(),
+            active: 0,
+            home_active: false,
+            strip: tab_strip::State::default(),
+            home: home::Home::default(),
+            shell: shell::Shell::default(),
+            drop_focus: false,
+            new_map_dialog: NewMapDialog::default(),
+            export_dialog: ExportDialog::default(),
+            export_run: None,
+            open_dialog: pick(),
+            save_dialog: pick(),
+            pack_dialog: pick(),
+            pack_install: pack_install::PackInstall::default(),
+            delete_prompt: None,
+            paste_prompt: None,
+            awaiting_save: None,
+            close_allowed: false,
+            leaving: Leaving::Window,
+            window_hidden: false,
+            title: String::new(),
+            main: false,
+            viewport,
+            quit_asked: false,
+            close_requested: false,
+        }
+    }
+
+    /// Asks to close this window, as its close button does: unsaved Maps are asked about first.
+    pub fn request_window_close(&mut self) {
+        self.win.close_requested = true;
     }
 
     /// Shows the tab ⌘`n` reaches (1 is Home, 9 the last tab); `n` out of range does nothing.
@@ -502,7 +652,7 @@ impl MapMakerApp {
 
     /// Whether a Map's editor is what the window shows: neither Home nor a start page.
     fn map_showing(&self) -> bool {
-        !self.home_active() && !self.start_page_showing()
+        !self.win.tabs.is_empty() && !self.home_active() && !self.start_page_showing()
     }
 
     /// Shows a message on the active tab's status bar, or on stderr when no Map is open.
@@ -680,15 +830,38 @@ impl MapMakerApp {
     /// turn; a clean close deletes every Recovery journal. Where closing the window leaves the
     /// app running, only a quit request exits.
     fn handle_close(&mut self, ctx: &egui::Context) {
-        let quit = std::mem::take(&mut self.app.quit_requested);
-        let window = ctx.input(|input| input.viewport().close_requested());
+        let window = std::mem::take(&mut self.win.close_requested)
+            || ctx.input(|input| input.viewport().close_requested());
+        let quit = if self.win.main {
+            std::mem::take(&mut self.app.quit_requested)
+        } else {
+            self.win.quit_asked
+        };
         if (!quit && !window) || self.win.close_allowed {
+            return;
+        }
+        // Popped-out windows go first, each asking about its own unsaved tabs. Quitting waits
+        // for them, and stops if the user cancels in one.
+        if self.win.main
+            && !self.popped.is_empty()
+            && (quit || (window && !self.app.close_hides_window))
+        {
+            for popped in &mut self.popped {
+                popped.quit_asked = true;
+            }
+            self.app.quit_requested = true;
+            if window {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            }
             return;
         }
         // A question already on screen is the close in progress.
         let asking =
             self.win.awaiting_save.is_some() || self.win.tabs.iter().any(|t| t.pending.is_some());
-        if quit {
+        if !self.win.main {
+            // A popped-out window only ever closes itself; the app goes on.
+            self.win.leaving = Leaving::Window;
+        } else if quit {
             self.win.leaving = Leaving::Quit;
         } else if !asking {
             self.win.leaving = if self.app.close_hides_window {
@@ -763,6 +936,8 @@ impl MapMakerApp {
         for tab in &mut self.win.tabs {
             tab.quit_decided = false;
         }
+        self.win.quit_asked = false;
+        self.app.quit_requested = false;
     }
 
     /// Leaves, discarding unsaved changes and their Recovery journals: quits the app, or closes
@@ -775,6 +950,10 @@ impl MapMakerApp {
             Leaving::Quit => {
                 self.win.close_allowed = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            Leaving::Window if !self.win.main => {
+                // No tabs left: the window is dropped after its frame.
+                self.win.tabs.clear();
             }
             Leaving::Window => {
                 // The Maps' memory is released, not kept loaded behind a hidden window.
@@ -795,7 +974,7 @@ impl MapMakerApp {
             .is_some_and(|tab| tab.pending.is_some() || tab.recovery_prompt.is_some())
             || self.win.tabs.iter().any(|tab| tab.pending.is_some())
             || self.win.awaiting_save.is_some()
-            || self.app.unsaved_prompt.is_some()
+            || (self.win.main && self.app.unsaved_prompt.is_some())
             || self.win.delete_prompt.is_some()
             || self.win.paste_prompt.is_some()
             || self.win.new_map_dialog.open
@@ -991,6 +1170,7 @@ impl MapMakerApp {
         let mut state = menu::State {
             updates_at_startup: self.app.updates.enabled() == Some(true),
             checking_for_updates: self.app.updates.is_checking(),
+            popped: !self.win.main,
             tabs: self
                 .win
                 .tabs
@@ -1151,8 +1331,21 @@ impl MapMakerApp {
             C::HidePanels => self.win.shell.toggle_panels(),
             C::Tab(n) => self.show_tab_number(n),
             C::ShowTab(index) => self.focus_tab(index),
-            C::Credits => self.app.credits.open = true,
-            C::CheckForUpdates => self.app.updates.start(true),
+            C::MoveTabToNewWindow if self.map_showing() => {
+                self.move_tab_to_new_window(self.win.active);
+            }
+            C::MoveTabToMainWindow if self.map_showing() => {
+                self.move_tab_to_main_window(self.win.active);
+            }
+            C::MoveTabToNewWindow | C::MoveTabToMainWindow => {}
+            C::Credits => {
+                self.app.credits.open = true;
+                self.show_main_window();
+            }
+            C::CheckForUpdates => {
+                self.app.updates.start(true);
+                self.show_main_window();
+            }
             C::ToggleUpdateCheck => {
                 let on = self.app.updates.enabled() == Some(true);
                 self.app.updates.set_enabled(!on);
@@ -1163,6 +1356,15 @@ impl MapMakerApp {
                 }
             }
             _ => self.run_map_command(command),
+        }
+    }
+
+    /// Brings the main window forward, where the dialogs shared by every window show.
+    fn show_main_window(&self) {
+        if !self.win.main {
+            self.app
+                .egui_ctx
+                .send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
         }
     }
 
@@ -1593,7 +1795,12 @@ impl MapMakerApp {
             .tabs
             .get(self.win.active)
             .is_some_and(|tab| tab.recovery_prompt.is_some() || tab.pending.is_some());
-        if !tab_asking && self.win.awaiting_save.is_none() && self.app.unsaved_prompt.is_none() {
+        // The offer of a Map never saved is shared, and shown in the main window only.
+        if self.win.main
+            && !tab_asking
+            && self.win.awaiting_save.is_none()
+            && self.app.unsaved_prompt.is_none()
+        {
             self.app.unsaved_prompt = self.app.unsaved_found.pop();
         }
         let Some(tab) = self.win.tabs.get(self.win.active) else {
@@ -1650,7 +1857,7 @@ impl MapMakerApp {
 
     /// Offers the journal of a Map never saved that a crash left: recovering it opens a tab.
     fn unsaved_journal_dialog(&mut self, ctx: &egui::Context) {
-        if self.app.unsaved_prompt.is_none() {
+        if !self.win.main || self.app.unsaved_prompt.is_none() {
             return;
         }
         let text = "A Map that was never saved wasn’t closed properly. Recover it?";
@@ -1749,7 +1956,11 @@ impl MapMakerApp {
             self.show_tab_number(n);
         }
         if let Some(forward) = step {
-            let slot = tab_strip::cycle(self.current_slot(), self.win.tabs.len(), forward);
+            let mut slot = tab_strip::cycle(self.current_slot(), self.win.tabs.len(), forward);
+            if slot == tab_strip::Slot::Home && !self.win.main {
+                // No Home here: go on to the next one.
+                slot = tab_strip::cycle(slot, self.win.tabs.len(), forward);
+            }
             self.show_slot(slot);
         }
         let (new_map, open, save, save_as, close_tab) = ctx.input_mut(|input| {
@@ -1889,6 +2100,7 @@ impl MapMakerApp {
             })
             .collect();
         let current = self.current_slot();
+        let placement = self.placement();
         let actions = ui
             .add_enabled_ui(enabled, |ui| {
                 tab_strip::show(
@@ -1898,11 +2110,14 @@ impl MapMakerApp {
                     &mut self.win.strip,
                     CHROME_INSET,
                     CUSTOM_CHROME,
+                    placement,
                 )
             })
             .inner;
         for action in actions {
             match action {
+                tab_strip::Action::MoveToNewWindow(index) => self.move_tab_to_new_window(index),
+                tab_strip::Action::MoveToMainWindow(index) => self.move_tab_to_main_window(index),
                 tab_strip::Action::Show(slot) => self.show_slot(slot),
                 tab_strip::Action::Close(index) => self.close_tab(index),
                 tab_strip::Action::NewMap => self.new_blank_tab(),
@@ -1947,8 +2162,10 @@ impl MapMakerApp {
             sprites: Some(&self.app.sprites),
             pack_status: self.win.pack_install.status(),
         };
-        self.app.credits.show(&ctx, None);
-        self.app.updates.show(&ctx);
+        if self.win.main {
+            self.app.credits.show(&ctx, None);
+            self.app.updates.show(&ctx);
+        }
         let actions = if start_page {
             self.win.home.start_page(ui, &data)
         } else {
@@ -2245,6 +2462,7 @@ impl eframe::App for MapMakerApp {
         #[cfg(target_os = "macos")]
         self.native_menu_actions(ui.ctx());
         self.show(ui);
+        self.show_popped(ui.ctx());
         // After the frame, so the menu shows what this frame changed.
         #[cfg(target_os = "macos")]
         self.native_menu_sync(ui.ctx());
@@ -2252,15 +2470,53 @@ impl eframe::App for MapMakerApp {
 }
 
 impl MapMakerApp {
+    /// One frame of each window a tab was popped out into, each in a viewport of its own.
+    fn show_popped(&mut self, ctx: &egui::Context) {
+        let mut windows = std::mem::take(&mut self.popped);
+        windows.retain(|window| !window.tabs.is_empty());
+        for window in &mut windows {
+            std::mem::swap(&mut self.win, window);
+            let builder = window_chrome(
+                egui::ViewportBuilder::default()
+                    .with_title(self.win.title.clone())
+                    .with_inner_size([1100.0, 760.0]),
+            );
+            let id = self.win.viewport;
+            ctx.show_viewport_immediate(id, builder, |ui, class| {
+                if class == egui::ViewportClass::EmbeddedWindow {
+                    // Without OS windows (UI tests) it floats over the main window.
+                    egui::Window::new(self.win.title.clone())
+                        .id(egui::Id::new(id))
+                        .default_size([1100.0, 760.0])
+                        .show(ui.ctx(), |ui| self.show(ui));
+                } else {
+                    self.show(ui);
+                }
+            });
+            std::mem::swap(&mut self.win, window);
+        }
+        // A window whose last tab left or closed is gone with its viewport.
+        windows.retain(|window| !window.tabs.is_empty());
+        windows.append(&mut self.popped);
+        self.popped = windows;
+        for tab in std::mem::take(&mut self.app.returning) {
+            self.win.tabs.push(tab);
+            self.win.active = self.win.tabs.len() - 1;
+            self.win.home_active = false;
+        }
+    }
+
     /// One frame of the editor.
     fn show(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        self.app.overlay.begin_frame(&ctx);
-        self.app.overlay.show(&ctx);
-        // ⌘+ and ⌘− zoom the Canvas only: keep egui's whole-UI zoom off and the scale at 1.
-        ctx.options_mut(|o| o.zoom_with_keyboard = false);
-        if ctx.zoom_factor() != 1.0 {
-            ctx.set_zoom_factor(1.0);
+        if self.win.main {
+            self.app.overlay.begin_frame(&ctx);
+            self.app.overlay.show(&ctx);
+            // ⌘+ and ⌘− zoom the Canvas only: keep egui's whole-UI zoom off and the scale at 1.
+            ctx.options_mut(|o| o.zoom_with_keyboard = false);
+            if ctx.zoom_factor() != 1.0 {
+                ctx.set_zoom_factor(1.0);
+            }
         }
         // What Copy or Cut took last frame goes to the system clipboard as text.
         if let Some(text) = self
@@ -2283,7 +2539,12 @@ impl MapMakerApp {
                 }
             });
         }
-        self.win.shell.set_window_width(ctx.content_rect().width());
+        let window_width = if self.win.main {
+            ctx.content_rect().width()
+        } else {
+            ui.max_rect().width()
+        };
+        self.win.shell.set_window_width(window_width);
         let panels_were_hidden = self.win.shell.panels_hidden();
         if !dialog_open && self.win.shell.overlay_open() {
             // Esc closes an open panel overlay before anything else sees it.
@@ -2307,6 +2568,10 @@ impl MapMakerApp {
         if !self.native_menu_shown() {
             egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui));
         }
+        if self.win.tabs.is_empty() && !self.win.main {
+            // The last tab just left; the window goes after this frame.
+            return;
+        }
         if self.home_active() || self.start_page_showing() {
             self.home_screen(ui, !self.home_active());
             self.journal(&ctx);
@@ -2314,9 +2579,11 @@ impl MapMakerApp {
         }
         self.win.home.left();
         let tab = &mut self.win.tabs[self.win.active];
-        self.app.credits.show(&ctx, Some(&mut tab.editor));
+        if self.win.main {
+            self.app.credits.show(&ctx, Some(&mut tab.editor));
+            self.app.updates.show(&ctx);
+        }
         tab.label_styles.show(&ctx, &mut tab.editor);
-        self.app.updates.show(&ctx);
         egui::Panel::bottom("status")
             .exact_size(theme::metrics::STATUS_BAR)
             .show(ui, |ui| self.status_bar(ui));

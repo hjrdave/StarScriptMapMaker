@@ -112,6 +112,10 @@ _Avoid_: Focus, active objects
 One open Map in the window, with its own editor, unsaved-changes state and view. Asset packs, Recent files and the export dialog are shared by all tabs and act on the active one.
 _Avoid_: Document, window, project
 
+**Popped-out window**:
+A window a Tab was moved into, with its own tab strip, panels and dialogs. Asset packs, Recent files and crash recovery stay shared; the Home tab lives only in the main window.
+_Avoid_: Detached window, second window
+
 **Home tab**:
 The tab that shows the map browser. It is not a Map and has no Canvas.
 _Avoid_: Start page, launcher
