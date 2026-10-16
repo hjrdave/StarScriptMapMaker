@@ -24,6 +24,9 @@ fn app(recovery_dir: &Path) -> Harness<'static, MapMakerApp> {
         .with_size(egui::vec2(1280.0, 800.0))
         .build_eframe(move |cc| MapMakerApp::with_recovery_dir(cc, Some(recovery_dir.clone())));
     harness.run();
+    // The app starts on Home with no Map; these tests count tabs from one open Map.
+    harness.state_mut().new_map(canvas());
+    harness.run();
     harness
 }
 
