@@ -15,6 +15,7 @@ use std::time::SystemTime;
 
 use eframe::egui::{self, Color32, Rect, vec2};
 
+use crate::file_actions;
 use crate::icons::{self, Icon};
 use crate::theme;
 use crate::update::UpdateCheck;
@@ -128,6 +129,8 @@ pub struct OpenTab {
     pub path: Option<PathBuf>,
     pub name: String,
     pub canvas: (u32, u32),
+    /// A blank new tab: it is no Map yet, so no list shows it.
+    pub blank: bool,
 }
 
 /// The known Maps, in the order the app remembers them, with the tab each is open in.
@@ -156,6 +159,7 @@ pub fn known_entries(
 pub fn open_entries(tabs: &[OpenTab], info: impl Fn(&Path) -> Info) -> Vec<Entry> {
     tabs.iter()
         .enumerate()
+        .filter(|(_, tab)| !tab.blank)
         .map(|(index, tab)| {
             let info = tab.path.as_deref().map(&info).unwrap_or_default();
             Entry {
@@ -275,6 +279,10 @@ pub enum Action {
     Focus(usize),
     /// Forget a missing file.
     Remove(PathBuf),
+    /// Show the file in the system file manager.
+    Reveal(PathBuf),
+    /// Ask to move the file to the Trash.
+    Delete(PathBuf),
     Credits,
 }
 
@@ -449,6 +457,83 @@ impl Home {
         actions
     }
 
+    /// Draws a new tab's start page: the New Map card, the latest of the known Maps and an
+    /// Open… button. A lighter Home, without the rail, search or sorting.
+    pub fn start_page(&mut self, ui: &mut egui::Ui, data: &Data<'_>) -> Vec<Action> {
+        let mut out = Vec::new();
+        let p = theme::palette(ui.ctx());
+        let now = SystemTime::now();
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(p.bg_window))
+            .show(ui, |ui| {
+                egui::Frame::NONE
+                    .inner_margin(egui::Margin {
+                        left: 32,
+                        right: 32,
+                        top: 24,
+                        bottom: 0,
+                    })
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            let title = if data.known.is_empty() {
+                                "New Tab"
+                            } else {
+                                "Recent maps"
+                            };
+                            ui.label(
+                                egui::RichText::new(title)
+                                    .size(20.0)
+                                    .color(p.text_primary)
+                                    .strong(),
+                            );
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui.button("Open…").clicked() {
+                                        out.push(Action::OpenDialog);
+                                    }
+                                },
+                            );
+                        });
+                    });
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        egui::Frame::NONE
+                            .inner_margin(egui::Margin::symmetric(24, 16))
+                            .show(ui, |ui| {
+                                let gap = 8.0;
+                                let width = ((ui.available_width() - gap * (COLUMNS as f32 - 1.0))
+                                    / COLUMNS as f32)
+                                    .floor()
+                                    .max(120.0);
+                                ui.spacing_mut().item_spacing = vec2(gap, gap);
+                                let mut cards: Vec<Option<&Entry>> = vec![None];
+                                cards.extend(data.known.iter().take(START_RECENT).map(Some));
+                                for row in cards.chunks(COLUMNS) {
+                                    ui.horizontal_top(|ui| {
+                                        for card in row {
+                                            match card {
+                                                None => new_map_card(ui, width, &mut out),
+                                                Some(entry) => {
+                                                    let texture = entry
+                                                        .path
+                                                        .as_deref()
+                                                        .and_then(|path| self.thumbnails.get(path));
+                                                    map_card(
+                                                        ui, width, entry, texture, now, &mut out,
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    });
+                                }
+                            });
+                    });
+            });
+        out
+    }
+
     fn rail(&mut self, ui: &mut egui::Ui, data: &Data<'_>, counts: Counts, out: &mut Vec<Action>) {
         let lists = [
             (View::All, counts.all),
@@ -572,6 +657,8 @@ impl Home {
 
 const RAIL_WIDTH: f32 = 232.0;
 const COLUMNS: usize = 4;
+/// How many recent Maps a new tab's start page lists after the New Map card: two rows.
+const START_RECENT: usize = 7;
 const ROW_HEIGHT: f32 = 28.0;
 
 fn section_label(ui: &mut egui::Ui, text: &str) {
@@ -659,15 +746,15 @@ fn line(ui: &egui::Ui, at: egui::Pos2, width: f32, text: &str, size: f32, color:
     ui.painter().galley(at, galley, color);
 }
 
-const NAME_HEIGHT: f32 = 18.0;
-const META_HEIGHT: f32 = 16.0;
+const FOOTER_HEIGHT: f32 = 52.0;
+
+fn thumb_height(width: f32) -> f32 {
+    // The preview is 16:10, as in the mockup.
+    (width * 0.625).round()
+}
 
 fn card_size(width: f32) -> egui::Vec2 {
-    // The preview is 16:10, as in the mockup.
-    vec2(
-        width,
-        (width * 0.625).round() + 8.0 + NAME_HEIGHT + META_HEIGHT,
-    )
+    vec2(width, thumb_height(width) + 1.0 + FOOTER_HEIGHT)
 }
 
 fn new_map_card(ui: &mut egui::Ui, width: f32, out: &mut Vec<Action>) {
@@ -680,7 +767,7 @@ fn new_map_card(ui: &mut egui::Ui, width: f32, out: &mut Vec<Action>) {
             "New Map: blank or from template",
         )
     });
-    let preview = Rect::from_min_size(rect.min, vec2(width, (width * 0.625).round()));
+    let preview = Rect::from_min_size(rect.min, vec2(width, thumb_height(width)));
     let stroke = egui::Stroke::new(
         1.0,
         if response.hovered() {
@@ -712,7 +799,7 @@ fn new_map_card(ui: &mut egui::Ui, width: f32, out: &mut Vec<Action>) {
         egui::FontId::new(theme::BODY, theme::ui_family()),
         p.text_secondary,
     );
-    let below = preview.max.y + 8.0;
+    let below = preview.max.y + 10.0;
     line(
         ui,
         egui::pos2(rect.min.x + 2.0, below),
@@ -723,7 +810,7 @@ fn new_map_card(ui: &mut egui::Ui, width: f32, out: &mut Vec<Action>) {
     );
     line(
         ui,
-        egui::pos2(rect.min.x + 2.0, below + NAME_HEIGHT),
+        egui::pos2(rect.min.x + 2.0, below + 18.0),
         width - 4.0,
         NEW_MAP_SHORTCUT,
         theme::CAPTION,
@@ -753,14 +840,29 @@ fn map_card(
     let (rect, response) = ui.allocate_exact_size(card_size(width), egui::Sense::click());
     let label = format!("Open {}", entry.name);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &label));
-    let preview = Rect::from_min_size(rect.min, vec2(width, (width * 0.625).round()));
+    let preview = Rect::from_min_size(rect.min, vec2(width, thumb_height(width)));
+    let radius = theme::RADIUS_FIELD;
+    let more_id = response.id.with("more");
+    let menu_open = egui::Popup::is_id_open(ui.ctx(), more_id.with("popup"))
+        || egui::Popup::is_id_open(ui.ctx(), response.id.with("context"));
+    let hovered = ui.rect_contains_pointer(rect) || menu_open;
     let painter = ui.painter();
-    painter.rect_filled(preview, theme::RADIUS_FIELD, p.bg_canvas);
+    painter.rect_filled(rect, radius, p.bg_raised);
+    painter.rect_filled(
+        preview,
+        egui::CornerRadius {
+            nw: radius,
+            ne: radius,
+            sw: 0,
+            se: 0,
+        },
+        p.bg_canvas,
+    );
     match texture {
         Some(texture) => {
             // Shown at about 2×: the stored preview is up to 512 px on its longer side.
             let size = texture.size_vec2();
-            let scale = ((preview.width() - 8.0) / size.x).min((preview.height() - 8.0) / size.y);
+            let scale = ((preview.width() - 16.0) / size.x).min((preview.height() - 16.0) / size.y);
             let image = Rect::from_center_size(preview.center(), size * scale);
             painter.image(
                 texture.id(),
@@ -788,49 +890,49 @@ fn map_card(
             );
         }
     }
+    painter.hline(
+        rect.x_range(),
+        preview.max.y + 0.5,
+        egui::Stroke::new(1.0, p.border_subtle),
+    );
     painter.rect_stroke(
-        preview,
-        theme::RADIUS_FIELD,
-        egui::Stroke::new(
-            1.0,
-            if response.hovered() {
-                p.gold
-            } else {
-                p.border_subtle
-            },
-        ),
+        rect,
+        radius,
+        egui::Stroke::new(1.0, if hovered { p.gold } else { p.border_subtle }),
         egui::StrokeKind::Inside,
     );
-    if entry.is_open() {
-        open_chip(ui, preview.min + vec2(8.0, 8.0));
-    }
-    let below = preview.max.y + 8.0;
+
+    // The footer: file-type icon, name, and when it was edited.
+    let footer_top = preview.max.y + 1.0;
+    let text_x = rect.min.x + 14.0;
+    let text_width = (rect.max.x - text_x - 36.0).max(0.0);
     line(
         ui,
-        egui::pos2(rect.min.x + 2.0, below),
-        width - 4.0,
+        egui::pos2(text_x, footer_top + 8.0),
+        text_width,
         &entry.name,
         theme::BODY,
         p.text_primary,
     );
-    let meta = match (entry.missing, entry.modified, entry.canvas) {
-        (true, ..) => "Missing".to_owned(),
-        (false, modified, canvas) => [
-            modified.map(|then| edited_ago(now, then)),
-            canvas.map(size_label),
-        ]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>()
-        .join(" · "),
+    let meta = if entry.missing {
+        "Missing".to_owned()
+    } else {
+        entry
+            .modified
+            .map(|then| edited_ago(now, then))
+            .unwrap_or_default()
     };
     line(
         ui,
-        egui::pos2(rect.min.x + 2.0, below + NAME_HEIGHT),
-        width - 4.0,
+        egui::pos2(text_x, footer_top + 28.0),
+        text_width,
         &meta,
         theme::CAPTION,
-        p.text_tertiary,
+        if entry.missing {
+            p.danger
+        } else {
+            p.text_tertiary
+        },
     );
 
     let mut removed = false;
@@ -844,6 +946,45 @@ fn map_card(
             removed = true;
         }
     }
+    // The "…" button, shown while the card is hovered or its menu is open.
+    if entry.path.is_some() {
+        let button = Rect::from_center_size(
+            egui::pos2(rect.max.x - 22.0, footer_top + FOOTER_HEIGHT / 2.0),
+            vec2(24.0, 24.0),
+        );
+        let more = ui.interact(button, more_id, egui::Sense::click());
+        more.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "More actions")
+        });
+        if hovered || more.has_focus() {
+            if more.hovered() {
+                ui.painter()
+                    .rect_filled(button, theme::RADIUS_BUTTON, p.hover_fill);
+            }
+            icons::paint(ui, button, Icon::More, 16.0, p.text_secondary);
+        }
+        egui::Popup::menu(&more)
+            .id(more_id.with("popup"))
+            .show(|ui| card_menu(ui, entry, out));
+        removed |= more.clicked();
+    }
+    response.context_menu(|ui| card_menu(ui, entry, out));
+
+    // No tooltip over an open menu, where it would cover the items.
+    let menu_open =
+        egui::Popup::is_id_open(ui.ctx(), more_id.with("popup")) || response.context_menu_opened();
+    if !menu_open {
+        let mut parts = Vec::new();
+        if let Some(canvas) = entry.canvas {
+            parts.push(size_label(canvas));
+        }
+        if entry.is_open() {
+            parts.push("Open in a tab".to_owned());
+        }
+        if !parts.is_empty() {
+            response.clone().on_hover_text(parts.join(" · "));
+        }
+    }
     if response.clicked() && !removed && !entry.missing {
         match (entry.tab, &entry.path) {
             (Some(tab), _) => out.push(Action::Focus(tab)),
@@ -853,25 +994,44 @@ fn map_card(
     }
 }
 
-/// The "Open in tab" chip on the preview's corner.
-fn open_chip(ui: &egui::Ui, at: egui::Pos2) {
-    let p = theme::palette(ui.ctx());
-    let galley = ui.painter().layout_no_wrap(
-        "Open in tab".to_owned(),
-        egui::FontId::new(theme::CAPTION, theme::ui_family()),
-        p.gold_text,
-    );
-    let rect = Rect::from_min_size(at, galley.size() + vec2(12.0, 4.0));
-    ui.painter()
-        .rect_filled(rect, theme::RADIUS_CHIP, p.bg_raised);
-    ui.painter().rect_stroke(
-        rect,
-        theme::RADIUS_CHIP,
-        egui::Stroke::new(1.0, p.gold_ring),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter()
-        .galley(at + vec2(6.0, 2.0), galley, p.gold_text);
+/// The items of a card's "…" and right-click menus.
+fn card_menu(ui: &mut egui::Ui, entry: &Entry, out: &mut Vec<Action>) {
+    let Some(path) = &entry.path else {
+        return;
+    };
+    if !entry.missing {
+        let open = if entry.is_open() { "Show tab" } else { "Open" };
+        if ui.button(open).clicked() {
+            match entry.tab {
+                Some(tab) => out.push(Action::Focus(tab)),
+                None => out.push(Action::Open(path.clone())),
+            }
+            ui.close();
+        }
+    }
+    if ui
+        .add_enabled(
+            !entry.missing,
+            egui::Button::new(file_actions::REVEAL_LABEL),
+        )
+        .clicked()
+    {
+        out.push(Action::Reveal(path.clone()));
+        ui.close();
+    }
+    ui.separator();
+    if entry.missing {
+        if ui.button("Remove from list").clicked() {
+            out.push(Action::Remove(path.clone()));
+            ui.close();
+        }
+    } else if ui
+        .button(egui::RichText::new("Delete…").color(theme::palette(ui.ctx()).danger))
+        .clicked()
+    {
+        out.push(Action::Delete(path.clone()));
+        ui.close();
+    }
 }
 
 #[cfg(test)]
@@ -948,11 +1108,13 @@ mod tests {
                 path: None,
                 name: "Untitled".into(),
                 canvas: (256, 256),
+                blank: false,
             },
             OpenTab {
                 path: Some("/maps/alpha.ssmap".into()),
                 name: "alpha.ssmap".into(),
                 canvas: (100, 100),
+                blank: false,
             },
         ];
         let open = open_entries(&tabs, |_| Info::default());
@@ -961,6 +1123,28 @@ mod tests {
         assert_eq!(open[0].name, "Untitled");
         assert_eq!(open[0].canvas, Some((256, 256)));
         assert_eq!(open[1].name, "alpha");
+    }
+
+    #[test]
+    fn a_blank_tab_is_in_no_list() {
+        let tabs = [
+            OpenTab {
+                path: None,
+                name: "New Tab".into(),
+                canvas: (1, 1),
+                blank: true,
+            },
+            OpenTab {
+                path: Some("/maps/alpha.ssmap".into()),
+                name: "alpha.ssmap".into(),
+                canvas: (100, 100),
+                blank: false,
+            },
+        ];
+        let open = open_entries(&tabs, |_| Info::default());
+        assert_eq!(open.len(), 1);
+        // The index is the tab's own, so Focus reaches the right tab.
+        assert_eq!(open[0].tab, Some(1));
     }
 
     #[test]
@@ -974,11 +1158,13 @@ mod tests {
                 path: None,
                 name: "Untitled".into(),
                 canvas: (1, 1),
+                blank: false,
             },
             OpenTab {
                 path: Some("/maps/b.ssmap".into()),
                 name: "b.ssmap".into(),
                 canvas: (1, 1),
+                blank: false,
             },
         ];
         let known = known_entries(&recent, &tabs, |_| Info::default());

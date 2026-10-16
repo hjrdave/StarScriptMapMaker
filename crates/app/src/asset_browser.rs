@@ -25,7 +25,7 @@ pub struct AssetBrowser {
     category: Option<String>,
     search: String,
     /// `None` records art that could not be loaded.
-    thumbnails: HashMap<AssetRef, Option<egui::TextureHandle>>,
+    thumbnails: HashMap<AssetRef, Option<ThumbArt>>,
 }
 
 /// Whether `asset` passes the filters: `category` exactly, and every word of `search` found
@@ -43,6 +43,31 @@ pub fn matches(asset: &Asset, category: Option<&str>, search: &str) -> bool {
     search
         .split_whitespace()
         .all(|word| haystack.contains(&word.to_lowercase()))
+}
+
+/// A thumbnail's texture, with whether its art is light enough to need the off-white tile.
+/// Worked out once, when the texture is made.
+#[derive(Clone)]
+struct ThumbArt {
+    texture: egui::TextureHandle,
+    light: bool,
+}
+
+/// Mean luminance (0 to 1) above which art counts as white or very light.
+const LIGHT_ART_LUMINANCE: f64 = 0.8;
+
+/// Whether the art is white or very light: its mean Rec. 709 luminance, weighted by alpha so
+/// transparent pixels don't count, is above [`LIGHT_ART_LUMINANCE`]. `rgba` is straight alpha.
+fn is_light_art(rgba: &[u8]) -> bool {
+    let (mut sum, mut weight) = (0.0_f64, 0.0_f64);
+    for px in rgba.chunks_exact(4) {
+        let alpha = f64::from(px[3]) / 255.0;
+        let luma =
+            0.2126 * f64::from(px[0]) + 0.7152 * f64::from(px[1]) + 0.0722 * f64::from(px[2]);
+        sum += luma / 255.0 * alpha;
+        weight += alpha;
+    }
+    weight > 0.0 && sum / weight > LIGHT_ART_LUMINANCE
 }
 
 /// The id of the pack the browser starts on: the one flagged `default = true`, or none.
@@ -287,15 +312,18 @@ impl AssetBrowser {
             .or_insert_with(|| {
                 let sprite = editor.sprites()?.get_installed(reference)?;
                 let art = &sprite.art;
+                let pixels = art.unpremultiplied();
+                let light = is_light_art(&pixels);
                 let image = egui::ColorImage::from_rgba_unmultiplied(
                     [art.width as usize, art.height as usize],
-                    &art.unpremultiplied(),
+                    &pixels,
                 );
-                Some(ui.ctx().load_texture(
+                let texture = ui.ctx().load_texture(
                     reference.to_string(),
                     image,
                     egui::TextureOptions::LINEAR,
-                ))
+                );
+                Some(ThumbArt { texture, light })
             })
             .clone();
         let palette = theme::palette(ui.ctx());
@@ -311,18 +339,16 @@ impl AssetBrowser {
             )
         });
         let painter = ui.painter();
-        let (fill, stroke) = if look.selected {
-            (palette.bg_raised, egui::Stroke::new(1.5, palette.gold))
+        let fill = match &texture {
+            Some(art) if art.light => palette.thumb_bg_light_art,
+            _ => palette.thumb_bg,
+        };
+        let stroke = if look.selected {
+            egui::Stroke::new(1.5, palette.gold)
         } else if response.hovered() {
-            (
-                palette.hover_fill,
-                egui::Stroke::new(1.0, palette.border_strong),
-            )
+            egui::Stroke::new(1.0, palette.border_strong)
         } else {
-            (
-                palette.bg_field,
-                egui::Stroke::new(1.0, palette.border_subtle),
-            )
+            egui::Stroke::new(1.0, palette.border_subtle)
         };
         painter.rect(
             rect,
@@ -333,7 +359,7 @@ impl AssetBrowser {
         );
         let inner = rect.shrink(5.0);
         match texture {
-            Some(texture) => {
+            Some(ThumbArt { texture, .. }) => {
                 let size = texture.size_vec2();
                 let scale = (inner.width() / size.x).min(inner.height() / size.y);
                 let art = egui::Rect::from_center_size(inner.center(), size * scale);
@@ -433,6 +459,22 @@ mod tests {
             licence: "CC0-1.0".into(),
             modified: "2026-10-14".into(),
         }
+    }
+
+    #[test]
+    fn light_art_is_told_from_dark_art() {
+        let white = [255, 255, 255, 255].repeat(4);
+        let black = [0, 0, 0, 255].repeat(4);
+        assert!(is_light_art(&white));
+        assert!(!is_light_art(&black));
+        assert!(!is_light_art(&[]), "no pixels");
+        // Transparent pixels are ignored, whatever colour they carry.
+        let mut mixed = [255, 255, 255, 0].repeat(8);
+        mixed.extend([0, 0, 0, 255].repeat(2));
+        assert!(!is_light_art(&mixed));
+        let mut pale = [255, 255, 255, 0].repeat(8);
+        pale.extend([240, 240, 240, 255].repeat(2));
+        assert!(is_light_art(&pale));
     }
 
     #[test]

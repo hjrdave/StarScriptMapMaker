@@ -20,8 +20,8 @@
 
 use std::path::{Path, PathBuf};
 
-use ssmap_core::Map;
 use ssmap_core::file::FileError;
+use ssmap_core::{Canvas, DistanceUnit, Map, Scale};
 use ssmap_render::TessellationCache;
 
 use crate::canvas_view::CanvasView;
@@ -49,6 +49,9 @@ pub struct MapTab {
     pub(crate) export_directory: Option<PathBuf>,
     /// While quitting: the user has already decided about this tab's unsaved changes.
     pub(crate) quit_decided: bool,
+    /// A new tab that shows the start page: no Map has been opened or created in it yet. Its
+    /// editor holds a placeholder Map that is never shown or saved.
+    pub(crate) blank: bool,
 }
 
 impl MapTab {
@@ -66,6 +69,29 @@ impl MapTab {
             pending: None,
             export_directory: None,
             quit_decided: false,
+            blank: false,
+        }
+    }
+
+    /// A new tab showing the start page, with nothing in it to save.
+    pub fn blank(cache: Option<TessellationCache>, recovery: Recovery) -> Self {
+        let canvas = Canvas::new(1, 1, Scale::new(1.0, DistanceUnit::Miles));
+        let mut tab = Self::new(Map::new(canvas), cache, recovery);
+        tab.blank = true;
+        tab
+    }
+
+    /// Whether this tab is still the start page.
+    pub fn is_blank(&self) -> bool {
+        self.blank
+    }
+
+    /// The name on the tab: "New Tab" until a Map is opened or created in it.
+    pub fn name(&self) -> String {
+        if self.blank {
+            "New Tab".into()
+        } else {
+            self.document.name()
         }
     }
 
@@ -90,7 +116,7 @@ impl MapTab {
     }
 
     pub fn has_unsaved_changes(&self) -> bool {
-        self.document.has_unsaved_changes(&self.editor.map)
+        !self.blank && self.document.has_unsaved_changes(&self.editor.map)
     }
 
     /// The Recovery journal being written for this tab's Map, once there is one.

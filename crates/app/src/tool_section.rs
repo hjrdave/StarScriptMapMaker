@@ -23,6 +23,7 @@ pub fn icon(tool: ToolId) -> Icon {
         ToolId::Select => Icon::Select,
         ToolId::Pan => Icon::Pan,
         ToolId::LandBrush => Icon::LandBrush,
+        ToolId::WaterBrush => Icon::WaterBrush,
         ToolId::Lasso => Icon::Lasso,
         ToolId::Label => Icon::Label,
         ToolId::Stamp => Icon::Stamp,
@@ -35,7 +36,7 @@ pub fn icon(tool: ToolId) -> Icon {
 pub fn has_section(tool: ToolId) -> bool {
     matches!(
         tool,
-        ToolId::LandBrush | ToolId::Stamp | ToolId::StampEraser
+        ToolId::LandBrush | ToolId::WaterBrush | ToolId::Stamp | ToolId::StampEraser
     )
 }
 
@@ -62,7 +63,7 @@ impl ToolSection {
                 header(ui, tool);
                 ui.add_space(theme::SPACING[2]);
                 match tool {
-                    ToolId::LandBrush => land_brush(ui, editor),
+                    ToolId::LandBrush | ToolId::WaterBrush => land_brush(ui, editor),
                     ToolId::Stamp => {
                         self.browser.show(ui, editor);
                         ui.add_space(theme::SPACING[2]);

@@ -45,6 +45,10 @@ pub struct Palette {
     /// design's `theme.rs`, the light ones are derived (see [`LIGHT_DERIVED`]).
     pub hover_fill: Color32,
     pub hover_stroke: Color32,
+    /// Asset thumbnail background: white, so dark line art stands out. Not in `tokens.json`.
+    pub thumb_bg: Color32,
+    /// Asset thumbnail background for white or very light art, so it doesn't vanish.
+    pub thumb_bg_light_art: Color32,
 }
 
 const fn hex(rgb: u32) -> Color32 {
@@ -79,6 +83,8 @@ impl Palette {
         ok: hex(0x8FD49A),
         hover_fill: hex(0x30353D),
         hover_stroke: hex(0x4A505B),
+        thumb_bg: hex(0xFFFFFF),
+        thumb_bg_light_art: hex(0xEDEAE0),
     };
 
     pub const LIGHT: Palette = Palette {
@@ -109,6 +115,8 @@ impl Palette {
         gold_ring: hex(0x8A6414),
         hover_fill: hex(0xEDE5D0),
         hover_stroke: hex(0xA89B80),
+        thumb_bg: hex(0xFFFFFF),
+        thumb_bg_light_art: hex(0xE4E0D2),
     };
 }
 

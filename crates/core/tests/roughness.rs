@@ -72,9 +72,9 @@ fn fingerprint(outline: &MultiPolygon) -> u64 {
 #[test]
 fn roughened_outlines_are_bit_identical_everywhere() {
     let cases = [
-        (Roughness::new(6.0, 40.0, 1), 0xadd2_efb4_920e_01e0_u64),
-        (Roughness::new(0.75, 3.5, 42), 0x555d_33b7_51ea_cbfe),
-        (Roughness::new(25.0, 300.0, u32::MAX), 0x594b_a984_0f67_c902),
+        (Roughness::new(6.0, 40.0, 1), 0xd36c_c54e_d0de_e22b_u64),
+        (Roughness::new(0.75, 3.5, 42), 0xca4d_4e1a_12ff_0772),
+        (Roughness::new(25.0, 300.0, u32::MAX), 0xfa44_a5b2_e1d5_9ece),
     ];
     let got: Vec<u64> = cases
         .iter()

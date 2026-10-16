@@ -110,7 +110,7 @@ fn esc_closes_the_recovery_question_and_keeps_the_journal() {
 #[test]
 fn esc_cancels_the_new_map_dialog() {
     let mut harness = app(tempfile::tempdir().unwrap().path());
-    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::T);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::N);
     harness.run();
     harness.get_by_label("Create");
 
