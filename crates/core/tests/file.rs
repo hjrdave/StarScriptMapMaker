@@ -105,6 +105,7 @@ fn sample_map() -> (Map, Id, Id) {
         ..Label::default()
     })));
     label.locked = true;
+    label.name = Some("Kingdom name".into());
     insert(&mut map, Some(assets), Node::Object(label));
     insert(&mut map, None, Node::Layer(Layer::new("Empty")));
     (map, land, landmass)

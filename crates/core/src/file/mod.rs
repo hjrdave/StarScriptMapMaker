@@ -596,6 +596,7 @@ fn encode_node(node: &Node) -> (&'static str, String, Option<Vec<u8>>) {
             None => (object.kind.name(), to_json(node), None),
             Some(geometry) => {
                 let stripped = Node::Object(Object {
+                    name: object.name.clone(),
                     locked: object.locked,
                     kind: object.kind.without_geometry(),
                     extra: object.extra.clone(),
