@@ -20,6 +20,7 @@ mod recent;
 pub mod recovery;
 pub mod tab;
 mod tessellation;
+pub mod theme;
 pub mod tools;
 pub mod update;
 
@@ -119,6 +120,7 @@ impl MapMakerApp {
         map: Map,
         recovery_dir: Option<PathBuf>,
     ) -> Self {
+        theme::install(&cc.egui_ctx);
         let (library, problems) = PackLibrary::load(&PackRoots::installed());
         for problem in &problems {
             eprintln!("Asset pack problem: {problem}");
