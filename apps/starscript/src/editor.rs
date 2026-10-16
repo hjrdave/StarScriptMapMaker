@@ -880,6 +880,15 @@ impl Editor {
 
     /// Creates a Layer above the active one (or on top), selects it and returns its id.
     pub fn new_layer(&mut self) -> Option<Id> {
+        self.new_container("Layer")
+    }
+
+    /// Creates an empty Group (a Layer named "Group N") where `new_layer` would put a Layer.
+    pub fn new_group(&mut self) -> Option<Id> {
+        self.new_container("Group")
+    }
+
+    fn new_container(&mut self, kind: &str) -> Option<Id> {
         let (parent, index) = match self.active_layer.filter(|&id| self.map.contains(id)) {
             Some(active) => {
                 let parent = self.map.parent(active);
@@ -894,7 +903,7 @@ impl Editor {
             None => (None, None),
         };
         let id = Id::new();
-        let name = format!("Layer {}", self.layer_count() + 1);
+        let name = format!("{kind} {}", self.layer_count() + 1);
         let command = Command::CreateLayer {
             id,
             parent,
@@ -902,6 +911,36 @@ impl Editor {
             name,
         };
         self.run_selecting(command, vec![id]).then_some(id)
+    }
+
+    /// Wraps the selection in a new Group and selects it. One Undo step; refused with a
+    /// toast when the selection doesn't share a parent.
+    pub fn group_selection(&mut self) -> Option<Id> {
+        let ids = self.selected_roots();
+        if ids.is_empty() {
+            return None;
+        }
+        let id = Id::new();
+        let name = format!("Group {}", self.layer_count() + 1);
+        self.run_selecting(Command::CreateGroup { id, ids, name }, vec![id])
+            .then_some(id)
+    }
+
+    /// Dissolves the selected Layers and Groups, selecting what was inside. One Undo step.
+    pub fn ungroup_selection(&mut self) -> bool {
+        let ids: Vec<Id> = self
+            .selected_roots()
+            .into_iter()
+            .filter(|&id| self.map.node(id).is_some_and(Node::is_layer))
+            .collect();
+        if ids.is_empty() {
+            return false;
+        }
+        let freed: Vec<Id> = ids
+            .iter()
+            .flat_map(|&id| self.map.children(Some(id)).to_vec())
+            .collect();
+        self.run_selecting(Command::Ungroup { ids }, freed)
     }
 
     pub fn delete_selection(&mut self) {

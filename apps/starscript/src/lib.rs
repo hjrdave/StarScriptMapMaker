@@ -1132,6 +1132,15 @@ impl MapMakerApp {
             C::NewLayer => {
                 editor.new_layer();
             }
+            C::NewGroup => {
+                editor.new_group();
+            }
+            C::Group => {
+                editor.group_selection();
+            }
+            C::Ungroup => {
+                editor.ungroup_selection();
+            }
             C::DeleteLayer => editor.delete_active_layer(),
             C::Union => editor.union_selection(),
             C::Subtract => editor.subtract_selection(),
@@ -1690,6 +1699,11 @@ impl MapMakerApp {
             if consume(input, &off, menu::Command::NewLayer) {
                 editor.new_layer();
             }
+            if consume(input, &off, menu::Command::Ungroup) {
+                editor.ungroup_selection();
+            } else if consume(input, &off, menu::Command::Group) {
+                editor.group_selection();
+            }
             if consume(input, &off, menu::Command::Delete)
                 || (!off.contains(&menu::Command::Delete)
                     && input.consume_key(Modifiers::NONE, Key::Delete))
@@ -1909,6 +1923,7 @@ fn egui_key(key: menu::Key) -> egui::Key {
         K::V => egui::Key::V,
         K::X => egui::Key::X,
         K::E => egui::Key::E,
+        K::G => egui::Key::G,
         K::J => egui::Key::J,
         K::N => egui::Key::N,
         K::O => egui::Key::O,
