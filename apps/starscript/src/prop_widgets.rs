@@ -3,7 +3,8 @@
 //!
 //! The widgets never touch the Editor. Each returns an [`Edit`] saying whether a drag or typed
 //! entry began, changed the value, or finished, and [`LiveEdit`] turns that into one gesture,
-//! so one scrub is one Undo step. The Mixed state (multi-edit) is out of scope.
+//! so one scrub is one Undo step. A spec can be [`mixed`](ScrubSpec::mixed), for a setting that
+//! differs across a multi-selection: the box says "Mixed" and an edit sets every item.
 
 use eframe::egui::{self, Color32, Sense, Stroke, StrokeKind, Vec2};
 use ssmap_core::{Color, Command};
@@ -217,15 +218,29 @@ impl LiveEdit {
         label: &str,
         command: impl FnOnce() -> Command,
     ) {
+        self.apply_all(editor, edit, label, || vec![command()]);
+    }
+
+    /// [`Self::apply`] for an edit that is several Commands, one per selected item: all of them
+    /// are one gesture, so one Undo step puts every item back.
+    pub fn apply_all(
+        &mut self,
+        editor: &mut Editor,
+        edit: Edit,
+        label: &str,
+        commands: impl FnOnce() -> Vec<Command>,
+    ) {
         if (edit.began || edit.changed) && !self.owns_gesture && !editor.gesture_open() {
             editor.begin_gesture(label);
             self.owns_gesture = true;
         }
         if edit.changed {
-            if self.owns_gesture {
-                editor.gesture_replace(command());
-            } else {
-                editor.gesture(command());
+            for (i, command) in commands().into_iter().enumerate() {
+                if self.owns_gesture && i == 0 {
+                    editor.gesture_replace(command);
+                } else {
+                    editor.gesture(command);
+                }
             }
         }
         if self.owns_gesture && (edit.finished || !editor.gesture_open()) {
@@ -495,6 +510,9 @@ pub struct ScrubSpec<'a> {
     pub default: Option<f64>,
     /// Whether the slider track is logarithmic, so small values are easy to set on a wide range.
     pub log: bool,
+    /// The setting differs across the selection: the box says "Mixed" and the thumb is neutral.
+    /// Any edit sets every item, even to the value shown.
+    pub mixed: bool,
 }
 
 impl<'a> ScrubSpec<'a> {
@@ -510,7 +528,14 @@ impl<'a> ScrubSpec<'a> {
             slider_max: None,
             default: None,
             log: false,
+            mixed: false,
         }
+    }
+
+    /// Marks the setting as differing across the selection.
+    pub fn mixed(mut self, mixed: bool) -> Self {
+        self.mixed = mixed;
+        self
     }
 
     /// A logarithmic slider track, for settings that span a wide range.
@@ -562,9 +587,24 @@ impl<'a> ScrubSpec<'a> {
     }
 
     fn format(&self, value: f64) -> String {
+        if self.mixed {
+            return MIXED.to_owned();
+        }
         format!("{value:.*}{}", self.decimals, self.unit)
     }
+
+    /// What typing starts from: nothing when mixed.
+    fn typing_start(&self, value: f64) -> String {
+        if self.mixed {
+            String::new()
+        } else {
+            format!("{value:.*}", self.decimals)
+        }
+    }
 }
+
+/// What the box of a setting that differs across the selection says.
+pub const MIXED: &str = "Mixed";
 
 #[derive(Clone, Default)]
 struct ScrubState {
@@ -765,7 +805,7 @@ fn number_box(
             let typed = typing.take().unwrap_or_default();
             if let Some(result) = eval_expression(&typed, value) {
                 let result = round_to(spec.range.clamp(result), spec.decimals.max(3));
-                if result != value {
+                if result != value || spec.mixed {
                     next = Some(result);
                 }
             }
@@ -782,7 +822,7 @@ fn number_box(
             egui::WidgetInfo::text_edit(enabled, spec.format(value), spec.format(value), spec.label)
         });
         if enabled && box_response.clicked() {
-            *typing = Some(format!("{value:.*}", spec.decimals));
+            *typing = Some(spec.typing_start(value));
         }
     }
 
@@ -919,7 +959,7 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
                 && let Some(default) = spec.default
             {
                 let default = spec.range.clamp(default);
-                if default != *value {
+                if default != *value || spec.mixed {
                     *value = default;
                     edit = Edit::instant();
                 }
@@ -932,7 +972,7 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
                 {
                     let t = f64::from((pos.x - rect.left() - 6.0) / (rect.width() - 12.0));
                     let next = slider_value(min, max, t, spec.decimals, spec.log);
-                    if next != *value {
+                    if next != *value || spec.mixed {
                         *value = next;
                         edit.changed = true;
                     }
@@ -981,6 +1021,13 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
                 palette.text_tertiary,
                 6.0,
             )
+        } else if spec.mixed && !response.dragged() {
+            (
+                palette.border_strong,
+                palette.gold,
+                palette.text_tertiary,
+                6.0,
+            )
         } else if response.dragged() {
             (palette.border_strong, palette.gold, palette.gold_text, 7.0)
         } else if response.hovered() || response.has_focus() {
@@ -995,15 +1042,22 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
         };
         let y = rect.center().y;
         let (x0, x1) = (rect.left() + 6.0, rect.right() - 6.0);
-        let x = x0 + t * (x1 - x0);
+        // A mixed setting has no place on the track: the thumb waits in the middle, unfilled.
+        let x = if spec.mixed {
+            (x0 + x1) / 2.0
+        } else {
+            x0 + t * (x1 - x0)
+        };
         ui.painter().line_segment(
             [egui::pos2(x0, y), egui::pos2(x1, y)],
             Stroke::new(3.0, line),
         );
-        ui.painter().line_segment(
-            [egui::pos2(x0, y), egui::pos2(x, y)],
-            Stroke::new(3.0, fill),
-        );
+        if !spec.mixed {
+            ui.painter().line_segment(
+                [egui::pos2(x0, y), egui::pos2(x, y)],
+                Stroke::new(3.0, fill),
+            );
+        }
         ui.painter().circle(
             egui::pos2(x, y),
             radius,
