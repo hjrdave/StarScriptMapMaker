@@ -155,6 +155,19 @@ pub enum Action {
     Show(Slot),
     Close(usize),
     NewMap,
+    /// Pop tab `n` out into a window of its own.
+    MoveToNewWindow(usize),
+    /// Put tab `n` of a popped-out window back in the main window.
+    MoveToMainWindow(usize),
+}
+
+/// Which window a strip belongs to, which decides what its tabs' context menu offers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Placement {
+    /// The main window, which also has the Home tab.
+    Main,
+    /// A window a tab was popped out into.
+    Popped,
 }
 
 /// The strip's own memory between frames.
@@ -193,6 +206,7 @@ pub fn show(
     state: &mut State,
     inset: f32,
     custom_chrome: bool,
+    placement: Placement,
 ) -> Vec<Action> {
     let mut actions = Vec::new();
     let p: &Palette = theme::palette(ui.ctx());
@@ -205,11 +219,7 @@ pub fn show(
 
     // Behind everything else, so a tab or button wins where they overlap.
     if custom_chrome {
-        let background = ui.interact(
-            strip,
-            egui::Id::new("tab-strip-bg"),
-            Sense::click_and_drag(),
-        );
+        let background = ui.interact(strip, ui.id().with("tab-strip-bg"), Sense::click_and_drag());
         if background.drag_started() {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
         }
@@ -221,7 +231,7 @@ pub fn show(
     }
 
     let flat_button = |ui: &mut egui::Ui, rect: Rect, id: &str, label: &str| {
-        let response = ui.interact(rect, egui::Id::new(id), Sense::click());
+        let response = ui.interact(rect, ui.id().with(id), Sense::click());
         response.widget_info(|| {
             egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
         });
@@ -231,11 +241,13 @@ pub fn show(
         response
     };
 
-    // Home.
-    let home = column(strip.min.x + inset, layout::HOME_TAB);
+    // Home, which only the main window has.
+    let has_home = placement == Placement::Main;
+    let home_width = if has_home { layout::HOME_TAB } else { 0.0 };
+    let home = column(strip.min.x + inset, home_width);
     let home_active = current == Slot::Home;
-    {
-        let response = ui.interact(home, egui::Id::new("tab-home"), Sense::click());
+    if has_home {
+        let response = ui.interact(home, ui.id().with("tab-home"), Sense::click());
         response.widget_info(|| {
             egui::WidgetInfo::selected(
                 egui::WidgetType::Button,
@@ -301,7 +313,7 @@ pub fn show(
             let hovered = pointer.is_some_and(|at| rect.contains(at) && viewport.contains(at));
             let body = ui.interact(
                 rect.intersect(viewport),
-                egui::Id::new(("tab", index)),
+                ui.id().with(("tab", index)),
                 Sense::click(),
             );
             body.widget_info(|| {
@@ -360,7 +372,7 @@ pub fn show(
                     let label = format!("Close {}", info.name);
                     let close = ui.interact(
                         hit.intersect(viewport),
-                        egui::Id::new(("tab-close", index)),
+                        ui.id().with(("tab-close", index)),
                         Sense::click(),
                     );
                     close.widget_info(|| {
@@ -383,7 +395,25 @@ pub fn show(
             if body.middle_clicked() {
                 actions.push(Action::Close(index));
             }
-            body.on_hover_text(info.path.as_deref().unwrap_or("Not saved yet"));
+            let body = body.on_hover_text(info.path.as_deref().unwrap_or("Not saved yet"));
+            body.context_menu(|ui| {
+                // A popped-out window's only tab can only go back.
+                if (placement == Placement::Main || tabs.len() > 1)
+                    && ui.button("Move Tab to New Window").clicked()
+                {
+                    actions.push(Action::MoveToNewWindow(index));
+                    ui.close();
+                }
+                if placement == Placement::Popped && ui.button("Move Tab to Main Window").clicked()
+                {
+                    actions.push(Action::MoveToMainWindow(index));
+                    ui.close();
+                }
+                if ui.button("Close Tab").clicked() {
+                    actions.push(Action::Close(index));
+                    ui.close();
+                }
+            });
         }
     });
 
