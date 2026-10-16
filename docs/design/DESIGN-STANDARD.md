@@ -90,6 +90,10 @@ Cards follow Figma's dashboard file card: a rounded, bordered card with a large 
 
 The Home tab's Library section has an **Asset packs** page. It lists every installed pack (name, preview thumbnails, author, licence, Asset count, built-in or user-added); opening a pack shows its Assets in a searchable thumbnail grid. **Add pack…** installs a pack through the native file picker, with progress and a clear error on failure. User-installed packs can be deleted from the card menu after a confirmation dialog that names the pack and says if maps use it. **Packs embedded in the app cannot be deleted**: they carry a "Built in" badge and the Delete action is hidden or disabled with a tooltip explaining why.
 
+### Asset thumbnails
+
+Every Asset thumbnail (Asset picker, Asset packs page, anywhere Assets are listed) sits on a **white** background so the Asset is easy to see. If the Asset itself is white or very light, use an **off-white** background instead. The background is chosen from the Asset's pixels and cached with the thumbnail, and both colours are named tokens, not literals. Gold selection rings and badges must stay readable on top of it. Placed Stamps on the Canvas are unaffected.
+
 ### Tool dock
 
 Floating, bottom-centre of the canvas area. Groups: Select V, Pan H │ Land Brush B, Lasso L, Label T │ Stamp S, Stamp Eraser E │ Export Region X. Active tool = gold-subtle fill + gold inset ring. Tooltip above the button after 500 ms: name + shortcut, on **one line** (no wrapping).
@@ -150,6 +154,7 @@ Changes the owner has decided after the handoff. The sections above already refl
 | Landmass Roughness stays smooth to drag at high values | — | #220 | Open |
 | Map cards are Figma-style (thumbnail, name, edited time) with Delete (confirmed) and Show in Finder | Handoff cards also showed size and an "Open in tab" chip on the face | #228 | Open |
 | Home tab gets an Asset packs page: browse, add via GUI, delete user packs; built-in packs can't be deleted | Handoff listed Asset packs in the Library rail without a page spec | #229 | Open |
+| Asset thumbnails use a white background, off-white for white Assets | Handoff used the dark panel as the thumbnail background | #231 | Open |
 | New tab opens a start page (last 6 Maps by most recently updated, Create new map, Open a file) instead of the New Map dialog | Handoff: `+` = New Map | #223 | Open |
 | One Stamp tool: click places, drag scatters; no separate Scatter Brush | Handoff had Stamp and Scatter Brush as separate tools | #219 | Open |
 
