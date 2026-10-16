@@ -74,6 +74,7 @@ Title bar with tabs 30 · traffic-light inset 84 · Home tab (scaled to the 30 p
 Title bar (tabs) → Layers panel | Canvas | Properties panel → status bar. Details, tab states and responsive rules are in `HANDOFF.md` and `mockups/Responsive.html`.
 
 - **Layers panel** (left, always): the single place to manage Layers. See [Layers panel](#layers-panel).
+  - **Collapse control:** a **double chevron** at the **bottom** of the panel (next to the "N Objects · N Layers" footer when expanded, pinned to the bottom of the 40 px strip when collapsed), the same control in both states. It flips direction with the state (`«` collapse, `»` expand). The collapsed strip shows only icons. The header keeps the `+` new-layer button. Shortcut ⌘⌥1.
 - **Properties panel** (right, always): active tool section (only for tools with settings), then selection sections.
 - **Floating controls** sit on the same baseline at the bottom of the canvas area (never over a panel): tool dock bottom-centre, zoom control bottom-right, both 40 px from the bottom and vertically centred on each other.
 - **No in-window toolbar buttons** for undo, zoom or export: those live in the native menu bar.
@@ -191,6 +192,7 @@ Changes the owner has decided after the handoff. The sections above already refl
 | Ranged numeric settings are sliders with a small number box instead of wide number fields | Handoff had separate numeric fields and sliders, with fields as the default | #242 | Open |
 | Land Brush shows the rough shoreline live while painting and erasing | Handoff showed a gold dashed outline of the smooth brush shape | #243 | Open |
 | Editing interactions must meet a frame-time budget (buttery smooth), measured by benchmarks | Handoff only asked for a frame-time readout in the status bar | #245 | Open |
+| Layers panel collapse control is a double chevron at the bottom that flips with state; collapsed strip shows only icons | Handoff: collapse button in the header, expand button at the top of the rail | #248 | Open |
 | New tab opens a start page (last 6 Maps by most recently updated, Create new map, Open a file) instead of the New Map dialog | Handoff: `+` = New Map | #223 | Open |
 | One Stamp tool: click places, drag scatters; no separate Scatter Brush | Handoff had Stamp and Scatter Brush as separate tools | #219 | Open |
 
