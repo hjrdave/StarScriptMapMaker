@@ -52,6 +52,7 @@ impl MacMenu {
     /// Must run on the main thread once the event loop has started.
     pub fn new(ctx: &eframe::egui::Context) -> Self {
         let (sender, events) = mpsc::channel();
+        super::dock::install(ctx);
         let ctx = ctx.clone();
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
             let _ = sender.send(event.id);

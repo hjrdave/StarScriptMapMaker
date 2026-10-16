@@ -92,6 +92,26 @@ nobody has seen it yet. Check it by hand:
       shows as missing with "Remove from list". With ten or more Maps the first frame is not
       held up while previews load. On a first launch (reset the stored choice) the update
       banner shows at the bottom of Home; Not now and Check automatically both dismiss it.
+- [ ] Close vs quit, Dock reopen and the hidden window (#238, #280). The Dock hook in
+      `native_menu/dock.rs` has not been compiled by CI; if it does not build or the click does
+      nothing, say so on #280.
+  - [ ] Close the window with the red button (⌘W on Home also closes it). The app stays in the
+        Dock with its running dot, and ⌘Q still quits.
+  - [ ] Repaints of a hidden window: with the window closed, nothing spins the CPU (Activity
+        Monitor stays near 0%), and the app does not hang or log errors in Console.
+  - [ ] Menu bar with no window: the menu bar still shows. Window, Help and the app menu open;
+        items that need a Map are disabled; New Map, Open… and Open Recent work and bring a
+        window back; Check for Updates and About work; ⌘Q quits.
+  - [ ] Window ▸ Minimize and Zoom (and ⌘M): they work with a window open, and are not broken by
+        a close and reopen cycle. Minimize, then click the Dock icon: the window comes back.
+  - [ ] Dock reopen: close the window and click the Dock icon. The window comes back, showing
+        only the Home tab (the Maps from before are closed). Click the Dock icon while the
+        window is visible: nothing changes. Repeat three times.
+  - [ ] Unsaved changes on close: edit a Map, then close the window. The prompt offers Save,
+        Don't Save and Cancel. Cancel keeps the window and the Map. Don't Save hides the window,
+        and reopening shows no unsaved Map. Save saves (a new Map asks where) and then hides.
+        With two Maps unsaved, each is asked about in turn. Quit (⌘Q) with unsaved changes asks
+        the same way, and Cancel stops the quit.
 - [ ] Check both the dark and the light theme.
 - [ ] Open a large Map. Pan and zoom; note how smooth it feels.
 - [ ] Run the frame-time measurement and record the numbers on #92:
