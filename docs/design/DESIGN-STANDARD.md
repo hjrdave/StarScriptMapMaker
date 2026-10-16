@@ -142,6 +142,7 @@ The Layers panel is where every Layer action happens. There is no separate layer
 ## Properties panel
 
 - **Active tool section** (tinted `bg.toolSection`, tool icon + shortcut in the header) only for tools with settings.
+- **Land Brush** (and Water Brush): Paint adds land to a landmass, Erase takes land away (⌥ flips the mode). While the stroke is in progress the shoreline is shown **rough, live**, with the landmass's Roughness settings, and matches the result on release.
 - **Stamp tool** (one tool for placing and scattering):
   - A **click** places one Stamp; a **drag** scatters Stamps along the path. There is no separate Scatter tool.
   - Settings: Asset picker (search, category, 4-column thumbnail grid, pack · author · licence), Place on (Land / Water / Any), Density, Spacing, Size jitter, Rotation jitter, Random flip, Variant (Random / Cycle / Fixed).
@@ -187,6 +188,7 @@ Changes the owner has decided after the handoff. The sections above already refl
 | A Map can have multiple art boards; only the primary board is exported | Handoff had one Canvas per Map | #239 | Open |
 | Multiple map templates (background looks) with a template picker in New Map | Handoff had one starter template and a template stack only | #241 | Open |
 | Ranged numeric settings are sliders with a small number box instead of wide number fields | Handoff had separate numeric fields and sliders, with fields as the default | #242 | Open |
+| Land Brush shows the rough shoreline live while painting and erasing | Handoff showed a gold dashed outline of the smooth brush shape | #243 | Open |
 | New tab opens a start page (last 6 Maps by most recently updated, Create new map, Open a file) instead of the New Map dialog | Handoff: `+` = New Map | #223 | Open |
 | One Stamp tool: click places, drag scatters; no separate Scatter Brush | Handoff had Stamp and Scatter Brush as separate tools | #219 | Open |
 
