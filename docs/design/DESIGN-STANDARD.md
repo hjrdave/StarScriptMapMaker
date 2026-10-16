@@ -80,7 +80,7 @@ Title bar (tabs) → Layers panel | Canvas | Properties panel → status bar. De
 
 ### New tab
 
-The **+** button (and ⌘T) opens a blank **New Tab** start page, not the New Map dialog. It shows recent Map thumbnails (same card style as the Home tab), a **Create new map** card, and an **Open…** link for the file system. Picking any of these opens or creates the Map in that tab, and the tab then takes the Map's name. A blank New Tab has nothing to save, so closing it shows no Save prompt. With no recent Maps, show only Create new map and Open….
+The **+** button (and ⌘T) opens a blank **New Tab** start page, not the New Map dialog. It is a quick "recent" screen: the **last 6** Maps as thumbnail cards ordered by **most recently updated**, a **Create new map** card, and an **Open a file** button for the file system. Picking any of these opens or creates the Map in that tab, and the tab then takes the Map's name. It has no side rail, search or sorting; the full list lives on the Home tab. A blank New Tab has nothing to save, so closing it shows no Save prompt. With no recent Maps, show only Create new map and Open a file.
 
 ### Map cards (Home tab and New Tab)
 
@@ -145,7 +145,7 @@ Changes the owner has decided after the handoff. The sections above already refl
 | Text gets Kerning, Tracking, Line height and Arch | Handoff had Tracking and Line height only | #213 | Open |
 | Landmass Roughness stays smooth to drag at high values | — | #220 | Open |
 | Map cards are Figma-style (thumbnail, name, edited time) with Delete (confirmed) and Show in Finder | Handoff cards also showed size and an "Open in tab" chip on the face | #228 | Open |
-| New tab opens a start page (recent thumbnails, Create new map, Open…) instead of the New Map dialog | Handoff: `+` = New Map | #223 | Open |
+| New tab opens a start page (last 6 Maps by most recently updated, Create new map, Open a file) instead of the New Map dialog | Handoff: `+` = New Map | #223 | Open |
 | One Stamp tool: click places, drag scatters; no separate Scatter Brush | Handoff had Stamp and Scatter Brush as separate tools | #219 | Open |
 
 ## Checklist for any UI change
