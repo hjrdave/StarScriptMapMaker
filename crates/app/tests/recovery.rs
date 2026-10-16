@@ -237,7 +237,7 @@ fn discarding_recovered_changes_deletes_the_journal() {
     let mut harness = app(dir.path());
     assert!(harness.state_mut().open_path(&file));
     harness.run();
-    harness.get_by_label("Discard Changes").click();
+    harness.get_by_label("Discard").click();
     harness.run();
     assert!(!recovery_path(&file).exists());
     assert_eq!(layer_names(&harness.state().editor().map), ["Base"]);
@@ -306,7 +306,7 @@ fn closing_with_unsaved_changes_asks_and_a_clean_close_deletes_the_journal() {
     wait_until_journaled(&mut harness);
 
     request_close(&mut harness);
-    harness.get_by_label("Save the changes to “coast.ssmap” before closing?");
+    harness.get_by_label("Save changes to “coast.ssmap”?");
     assert!(!harness.state().is_closing());
     harness.get_by_label("Cancel").click();
     harness.run();
@@ -344,5 +344,5 @@ fn closing_without_unsaved_changes_does_not_ask() {
     let dir = tempfile::tempdir().unwrap();
     let mut harness = app(dir.path());
     request_close(&mut harness);
-    assert!(harness.query_by_label("Unsaved changes").is_none());
+    assert!(harness.query_by_label("Don’t Save").is_none());
 }

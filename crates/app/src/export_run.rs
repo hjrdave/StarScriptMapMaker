@@ -4,10 +4,13 @@
 
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use eframe::egui;
 use ssmap_core::{ExportSettings, ExportSize, credits_file_path};
 use ssmap_render::{ExportJob, ExportStatus, ExportStep};
+
+use crate::{dialog, theme};
 
 /// What the app shows for an export that is still going.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -46,6 +49,8 @@ pub struct ExportRun<J = ExportJob> {
     progress: Progress,
     /// The text for `<name>.credits.txt`, written once the PNG is in place.
     credits_file: Option<String>,
+    /// When the first tile began rendering, for the time left.
+    rendering_since: Option<Instant>,
 }
 
 impl<J: Stoppable> ExportRun<J> {
@@ -55,6 +60,17 @@ impl<J: Stoppable> ExportRun<J> {
             dest,
             progress: Progress::Waiting,
             credits_file,
+            rendering_since: None,
+        }
+    }
+
+    /// The time the rest of the tiles should take, once enough have rendered to tell.
+    pub fn time_left(&self) -> Option<Duration> {
+        match (self.progress, self.rendering_since) {
+            (Progress::Rendering { done, total }, Some(since)) => {
+                estimate_time_left(since.elapsed(), done, total)
+            }
+            _ => None,
         }
     }
 
@@ -86,6 +102,11 @@ impl<J: Stoppable> ExportRun<J> {
                     ExportStatus::WaitingForDerivedData => Progress::Waiting,
                     ExportStatus::Rendering { done, total } => Progress::Rendering { done, total },
                 };
+                if matches!(self.progress, Progress::Rendering { .. })
+                    && self.rendering_since.is_none()
+                {
+                    self.rendering_since = Some(Instant::now());
+                }
                 Outcome::Running(self.progress)
             }
             Ok(ExportStep::Finished(size)) => {
@@ -133,12 +154,37 @@ pub fn export_path(settings: &ExportSettings, directory: &Path) -> Option<PathBu
     Some(directory.join(name))
 }
 
-/// The modal progress dialog. Returns true when Cancel is pressed.
-pub fn show_progress(ctx: &egui::Context, dest: &Path, progress: Progress) -> bool {
+/// How long the rest of the tiles will take, going by the `elapsed` time the first `done`
+/// took. `None` before a tile is done.
+pub fn estimate_time_left(elapsed: Duration, done: u32, total: u32) -> Option<Duration> {
+    if done == 0 || done > total {
+        return None;
+    }
+    Some(elapsed.mul_f64(f64::from(total - done) / f64::from(done)))
+}
+
+/// "12 s left", "2 min 5 s left".
+pub fn time_left_text(left: Duration) -> String {
+    let seconds = left.as_secs_f64().ceil() as u64;
+    if seconds < 60 {
+        format!("{seconds} s left")
+    } else {
+        format!("{} min {} s left", seconds / 60, seconds % 60)
+    }
+}
+
+/// The modal progress dialog. Returns true when Cancel is pressed (or Esc).
+pub fn show_progress(
+    ctx: &egui::Context,
+    dest: &Path,
+    progress: Progress,
+    time_left: Option<Duration>,
+) -> bool {
     let mut cancel = false;
-    egui::Modal::new(egui::Id::new("export_progress")).show(ctx, |ui| {
-        ui.heading("Exporting PNG");
-        ui.label(dest.display().to_string());
+    let shown = dialog::show(ctx, "export_progress", "Exporting PNG", 380.0, |ui| {
+        let p = theme::palette(ui.ctx());
+        ui.label(egui::RichText::new(dest.display().to_string()).color(p.text_secondary));
+        ui.add_space(8.0);
         match progress {
             Progress::Waiting => {
                 ui.horizontal(|ui| {
@@ -152,14 +198,23 @@ pub fn show_progress(ctx: &egui::Context, dest: &Path, progress: Progress) -> bo
                 } else {
                     done as f32 / total as f32
                 };
-                ui.add(egui::ProgressBar::new(fraction).text(format!("{done} of {total} tiles")));
+                ui.add(
+                    egui::ProgressBar::new(fraction)
+                        .fill(p.gold)
+                        .text(format!("{done} of {total} tiles")),
+                );
+                if let Some(left) = time_left {
+                    ui.label(egui::RichText::new(time_left_text(left)).color(p.text_secondary));
+                }
             }
         }
-        if ui.button("Cancel").clicked() {
-            cancel = true;
-        }
+        dialog::buttons(ui, |ui| {
+            if ui.button("Cancel").clicked() {
+                cancel = true;
+            }
+        });
     });
-    cancel
+    cancel || shown.cancelled
 }
 
 #[cfg(test)]

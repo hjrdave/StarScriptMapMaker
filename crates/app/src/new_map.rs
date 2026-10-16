@@ -4,6 +4,8 @@
 use eframe::egui;
 use ssmap_core::{Canvas, DefaultLayers, DistanceUnit, LabelStyles, Map, MapTemplate, Scale};
 
+use crate::{dialog, theme};
+
 /// The smallest and largest side of a Canvas, in nominal pixels.
 pub const SIDE_RANGE: std::ops::RangeInclusive<u32> = 256..=16384;
 
@@ -72,6 +74,11 @@ impl NewMapDialog {
         })
     }
 
+    /// The real-world area the Canvas covers, like "1,024 × 768 mi".
+    pub fn coverage(&self) -> String {
+        coverage_text(self.width, self.height, self.distance, self.unit)
+    }
+
     /// Shows the dialog while it is open. Returns the Canvas once the user presses Create.
     pub fn show(&mut self, ctx: &egui::Context) -> Option<Canvas> {
         if !self.open {
@@ -79,10 +86,10 @@ impl NewMapDialog {
         }
         let mut created = None;
         let mut cancelled = false;
-        let modal = egui::Modal::new(egui::Id::new("new_map")).show(ctx, |ui| {
-            ui.heading("New Map");
+        let shown = dialog::show(ctx, "new_map", "New Map", 380.0, |ui| {
             egui::Grid::new("new map settings")
                 .num_columns(2)
+                .spacing([12.0, 8.0])
                 .show(ui, |ui| {
                     ui.label("Width");
                     ui.add(
@@ -115,15 +122,19 @@ impl NewMapDialog {
                     });
                     ui.end_row();
                 });
+            ui.add_space(8.0);
             let problem = self.problem();
-            if let Some(problem) = &problem {
-                ui.colored_label(ui.visuals().error_fg_color, problem);
+            let p = theme::palette(ui.ctx());
+            match &problem {
+                Some(problem) => {
+                    ui.colored_label(p.danger, problem);
+                }
+                None => {
+                    ui.label(egui::RichText::new(self.coverage()).color(p.text_secondary));
+                }
             }
-            ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(problem.is_none(), egui::Button::new("Create"))
-                    .clicked()
-                {
+            dialog::buttons(ui, |ui| {
+                if dialog::primary_button(ui, problem.is_none(), "Create").clicked() {
                     created = self.canvas();
                 }
                 if ui.button("Cancel").clicked() {
@@ -131,10 +142,49 @@ impl NewMapDialog {
                 }
             });
         });
-        if created.is_some() || cancelled || modal.should_close() {
+        if created.is_none() && dialog::enter_confirms(ctx) {
+            created = self.canvas();
+        }
+        if created.is_some() || cancelled || shown.cancelled {
             self.open = false;
         }
         created
+    }
+}
+
+/// The real-world size of a `width` × `height` px Canvas at `distance` per pixel.
+pub fn coverage_text(width: u32, height: u32, distance: f64, unit: DistanceUnit) -> String {
+    format!(
+        "{} × {} {}",
+        group_digits(f64::from(width) * distance),
+        group_digits(f64::from(height) * distance),
+        unit_abbreviation(unit)
+    )
+}
+
+/// `value` to at most two decimals, with thousands separators.
+fn group_digits(value: f64) -> String {
+    let text = format!("{value:.2}");
+    let text = text.trim_end_matches('0').trim_end_matches('.');
+    let (whole, fraction) = text.split_once('.').unwrap_or((text, ""));
+    let mut grouped = String::new();
+    for (i, digit) in whole.chars().enumerate() {
+        if i > 0 && (whole.len() - i) % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(digit);
+    }
+    if fraction.is_empty() {
+        grouped
+    } else {
+        format!("{grouped}.{fraction}")
+    }
+}
+
+fn unit_abbreviation(unit: DistanceUnit) -> &'static str {
+    match unit {
+        DistanceUnit::Miles => "mi",
+        DistanceUnit::Kilometres => "km",
     }
 }
 
@@ -154,6 +204,19 @@ mod tests {
         let canvas = NewMapDialog::default().canvas().unwrap();
         assert_eq!((canvas.width, canvas.height), (4096, 3072));
         assert_eq!(canvas.scale, Scale::new(0.25, DistanceUnit::Miles));
+    }
+
+    #[test]
+    fn the_coverage_line_is_the_real_world_size() {
+        assert_eq!(NewMapDialog::default().coverage(), "1,024 × 768 mi");
+        assert_eq!(
+            coverage_text(1000, 800, 2.0, DistanceUnit::Kilometres),
+            "2,000 × 1,600 km"
+        );
+        assert_eq!(
+            coverage_text(300, 256, 0.125, DistanceUnit::Miles),
+            "37.5 × 32 mi"
+        );
     }
 
     #[test]

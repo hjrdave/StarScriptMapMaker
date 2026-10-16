@@ -136,7 +136,7 @@ fn closing_a_dirty_tab_asks_and_cancel_keeps_it() {
 
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::W);
     harness.run();
-    harness.get_by_label("Save the changes to “first.ssmap” before closing?");
+    harness.get_by_label("Save changes to “first.ssmap”?");
     harness.get_by_label("Cancel").click();
     harness.run();
     assert_eq!(harness.state().tabs().len(), 2);
@@ -189,7 +189,7 @@ fn a_clean_tab_closes_at_once_and_the_last_tab_leaves_an_empty_window() {
     harness.run();
     assert_eq!(harness.state().tabs().len(), 1);
     assert_eq!(harness.state().active_tab(), 0);
-    assert!(harness.query_by_label("Unsaved changes").is_none());
+    assert!(harness.query_by_label("Don’t Save").is_none());
 
     harness.state_mut().close_tab(0);
     harness.run();
@@ -215,12 +215,12 @@ fn quitting_with_two_dirty_tabs_asks_about_each_and_cancel_stops_the_quit() {
     harness.run();
 
     request_close(&mut harness);
-    harness.get_by_label("Save the changes to “first.ssmap” before closing?");
+    harness.get_by_label("Save changes to “first.ssmap”?");
     assert_eq!(harness.state().active_tab(), 1, "its tab is shown first");
     harness.get_by_label("Don’t Save").click();
     harness.run();
     assert!(!harness.state().is_closing());
-    harness.get_by_label("Save the changes to “second.ssmap” before closing?");
+    harness.get_by_label("Save changes to “second.ssmap”?");
     assert_eq!(harness.state().active_tab(), 2);
     harness.get_by_label("Cancel").click();
     harness.run();
@@ -230,10 +230,10 @@ fn quitting_with_two_dirty_tabs_asks_about_each_and_cancel_stops_the_quit() {
 
     // Quitting again asks about both again; answering both closes the window.
     request_close(&mut harness);
-    harness.get_by_label("Save the changes to “first.ssmap” before closing?");
+    harness.get_by_label("Save changes to “first.ssmap”?");
     harness.get_by_label("Save").click();
     harness.run();
-    harness.get_by_label("Save the changes to “second.ssmap” before closing?");
+    harness.get_by_label("Save changes to “second.ssmap”?");
     harness.get_by_label("Don’t Save").click();
     harness.run();
     assert!(harness.state().is_closing());
