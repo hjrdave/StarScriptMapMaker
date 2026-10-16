@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+mod common;
+
 use ssmap_app::MapMakerApp;
 use ssmap_core::file::{MapFile, recovery_path};
 use ssmap_core::{Canvas, DistanceUnit, Id, Layer, Map, Node, Op, Scale, Subtree};
@@ -52,8 +54,7 @@ fn wait_until_journaled(harness: &mut Harness<'_, MapMakerApp>) {
 }
 
 fn new_layer(harness: &mut Harness<'_, MapMakerApp>) {
-    harness.get_by_label("New Layer").click();
-    harness.run();
+    common::new_layer(harness);
 }
 
 fn layer_names(map: &Map) -> Vec<String> {

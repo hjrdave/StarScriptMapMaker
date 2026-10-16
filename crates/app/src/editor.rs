@@ -791,6 +791,40 @@ impl Editor {
         }
     }
 
+    /// The Objects directly on the active Layer.
+    pub fn active_layer_objects(&self) -> Vec<Id> {
+        let Some(layer) = self.active_layer.filter(|&id| self.map.contains(id)) else {
+            return Vec::new();
+        };
+        self.map
+            .children(Some(layer))
+            .iter()
+            .copied()
+            .filter(|&id| matches!(self.map.node(id), Some(Node::Object(_))))
+            .collect()
+    }
+
+    /// Select All: selects every Object on the active Layer.
+    pub fn select_all(&mut self) {
+        let objects = self.active_layer_objects();
+        if !objects.is_empty() {
+            self.select(objects);
+        }
+    }
+
+    /// Deselect: empties the Selection; the active Layer stays.
+    pub fn deselect(&mut self) {
+        self.select(Vec::new());
+    }
+
+    /// Deletes the active Layer with what it holds. One Undo step.
+    pub fn delete_active_layer(&mut self) {
+        if let Some(layer) = self.active_layer.filter(|&id| self.map.contains(id)) {
+            self.select(vec![layer]);
+            self.delete_selection();
+        }
+    }
+
     /// The newest toast still showing.
     pub fn notice(&self) -> Option<&Toast> {
         self.toasts.items().last()

@@ -17,6 +17,7 @@ pub mod home;
 pub mod icons;
 mod label_styles;
 mod layer_tree;
+pub mod menu;
 pub mod new_map;
 pub mod prop_widgets;
 mod properties;
@@ -40,6 +41,7 @@ use ssmap_core::asset::{PackLibrary, PackRoots};
 use ssmap_core::file::{JournalBase, MapFile, PREVIEW_SIZE, remove_journal};
 use ssmap_core::{CREDITS_CHUNK_KEYWORD, Canvas, Map};
 use ssmap_render::{ExportJob, PngMeta, SpriteStore, TessellationCache};
+use std::collections::HashSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -143,6 +145,9 @@ pub struct MapMakerApp {
     egui_ctx: egui::Context,
     /// The window title last sent, so it is only sent when it changes.
     title: String,
+    /// Commands whose key the egui handler leaves alone, because something else (the native
+    /// menu on macOS) owns it. Each key is then handled once.
+    shortcuts_off: HashSet<menu::Command>,
 }
 
 impl MapMakerApp {
@@ -228,6 +233,7 @@ impl MapMakerApp {
             recent: RecentFiles::load(cc.storage),
             shell: shell::Shell::load(cc.storage),
             drop_focus: false,
+            shortcuts_off: HashSet::new(),
             updates: UpdateCheck::load(cc.storage),
             new_map_dialog: NewMapDialog::default(),
             export_dialog: ExportDialog::default(),
@@ -726,89 +732,203 @@ impl MapMakerApp {
         Some(png)
     }
 
-    fn file_menu(&mut self, ui: &mut egui::Ui) {
-        ui.menu_button("File", |ui| {
-            if ui.button("New Map…").clicked() {
-                self.new_map_dialog.open = true;
-                ui.close();
-            }
-            if ui.button("Open…").clicked() {
-                self.show_open_dialog();
-            }
-            ui.menu_button("Open Recent", |ui| {
-                if let Some(path) = self.recent.menu(ui) {
-                    ui.close();
-                    if path.is_file() {
-                        self.open_path(&path);
-                    } else {
-                        self.recent.remove(&path);
-                        self.home.forget(&path);
-                        self.notify_error(format!("“{}” no longer exists", path.display()));
+    /// Stops the egui handler from reacting to `command`'s key, or starts again.
+    pub fn set_shortcut_enabled(&mut self, command: menu::Command, enabled: bool) {
+        if enabled {
+            self.shortcuts_off.remove(&command);
+        } else {
+            self.shortcuts_off.insert(command);
+        }
+    }
+
+    /// The Editor of the Map showing, for tests; `None` on Home.
+    pub fn active_editor_mut(&mut self) -> Option<&mut Editor> {
+        if self.home_active() {
+            return None;
+        }
+        self.tabs.get_mut(self.active).map(|tab| &mut tab.editor)
+    }
+
+    /// What the menus depend on, from the active tab.
+    fn menu_state(&self) -> menu::State {
+        let mut state = menu::State {
+            updates_at_startup: self.updates.enabled() == Some(true),
+            checking_for_updates: self.updates.is_checking(),
+            tabs: self
+                .tabs
+                .iter()
+                .enumerate()
+                .map(|(index, tab)| menu::TabState {
+                    name: tab.document.name(),
+                    active: !self.home_active() && index == self.active,
+                })
+                .collect(),
+            ..menu::State::default()
+        };
+        if self.home_active() {
+            return state;
+        }
+        let editor = &self.tab().editor;
+        state.has_map = true;
+        state.node_edit = editor.node_edit().is_some();
+        state.nodes_selected = editor
+            .node_edit()
+            .is_some_and(|edit| !edit.nodes.is_empty());
+        state.gesture_open = editor.gesture_open();
+        state.can_undo = editor.can_undo();
+        state.undo_label = editor.undo_label().map(str::to_owned);
+        state.can_redo = editor.can_redo();
+        state.redo_label = editor.redo_label().map(str::to_owned);
+        state.has_selection = !editor.selection().is_empty();
+        state.can_select_all = !editor.active_layer_objects().is_empty();
+        state.has_active_layer = editor
+            .active_layer()
+            .is_some_and(|id| editor.map.contains(id));
+        state.can_combine = editor.can_combine();
+        state.can_split = editor.can_split();
+        state.can_shuffle = editor.can_shuffle();
+        state.can_re_export = self.re_export_target().is_some() && self.export_run.is_none();
+        state
+    }
+
+    /// The menu bar, drawn from [`menu::menus`].
+    fn menu_bar(&mut self, ui: &mut egui::Ui) {
+        let menus = menu::menus(&self.menu_state());
+        let mut chosen = None;
+        egui::MenuBar::new().ui(ui, |ui| {
+            for menu in &menus {
+                ui.menu_button(menu.title, |ui| {
+                    for entry in &menu.entries {
+                        match entry {
+                            menu::Entry::Separator => {
+                                ui.separator();
+                            }
+                            menu::Entry::OpenRecent => {
+                                ui.menu_button("Open Recent", |ui| {
+                                    if let Some(path) = self.recent.menu(ui) {
+                                        ui.close();
+                                        self.open_recent(&path);
+                                    }
+                                });
+                            }
+                            menu::Entry::Item(item) => {
+                                if menu_item(ui, item) {
+                                    chosen = Some(item.command);
+                                    ui.close();
+                                }
+                            }
+                        }
                     }
+                });
+            }
+        });
+        if let Some(command) = chosen {
+            self.run_command(command);
+        }
+    }
+
+    fn open_recent(&mut self, path: &Path) {
+        if path.is_file() {
+            self.open_path(path);
+        } else {
+            self.recent.remove(path);
+            self.home.forget(path);
+            self.notify_error(format!("“{}” no longer exists", path.display()));
+        }
+    }
+
+    fn open_export_dialog(&mut self) {
+        let tab = &self.tabs[self.active];
+        let directory = tab.document.path().and_then(Path::parent);
+        self.export_dialog.open_with(
+            &tab.editor.map.export_settings,
+            directory.map(Path::to_path_buf),
+        );
+    }
+
+    /// Runs a menu command: from a click on the menu bar, or from its key.
+    pub fn run_command(&mut self, command: menu::Command) {
+        use menu::Command as C;
+        match command {
+            C::NewMap | C::NewTab => self.new_map_dialog.open = true,
+            C::Open => self.show_open_dialog(),
+            C::Home => self.show_slot(tab_strip::Slot::Home),
+            C::ToggleLayers => self.shell.toggle_layers(),
+            C::ToggleProperties => self.shell.toggle_properties(),
+            C::HidePanels => self.shell.toggle_panels(),
+            C::Tab(n) => self.show_tab_number(n),
+            C::ShowTab(index) => self.focus_tab(index),
+            C::Credits => self.credits.open = true,
+            C::CheckForUpdates => self.updates.start(true),
+            C::ToggleUpdateCheck => {
+                let on = self.updates.enabled() == Some(true);
+                self.updates.set_enabled(!on);
+            }
+            C::CloseTab => {
+                if self.current_slot().can_close() {
+                    self.close_tab(self.active);
                 }
-            });
-            ui.separator();
-            let has_tab = !self.home_active();
-            if ui.add_enabled(has_tab, egui::Button::new("Save")).clicked() {
+            }
+            _ => self.run_map_command(command),
+        }
+    }
+
+    /// The commands that act on the Map showing; they do nothing on Home.
+    fn run_map_command(&mut self, command: menu::Command) {
+        use menu::Command as C;
+        if self.home_active() {
+            return;
+        }
+        match command {
+            C::Save => {
                 self.save();
             }
-            if ui
-                .add_enabled(has_tab, egui::Button::new("Save As…"))
-                .clicked()
-            {
-                self.show_save_dialog();
+            C::SaveAs => self.show_save_dialog(),
+            C::ExportPng => self.open_export_dialog(),
+            C::ReExport => self.re_export(),
+            _ => {}
+        }
+        let tab = &mut self.tabs[self.active];
+        let editor = &mut tab.editor;
+        match command {
+            C::LabelStyles => tab.label_styles.open = !tab.label_styles.open,
+            C::Undo => editor.undo(),
+            C::Redo => editor.redo(),
+            C::Delete => editor.delete_selection(),
+            C::SelectAll => editor.select_all(),
+            C::Deselect => editor.deselect(),
+            C::DeleteNodes => editor.delete_selected_nodes(),
+            C::FinishNodeEdit => editor.leave_node_edit(),
+            C::CancelGesture => editor.cancel_gesture(),
+            C::ZoomIn => tab.canvas_view.request_zoom(zoom::Zoom::In),
+            C::ZoomOut => tab.canvas_view.request_zoom(zoom::Zoom::Out),
+            C::ZoomFit => tab.canvas_view.request_zoom(zoom::Zoom::Fit),
+            C::ZoomSelection => tab.canvas_view.request_zoom(zoom::Zoom::Selection),
+            C::ActualSize => tab.canvas_view.request_zoom(zoom::Zoom::Percent(1.0)),
+            C::EmbedAssets => {
+                editor.end_gesture();
+                if !editor.embed_used_assets() {
+                    editor.info("Nothing was embedded");
+                }
             }
-            if ui
-                .add_enabled(has_tab, egui::Button::new("Close Tab"))
-                .clicked()
-            {
-                self.close_tab(self.active);
-                ui.close();
+            C::UpdateFromPacks => {
+                editor.end_gesture();
+                if !editor.update_from_packs() {
+                    editor.info("Nothing was updated: no installed pack has newer art");
+                }
             }
-            ui.separator();
-            if ui
-                .add_enabled(has_tab, egui::Button::new("Export PNG…"))
-                .clicked()
-            {
-                let tab = &self.tabs[self.active];
-                let directory = tab.document.path().and_then(Path::parent);
-                self.export_dialog.open_with(
-                    &tab.editor.map.export_settings,
-                    directory.map(Path::to_path_buf),
-                );
-                ui.close();
+            C::NewLayer => {
+                editor.new_layer();
             }
-            let again = has_tab && self.re_export_target().is_some() && self.export_run.is_none();
-            if ui
-                .add_enabled(again, egui::Button::new("Re-export"))
-                .clicked()
-            {
-                self.re_export();
-                ui.close();
+            C::DeleteLayer => editor.delete_active_layer(),
+            C::Union => editor.union_selection(),
+            C::Subtract => editor.subtract_selection(),
+            C::SplitApart => editor.split_selection(),
+            C::ShuffleVariant => {
+                editor.shuffle_variants();
             }
-        });
-        ui.menu_button("Help", |ui| {
-            if ui.button("Credits…").clicked() {
-                self.credits.open = true;
-                ui.close();
-            }
-            ui.separator();
-            let mut automatic = self.updates.enabled() == Some(true);
-            if ui
-                .checkbox(&mut automatic, "Check for updates at startup")
-                .changed()
-            {
-                self.updates.set_enabled(automatic);
-            }
-            let idle = !self.updates.is_checking();
-            if ui
-                .add_enabled(idle, egui::Button::new("Check for Updates Now"))
-                .clicked()
-            {
-                self.updates.start(true);
-                ui.close();
-            }
-        });
+            _ => {}
+        }
     }
 
     /// File dialogs and the unsaved-changes question.
@@ -1169,37 +1289,32 @@ impl MapMakerApp {
         }
         use egui::{Key, KeyboardShortcut, Modifiers};
         let shortcut = |modifiers, key| KeyboardShortcut::new(modifiers, key);
+        let off = self.shortcuts_off.clone();
         // The panel shortcuts come first: egui ignores extra Alt, so Cmd+Alt+1 would
         // otherwise also match Cmd+1 (Home) below.
-        ctx.input_mut(|input| {
-            let both = Modifiers::COMMAND | Modifiers::ALT;
-            if input.consume_shortcut(&shortcut(both, Key::Num1)) {
-                self.shell.toggle_layers();
-            }
-            if input.consume_shortcut(&shortcut(both, Key::Num2)) {
-                self.shell.toggle_properties();
-            }
-            if input.consume_key(Modifiers::NONE, Key::Tab) {
-                self.shell.toggle_panels();
-            }
-        });
-        let (new_map, number, step) = ctx.input_mut(|input| {
-            let new_map = input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::T));
-            let number = [
-                Key::Num1,
-                Key::Num2,
-                Key::Num3,
-                Key::Num4,
-                Key::Num5,
-                Key::Num6,
-                Key::Num7,
-                Key::Num8,
-                Key::Num9,
+        let panels = ctx.input_mut(|input| {
+            [
+                menu::Command::ToggleLayers,
+                menu::Command::ToggleProperties,
+                menu::Command::HidePanels,
             ]
-            .iter()
-            .zip(1u8..)
-            .find(|(key, _)| input.consume_shortcut(&shortcut(Modifiers::COMMAND, **key)))
-            .map(|(_, n)| n);
+            .into_iter()
+            .filter(|&command| consume(input, &off, command))
+            .collect::<Vec<_>>()
+        });
+        for command in panels {
+            self.run_command(command);
+        }
+        let (new_map, number, step) = ctx.input_mut(|input| {
+            let new_map = consume(input, &off, menu::Command::NewTab);
+            let number = (1u8..=9).find(|&n| {
+                let command = if n == 1 {
+                    menu::Command::Home
+                } else {
+                    menu::Command::Tab(n)
+                };
+                consume(input, &off, command)
+            });
             // Shift first: plain Ctrl+Tab would also match it.
             let step = if input
                 .consume_shortcut(&shortcut(Modifiers::CTRL | Modifiers::SHIFT, Key::Tab))
@@ -1224,14 +1339,12 @@ impl MapMakerApp {
         }
         let (new_map, open, save, save_as, close_tab) = ctx.input_mut(|input| {
             // Cmd+Shift+N is New Layer, below.
-            let new_map = !input.modifiers.shift
-                && input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::N));
+            let new_map = !input.modifiers.shift && consume(input, &off, menu::Command::NewMap);
             // Shift+S first: plain Cmd+S would also match it.
-            let save_as =
-                input.consume_shortcut(&shortcut(Modifiers::COMMAND | Modifiers::SHIFT, Key::S));
-            let save = input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::S));
-            let open = input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::O));
-            let close_tab = input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::W));
+            let save_as = consume(input, &off, menu::Command::SaveAs);
+            let save = consume(input, &off, menu::Command::Save);
+            let open = consume(input, &off, menu::Command::Open);
+            let close_tab = consume(input, &off, menu::Command::CloseTab);
             (new_map, open, save, save_as, close_tab)
         });
         if new_map {
@@ -1253,43 +1366,53 @@ impl MapMakerApp {
         } else if save {
             self.save();
         }
-        let zoom = ctx.input_mut(|input| {
-            if input.consume_key(Modifiers::COMMAND, Key::Plus)
-                || input.consume_key(Modifiers::COMMAND, Key::Equals)
-            {
-                Some(zoom::Zoom::In)
-            } else if input.consume_key(Modifiers::COMMAND, Key::Minus) {
-                Some(zoom::Zoom::Out)
-            } else if input.consume_key(Modifiers::SHIFT, Key::Num0) {
-                Some(zoom::Zoom::Percent(1.0))
-            } else if input.consume_key(Modifiers::SHIFT, Key::Num1) {
-                Some(zoom::Zoom::Fit)
-            } else if input.consume_key(Modifiers::SHIFT, Key::Num2) {
-                Some(zoom::Zoom::Selection)
-            } else {
-                None
+        let commands = ctx.input_mut(|input| {
+            // More specific first: egui ignores an extra Shift or Alt, so ⌘A would also read
+            // as ⇧⌘A, and ⇧0 as plain 0.
+            let mut commands = Vec::new();
+            for command in [
+                menu::Command::ExportPng,
+                menu::Command::Deselect,
+                menu::Command::SelectAll,
+                menu::Command::ActualSize,
+                menu::Command::ZoomFit,
+                menu::Command::ZoomSelection,
+                menu::Command::ZoomIn,
+                menu::Command::ZoomOut,
+            ] {
+                if consume(input, &off, command) {
+                    commands.push(command);
+                }
             }
+            // ⌘= is the same key as ⌘+ on most keyboards.
+            if !off.contains(&menu::Command::ZoomIn)
+                && input.consume_key(Modifiers::COMMAND, Key::Equals)
+            {
+                commands.push(menu::Command::ZoomIn);
+            }
+            commands
         });
-        if let Some(zoom) = zoom {
-            self.tabs[self.active].canvas_view.request_zoom(zoom);
+        for command in commands {
+            self.run_command(command);
         }
         let editor = &mut self.tabs[self.active].editor;
         ctx.input_mut(|input| {
-            if editor.node_edit().is_some() && input.consume_key(Modifiers::NONE, Key::Enter) {
+            if editor.node_edit().is_some() && consume(input, &off, menu::Command::FinishNodeEdit) {
                 editor.leave_node_edit();
             }
-            if input.consume_shortcut(&shortcut(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z))
+            if consume(input, &off, menu::Command::Redo)
                 || input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::Y))
             {
                 editor.redo();
-            } else if input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::Z)) {
+            } else if consume(input, &off, menu::Command::Undo) {
                 editor.undo();
             }
-            if input.consume_shortcut(&shortcut(Modifiers::COMMAND | Modifiers::SHIFT, Key::N)) {
+            if consume(input, &off, menu::Command::NewLayer) {
                 editor.new_layer();
             }
-            if input.consume_key(Modifiers::NONE, Key::Delete)
-                || input.consume_key(Modifiers::NONE, Key::Backspace)
+            if consume(input, &off, menu::Command::Delete)
+                || (!off.contains(&menu::Command::Delete)
+                    && input.consume_key(Modifiers::NONE, Key::Delete))
             {
                 if editor.node_edit().is_some() {
                     editor.delete_selected_nodes();
@@ -1297,7 +1420,7 @@ impl MapMakerApp {
                     editor.delete_selection();
                 }
             }
-            if input.consume_key(Modifiers::NONE, Key::Escape) {
+            if consume(input, &off, menu::Command::CancelGesture) {
                 if editor.gesture_open() {
                     editor.cancel_gesture();
                 } else if editor.node_edit().is_some() {
@@ -1327,43 +1450,6 @@ impl MapMakerApp {
                 };
                 editor.brush_size = (editor.brush_size * step)
                     .clamp(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end());
-            }
-        });
-    }
-
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            self.file_menu(ui);
-            ui.separator();
-            if self.home_active() {
-                return;
-            }
-            let Some(tab) = self.tabs.get_mut(self.active) else {
-                return;
-            };
-            let editor = &mut tab.editor;
-            ui.toggle_value(&mut tab.label_styles.open, "Label styles");
-            ui.separator();
-            let undo_hint = editor.undo_label().map(|l| format!("Undo {l}"));
-            let undo = ui.add_enabled(editor.can_undo(), egui::Button::new("Undo"));
-            if undo.on_hover_text(undo_hint.unwrap_or_default()).clicked() {
-                editor.undo();
-            }
-            let redo_hint = editor.redo_label().map(|l| format!("Redo {l}"));
-            let redo = ui.add_enabled(editor.can_redo(), egui::Button::new("Redo"));
-            if redo.on_hover_text(redo_hint.unwrap_or_default()).clicked() {
-                editor.redo();
-            }
-            ui.separator();
-            if ui.button("New Layer").clicked() {
-                editor.new_layer();
-            }
-            let has_selection = !editor.selection().is_empty();
-            if ui
-                .add_enabled(has_selection, egui::Button::new("Delete"))
-                .clicked()
-            {
-                editor.delete_selection();
             }
         });
     }
@@ -1495,6 +1581,78 @@ impl MapMakerApp {
     }
 }
 
+/// Whether to show ⌘ in shortcut labels rather than Ctrl.
+const MAC: bool = cfg!(target_os = "macos");
+
+/// Draws one menu item; returns whether it was chosen.
+fn menu_item(ui: &mut egui::Ui, item: &menu::Item) -> bool {
+    match item.checked {
+        Some(on) => {
+            let mut value = on;
+            ui.add_enabled(item.enabled, egui::Checkbox::new(&mut value, &item.title))
+                .changed()
+        }
+        None => {
+            let mut button = egui::Button::new(&item.title);
+            if let Some(shortcut) = item.shortcut {
+                button = button.shortcut_text(shortcut.label(MAC));
+            }
+            ui.add_enabled(item.enabled, button).clicked()
+        }
+    }
+}
+
+/// The egui key for a menu key.
+fn egui_key(key: menu::Key) -> egui::Key {
+    use menu::Key as K;
+    match key {
+        K::A => egui::Key::A,
+        K::E => egui::Key::E,
+        K::N => egui::Key::N,
+        K::O => egui::Key::O,
+        K::S => egui::Key::S,
+        K::T => egui::Key::T,
+        K::W => egui::Key::W,
+        K::Z => egui::Key::Z,
+        K::Plus => egui::Key::Plus,
+        K::Minus => egui::Key::Minus,
+        K::Num(0) => egui::Key::Num0,
+        K::Num(1) => egui::Key::Num1,
+        K::Num(2) => egui::Key::Num2,
+        K::Num(3) => egui::Key::Num3,
+        K::Num(4) => egui::Key::Num4,
+        K::Num(5) => egui::Key::Num5,
+        K::Num(6) => egui::Key::Num6,
+        K::Num(7) => egui::Key::Num7,
+        K::Num(8) => egui::Key::Num8,
+        K::Num(_) => egui::Key::Num9,
+        K::Tab => egui::Key::Tab,
+        K::Enter => egui::Key::Enter,
+        K::Escape => egui::Key::Escape,
+        K::Backspace => egui::Key::Backspace,
+    }
+}
+
+/// Takes the key press that runs `command`, unless its shortcut is switched off. The key is
+/// read from the menu model, so the label and the handling are one binding.
+fn consume(
+    input: &mut egui::InputState,
+    off: &HashSet<menu::Command>,
+    command: menu::Command,
+) -> bool {
+    let Some(shortcut) = menu::shortcut(command).filter(|_| !off.contains(&command)) else {
+        return false;
+    };
+    let mut modifiers = egui::Modifiers::NONE;
+    modifiers.command = shortcut.command;
+    modifiers.shift = shortcut.shift;
+    modifiers.alt = shortcut.alt;
+    input.consume_shortcut(&egui::KeyboardShortcut::new(
+        modifiers,
+        egui_key(shortcut.key),
+    ))
+}
+
 /// Why a Map file's journal is offered only as a copy, when its save generation differs.
 const CHANGED_SINCE: &str = "The file was replaced or saved elsewhere since they were made.";
 
@@ -1616,7 +1774,7 @@ impl eframe::App for MapMakerApp {
             .exact_size(theme::metrics::TITLE_BAR_WITH_TABS)
             .frame(strip)
             .show(ui, |ui| self.tab_strip(ui, !dialog_open));
-        egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
+        egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui));
         if self.home_active() {
             self.home_screen(ui);
             self.journal(&ctx);
