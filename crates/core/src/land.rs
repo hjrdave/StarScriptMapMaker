@@ -15,7 +15,7 @@ use crate::geometry::{MultiPolygon, NodeRef, Point, Polygon};
 use crate::id::Id;
 use crate::map::Map;
 use crate::node::{Node, ObjectKind};
-use crate::roughness::RoughnessCache;
+use crate::roughness::{RoughnessCache, roughen};
 
 /// Chaikin passes over a stroke's centreline before it becomes a region. Each pass doubles
 /// the points and rounds every corner.
@@ -245,6 +245,52 @@ pub fn water_command(
             fill: None,
         },
     }))
+}
+
+/// The live preview of a brush stroke: the area, with its rough shoreline, that `command` (from
+/// [`brush_command`] or [`water_command`]) adds to the Map (an add) or takes away (an erase).
+/// It is made from the same unions and differences the Command runs, then roughened as a
+/// render does, so the outline the user sees while painting is the one the stroke commits.
+/// `None` for any other Command, or when nothing changes.
+pub fn preview_area(
+    map: &Map,
+    roughness: &mut RoughnessCache,
+    command: &Command,
+) -> Option<MultiPolygon> {
+    let area = match command {
+        Command::CreateLandmass { geometry, .. } | Command::CreateLake { geometry, .. } => {
+            roughen(geometry, &map.defaults.roughness)
+        }
+        Command::AddRegion { id, region } => {
+            let geometry = outline_of(map, *id)?;
+            let after = roughen(&union(geometry, region), map.roughness(*id)?);
+            difference(&after, &*roughness.outline(map, *id)?)
+        }
+        Command::SubtractRegion { ids, region } => {
+            let mut removed = MultiPolygon::default();
+            for &id in ids {
+                let Some(geometry) = outline_of(map, id) else {
+                    continue;
+                };
+                if !intersects(geometry, region) {
+                    continue;
+                }
+                let before = roughness.outline(map, id)?;
+                let after = roughen(&difference(geometry, region), map.roughness(id)?);
+                removed = union(&removed, &difference(&before, &after));
+            }
+            removed
+        }
+        _ => return None,
+    };
+    (!area.is_empty()).then_some(area)
+}
+
+fn outline_of(map: &Map, id: Id) -> Option<&MultiPolygon> {
+    match map.node(id)? {
+        Node::Object(o) => o.kind.geometry(),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, thiserror::Error)]
