@@ -174,6 +174,79 @@ pub fn brush_command(
     }))
 }
 
+/// What a water brush stroke does, given the editor's Selection:
+///
+/// - **Add** merges into the selected Lake (the last selected, if several). With none
+///   selected, it merges into the topmost Lake under the stroke's start, or creates a Lake with
+///   id `new_id` in `layer` if the stroke starts anywhere else. Narrow strokes make rivers and
+///   wide ones lakes; both are Lakes, drawn above land.
+/// - **Erase** cuts the stroke out of the selected Lakes, or with none selected, out of every
+///   Lake it touches.
+///
+/// Returns `None` when an erase touches nothing, and [`BrushError::NoLayer`] when a stroke
+/// needs a Layer and there is none. Locked targets are kept, so the Command fails and says why.
+pub fn water_command(
+    map: &Map,
+    roughness: &mut RoughnessCache,
+    selection: &[Id],
+    layer: Option<Id>,
+    stroke: BrushStroke,
+    new_id: Id,
+) -> Result<Option<Command>, BrushError> {
+    let is_lake = |id: Id| matches!(map.node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Lake(_)));
+    let BrushStroke {
+        region,
+        start,
+        erase,
+    } = stroke;
+
+    if erase {
+        let mut ids: Vec<Id> = selection
+            .iter()
+            .copied()
+            .filter(|&id| is_lake(id))
+            .collect();
+        if ids.is_empty() {
+            ids = map
+                .draw_order()
+                .into_iter()
+                .filter(|&id| {
+                    matches!(map.node(id), Some(Node::Object(o))
+                        if matches!(o.kind, ObjectKind::Lake(_))
+                            && intersects(o.kind.geometry().expect("a Lake"), &region))
+                })
+                .collect();
+        }
+        return Ok((!ids.is_empty()).then_some(Command::SubtractRegion { ids, region }));
+    }
+
+    let target = selection
+        .iter()
+        .rev()
+        .copied()
+        .find(|&id| is_lake(id))
+        .or_else(|| {
+            map.draw_order().into_iter().rev().find(|&id| {
+                is_lake(id)
+                    && roughness
+                        .outline(map, id)
+                        .is_some_and(|outline| outline.contains(start))
+            })
+        });
+    Ok(Some(match target {
+        Some(id) => Command::AddRegion { id, region },
+        None => Command::CreateLake {
+            id: new_id,
+            parent: layer
+                .filter(|&id| matches!(map.node(id), Some(Node::Layer(_))))
+                .ok_or(BrushError::NoLayer)?,
+            index: None,
+            geometry: region,
+            fill: None,
+        },
+    }))
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum BrushError {
     #[error("choose a Layer to paint land into")]
