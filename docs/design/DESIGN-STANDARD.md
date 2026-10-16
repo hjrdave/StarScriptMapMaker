@@ -118,7 +118,7 @@ Floating, bottom-centre of the canvas area. Groups: Select V, Pan H │ Land Bru
 
 ### Zoom control
 
-Bottom-right: `−` | percentage | `+`. The percentage button shows the percentage only, with no extra icon. Its dropdown offers an editable % field, Zoom to Fit, Zoom to Selection, and the preset levels. ⌘+ (also ⌘=) and ⌘− zoom the **Canvas only**; they never scale the UI.
+Bottom-right: a single dark rounded pill (subtle border, elevation e2) in three sections separated by thin vertical dividers: `−` | percentage | `+`. The percentage is plain text in the middle section, with no raised inner button and no extra icon. The pill keeps a fixed width so it doesn't change size as the percentage changes. Its dropdown offers an editable % field, Zoom to Fit, Zoom to Selection, and the preset levels. ⌘+ (also ⌘=) and ⌘− zoom the **Canvas only**; they never scale the UI.
 
 ### Alerts (toasts)
 
@@ -168,7 +168,7 @@ Changes the owner has decided after the handoff. The sections above already refl
 | Layer management is entirely in the Layers panel (lock, delete, move, rename, groups, linking); no separate layer-properties menu | Handoff had Layer-level fields in Properties | #205, #206 | Open |
 | Stamp and Land Brush have distinct, self-explanatory icons (stamp icon, land icon) | Handoff reused one icon | #208 | Open |
 | A Water brush for lakes and rivers is a tool | Handoff only had Lake via the Land Brush's "Paint into" | #209 | Open |
-| Zoom button shows the percentage only | Mockup showed a trailing icon | #211 | Open |
+| Zoom control is one pill with `−` / percentage / `+` in three sections with dividers, no icon | Mockup showed a raised percentage button with a trailing icon | #211 | Open |
 | Text gets Kerning, Tracking, Line height and Arch | Handoff had Tracking and Line height only | #213 | Open |
 | Landmass Roughness stays smooth to drag at high values | — | #220 | Open |
 | Map cards are Figma-style (thumbnail, name, edited time) with Delete (confirmed) and Show in Finder | Handoff cards also showed size and an "Open in tab" chip on the face | #228 | Open |
