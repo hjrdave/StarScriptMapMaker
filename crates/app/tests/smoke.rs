@@ -76,13 +76,22 @@ fn the_theme_is_installed_dark_by_default() {
     assert_eq!(style.text_styles[&egui::TextStyle::Body].size, 12.0);
 }
 
+/// The Layers panel's row for `label`. The Properties panel on the right names the active Layer
+/// too, so the same label can match twice; the Layers panel is the leftmost.
+fn layers_row<'h>(harness: &'h Harness<'_, MapMakerApp>, label: &'h str) -> egui_kittest::Node<'h> {
+    harness
+        .query_all_by_label(label)
+        .min_by(|a, b| a.rect().min.x.total_cmp(&b.rect().min.x))
+        .unwrap_or_else(|| panic!("no node labelled {label:?}"))
+}
+
 #[test]
 fn a_locked_layer_refuses_edits_with_a_visible_message() {
     let mut harness = app();
     harness.get_by_label("New Layer").click();
     harness.run();
     // Lock and eye show on hover; the Layers panel lists the new, topmost Layer first.
-    harness.get_by_label("Layer 5").hover();
+    layers_row(&harness, "Layer 5").hover();
     harness.run();
     harness.query_all_by_label("Lock").next().unwrap().click();
     harness.run();
@@ -90,7 +99,7 @@ fn a_locked_layer_refuses_edits_with_a_visible_message() {
     assert!(harness.state().editor().map.node(layer).unwrap().locked());
 
     // The hide toggle is refused, and the reason shows in the status bar.
-    harness.get_by_label("Layer 5").hover();
+    layers_row(&harness, "Layer 5").hover();
     harness.run();
     harness.query_all_by_label("Hide").next().unwrap().click();
     harness.run();
