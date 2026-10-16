@@ -30,7 +30,7 @@ fn app() -> Harness<'static, MapMakerApp> {
 /// The test pack installed, with one of its Stamps placed on the Map.
 fn with_stamp(harness: &mut Harness<'static, MapMakerApp>) {
     let roots = PackRoots {
-        built_in: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../core/tests/packs"),
+        built_in: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/core/tests/packs"),
         user: None,
     };
     let (library, problems) = PackLibrary::load(&roots);

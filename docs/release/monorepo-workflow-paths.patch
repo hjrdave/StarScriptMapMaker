@@ -1,0 +1,14 @@
+Apply with `git apply docs/release/monorepo-workflow-paths.patch` (owner review required).
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -5 +5 @@
+-# (crates/app/src/update.rs). Nothing is signed. A tag with a suffix (v1.2.3-rc.1) is
++# (apps/starscript/src/update.rs). Nothing is signed. A tag with a suffix (v1.2.3-rc.1) is
+@@ -55 +55 @@
+-        working-directory: crates/app
++        working-directory: apps/starscript
+--- a/.github/workflows/nightly.yml
++++ b/.github/workflows/nightly.yml
+@@ -47 +47 @@
+-        working-directory: crates/app
++        working-directory: apps/starscript

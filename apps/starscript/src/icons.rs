@@ -1,5 +1,5 @@
 //! The UI icon set (docs/design/ui-handoff/HANDOFF.md, Icons): one SVG per icon on a 16 pt
-//! grid in `crates/app/icons/`, rasterised with resvg into a 1x atlas (16 px cells, 1 px
+//! grid in `apps/starscript/icons/`, rasterised with resvg into a 1x atlas (16 px cells, 1 px
 //! strokes) and a 2x atlas (32 px cells, 1.5 pt = 3 px strokes). Glyphs are white on
 //! transparent and tinted when drawn.
 //!
