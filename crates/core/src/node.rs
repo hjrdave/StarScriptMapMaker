@@ -73,6 +73,10 @@ pub struct Object {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     pub locked: bool,
+    /// Whether the Object belongs to the Canvas (and is clipped at its edge) or sits on the
+    /// pasteboard. Changed only by dragging, never by resizing the Canvas.
+    #[serde(default, skip_serializing_if = "Membership::is_default")]
+    pub membership: Membership,
     pub kind: ObjectKind,
     #[serde(flatten)]
     pub extra: Extra,
@@ -83,9 +87,28 @@ impl Object {
         Self {
             name: None,
             locked: false,
+            membership: Membership::default(),
             kind,
             extra: Extra::new(),
         }
+    }
+}
+
+/// Which board an Object belongs to. A member is clipped at the Canvas edge and exported;
+/// a pasteboard Object shows in full around the Canvas and is not exported.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Membership {
+    /// Belongs to the Canvas. Files saved before membership existed get this.
+    #[default]
+    Canvas,
+    /// Belongs to no board.
+    Pasteboard,
+}
+
+impl Membership {
+    fn is_default(&self) -> bool {
+        *self == Membership::default()
     }
 }
 

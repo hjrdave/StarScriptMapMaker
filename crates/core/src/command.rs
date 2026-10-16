@@ -16,7 +16,7 @@ use crate::id::Id;
 use crate::label::{Label, LabelStyle, LabelStyles};
 use crate::land;
 use crate::map::{Map, MapDefaults, Subtree};
-use crate::node::{Lake, Landmass, Layer, Node, Object, ObjectKind, Stamp};
+use crate::node::{Lake, Landmass, Layer, Membership, Node, Object, ObjectKind, Stamp};
 use crate::op::{Op, OpError, Property};
 use crate::roughness::Roughness;
 use crate::shore::{ShoreKind, ShoreStyle};
@@ -173,6 +173,20 @@ pub enum Command {
     SplitApart {
         id: Id,
         new_ids: Vec<Id>,
+    },
+    /// Resizes the Canvas to `width` by `height` with its top-left corner at the workspace
+    /// position `origin`. Objects keep their positions, size and membership, even when they
+    /// end up entirely outside the Canvas. Locks don't matter: no Object is touched.
+    ResizeCanvas {
+        origin: Point,
+        width: u32,
+        height: u32,
+    },
+    /// Sets whether Objects belong to the Canvas or sit on the pasteboard. Only a drag
+    /// changes membership; resizing the Canvas never does.
+    SetMembership {
+        ids: Vec<Id>,
+        membership: Membership,
     },
     /// Sets the fill colour of Landmasses and Lakes.
     SetFill {
@@ -370,6 +384,10 @@ pub enum CommandError {
     NotAStamp(Id),
     #[error("{0} is not an Object")]
     NotAnObject(Id),
+    #[error("the Canvas needs a width and height of at least 1, not {width} by {height}")]
+    InvalidCanvasSize { width: u32, height: u32 },
+    #[error("the Canvas origin {0:?} is not finite")]
+    InvalidCanvasOrigin(Point),
     #[error("cannot embed: {0}")]
     InvalidEmbed(String),
     #[error("invalid Stamp: {0}")]
@@ -411,6 +429,8 @@ impl Command {
             Command::Union { .. } => "Union",
             Command::Subtract { .. } => "Subtract",
             Command::SplitApart { .. } => "Split Apart",
+            Command::ResizeCanvas { .. } => "Resize Canvas",
+            Command::SetMembership { .. } => "Change Board",
             Command::SetFill { .. } => "Change Fill",
             Command::SetRoughness { .. } => "Change Roughness",
             Command::SetDefaultRoughness { .. } => "Change Default Roughness",
@@ -625,6 +645,40 @@ impl Command {
             Command::Union { ids } => union_landmasses(map, ids),
             Command::Subtract { ids } => subtract_landmasses(map, ids),
             Command::SplitApart { id, new_ids } => split_apart(map, *id, new_ids),
+            Command::ResizeCanvas {
+                origin,
+                width,
+                height,
+            } => {
+                if *width == 0 || *height == 0 {
+                    return Err(CommandError::InvalidCanvasSize {
+                        width: *width,
+                        height: *height,
+                    });
+                }
+                if !origin.iter().all(|c| c.is_finite()) {
+                    return Err(CommandError::InvalidCanvasOrigin(*origin));
+                }
+                Ok(vec![Op::ResizeCanvas {
+                    origin: *origin,
+                    width: *width,
+                    height: *height,
+                }])
+            }
+            Command::SetMembership { ids, membership } => {
+                let mut seen = HashSet::new();
+                let mut ops = Vec::with_capacity(ids.len());
+                for &id in ids {
+                    if !matches!(existing(map, id)?, Node::Object(_)) {
+                        return Err(CommandError::NotAnObject(id));
+                    }
+                    unlocked(map, id)?;
+                    if seen.insert(id) {
+                        ops.push(set(id, Property::Membership(*membership)));
+                    }
+                }
+                Ok(ops)
+            }
             Command::SetFill { ids, fill } => {
                 let ids = outlined(map, ids)?;
                 Ok(ids

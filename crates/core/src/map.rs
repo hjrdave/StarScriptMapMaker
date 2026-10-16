@@ -11,6 +11,7 @@ use crate::color::Color;
 use crate::embedded::Embedded;
 use crate::export::ExportSettings;
 use crate::extra::Extra;
+use crate::geometry::{Point, Rect};
 use crate::id::Id;
 use crate::label::{LabelStyles, ResolvedLabel};
 use crate::node::{Landmass, Node, Object, ObjectKind};
@@ -24,6 +25,12 @@ pub struct Canvas {
     pub width: u32,
     /// Height in nominal pixels (Canvas units).
     pub height: u32,
+    /// The workspace position of the Canvas's top-left corner. Object positions are in
+    /// workspace coordinates, so moving the origin (as when resizing from the left or top
+    /// edge) never shifts an Object. Files saved before it existed have it at the workspace
+    /// origin.
+    #[serde(default, skip_serializing_if = "is_workspace_origin")]
+    pub origin: Point,
     pub scale: Scale,
     /// The water colour and texture behind the Objects. Files saved before it existed get
     /// the default.
@@ -33,11 +40,27 @@ pub struct Canvas {
     pub extra: Extra,
 }
 
+fn is_workspace_origin(origin: &Point) -> bool {
+    *origin == [0.0, 0.0]
+}
+
 impl Canvas {
+    /// The Canvas rectangle in workspace coordinates.
+    pub fn rect(&self) -> Rect {
+        Rect {
+            min: self.origin,
+            max: [
+                self.origin[0] + f64::from(self.width),
+                self.origin[1] + f64::from(self.height),
+            ],
+        }
+    }
+
     pub fn new(width: u32, height: u32, scale: Scale) -> Self {
         Self {
             width,
             height,
+            origin: [0.0, 0.0],
             scale,
             background: Background::default(),
             extra: Extra::new(),
