@@ -134,6 +134,72 @@ fn new_map_shows_the_real_world_coverage() {
     harness.get_by_label("1,024 × 768 mi");
 }
 
+fn template_dialog() -> Harness<'static, NewMapDialog> {
+    let mut dialog = NewMapDialog::default();
+    dialog.open = true;
+    dialog_harness(
+        |ui, dialog: &mut NewMapDialog| {
+            dialog.show(ui.ctx());
+        },
+        dialog,
+    )
+}
+
+#[test]
+fn new_map_offers_every_template_with_the_starter_selected() {
+    let mut harness = template_dialog();
+    harness.run();
+    assert!(harness.state().templates().len() >= 6);
+    assert_eq!(harness.state().templates()[0].id(), "starter");
+    let starter = harness.state().templates()[0].name().to_owned();
+    assert_eq!(harness.state().selected_name(), Some(starter.as_str()));
+    for template in harness.state().templates() {
+        harness.get_by_label(template.name());
+    }
+    harness.get_by_label(&format!("Preview: {starter}"));
+}
+
+#[test]
+fn picking_a_template_card_updates_the_preview_and_the_map() {
+    let mut harness = template_dialog();
+    harness.run();
+    let names: Vec<String> = harness
+        .state()
+        .templates()
+        .iter()
+        .map(|t| t.name().to_owned())
+        .collect();
+    for name in names {
+        harness.get_by_label(&name).click();
+        harness.run();
+        harness.get_by_label(&format!("Preview: {name}"));
+        assert_eq!(harness.state().selected_name(), Some(name.as_str()));
+        let template = harness.state().chosen_template().unwrap();
+        assert_eq!(template.name(), name);
+        let (map, _, problem) = ssmap_app::new_map::start_map_from(Ok(template.clone()), canvas());
+        assert_eq!(problem, None);
+        assert_eq!(map.canvas.background, *template.background());
+    }
+}
+
+#[test]
+fn creating_from_each_template_opens_a_map_with_its_background() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut harness = app(dir.path());
+    let (templates, problems) = ssmap_core::MapTemplate::load_all();
+    assert!(problems.is_empty());
+    for template in templates {
+        let before = harness.state().tabs().len();
+        harness
+            .state_mut()
+            .new_map_from(Ok(template.clone()), canvas());
+        harness.run();
+        assert_eq!(harness.state().tabs().len(), before + 1);
+        let tab = harness.state().tabs().last().unwrap();
+        assert_eq!(tab.editor().map.canvas.background, *template.background());
+    }
+}
+
 #[test]
 fn esc_cancels_the_export_dialog() {
     let mut dialog = ExportDialog::default();
