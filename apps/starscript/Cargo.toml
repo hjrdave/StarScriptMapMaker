@@ -33,13 +33,20 @@ uuid.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 muda.workspace = true
+objc2.workspace = true
+objc2-app-kit.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
 egui_kittest = { version = "0.36", features = ["eframe"] }
 
-[lints]
-workspace = true
+# Not `workspace = true`: that forbids `unsafe`, and `native_menu/dock.rs` needs it to add the
+# Dock-click method to winit's app delegate. Keep in step with the workspace table.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
 
 # Installable packages, built by `cargo packager --release` from this folder (ADR 0008,
 # docs/packaging.md). Paths are relative to this crate. All packages are unsigned.

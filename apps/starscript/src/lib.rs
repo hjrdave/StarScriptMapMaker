@@ -986,11 +986,14 @@ impl MapMakerApp {
 
     /// Runs the native menu items chosen since the last frame.
     #[cfg(target_os = "macos")]
-    fn native_menu_actions(&mut self) {
+    fn native_menu_actions(&mut self, ctx: &egui::Context) {
         use native_menu::mac::Action;
         let Some(mut native) = self.app.native_menu.take() else {
             return;
         };
+        if native_menu::dock::take_click() {
+            self.reopen_window(ctx);
+        }
         let dialog_open = self.dialog_open();
         for action in native.take_actions() {
             match action {
@@ -2111,7 +2114,7 @@ impl eframe::App for MapMakerApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
-        self.native_menu_actions();
+        self.native_menu_actions(ui.ctx());
         self.show(ui);
         // After the frame, so the menu shows what this frame changed.
         #[cfg(target_os = "macos")]

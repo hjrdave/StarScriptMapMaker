@@ -26,6 +26,9 @@ insta = { version = "1.49", features = ["glob", "json"] }
 lyon = "1.0"
 # Native macOS menu bar (app crate, macOS only).
 muda = { version = "0.21", default-features = false }
+# Dock-click reopen hook (app crate, macOS only). Versions match what eframe and winit use.
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow"] }
 png = "0.18"
 # Native Open and Save dialogs (NSOpenPanel on macOS, the system dialogs elsewhere).
 rfd = "0.17"
