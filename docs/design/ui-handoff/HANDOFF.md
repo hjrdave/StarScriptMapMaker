@@ -61,8 +61,8 @@ Never: project, element, symbol, folder (except real filesystem folders on the H
 - Opening a Map that's already open focuses its tab. Closing a dirty tab shows the Save prompt (Components.html → Dialog).
 
 ### Left: Layers (always)
-- 232 px, resizable 200–360. Header: "Layers", New Layer, Group (⌘G), Collapse (⌘⌥1).
-- Collapsed = 40 px rail: expand button, Layers icon, vertical selection path (see `Label.html`).
+- 232 px, resizable 200–360. Header: "Layers", New Layer, Group (⌘G). Collapse (⌘⌥1) is a double chevron at the end of the bottom bar (the footer), mirrored to point right when collapsed.
+- Collapsed = 40 px rail, icons only: Layers icon and vertical selection path, with the same double-chevron control (now expand) pinned at the bottom (see `Label.html`).
 - Tree rows 26 px: chevron, kind icon (Layer/Group, Landmass, Lake, Stamp, Label), name, trailing indicators.
   - Indicators: Clip-to-Landmass (blue ↳ glyph), Depth-sort (↕), opacity % when ≠ 100, Active Layer (gold target icon = where new Objects go), eye / lock on hover or when non-default.
   - States: selected (gold-subtle fill + inset ring), hover, hidden (slashed eye + italic dim name), locked (filled padlock), **locked by parent** (dashed padlock, dim name — not toggleable), renaming (inline field), drag-reorder (gold line between rows), drag-reparent (gold ring around target row).

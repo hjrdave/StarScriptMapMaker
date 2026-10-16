@@ -68,6 +68,7 @@ pub fn accelerator(shortcut: Shortcut) -> Option<Accelerator> {
     let key = match shortcut.key {
         Key::A => "a".to_owned(),
         Key::E => "e".to_owned(),
+        Key::J => "j".to_owned(),
         Key::N => "n".to_owned(),
         Key::O => "o".to_owned(),
         Key::S => "s".to_owned(),

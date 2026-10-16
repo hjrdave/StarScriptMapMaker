@@ -488,6 +488,11 @@ pub struct ScrubSpec<'a> {
     pub provenance: Provenance,
     /// 22 or 26 px high.
     pub height: f32,
+    /// Where a slider's track ends when that is short of `range.max`; a typed value may
+    /// still go up to `range.max`.
+    pub slider_max: Option<f64>,
+    /// What double-clicking a slider resets to.
+    pub default: Option<f64>,
 }
 
 impl<'a> ScrubSpec<'a> {
@@ -500,7 +505,20 @@ impl<'a> ScrubSpec<'a> {
             decimals: 0,
             provenance: Provenance::Plain,
             height: metrics::FIELD[0],
+            slider_max: None,
+            default: None,
         }
+    }
+
+    /// The slider track covers `range.min..=max`; typing may go beyond, up to `range.max`.
+    pub fn slider_max(mut self, max: f64) -> Self {
+        self.slider_max = Some(max);
+        self
+    }
+
+    pub fn default_value(mut self, default: f64) -> Self {
+        self.default = Some(default);
+        self
     }
 
     pub fn unit(mut self, unit: &'a str) -> Self {
@@ -658,10 +676,19 @@ pub fn scrub_field(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> 
 // ---------------------------------------------------------------------------------------------
 // Slider
 
-/// A slider with a value readout. Dragging is one gesture; clicking the track is one step.
+/// The value a slider holds at `t` (0..=1) along its track.
+fn slider_value(min: f64, max: f64, t: f64, decimals: usize) -> f64 {
+    round_to(min + t.clamp(0.0, 1.0) * (max - min), decimals)
+}
+
+/// A slider with a small number box. Dragging is one gesture; clicking the track is one step.
+/// Arrow keys nudge (⇧ ×10, ⌥ ×0.1) and a double-click resets to the spec's default. The box
+/// types an exact value (Enter or blur commits, Esc cancels), clamped to the spec's range.
 pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit {
     let palette = theme::palette(ui.ctx());
     let enabled = ui.is_enabled();
+    let id = ui.make_persistent_id(("slider", spec.label));
+    let mut typing: Option<String> = ui.data(|d| d.get_temp(id));
     let mut edit = Edit::default();
     ui.horizontal(|ui| {
         let (label_rect, _) = ui.allocate_exact_size(
@@ -670,7 +697,7 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
         );
         paint_label(ui, label_rect, spec.label, spec.provenance);
 
-        let readout_w = 48.0;
+        let readout_w = 64.0;
         let track_w = (ui.available_width()
             - readout_w
             - ui.spacing().item_spacing.x
@@ -685,30 +712,65 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
             },
         );
         response.widget_info(|| egui::WidgetInfo::slider(enabled, *value, spec.label));
-        let span = spec.range.max - spec.range.min;
+        let min = spec.range.min;
+        let max = spec
+            .slider_max
+            .unwrap_or(spec.range.max)
+            .min(spec.range.max);
+        let span = max - min;
         let usable = span.is_finite() && span > 0.0;
         if enabled && usable {
-            if response.drag_started() || response.clicked() {
-                edit.began = true;
-            }
-            if (response.dragged() || response.clicked())
-                && let Some(pos) = response.interact_pointer_pos()
+            if response.double_clicked()
+                && let Some(default) = spec.default
             {
-                let t = f64::from(
-                    ((pos.x - rect.left() - 6.0) / (rect.width() - 12.0)).clamp(0.0, 1.0),
-                );
-                let next = round_to(spec.range.min + t * span, spec.decimals);
-                if next != *value {
-                    *value = next;
-                    edit.changed = true;
+                let default = spec.range.clamp(default);
+                if default != *value {
+                    *value = default;
+                    edit = Edit::instant();
+                }
+            } else {
+                if response.drag_started() || response.clicked() {
+                    edit.began = true;
+                }
+                if (response.dragged() || response.clicked())
+                    && let Some(pos) = response.interact_pointer_pos()
+                {
+                    let t = f64::from((pos.x - rect.left() - 6.0) / (rect.width() - 12.0));
+                    let next = slider_value(min, max, t, spec.decimals);
+                    if next != *value {
+                        *value = next;
+                        edit.changed = true;
+                    }
+                }
+                if response.drag_stopped() || response.clicked() {
+                    edit.finished = true;
                 }
             }
-            if response.drag_stopped() || response.clicked() {
-                edit.finished = true;
+            if response.has_focus() {
+                let (dir, speed) = ui.input(|i| {
+                    let dir = f64::from(
+                        i32::from(i.key_pressed(egui::Key::ArrowRight))
+                            + i32::from(i.key_pressed(egui::Key::ArrowUp))
+                            - i32::from(i.key_pressed(egui::Key::ArrowLeft))
+                            - i32::from(i.key_pressed(egui::Key::ArrowDown)),
+                    );
+                    (dir, Speed::from_modifiers(i.modifiers))
+                });
+                if dir != 0.0 {
+                    let nudge = (span / 100.0).max(spec.step) * speed.factor();
+                    let next = round_to(
+                        spec.range.clamp(*value + dir * nudge),
+                        spec.decimals.max(if speed == Speed::Fine { 2 } else { 0 }),
+                    );
+                    if next != *value {
+                        *value = next;
+                        edit = Edit::instant();
+                    }
+                }
             }
         }
         let t = if usable {
-            ((*value - spec.range.min) / span).clamp(0.0, 1.0) as f32
+            ((*value - min) / span).clamp(0.0, 1.0) as f32
         } else {
             0.0
         };
@@ -721,6 +783,8 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
             )
         } else if response.dragged() {
             (palette.border_strong, palette.gold, palette.gold_text, 7.0)
+        } else if response.hovered() || response.has_focus() {
+            (palette.border_strong, palette.gold, palette.gold_text, 6.5)
         } else {
             (
                 palette.border_strong,
@@ -746,17 +810,70 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
             thumb,
             Stroke::new(1.0, palette.bg_field),
         );
-        let (readout, _) =
-            ui.allocate_exact_size(Vec2::new(readout_w, spec.height), Sense::hover());
-        paint_value(
-            ui,
-            readout,
-            &spec.format(*value),
-            spec.provenance,
-            egui::Align2::RIGHT_CENTER,
+        let (box_rect, box_response) =
+            ui.allocate_exact_size(Vec2::new(readout_w, spec.height), Sense::click());
+        ui.painter().rect(
+            box_rect,
+            theme::RADIUS_FIELD,
+            palette.bg_field,
+            Stroke::new(1.0, palette.border_subtle),
+            StrokeKind::Inside,
         );
+        if let Some(text) = typing.as_mut() {
+            let field = ui.put(
+                box_rect,
+                egui::TextEdit::singleline(text)
+                    .frame(egui::Frame::NONE)
+                    .margin(egui::Margin::symmetric(6, 0))
+                    .horizontal_align(egui::Align::RIGHT)
+                    .font(egui::FontId::new(theme::MONO, theme::mono_family())),
+            );
+            if !field.has_focus() && !field.lost_focus() {
+                field.request_focus();
+            }
+            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                typing = None;
+            } else if field.lost_focus() {
+                // Enter or clicking away both commit.
+                let typed = typing.take().unwrap_or_default();
+                if let Some(result) = eval_expression(&typed, *value) {
+                    let result = round_to(spec.range.clamp(result), spec.decimals.max(3));
+                    if result != *value {
+                        *value = result;
+                        edit = Edit::instant();
+                    }
+                }
+            }
+        } else {
+            paint_value(
+                ui,
+                box_rect,
+                &spec.format(*value),
+                spec.provenance,
+                egui::Align2::RIGHT_CENTER,
+            );
+            box_response.widget_info(|| {
+                egui::WidgetInfo::text_edit(
+                    enabled,
+                    spec.format(*value),
+                    spec.format(*value),
+                    spec.label,
+                )
+            });
+            if enabled && box_response.clicked() {
+                typing = Some(format!("{value:.*}", spec.decimals));
+            }
+        }
         if trailing(ui, spec.label, spec.provenance) {
             edit.reset = true;
+        }
+    });
+    ui.data_mut(|d| match typing {
+        Some(text) => {
+            d.insert_temp(id, text);
+        }
+        None => {
+            d.remove::<String>(id);
         }
     });
     edit
@@ -1164,6 +1281,13 @@ mod tests {
         ] {
             assert_eq!(eval_expression(bad, 4.0), None, "{bad:?}");
         }
+    }
+
+    #[test]
+    fn slider_value_maps_and_clamps_the_track() {
+        assert_eq!(slider_value(0.0, 50.0, 0.5, 1), 25.0);
+        assert_eq!(slider_value(0.0, 50.0, 2.0, 1), 50.0);
+        assert_eq!(slider_value(10.0, 20.0, -1.0, 0), 10.0);
     }
 
     #[test]

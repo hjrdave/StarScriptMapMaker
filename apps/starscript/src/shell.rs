@@ -404,30 +404,30 @@ pub fn divider(ui: &mut egui::Ui, shell: &mut Shell, side: Side, panel: egui::Re
         .vline(x, panel.y_range(), egui::Stroke::new(1.0, color));
 }
 
-/// The 40 pt rail Layers collapses to. Returns true when clicked, which expands Layers.
+/// The Layers collapse control: a double chevron that points left while the panel is
+/// expanded and is mirrored to point right once `collapsed`. Its place is the bottom of the
+/// panel in both states.
+pub fn collapse_button(ui: &mut egui::Ui, collapsed: bool) -> egui::Response {
+    let label = if collapsed {
+        "Expand Layers (⌘⌥1)"
+    } else {
+        "Collapse Layers (⌘⌥1)"
+    };
+    icons::icon_button_flipped(ui, Icon::CollapseDouble, label, collapsed)
+}
+
+/// The 40 pt rail Layers collapses to: only icons, with the expand control pinned to the
+/// bottom. Returns true when that was clicked, which expands Layers.
 pub fn layers_rail(ui: &mut egui::Ui, path: &[String]) -> bool {
     let palette = theme::palette(ui.ctx());
     let rect = ui.max_rect();
-    let response = ui.interact(rect, ui.id().with("layers rail"), egui::Sense::click());
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Expand Layers (⌘⌥1)")
-    });
-    let hovered = response.hovered();
-    let tint = if hovered {
-        palette.text_primary
-    } else {
-        palette.text_secondary
-    };
-    let top = rect.top() + metrics::PANEL_HEADER / 2.0;
-    let slot = |y: f32| {
-        egui::Rect::from_center_size(
-            egui::pos2(rect.center().x, y),
-            egui::Vec2::splat(icons::GRID + 8.0),
-        )
-    };
-    icons::paint(ui, slot(top), Icon::CollapseRight, icons::GRID, tint);
-    let layers_y = top + metrics::PANEL_HEADER;
-    icons::paint(ui, slot(layers_y), Icon::LayerGroup, icons::GRID, tint);
+    let tint = palette.text_secondary;
+    let layers_y = rect.top() + metrics::PANEL_HEADER / 2.0;
+    let slot = egui::Rect::from_center_size(
+        egui::pos2(rect.center().x, layers_y),
+        egui::Vec2::splat(icons::GRID + 8.0),
+    );
+    icons::paint(ui, slot, Icon::LayerGroup, icons::GRID, tint);
     if !path.is_empty() {
         let text = path.join(" › ");
         let galley = ui.painter().layout_no_wrap(
@@ -445,7 +445,18 @@ pub fn layers_rail(ui: &mut egui::Ui, path: &[String]) -> bool {
             .with_angle(std::f32::consts::FRAC_PI_2);
         ui.painter().add(shape);
     }
-    response
+    let bar = egui::Rect::from_min_max(
+        egui::pos2(
+            rect.left(),
+            rect.bottom() - crate::layer_tree::FOOTER_HEIGHT,
+        ),
+        rect.right_bottom(),
+    );
+    let mut bottom =
+        ui.new_child(egui::UiBuilder::new().max_rect(bar).layout(
+            egui::Layout::top_down(egui::Align::Center).with_main_align(egui::Align::Center),
+        ));
+    collapse_button(&mut bottom, true)
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
 }
