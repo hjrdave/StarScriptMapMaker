@@ -264,22 +264,25 @@ impl PropertiesPanel {
         let provenance = group.provenance;
         let mut next = group.current.clone();
         let spec = |label| ScrubSpec::new(label).provenance(provenance);
-        let edit = prop_widgets::scrub_field(
+        let edit = prop_widgets::slider(
             ui,
             &mut next.amount,
             &spec("Amount")
                 .unit(" u")
                 .range(0.0, 1000.0)
+                .slider_max(50.0)
+                .default_value(0.0)
                 .step(0.5)
                 .decimals(1),
         );
         self.edit(editor, edit, &next, group);
-        let edit = prop_widgets::scrub_field(
+        let edit = prop_widgets::slider(
             ui,
             &mut next.scale,
             &spec("Scale")
                 .unit(" u")
                 .range(0.5, 10_000.0)
+                .slider_max(200.0)
                 .step(1.0)
                 .decimals(1),
         );
@@ -348,10 +351,17 @@ impl PropertiesPanel {
         let provenance = group.provenance;
         let mut style = group.current.clone();
         let spec = |label| ScrubSpec::new(label).provenance(provenance);
-        let length = |label, max| spec(label).unit(" u").range(0.0, max).step(0.1).decimals(1);
+        let length = |label, max: f64| {
+            spec(label)
+                .unit(" u")
+                .range(0.0, max)
+                .slider_max(max / 5.0)
+                .step(0.1)
+                .decimals(1)
+        };
 
         caption(ui, "Outline");
-        let edit = prop_widgets::scrub_field(ui, &mut style.outline.width, &length("Width", 100.0));
+        let edit = prop_widgets::slider(ui, &mut style.outline.width, &length("Width", 100.0));
         self.edit(editor, edit, &style, group);
         let mut colour = Some(style.outline.color);
         let edit = prop_widgets::swatch(ui, "Colour", &mut colour, false, provenance).edit;
@@ -367,17 +377,15 @@ impl PropertiesPanel {
         );
         style.ripples.count = count as u32;
         self.edit(editor, edit, &style, group);
-        let edit =
-            prop_widgets::scrub_field(ui, &mut style.ripples.spacing, &length("Spacing", 500.0));
+        let edit = prop_widgets::slider(ui, &mut style.ripples.spacing, &length("Spacing", 500.0));
         self.edit(editor, edit, &style, group);
-        let edit =
-            prop_widgets::scrub_field(ui, &mut style.ripples.width, &length("Line width", 50.0));
+        let edit = prop_widgets::slider(ui, &mut style.ripples.width, &length("Line width", 50.0));
         self.edit(editor, edit, &style, group);
         let mut colour = Some(style.ripples.color);
         let edit = prop_widgets::swatch(ui, "Line colour", &mut colour, false, provenance).edit;
         style.ripples.color = colour.unwrap_or(style.ripples.color);
         self.edit(editor, edit, &style, group);
-        let edit = prop_widgets::scrub_field(
+        let edit = prop_widgets::slider(
             ui,
             &mut style.ripples.fade,
             &spec("Fade").range(0.0, 1.0).step(0.01).decimals(2),
@@ -386,7 +394,7 @@ impl PropertiesPanel {
 
         caption(ui, "Inner shade");
         let edit =
-            prop_widgets::scrub_field(ui, &mut style.shading.width, &length("Shade width", 500.0));
+            prop_widgets::slider(ui, &mut style.shading.width, &length("Shade width", 500.0));
         self.edit(editor, edit, &style, group);
         let mut colour = Some(style.shading.color);
         let edit = prop_widgets::swatch(ui, "Shade colour", &mut colour, false, provenance).edit;
