@@ -36,6 +36,8 @@ pub enum Command {
     ActualSize,
     ToggleLayers,
     ToggleProperties,
+    /// Shows the History section in the left sidebar.
+    ShowHistory,
     HidePanels,
     Home,
     /// ⌘`n` for `n` in 2 to 9.
@@ -185,6 +187,7 @@ pub fn shortcut(command: Command) -> Option<Shortcut> {
         ActualSize => Shortcut::new(!c, s, !a, Key::Num(0)),
         ToggleLayers => Shortcut::new(c, !s, a, Key::Num(1)),
         ToggleProperties => Shortcut::new(c, !s, a, Key::Num(2)),
+        ShowHistory => Shortcut::new(c, !s, a, Key::Num(5)),
         HidePanels => Shortcut::new(!c, !s, !a, Key::Tab),
         Home => Shortcut::new(c, !s, !a, Key::Num(1)),
         Tab(n @ 2..=9) => Shortcut::new(c, !s, !a, Key::Num(n)),
@@ -356,6 +359,7 @@ pub fn menus(state: &State) -> Vec<Menu> {
         Separator,
         item(ToggleLayers, "Toggle Layers", map),
         item(ToggleProperties, "Toggle Properties", map),
+        item(ShowHistory, "History", map),
         item(HidePanels, "Hide Panels", map),
         Separator,
         item(Home, "Home", true),
