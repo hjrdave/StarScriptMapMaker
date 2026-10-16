@@ -71,6 +71,7 @@ pub fn accelerator(shortcut: Shortcut) -> Option<Accelerator> {
         Key::C => "c".to_owned(),
         Key::V => "v".to_owned(),
         Key::X => "x".to_owned(),
+        Key::G => "g".to_owned(),
         Key::J => "j".to_owned(),
         Key::N => "n".to_owned(),
         Key::O => "o".to_owned(),

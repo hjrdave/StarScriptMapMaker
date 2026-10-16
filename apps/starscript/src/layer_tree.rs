@@ -78,8 +78,9 @@ pub fn move_command(map: &Map, dragged: Id, target: DropTarget) -> Option<Comman
         DropTarget::Into(layer) => (Some(layer), map.children(Some(layer)).len()),
     };
     if let Some(parent) = parent
-        && map.is_ancestor_or_self(dragged, parent)
+        && (map.is_ancestor_or_self(dragged, parent) || !map.accepts_children(parent))
     {
+        // Into itself, or onto a locked Group (itself or through one above it).
         return None;
     }
     // Move counts the index after the dragged node leaves its old place.
@@ -247,6 +248,8 @@ pub struct LayerTree {
     /// Object and Layer counts by Map revision, for the same reason.
     counts: Option<(u64, (usize, usize))>,
     collapse_generation: u64,
+    /// A delete waiting on the confirmation: the Group it names and how many nodes are inside.
+    confirm_delete: Option<(Id, usize)>,
 }
 
 enum Action {
@@ -262,8 +265,38 @@ enum Action {
     Cut(Id),
     /// Deletes the row, or the whole selection if the row is part of it.
     Delete(Id),
+    /// Wraps the selection in a Group.
+    Group,
+    /// Dissolves the selected Groups.
+    Ungroup,
     FinishRename,
     CancelRename,
+}
+
+/// The first selected Layer that holds something, if any: deleting it takes its contents too.
+fn filled_group(map: &Map, selection: &[Id]) -> Option<Id> {
+    selection
+        .iter()
+        .copied()
+        .find(|&id| map.node(id).is_some_and(Node::is_layer) && !map.children(Some(id)).is_empty())
+}
+
+/// How many nodes sit inside the selected Layers, at any depth.
+fn contents(map: &Map, selection: &[Id]) -> usize {
+    let mut pending: Vec<Id> = selection.to_vec();
+    let mut count = 0;
+    while let Some(id) = pending.pop() {
+        let children = map.children(Some(id));
+        count += children.len();
+        pending.extend(children);
+    }
+    count
+}
+
+/// The confirmation text for deleting the Group `name` and the `inside` nodes it holds.
+pub fn delete_message(name: &str, inside: usize) -> String {
+    let items = if inside == 1 { "item" } else { "items" };
+    format!("Delete the Group \"{name}\"? Its {inside} {items} will be deleted too.")
 }
 
 impl LayerTree {
@@ -348,7 +381,19 @@ impl LayerTree {
                     if !editor.is_selected(id) {
                         editor.select(vec![id]);
                     }
-                    editor.delete_selection();
+                    match filled_group(&editor.map, editor.selection()) {
+                        Some(group) => {
+                            let inside = contents(&editor.map, editor.selection());
+                            self.confirm_delete = Some((group, inside));
+                        }
+                        None => editor.delete_selection(),
+                    }
+                }
+                Action::Group => {
+                    editor.group_selection();
+                }
+                Action::Ungroup => {
+                    editor.ungroup_selection();
                 }
                 Action::StartRename(id) => {
                     self.renaming = Some((id, node_name(&editor.map, id)));
@@ -367,7 +412,45 @@ impl LayerTree {
                 Action::CancelRename => self.renaming = None,
             }
         }
+        self.confirm_delete_dialog(ui.ctx(), editor);
         collapse_clicked
+    }
+
+    /// The confirmation before deleting a Group that holds something: it names the Group and
+    /// says the contents go too.
+    fn confirm_delete_dialog(&mut self, ctx: &egui::Context, editor: &mut Editor) {
+        let Some((group, inside)) = self.confirm_delete else {
+            return;
+        };
+        let mut choice = None;
+        egui::Window::new("Delete Group")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.label(delete_message(&node_name(&editor.map, group), inside));
+                ui.horizontal(|ui| {
+                    if ui.button("Delete").clicked() {
+                        choice = Some(true);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        choice = Some(false);
+                    }
+                });
+            });
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            choice = Some(false);
+        }
+        match choice {
+            Some(true) => {
+                self.confirm_delete = None;
+                if editor.map.contains(group) {
+                    editor.delete_selection();
+                }
+            }
+            Some(false) => self.confirm_delete = None,
+            None => {}
+        }
     }
 
     fn row(&mut self, ui: &mut egui::Ui, editor: &Editor, row: Row, actions: &mut Vec<Action>) {
@@ -631,6 +714,20 @@ impl LayerTree {
                 actions.push(Action::Duplicate(row.id));
                 ui.close();
             }
+            if ui.button("Group").clicked() {
+                if !selected {
+                    actions.push(Action::Select(row.id, false));
+                }
+                actions.push(Action::Group);
+                ui.close();
+            }
+            if layer.is_some() && ui.button("Ungroup").clicked() {
+                if !selected {
+                    actions.push(Action::Select(row.id, false));
+                }
+                actions.push(Action::Ungroup);
+                ui.close();
+            }
             if ui.button("Copy").clicked() {
                 actions.push(Action::Copy(row.id));
                 ui.close();
@@ -691,13 +788,13 @@ impl LayerTree {
                 }
             }
         });
-        if response.dnd_hover_payload::<Id>().is_some()
+        // No indicator where the drop would be refused, such as onto a locked Group.
+        if let Some(dragged) = response.dnd_hover_payload::<Id>()
             && let Some(target) = drop_target(ui, rect, row.id, layer.is_some())
+            && let Some(command) = move_command(map, *dragged, target)
         {
             paint_drop_indicator(ui, palette, rect, target);
-            if let Some(dropped) = response.dnd_release_payload::<Id>()
-                && let Some(command) = move_command(map, *dropped, target)
-            {
+            if response.dnd_release_payload::<Id>().is_some() {
                 actions.push(Action::Run(command));
             }
         }
@@ -1172,5 +1269,104 @@ mod tests {
         harness.state_mut().editor.new_layer();
         harness.run();
         harness.get_by_label("1 Object · 3 Layers");
+    }
+
+    #[test]
+    fn grouping_is_one_undo_step_and_ungrouping_restores_the_layers() {
+        let (mut editor, a, b) = editor_with_two_layers();
+        let before = editor.map.view();
+        editor.select(vec![a, b]);
+        let group = editor.group_selection().expect("a Group");
+        assert_eq!(editor.selection(), [group]);
+        assert_eq!(editor.map.parent(a), Some(group));
+        assert_eq!(editor.map.parent(b), Some(group));
+        let grouped = editor.map.view();
+        assert!(editor.ungroup_selection());
+        assert_eq!(editor.map.parent(a), None);
+        assert_eq!(editor.selection().len(), 2);
+        editor.undo();
+        assert_eq!(editor.map.view(), grouped);
+        editor.undo();
+        assert_eq!(editor.map.view(), before);
+    }
+
+    #[test]
+    fn an_empty_group_can_be_created_and_collapses_with_its_contents() {
+        let (mut editor, a, _) = editor_with_two_layers();
+        let group = editor.new_group().expect("a Group");
+        assert!(editor.map.children(Some(group)).is_empty());
+        let command = move_command(&editor.map, a, DropTarget::Into(group)).unwrap();
+        assert!(editor.run(command));
+        let mut collapsed = HashSet::new();
+        assert!(rows(&editor.map, &collapsed).iter().any(|r| r.id == a));
+        collapsed.insert(group);
+        let visible = rows(&editor.map, &collapsed);
+        assert!(!visible.iter().any(|r| r.id == a));
+        assert!(visible.iter().any(|r| r.id == group));
+        let open = rows(&editor.map, &HashSet::new());
+        let depth = |id| open.iter().find(|r| r.id == id).unwrap().depth;
+        assert_eq!(depth(a), depth(group) + 1);
+    }
+
+    #[test]
+    fn layers_drag_into_and_out_of_a_group() {
+        let (mut editor, a, b) = editor_with_two_layers();
+        let group = editor.new_group().unwrap();
+        let into = move_command(&editor.map, a, DropTarget::Into(group)).unwrap();
+        assert!(editor.run(into));
+        assert_eq!(editor.map.parent(a), Some(group));
+        let out = move_command(&editor.map, a, DropTarget::Above(b)).unwrap();
+        assert!(editor.run(out));
+        assert_eq!(editor.map.parent(a), None);
+        editor.undo();
+        assert_eq!(editor.map.parent(a), Some(group));
+    }
+
+    #[test]
+    fn a_locked_group_locks_its_contents_and_refuses_drops() {
+        let (mut editor, a, b) = editor_with_two_layers();
+        let group = editor.new_group().unwrap();
+        let into = move_command(&editor.map, a, DropTarget::Into(group)).unwrap();
+        assert!(editor.run(into));
+        assert!(editor.run(Command::SetLocked {
+            id: group,
+            locked: true
+        }));
+        assert!(RowState::of(&editor.map, a).locked_by_parent);
+        assert!(move_command(&editor.map, b, DropTarget::Into(group)).is_none());
+        assert!(move_command(&editor.map, b, DropTarget::Above(a)).is_none());
+    }
+
+    #[test]
+    fn deleting_a_group_asks_first_naming_it_and_its_contents() {
+        let (mut editor, a, _) = editor_with_two_layers();
+        let group = editor.new_group().unwrap();
+        let into = move_command(&editor.map, a, DropTarget::Into(group)).unwrap();
+        assert!(editor.run(into));
+        assert!(editor.run(Command::RenameLayer {
+            id: group,
+            name: "Coast".into()
+        }));
+        assert_eq!(filled_group(&editor.map, &[group]), Some(group));
+        assert_eq!(filled_group(&editor.map, &[a]), None);
+        assert_eq!(contents(&editor.map, &[group]), 1);
+        assert_eq!(
+            delete_message("Coast", 1),
+            "Delete the Group \"Coast\"? Its 1 item will be deleted too."
+        );
+        editor.select(vec![group]);
+        let mut harness = harness(editor);
+        harness.state_mut().tree.confirm_delete = Some((group, 1));
+        harness.run();
+        harness.get_by_label_contains("\"Coast\"");
+        harness.get_by_label("Cancel").click();
+        harness.run();
+        assert!(harness.state().editor.map.contains(group));
+        harness.state_mut().tree.confirm_delete = Some((group, 1));
+        harness.run();
+        harness.get_by_label("Delete").click();
+        harness.run();
+        let editor = &harness.state().editor;
+        assert!(!editor.map.contains(group) && !editor.map.contains(a));
     }
 }
