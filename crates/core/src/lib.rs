@@ -3,6 +3,7 @@
 //! This crate must never depend on egui or wgpu (ADR 0001); CI enforces it.
 
 pub mod asset;
+mod background;
 mod color;
 mod command;
 mod embedded;
@@ -25,6 +26,7 @@ mod stamp_pick;
 mod template;
 
 pub use asset::AssetRef;
+pub use background::{Background, BackgroundTexture};
 pub use color::{Color, ParseColorError};
 pub use command::{Command, CommandError, PlacedStamp};
 pub use embedded::{
