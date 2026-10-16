@@ -1470,7 +1470,12 @@ impl MapMakerApp {
                 .and_then(|pointer| tab.canvas_view.canvas_point(pointer));
             if let Some(point) = point {
                 ui.separator();
-                ui.label(text(shell::cursor_text(&tab.editor.map.canvas, point)));
+                let real_world = self.shell.current_layout().real_world_coordinates;
+                ui.label(text(shell::cursor_text(
+                    &tab.editor.map.canvas,
+                    point,
+                    real_world,
+                )));
             }
             let summary = shell::selection_summary(
                 &tab.editor.map,
@@ -1553,7 +1558,14 @@ impl eframe::App for MapMakerApp {
                 }
             });
         }
+        self.shell.set_window_width(ctx.content_rect().width());
         let panels_were_hidden = self.shell.panels_hidden();
+        if !dialog_open && self.shell.overlay_open() {
+            // Esc closes an open panel overlay before anything else sees it.
+            if ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+                self.shell.close_overlays();
+            }
+        }
         if !dialog_open {
             self.open_dropped_files(&ctx);
             self.shortcuts(&ctx);
@@ -1581,52 +1593,66 @@ impl eframe::App for MapMakerApp {
             .exact_size(theme::metrics::STATUS_BAR)
             .show(ui, |ui| self.status_bar(ui));
         let tab = &mut self.tabs[self.active];
+        let layout = self.shell.current_layout();
+        // The window grew: an overlay for a panel that now shows in full has nothing to open.
+        if layout.layers != shell::PanelMode::Rail {
+            self.shell.set_layers_overlay(false);
+        }
+        if layout.properties != shell::PanelMode::Rail {
+            self.shell.set_properties_overlay(false);
+        }
         let mut layers_divider = None;
         let mut properties_divider = None;
-        if self.shell.layers_shown() {
-            let collapsed = self.shell.layers_collapsed();
-            let panel = egui::Panel::left("layers")
-                .resizable(false)
-                .exact_size(self.shell.layers_layout_width())
-                .show(ui, |ui| {
-                    if collapsed {
+        let mut layers_rail = None;
+        let mut properties_rail = None;
+        match layout.layers {
+            shell::PanelMode::Hidden => {}
+            shell::PanelMode::Rail => {
+                let panel = egui::Panel::left("layers")
+                    .resizable(false)
+                    .exact_size(layout.layers.width())
+                    .show(ui, |ui| {
                         let path = shell::selection_path(&tab.editor.map, tab.editor.selection());
                         if shell::layers_rail(ui, &path) {
-                            self.shell.set_layers_collapsed(false);
-                        }
-                        return;
-                    }
-                    shell::panel_header(ui, "Layers", |ui| {
-                        if icons::icon_button(
-                            ui,
-                            icons::Icon::CollapseLeft,
-                            "Collapse Layers (⌘⌥1)",
-                        )
-                        .clicked()
-                        {
-                            self.shell.set_layers_collapsed(true);
-                        }
-                        // Right to left: this lands just left of Collapse.
-                        if icons::icon_button(ui, icons::Icon::Add, "New Layer (⇧⌘N)").clicked()
-                        {
-                            tab.editor.new_layer();
+                            self.shell.click_layers_rail();
                         }
                     });
-                    tab.layer_tree.show(ui, &mut tab.editor);
-                });
-            if !collapsed {
+                layers_rail = Some(panel.response.rect);
+            }
+            shell::PanelMode::Full(width) => {
+                let panel = egui::Panel::left("layers")
+                    .resizable(false)
+                    .exact_size(width)
+                    .show(ui, |ui| {
+                        layers_panel(ui, &mut self.shell, tab, layout.layers_footer, false)
+                    });
                 layers_divider = Some(panel.response.rect);
             }
         }
-        if self.shell.properties_shown() {
-            let panel = egui::Panel::right("properties")
-                .resizable(false)
-                .exact_size(self.shell.width(shell::Side::Right))
-                .show(ui, |ui| tab.properties.show(ui, &mut tab.editor));
-            if tab.properties.take_manage_label_styles() {
-                tab.label_styles.open = true;
+        match layout.properties {
+            shell::PanelMode::Hidden => {}
+            shell::PanelMode::Rail => {
+                let panel = egui::Panel::right("properties")
+                    .resizable(false)
+                    .exact_size(layout.properties.width())
+                    .show(ui, |ui| {
+                        if shell::properties_rail(ui) {
+                            let open = self.shell.properties_overlay();
+                            self.shell.set_properties_overlay(!open);
+                        }
+                    });
+                properties_rail = Some(panel.response.rect);
             }
-            properties_divider = Some(panel.response.rect);
+            shell::PanelMode::Full(width) => {
+                let panel = egui::Panel::right("properties")
+                    .resizable(false)
+                    .exact_size(width)
+                    .show(ui, |ui| tab.properties.show(ui, &mut tab.editor));
+                if tab.properties.take_manage_label_styles() {
+                    tab.label_styles.open = true;
+                }
+                properties_divider = Some(panel.response.rect);
+            }
         }
         let canvas = egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
@@ -1644,8 +1670,93 @@ impl eframe::App for MapMakerApp {
                 shell::divider(ui, &mut self.shell, side, rect);
             }
         }
+        // A rail's panel opened over the Canvas: Layers from the left, Properties as a
+        // floating inspector pinned to the top right.
+        let canvas_rect = canvas.response.rect;
+        let palette = theme::palette(&ctx);
+        let overlay_frame = egui::Frame::new()
+            .fill(palette.bg_panel)
+            .stroke(egui::Stroke::new(1.0, palette.border_strong))
+            .shadow(egui::Shadow {
+                offset: [0, 4],
+                blur: 16,
+                spread: 0,
+                color: theme::SCRIM,
+            });
+        let mut overlay_rect = None;
+        if self.shell.layers_overlay() {
+            let width = self.shell.width(shell::Side::Left);
+            let area = egui::Area::new(egui::Id::new("layers overlay"))
+                .order(egui::Order::Foreground)
+                .fixed_pos(canvas_rect.min)
+                .show(&ctx, |ui| {
+                    overlay_frame.show(ui, |ui| {
+                        ui.set_width(width);
+                        ui.set_height(canvas_rect.height());
+                        layers_panel(ui, &mut self.shell, tab, true, true);
+                    });
+                });
+            overlay_rect = Some(area.response.rect);
+        } else if self.shell.properties_overlay() {
+            const MARGIN: f32 = 8.0;
+            let width = self.shell.width(shell::Side::Right);
+            let height = (canvas_rect.height() - 2.0 * MARGIN).max(0.0);
+            let area = egui::Area::new(egui::Id::new("properties inspector"))
+                .order(egui::Order::Foreground)
+                .fixed_pos(canvas_rect.right_top() + egui::vec2(-width - MARGIN, MARGIN))
+                .show(&ctx, |ui| {
+                    overlay_frame.show(ui, |ui| {
+                        ui.set_width(width);
+                        ui.set_height(height);
+                        tab.properties.show(ui, &mut tab.editor);
+                    });
+                });
+            if tab.properties.take_manage_label_styles() {
+                tab.label_styles.open = true;
+            }
+            overlay_rect = Some(area.response.rect);
+        }
+        if let Some(overlay_rect) = overlay_rect {
+            // A press anywhere else closes it. The rails are left out, as they toggle it.
+            let outside = ctx.input(|input| {
+                input.pointer.any_pressed()
+                    && input.pointer.interact_pos().is_some_and(|pos| {
+                        !overlay_rect.contains(pos)
+                            && !layers_rail.is_some_and(|rail| rail.contains(pos))
+                            && !properties_rail.is_some_and(|rail| rail.contains(pos))
+                    })
+            });
+            if outside {
+                self.shell.close_overlays();
+            }
+        }
         self.journal(&ctx);
     }
+}
+
+/// The Layers panel: its header and the tree. As an overlay, collapsing closes it.
+fn layers_panel(
+    ui: &mut egui::Ui,
+    shell: &mut shell::Shell,
+    tab: &mut MapTab,
+    footer: bool,
+    overlay: bool,
+) {
+    shell::panel_header(ui, "Layers", |ui| {
+        if icons::icon_button(ui, icons::Icon::CollapseLeft, "Collapse Layers (⌘⌥1)").clicked()
+        {
+            if overlay {
+                shell.close_overlays();
+            } else {
+                shell.set_layers_collapsed(true);
+            }
+        }
+        // Right to left: this lands just left of Collapse.
+        if icons::icon_button(ui, icons::Icon::Add, "New Layer (⇧⌘N)").clicked() {
+            tab.editor.new_layer();
+        }
+    });
+    tab.layer_tree.show(ui, &mut tab.editor, footer);
 }
 
 #[cfg(test)]

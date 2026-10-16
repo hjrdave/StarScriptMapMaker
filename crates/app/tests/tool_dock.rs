@@ -82,7 +82,7 @@ fn all_nine_tools_show_at_the_minimum_window_size() {
 #[test]
 fn the_dock_stays_inside_the_canvas_and_recentres_when_layers_collapses() {
     let mut harness = app(egui::vec2(WIDTH, 800.0));
-    let layers = harness.state().shell().layers_layout_width();
+    let layers = harness.state().shell().current_layout().layers.width();
     let properties = harness.state().shell().width(ssmap_app::shell::Side::Right);
     let (left, right) = dock_span(&harness);
     assert!(left >= layers && right <= WIDTH - properties);
@@ -90,7 +90,7 @@ fn the_dock_stays_inside_the_canvas_and_recentres_when_layers_collapses() {
 
     harness.get_by_label("Collapse Layers (⌘⌥1)").click();
     harness.run();
-    let layers = harness.state().shell().layers_layout_width();
+    let layers = harness.state().shell().current_layout().layers.width();
     assert!(layers < 100.0);
     let (left, right) = dock_span(&harness);
     assert!(left >= layers && right <= WIDTH - properties);

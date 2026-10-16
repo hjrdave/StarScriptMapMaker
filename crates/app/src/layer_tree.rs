@@ -255,7 +255,8 @@ enum Action {
 }
 
 impl LayerTree {
-    pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+    /// `footer` shows the Object and Layer counts under the list.
+    pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor, footer_shown: bool) {
         let revision = editor.map.revision();
         let rows = match self.cache.take() {
             Some((r, g, rows)) if r == revision && g == self.collapse_generation => rows,
@@ -275,7 +276,8 @@ impl LayerTree {
 
         let mut actions = Vec::new();
         ui.spacing_mut().item_spacing.y = 0.0;
-        let list_height = (ui.available_height() - FOOTER_HEIGHT).max(ROW_HEIGHT);
+        let footer_height = if footer_shown { FOOTER_HEIGHT } else { 0.0 };
+        let list_height = (ui.available_height() - footer_height).max(ROW_HEIGHT);
         egui::ScrollArea::vertical()
             .auto_shrink(false)
             .max_height(list_height)
@@ -285,7 +287,9 @@ impl LayerTree {
                 }
             });
         self.cache = Some((revision, self.collapse_generation, rows));
-        footer(ui, &footer_text(objects, layers));
+        if footer_shown {
+            footer(ui, &footer_text(objects, layers));
+        }
 
         for action in actions {
             match action {
@@ -923,7 +927,7 @@ mod tests {
             .build_ui_state(
                 |ui, fixture: &mut Fixture| {
                     theme::install(&ui.ctx().clone());
-                    fixture.tree.show(ui, &mut fixture.editor);
+                    fixture.tree.show(ui, &mut fixture.editor, true);
                 },
                 Fixture {
                     editor,
