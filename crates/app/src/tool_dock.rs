@@ -151,10 +151,15 @@ fn tooltip(ui: &egui::Ui, palette: &Palette, response: &egui::Response, text: &s
                 .shadow(theme::shadow_e1())
                 .inner_margin(egui::Margin::symmetric(8, 4))
                 .show(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new(text)
-                            .size(theme::CAPTION)
-                            .color(palette.text_primary),
+                    // Never wrap: the Area is pinned beside the button, so its
+                    // available width is small and would break the label.
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(text)
+                                .size(theme::CAPTION)
+                                .color(palette.text_primary),
+                        )
+                        .wrap_mode(egui::TextWrapMode::Extend),
                     );
                 });
         });
