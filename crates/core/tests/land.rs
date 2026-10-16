@@ -238,3 +238,87 @@ fn changing_roughness_is_one_undo_step() {
         "nothing else to undo"
     );
 }
+
+fn water_stroke(region: MultiPolygon, start: Point, erase: bool) -> ssmap_core::land::BrushStroke {
+    ssmap_core::land::BrushStroke {
+        region,
+        start,
+        erase,
+    }
+}
+
+#[test]
+fn the_water_brush_creates_a_lake_then_merges_and_erases() {
+    use ssmap_core::land::{BrushError, water_command};
+
+    let mut map = empty_map();
+    let water = layer(&mut map, "Water");
+    let mut cache = RoughnessCache::default();
+    let new_id = Id::new();
+
+    let river = region(square([0.0, 0.0], 20.0), vec![]);
+    let command = water_command(
+        &map,
+        &mut cache,
+        &[],
+        Some(water),
+        water_stroke(river, [10.0, 10.0], false),
+        new_id,
+    )
+    .unwrap()
+    .expect("a stroke on bare ground makes a Lake");
+    assert!(
+        matches!(&command, Command::CreateLake { id, parent, .. } if *id == new_id && *parent == water)
+    );
+    run(&mut map, command);
+
+    // A stroke starting in the Lake extends it rather than starting another.
+    let more = region(square([15.0, 0.0], 20.0), vec![]);
+    let command = water_command(
+        &map,
+        &mut cache,
+        &[],
+        Some(water),
+        water_stroke(more, [18.0, 10.0], false),
+        Id::new(),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(&command, Command::AddRegion { id, .. } if *id == new_id));
+    run(&mut map, command);
+
+    // Erasing cuts the Lake without any selection.
+    let cut = region(square([-5.0, -5.0], 60.0), vec![]);
+    let command = water_command(
+        &map,
+        &mut cache,
+        &[],
+        None,
+        water_stroke(cut, [0.0, 0.0], true),
+        Id::new(),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(&command, Command::SubtractRegion { ids, .. } if ids == &vec![new_id]));
+
+    // Erasing away from every Lake does nothing, and painting needs a Layer.
+    let far = region(square([500.0, 500.0], 10.0), vec![]);
+    let erased = water_command(
+        &map,
+        &mut cache,
+        &[],
+        None,
+        water_stroke(far.clone(), [505.0, 505.0], true),
+        Id::new(),
+    );
+    assert_eq!(erased, Ok(None));
+    let painted = water_command(
+        &map,
+        &mut cache,
+        &[],
+        None,
+        water_stroke(far, [505.0, 505.0], false),
+        Id::new(),
+    );
+    assert_eq!(painted, Err(BrushError::NoLayer));
+}

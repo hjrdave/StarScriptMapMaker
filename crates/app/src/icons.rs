@@ -48,6 +48,7 @@ icons! {
     Select, "Select", "select";
     Pan, "Pan", "pan";
     LandBrush, "Land Brush", "land-brush";
+    WaterBrush, "Water Brush", "water-brush";
     Lasso, "Lasso", "lasso";
     Label, "Label", "label";
     Stamp, "Stamp", "stamp";

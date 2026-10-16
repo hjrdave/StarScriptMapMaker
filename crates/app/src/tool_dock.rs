@@ -16,7 +16,12 @@ const TOOLTIP_GAP: f32 = 6.0;
 /// The tool groups, split by dividers.
 const GROUPS: [&[ToolId]; 4] = [
     &[ToolId::Select, ToolId::Pan],
-    &[ToolId::LandBrush, ToolId::Lasso, ToolId::Label],
+    &[
+        ToolId::LandBrush,
+        ToolId::WaterBrush,
+        ToolId::Lasso,
+        ToolId::Label,
+    ],
     &[ToolId::Stamp, ToolId::Scatter, ToolId::StampEraser],
     &[ToolId::ExportRegion],
 ];
