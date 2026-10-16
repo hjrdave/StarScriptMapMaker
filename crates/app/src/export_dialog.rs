@@ -8,6 +8,8 @@ use ssmap_core::{
     Canvas, ExportRegion, ExportSettings, MAX_EXPORT_SIDE, SizeMode, WARN_EXPORT_SIDE,
 };
 
+use crate::{dialog, prop_widgets, theme};
+
 /// What the dialog tells the user about the chosen size.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum SizeMessage {
@@ -61,6 +63,29 @@ pub fn switch_size_mode(to: &SizeMode, settings: &ExportSettings, canvas: &Canva
     }
 }
 
+/// The Scale buttons beside the field.
+const SCALE_PRESETS: [f64; 4] = [1.0, 2.0, 4.0, 8.0];
+
+/// What the rendered image takes in memory, as text: 4 bytes a pixel. `None` while the size
+/// can't be made.
+pub fn memory_estimate(settings: &ExportSettings, canvas: &Canvas) -> Option<String> {
+    let size = settings.output_size(canvas).ok()?;
+    let bytes = u64::from(size.width) * u64::from(size.height) * 4;
+    let mib = bytes as f64 / (1024.0 * 1024.0);
+    Some(if mib >= 1024.0 {
+        format!("{:.1} GB", mib / 1024.0)
+    } else {
+        format!("{mib:.0} MB")
+    })
+}
+
+/// Whether the Scale `factor` makes an image the export can write, with `settings` otherwise.
+pub fn scale_allowed(factor: f64, settings: &ExportSettings, canvas: &Canvas) -> bool {
+    let mut trial = settings.clone();
+    trial.size = SizeMode::Scale { factor };
+    trial.output_size(canvas).is_ok()
+}
+
 fn mode_name(mode: &SizeMode) -> &'static str {
     match mode {
         SizeMode::Scale { .. } => "Scale",
@@ -87,6 +112,8 @@ pub enum DialogAction {
     Save(ExportSettings),
     /// Store the settings, then export with them.
     Export(ExportSettings),
+    /// Store the settings and switch to the Export Region tool to draw the region.
+    DrawRegion(ExportSettings),
 }
 
 #[derive(Default)]
@@ -121,27 +148,30 @@ impl ExportDialog {
         }
         let mut action = None;
         let mut cancelled = false;
-        let modal = egui::Modal::new(egui::Id::new("export_png")).show(ctx, |ui| {
-            ui.heading("Export PNG");
+        let shown = dialog::show(ctx, "export_png", "Export PNG", 460.0, |ui| {
+            self.region_ui(ui, canvas, &mut action);
+            ui.separator();
             self.size_ui(ui, canvas);
             ui.separator();
-            self.region_ui(ui, canvas);
-            ui.separator();
-            ui.checkbox(
-                &mut self.draft.transparent_background,
+            prop_widgets::checkbox_row(
+                ui,
                 "Transparent background",
+                &mut self.draft.transparent_background,
             );
-            ui.checkbox(
-                &mut self.draft.credits.text_file,
+            prop_widgets::checkbox_row(
+                ui,
                 "Write a credits.txt file beside the PNG",
+                &mut self.draft.credits.text_file,
             );
-            ui.checkbox(
-                &mut self.draft.credits.png_chunk,
+            prop_widgets::checkbox_row(
+                ui,
                 "Write the credits into the PNG",
+                &mut self.draft.credits.png_chunk,
             );
             ui.separator();
             egui::Grid::new("export file")
                 .num_columns(2)
+                .spacing([12.0, 8.0])
                 .show(ui, |ui| {
                     ui.label("File name");
                     let mut name = self.draft.file_name.clone().unwrap_or_default();
@@ -155,26 +185,33 @@ impl ExportDialog {
                 });
             ui.separator();
             let message = size_message(&self.draft, canvas);
+            let p = theme::palette(ui.ctx());
             let colour = match &message {
-                SizeMessage::Size(_) => ui.visuals().text_color(),
-                SizeMessage::Warning(_) => ui.visuals().warn_fg_color,
-                SizeMessage::Error(_) => ui.visuals().error_fg_color,
+                SizeMessage::Size(_) => p.text_primary,
+                SizeMessage::Warning(_) => p.warn,
+                SizeMessage::Error(_) => p.danger,
             };
             ui.colored_label(colour, message.text());
+            if let Some(memory) = memory_estimate(&self.draft, canvas) {
+                ui.label(
+                    egui::RichText::new(format!("About {memory} of memory"))
+                        .color(p.text_secondary),
+                );
+            }
             let valid = !matches!(message, SizeMessage::Error(_));
-            ui.horizontal(|ui| {
+            dialog::buttons(ui, |ui| {
+                if dialog::primary_button(ui, valid, "Export").clicked() {
+                    action = Some(DialogAction::Export(self.draft.clone()));
+                }
                 if ui.add_enabled(valid, egui::Button::new("Save")).clicked() {
                     action = Some(DialogAction::Save(self.draft.clone()));
-                }
-                if ui.add_enabled(valid, egui::Button::new("Export")).clicked() {
-                    action = Some(DialogAction::Export(self.draft.clone()));
                 }
                 if ui.button("Cancel").clicked() {
                     cancelled = true;
                 }
             });
         });
-        if action.is_some() || cancelled || modal.should_close() {
+        if action.is_some() || cancelled || shown.cancelled {
             self.open = false;
         }
         action
@@ -209,6 +246,8 @@ impl ExportDialog {
                     self.draft.size = switch_size_mode(&mode, &self.draft, canvas);
                 }
                 ui.end_row();
+                // Presets that would pass the cap are disabled.
+                let allowed = SCALE_PRESETS.map(|f| scale_allowed(f, &self.draft, canvas));
                 match &mut self.draft.size {
                     SizeMode::Scale { factor } => {
                         ui.label("Scale");
@@ -219,8 +258,9 @@ impl ExportDialog {
                                     .range(0.01..=64.0)
                                     .suffix("×"),
                             );
-                            for preset in [1.0, 2.0, 4.0] {
-                                if ui.small_button(format!("{preset}×")).clicked() {
+                            for (preset, allowed) in SCALE_PRESETS.into_iter().zip(allowed) {
+                                let button = egui::Button::new(format!("{preset}×")).small();
+                                if ui.add_enabled(allowed, button).clicked() {
                                     *factor = preset;
                                 }
                             }
@@ -256,16 +296,19 @@ impl ExportDialog {
             });
     }
 
-    fn region_ui(&mut self, ui: &mut egui::Ui, canvas: &Canvas) {
+    fn region_ui(&mut self, ui: &mut egui::Ui, canvas: &Canvas, action: &mut Option<DialogAction>) {
         let before = matches!(self.draft.region, ExportRegion::Custom { .. });
-        let mut custom = before;
+        let mut selected = usize::from(before);
         ui.horizontal(|ui| {
             ui.label("Region");
-            ui.radio_value(&mut custom, false, "Whole Canvas");
-            ui.radio_value(&mut custom, true, "Custom region");
+            prop_widgets::segmented(ui, &["Whole Canvas", "Custom region"], &mut selected);
         });
+        let custom = selected == 1;
         if custom != before {
             self.draft.region = region_switch(custom, &self.draft, canvas);
+        }
+        if custom && ui.button("Draw region on Canvas").clicked() {
+            *action = Some(DialogAction::DrawRegion(self.draft.clone()));
         }
         if let ExportRegion::Custom { rect } = &mut self.draft.region {
             egui::Grid::new("export region")

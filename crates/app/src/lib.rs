@@ -5,6 +5,7 @@ mod asset_browser;
 mod canvas_controls;
 mod canvas_view;
 pub mod credits;
+pub mod dialog;
 pub mod document;
 pub mod editor;
 pub mod export_dialog;
@@ -842,6 +843,10 @@ impl MapMakerApp {
                     tab.editor.map.export_settings = settings;
                     self.export_from_dialog();
                 }
+                Some(DialogAction::DrawRegion(settings)) => {
+                    tab.editor.map.export_settings = settings;
+                    tab.editor.active_tool = tools::ToolId::ExportRegion;
+                }
                 None => {}
             }
         }
@@ -952,7 +957,7 @@ impl MapMakerApp {
         let dest = run.dest().to_path_buf();
         match outcome {
             Outcome::Running(progress) => {
-                if export_run::show_progress(ctx, &dest, progress) {
+                if export_run::show_progress(ctx, &dest, progress, run.time_left()) {
                     run.cancel();
                     self.export_run = None;
                     tab.editor.info("Export cancelled");
@@ -987,21 +992,34 @@ impl MapMakerApp {
         };
         let name = tab.document.name();
         let mut choice = None;
-        egui::Modal::new(egui::Id::new("unsaved_changes")).show(ctx, |ui| {
-            ui.heading("Unsaved changes");
-            ui.label(format!("Save the changes to “{name}” before closing?"));
-            ui.horizontal(|ui| {
-                if ui.button("Save").clicked() {
-                    choice = Some(UnsavedChoice::Save);
-                }
-                if ui.button("Don’t Save").clicked() {
-                    choice = Some(UnsavedChoice::Discard);
-                }
-                if ui.button("Cancel").clicked() {
-                    choice = Some(UnsavedChoice::Cancel);
-                }
-            });
-        });
+        let shown = dialog::show(
+            ctx,
+            "unsaved_changes",
+            &format!("Save changes to “{name}”?"),
+            360.0,
+            |ui| {
+                ui.label("Your changes are lost if you don’t save them.");
+                dialog::buttons(ui, |ui| {
+                    let save = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::S);
+                    if dialog::primary_button_with_shortcut(ui, "Save", &save).clicked() {
+                        choice = Some(UnsavedChoice::Save);
+                    }
+                    if ui.button("Cancel").clicked() {
+                        choice = Some(UnsavedChoice::Cancel);
+                    }
+                    if ui.button("Don’t Save").clicked() {
+                        choice = Some(UnsavedChoice::Discard);
+                    }
+                });
+            },
+        );
+        if choice.is_none() {
+            if shown.cancelled {
+                choice = Some(UnsavedChoice::Cancel);
+            } else if dialog::enter_confirms(ctx) {
+                choice = Some(UnsavedChoice::Save);
+            }
+        }
         let Some(choice) = choice else {
             return;
         };
@@ -1071,30 +1089,25 @@ impl MapMakerApp {
                 "Save Recovered Copy",
             ),
         };
-        let mut recovered = None;
-        egui::Modal::new(egui::Id::new("recovery")).show(ctx, |ui| {
-            ui.heading("Recover unsaved changes");
-            ui.label(text);
-            ui.horizontal(|ui| {
-                if ui.button(recover).clicked() {
-                    recovered = Some(true);
-                }
-                if ui.button("Discard Changes").clicked() {
-                    recovered = Some(false);
-                }
-            });
-        });
-        let Some(recovered) = recovered else {
+        let Some(choice) = recovery_modal(ctx, &text, recover) else {
             return;
         };
         let prompt = self.tabs[self.active]
             .recovery_prompt
             .take()
             .expect("shown above");
-        match (prompt, recovered) {
-            (RecoveryPrompt::Replay(found), true) => self.replay_recovery(found),
-            (RecoveryPrompt::Copy { found, .. }, true) => self.save_recovered_copy(found),
-            (RecoveryPrompt::Replay(found) | RecoveryPrompt::Copy { found, .. }, false) => {
+        match (prompt, choice) {
+            (_, RecoveryChoice::Later) => {}
+            (RecoveryPrompt::Replay(found), RecoveryChoice::Recover) => {
+                self.replay_recovery(found);
+            }
+            (RecoveryPrompt::Copy { found, .. }, RecoveryChoice::Recover) => {
+                self.save_recovered_copy(found);
+            }
+            (
+                RecoveryPrompt::Replay(found) | RecoveryPrompt::Copy { found, .. },
+                RecoveryChoice::Discard,
+            ) => {
                 if let Err(err) = remove_journal(&found.path) {
                     self.notify_error(format!("Couldn’t delete the unsaved changes: {err}"));
                 }
@@ -1107,27 +1120,19 @@ impl MapMakerApp {
         if self.unsaved_prompt.is_none() {
             return;
         }
-        let mut recovered = None;
-        egui::Modal::new(egui::Id::new("recovery")).show(ctx, |ui| {
-            ui.heading("Recover unsaved changes");
-            ui.label("A Map that was never saved wasn’t closed properly. Recover it?");
-            ui.horizontal(|ui| {
-                if ui.button("Recover").clicked() {
-                    recovered = Some(true);
-                }
-                if ui.button("Discard Changes").clicked() {
-                    recovered = Some(false);
-                }
-            });
-        });
-        let Some(recovered) = recovered else {
+        let text = "A Map that was never saved wasn’t closed properly. Recover it?";
+        let Some(choice) = recovery_modal(ctx, text, "Recover") else {
             return;
         };
         let found = self.unsaved_prompt.take().expect("shown above");
-        if recovered {
-            self.recover_unsaved(found);
-        } else if let Err(err) = remove_journal(&found.path) {
-            self.notify_error(format!("Couldn’t delete the unsaved changes: {err}"));
+        match choice {
+            RecoveryChoice::Recover => self.recover_unsaved(found),
+            RecoveryChoice::Discard => {
+                if let Err(err) = remove_journal(&found.path) {
+                    self.notify_error(format!("Couldn’t delete the unsaved changes: {err}"));
+                }
+            }
+            RecoveryChoice::Later => {}
         }
     }
 
@@ -1536,6 +1541,39 @@ enum UnsavedChoice {
     Save,
     Discard,
     Cancel,
+}
+
+/// The answer to a Recovery question.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RecoveryChoice {
+    Recover,
+    Discard,
+    /// Esc: leave the unsaved changes on disk and ask again next time.
+    Later,
+}
+
+/// Shows the Recovery dialog with `text` and a `recover` button.
+fn recovery_modal(ctx: &egui::Context, text: &str, recover: &str) -> Option<RecoveryChoice> {
+    let mut choice = None;
+    let shown = dialog::show(ctx, "recovery", "Recover unsaved changes", 420.0, |ui| {
+        ui.label(text);
+        dialog::buttons(ui, |ui| {
+            if dialog::primary_button(ui, true, recover).clicked() {
+                choice = Some(RecoveryChoice::Recover);
+            }
+            if ui.button("Discard").clicked() {
+                choice = Some(RecoveryChoice::Discard);
+            }
+        });
+    });
+    if choice.is_none() {
+        if shown.cancelled {
+            choice = Some(RecoveryChoice::Later);
+        } else if dialog::enter_confirms(ctx) {
+            choice = Some(RecoveryChoice::Recover);
+        }
+    }
+    choice
 }
 
 impl eframe::App for MapMakerApp {
