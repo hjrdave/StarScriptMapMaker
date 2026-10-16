@@ -20,7 +20,7 @@ use ssmap_render::{Fonts, LabelLayout};
 
 use crate::editor::Editor;
 use crate::prop_widgets::{
-    Edit, LiveEdit, Provenance, ScrubSpec, checkbox_row, scrub_field, slider, swatch,
+    Edit, LiveEdit, Provenance, ScrubSpec, checkbox_row, number_field, slider, swatch,
 };
 use crate::theme;
 
@@ -355,29 +355,34 @@ impl LabelStylesPanel {
             }
         });
         let mut weight = f64::from(next.font.weight);
-        let spec = ScrubSpec::new("Weight").range(100.0, 900.0);
-        merge(scrub_field(ui, &mut weight, &spec));
+        let spec = ScrubSpec::new("Weight").range(100.0, 900.0).step(100.0);
+        merge(number_field(ui, &mut weight, &spec));
         next.font.weight = weight.round() as u16;
         if checkbox_row(ui, "Italic", &mut next.font.italic) {
             merge(instant());
         }
         let spec = ScrubSpec::new("Size")
             .range(0.1, 10_000.0)
+            .slider_max(500.0)
+            .logarithmic()
             .step(0.5)
             .decimals(1);
-        merge(scrub_field(ui, &mut next.size, &spec));
+        merge(slider(ui, &mut next.size, &spec));
         let spec = ScrubSpec::new("Letter spacing")
             .unit(" em")
             .range(-1.0, 5.0)
+            .slider_max(1.0)
+            .default_value(0.0)
             .step(0.005)
             .decimals(3);
-        merge(scrub_field(ui, &mut next.letter_spacing, &spec));
+        merge(slider(ui, &mut next.letter_spacing, &spec));
         let spec = ScrubSpec::new("Line height")
             .unit("×")
             .range(0.1, 10.0)
+            .slider_max(3.0)
             .step(0.01)
             .decimals(2);
-        merge(scrub_field(ui, &mut next.line_height, &spec));
+        merge(slider(ui, &mut next.line_height, &spec));
         let mut percent = next.arch * 100.0;
         let spec = ScrubSpec::new("Arch")
             .unit("%")
@@ -401,9 +406,11 @@ impl LabelStylesPanel {
 
         let spec = ScrubSpec::new("Halo")
             .range(0.0, 1_000.0)
+            .slider_max(100.0)
+            .default_value(0.0)
             .step(0.1)
             .decimals(1);
-        merge(scrub_field(ui, &mut next.halo.width, &spec));
+        merge(slider(ui, &mut next.halo.width, &spec));
         let mut halo = Some(next.halo.color);
         merge(swatch(ui, "Halo colour", &mut halo, false, Provenance::Plain).edit);
         next.halo.color = halo.unwrap_or(next.halo.color);

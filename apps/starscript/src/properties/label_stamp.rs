@@ -177,57 +177,75 @@ impl PropertiesPanel {
         self.label_apply(editor, &ctx, edit, &next, |l| l.font = None);
 
         let mut weight = f64::from(next.font.weight);
-        let edit = prop_widgets::scrub_field(
+        let edit = prop_widgets::number_field(
             ui,
             &mut weight,
             &ScrubSpec::new("Weight")
                 .range(100.0, 900.0)
-                .step(1.0)
+                .step(100.0)
                 .provenance(font),
         );
         if edit.changed {
             next.font.weight = weight as u16;
         }
-        self.label_apply(editor, &ctx, edit, &next, |l| l.font = None);
+        self.label_apply_as("Change Label Weight", editor, &ctx, edit, &next, |l| {
+            l.font = None
+        });
         if prop_widgets::checkbox_row(ui, "Italic", &mut next.font.italic) {
             self.label_apply(editor, &ctx, Edit::instant(), &next, |l| l.font = None);
         }
 
-        let edit = prop_widgets::scrub_field(
+        let edit = prop_widgets::slider(
             ui,
             &mut next.size,
             &ScrubSpec::new("Size")
                 .unit(" u")
                 .range(0.1, 100_000.0)
+                .slider_max(500.0)
+                .logarithmic()
                 .step(0.5)
                 .decimals(1)
                 .provenance(provenance(label.size.is_some())),
         );
-        self.label_apply(editor, &ctx, edit, &next, |l| l.size = None);
+        self.label_apply_as("Change Label Size", editor, &ctx, edit, &next, |l| {
+            l.size = None
+        });
 
-        let edit = prop_widgets::scrub_field(
+        let edit = prop_widgets::slider(
             ui,
             &mut next.letter_spacing,
             &ScrubSpec::new("Letter spacing")
                 .unit(" em")
-                .range(-10.0, 10.0)
+                .range(-1.0, 5.0)
+                .slider_max(1.0)
+                .default_value(0.0)
                 .step(0.005)
                 .decimals(3)
                 .provenance(provenance(label.letter_spacing.is_some())),
         );
-        self.label_apply(editor, &ctx, edit, &next, |l| l.letter_spacing = None);
+        self.label_apply_as(
+            "Change Label Letter Spacing",
+            editor,
+            &ctx,
+            edit,
+            &next,
+            |l| l.letter_spacing = None,
+        );
 
-        let edit = prop_widgets::scrub_field(
+        let edit = prop_widgets::slider(
             ui,
             &mut next.line_height,
             &ScrubSpec::new("Line height")
                 .unit("×")
                 .range(0.1, 10.0)
+                .slider_max(3.0)
                 .step(0.01)
                 .decimals(2)
                 .provenance(provenance(label.line_height.is_some())),
         );
-        self.label_apply(editor, &ctx, edit, &next, |l| l.line_height = None);
+        self.label_apply_as("Change Label Line Height", editor, &ctx, edit, &next, |l| {
+            l.line_height = None
+        });
 
         let mut percent = next.arch * 100.0;
         let edit = prop_widgets::slider(
@@ -243,7 +261,9 @@ impl PropertiesPanel {
         if edit.changed {
             next.arch = (percent / 100.0).clamp(-1.0, 1.0);
         }
-        self.label_apply(editor, &ctx, edit, &next, |l| l.arch = None);
+        self.label_apply_as("Change Label Arch", editor, &ctx, edit, &next, |l| {
+            l.arch = None
+        });
 
         let mut edit = Edit::default();
         let reset =
@@ -297,20 +317,26 @@ impl PropertiesPanel {
         if edit.changed {
             next.opacity = (percent / 100.0).clamp(0.0, 1.0) as f32;
         }
-        self.label_apply(editor, &ctx, edit, &next, |l| l.opacity = None);
+        self.label_apply_as("Change Label Opacity", editor, &ctx, edit, &next, |l| {
+            l.opacity = None
+        });
 
         let halo = provenance(label.halo.is_some());
-        let edit = prop_widgets::scrub_field(
+        let edit = prop_widgets::slider(
             ui,
             &mut next.halo.width,
             &ScrubSpec::new("Halo")
                 .unit(" u")
                 .range(0.0, 100_000.0)
+                .slider_max(100.0)
+                .default_value(0.0)
                 .step(0.1)
                 .decimals(1)
                 .provenance(halo),
         );
-        self.label_apply(editor, &ctx, edit, &next, |l| l.halo = None);
+        self.label_apply_as("Change Label Halo", editor, &ctx, edit, &next, |l| {
+            l.halo = None
+        });
         let mut colour = Some(next.halo.color);
         let response = prop_widgets::swatch(ui, "Halo colour", &mut colour, false, halo);
         if response.edit.changed {
@@ -334,6 +360,19 @@ impl PropertiesPanel {
         next: &ResolvedLabel,
         clear: impl FnOnce(&mut Label),
     ) {
+        self.label_apply_as("Edit Label", editor, ctx, edit, next, clear);
+    }
+
+    /// [`Self::label_apply`] with the name its Undo step gets.
+    fn label_apply_as(
+        &mut self,
+        name: &str,
+        editor: &mut Editor,
+        ctx: &LabelEdit<'_>,
+        edit: Edit,
+        next: &ResolvedLabel,
+        clear: impl FnOnce(&mut Label),
+    ) {
         if edit.reset {
             let mut cleared = ctx.label.clone();
             clear(&mut cleared);
@@ -343,11 +382,10 @@ impl PropertiesPanel {
             });
             return;
         }
-        self.live
-            .apply(editor, edit, "Edit Label", || Command::SetLabel {
-                id: ctx.id,
-                label: Box::new(ctx.label.with_resolved(ctx.styles, next)),
-            });
+        self.live.apply(editor, edit, name, || Command::SetLabel {
+            id: ctx.id,
+            label: Box::new(ctx.label.with_resolved(ctx.styles, next)),
+        });
     }
 
     /// Every field of a Stamp. A scrub is one gesture, a click one step.

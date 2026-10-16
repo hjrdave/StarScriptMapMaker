@@ -143,18 +143,28 @@ fn scatter_settings(ui: &mut egui::Ui, editor: &mut Editor) {
     slider(
         ui,
         &mut brush.density,
-        &ScrubSpec::new("Density").range(0.5, 100.0).decimals(1),
+        &ScrubSpec::new("Density")
+            .range(0.5, 100.0)
+            .logarithmic()
+            .default_value(8.0)
+            .decimals(1),
     );
     slider(
         ui,
         &mut brush.spacing,
-        &ScrubSpec::new("Spacing").range(0.0, 200.0),
+        &ScrubSpec::new("Spacing")
+            .range(0.0, 2000.0)
+            .slider_max(200.0)
+            .default_value(10.0),
     );
     let mut jitter = brush.size_jitter * 100.0;
     if slider(
         ui,
         &mut jitter,
-        &ScrubSpec::new("Size jitter").range(0.0, 90.0).unit("%"),
+        &ScrubSpec::new("Size jitter")
+            .range(0.0, 90.0)
+            .unit("%")
+            .default_value(20.0),
     ) {
         brush.size_jitter = jitter / 100.0;
     }
@@ -163,7 +173,8 @@ fn scatter_settings(ui: &mut egui::Ui, editor: &mut Editor) {
         &mut brush.rotation_jitter,
         &ScrubSpec::new("Rotation jitter")
             .range(0.0, 180.0)
-            .unit("°"),
+            .unit("°")
+            .default_value(0.0),
     );
     prop_widgets::checkbox_row(ui, "Random flip", &mut brush.random_flip);
     prop_widgets::checkbox_row(ui, "Random variant", &mut brush.random_variant);
