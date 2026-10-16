@@ -52,24 +52,34 @@ impl ToolId {
             ToolId::Lasso => "Lasso",
             ToolId::Label => "Label",
             ToolId::Stamp => "Stamp",
-            ToolId::Scatter => "Scatter",
+            ToolId::Scatter => "Scatter Brush",
             ToolId::StampEraser => "Stamp Eraser",
             ToolId::ExportRegion => "Export Region",
         }
     }
 
-    pub fn shortcut(self) -> egui::Key {
+    /// The key and modifiers that select the tool. Scatter Brush is ⇧S, so check it before
+    /// Stamp's S: egui ignores an extra Shift when matching.
+    pub fn shortcut(self) -> (egui::Modifiers, egui::Key) {
+        let none = egui::Modifiers::NONE;
         match self {
-            ToolId::Select => egui::Key::V,
-            ToolId::Pan => egui::Key::H,
-            ToolId::LandBrush => egui::Key::B,
-            ToolId::Lasso => egui::Key::L,
-            ToolId::Label => egui::Key::T,
-            ToolId::Stamp => egui::Key::S,
-            ToolId::Scatter => egui::Key::C,
-            ToolId::StampEraser => egui::Key::E,
-            ToolId::ExportRegion => egui::Key::X,
+            ToolId::Select => (none, egui::Key::V),
+            ToolId::Pan => (none, egui::Key::H),
+            ToolId::LandBrush => (none, egui::Key::B),
+            ToolId::Lasso => (none, egui::Key::L),
+            ToolId::Label => (none, egui::Key::T),
+            ToolId::Stamp => (none, egui::Key::S),
+            ToolId::Scatter => (egui::Modifiers::SHIFT, egui::Key::S),
+            ToolId::StampEraser => (none, egui::Key::E),
+            ToolId::ExportRegion => (none, egui::Key::X),
         }
+    }
+
+    /// The shortcut as shown in the UI, such as "V" or "⇧S".
+    pub fn shortcut_text(self) -> String {
+        let (modifiers, key) = self.shortcut();
+        let shift = if modifiers.shift { "⇧" } else { "" };
+        format!("{shift}{}", key.name())
     }
 }
 

@@ -927,7 +927,7 @@ mod tests {
         fixture.editor.active_tool = ToolId::Scatter;
         let mut harness = harness(fixture);
         for label in [
-            "Scatter",
+            "Scatter Brush",
             "Size",
             "Place on",
             "Density",
@@ -943,7 +943,7 @@ mod tests {
 
         harness.state_mut().editor.active_tool = ToolId::Select;
         harness.run();
-        for label in ["Scatter", "Density", "Tree (test-pack/tree)"] {
+        for label in ["Scatter Brush", "Density", "Tree (test-pack/tree)"] {
             assert!(harness.query_by_label(label).is_none(), "{label}");
         }
     }
