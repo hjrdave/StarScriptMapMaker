@@ -11,7 +11,7 @@ use ssmap_core::{
 fn write_pack(dir: &Path, id: &str) {
     std::fs::create_dir_all(dir.join("art")).unwrap();
     let manifest = format!(
-        "[pack]\nid = \"{id}\"\nname = \"Pack {id}\"\nlicence = \"CC0-1.0\"\ncredits = \"\"\n\
+        "[pack]\nid = \"{id}\"\nname = \"Pack {id}\"\nlicence = \"CC0-1.0\"\ncredits = \"Test credits\"\n\
          modified = \"2026-01-01\"\nauthor = \"A\"\n\n[[asset]]\nid = \"one\"\nname = \"One\"\n\
          category = \"c\"\nfile = \"art/one.svg\"\nanchor = [0.5, 0.5]\nwidth = 8\n"
     );
