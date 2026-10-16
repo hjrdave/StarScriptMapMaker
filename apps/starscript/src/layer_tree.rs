@@ -256,6 +256,10 @@ enum Action {
     StartRename(Id),
     /// Duplicates the row, or the whole selection if the row is part of it.
     Duplicate(Id),
+    /// Copies the row, or the whole selection if the row is part of it.
+    Copy(Id),
+    /// Cuts the row, or the whole selection if the row is part of it.
+    Cut(Id),
     /// Deletes the row, or the whole selection if the row is part of it.
     Delete(Id),
     FinishRename,
@@ -327,6 +331,18 @@ impl LayerTree {
                         editor.select(vec![id]);
                     }
                     editor.duplicate_selection();
+                }
+                Action::Copy(id) => {
+                    if !editor.is_selected(id) {
+                        editor.select(vec![id]);
+                    }
+                    editor.copy_selection();
+                }
+                Action::Cut(id) => {
+                    if !editor.is_selected(id) {
+                        editor.select(vec![id]);
+                    }
+                    editor.cut_selection();
                 }
                 Action::Delete(id) => {
                     if !editor.is_selected(id) {
@@ -613,6 +629,14 @@ impl LayerTree {
             };
             if ui.button(duplicate).clicked() {
                 actions.push(Action::Duplicate(row.id));
+                ui.close();
+            }
+            if ui.button("Copy").clicked() {
+                actions.push(Action::Copy(row.id));
+                ui.close();
+            }
+            if ui.button("Cut").clicked() {
+                actions.push(Action::Cut(row.id));
                 ui.close();
             }
             if !state.locked_by_parent {

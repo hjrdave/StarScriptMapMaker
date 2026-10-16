@@ -252,6 +252,24 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "is_zero")]
         offset: [f64; 2],
     },
+    /// Pastes copied branches of the tree into Layer `parent` (the root when `None`) at
+    /// `index` (the top when `None`), as one edit. `subtrees` are the branches as copied, with
+    /// their original ids; `new_ids` names every pasted node as in `Duplicate`: each branch in
+    /// order, a node followed by its descendants in tree order. Nodes keep their names,
+    /// visibility, lock state and settings, and a name already used beside them gets " copy"
+    /// added. `offset` moves every Object by that many Canvas units. A Clip follows its
+    /// Landmass when that is pasted too, stays if the Landmass is still in the Map, and is
+    /// dropped otherwise.
+    Paste {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<Id>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<usize>,
+        subtrees: Vec<Subtree>,
+        new_ids: Vec<Id>,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        offset: [f64; 2],
+    },
     /// Embeds Assets and font files in the Map (ADR 0005), as saving does for everything the
     /// Map uses. Files are stored once per content hash. An Asset or font file already
     /// embedded is left as it is: the embedded copy wins.
@@ -387,6 +405,7 @@ impl Command {
             Command::SetStamp { .. } => "Edit Stamp",
             Command::PlaceStamps { .. } => "Place Stamps",
             Command::Duplicate { .. } => "Duplicate",
+            Command::Paste { .. } => "Paste",
             Command::EmbedAssets { .. } => "Embed Assets",
             Command::UpdateFromPack { .. } => "Update from Pack",
         }
@@ -527,6 +546,13 @@ impl Command {
                 new_ids,
                 offset,
             } => duplicate(map, ids, new_ids, *offset),
+            Command::Paste {
+                parent,
+                index,
+                subtrees,
+                new_ids,
+                offset,
+            } => paste(map, *parent, *index, subtrees, new_ids, *offset),
             Command::Translate { ids, offset } => transform(map, ids, &Affine::translate(*offset)),
             Command::Transform { ids, transform: t } => transform(map, ids, t),
             Command::AddRegion { id, region } => {
@@ -1163,6 +1189,130 @@ fn duplicate(
         });
     }
     Ok(ops)
+}
+
+fn paste(
+    map: &Map,
+    parent: Option<Id>,
+    index: Option<usize>,
+    subtrees: &[Subtree],
+    new_ids: &[Id],
+    offset: [f64; 2],
+) -> Result<Vec<Op>, CommandError> {
+    if !offset.iter().all(|v| v.is_finite()) {
+        return Err(CommandError::InvalidTransform(Affine::translate(offset).0));
+    }
+    if let Some(parent) = parent {
+        layer(map, parent)?;
+        unlocked(map, parent)?;
+    }
+    let siblings = map.children(parent);
+    let index = index.unwrap_or(siblings.len());
+    let mut order = Vec::new();
+    for root in subtrees {
+        let mut pending = vec![root];
+        while let Some(tree) = pending.pop() {
+            order.push(tree.id);
+            pending.extend(tree.children.iter().rev());
+        }
+    }
+    if new_ids.len() != order.len() {
+        return Err(CommandError::DuplicateIds {
+            expected: order.len(),
+            got: new_ids.len(),
+        });
+    }
+    let mut fresh = HashSet::new();
+    for &id in new_ids {
+        if map.contains(id) || !fresh.insert(id) {
+            return Err(CommandError::IdInUse(id));
+        }
+    }
+    let renamed: HashMap<Id, Id> = order.iter().copied().zip(new_ids.iter().copied()).collect();
+    let translate = Affine::translate(offset);
+    let mut taken: HashSet<String> = siblings
+        .iter()
+        .filter_map(|&id| map.node(id).and_then(own_name).map(str::to_owned))
+        .collect();
+    let mut ops = Vec::with_capacity(subtrees.len());
+    for (n, source) in subtrees.iter().enumerate() {
+        let mut subtree = pasted_subtree(map, source, &renamed, &translate, offset)?;
+        match &mut subtree.node {
+            Node::Layer(layer) => {
+                if taken.contains(&layer.name) {
+                    layer.name = copy_name(&layer.name, &taken);
+                }
+                taken.insert(layer.name.clone());
+            }
+            Node::Object(object) => {
+                if let Some(name) = &object.name {
+                    let name = if taken.contains(name) {
+                        copy_name(name, &taken)
+                    } else {
+                        name.clone()
+                    };
+                    taken.insert(name.clone());
+                    object.name = Some(name);
+                }
+            }
+        }
+        ops.push(Op::Insert {
+            parent,
+            index: index + n,
+            subtree,
+        });
+    }
+    Ok(ops)
+}
+
+/// `source` with new ids, moved by `offset`, its Clips resolved against the pasted ids.
+fn pasted_subtree(
+    map: &Map,
+    source: &Subtree,
+    renamed: &HashMap<Id, Id>,
+    translate: &Affine,
+    offset: [f64; 2],
+) -> Result<Subtree, CommandError> {
+    let mut node = source.node.clone();
+    if let Node::Layer(layer) = &mut node
+        && let Some(clip) = layer.clip
+    {
+        let still_a_landmass = matches!(
+            map.node(clip),
+            Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Landmass(_))
+        );
+        layer.clip = match renamed.get(&clip) {
+            Some(&new) => Some(new),
+            None if still_a_landmass => Some(clip),
+            None => None,
+        };
+    }
+    let id = renamed[&source.id];
+    if let Node::Object(object) = &mut node
+        && !is_zero(&offset)
+    {
+        match &mut object.kind {
+            ObjectKind::Landmass(Landmass { geometry, .. })
+            | ObjectKind::Lake(Lake { geometry, .. }) => {
+                *geometry = geometry.transformed(translate);
+                if let Some(problem) = geometry.problem() {
+                    return Err(CommandError::InvalidGeometry { id, problem });
+                }
+            }
+            ObjectKind::Stamp(stamp) => {
+                stamp.position = [stamp.position[0] + offset[0], stamp.position[1] + offset[1]];
+            }
+            ObjectKind::Label(label) => {
+                label.position = [label.position[0] + offset[0], label.position[1] + offset[1]];
+            }
+        }
+    }
+    let children = source
+        .children
+        .iter()
+        .map(|child| pasted_subtree(map, child, renamed, translate, offset))
+        .collect::<Result<_, _>>()?;
+    Ok(Subtree { id, node, children })
 }
 
 /// A copy of the subtree at `id` with new ids, its outlines and positions moved by `offset`.

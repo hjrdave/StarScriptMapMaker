@@ -68,6 +68,9 @@ pub fn accelerator(shortcut: Shortcut) -> Option<Accelerator> {
     let key = match shortcut.key {
         Key::A => "a".to_owned(),
         Key::E => "e".to_owned(),
+        Key::C => "c".to_owned(),
+        Key::V => "v".to_owned(),
+        Key::X => "x".to_owned(),
         Key::J => "j".to_owned(),
         Key::N => "n".to_owned(),
         Key::O => "o".to_owned(),
@@ -93,7 +96,13 @@ pub fn accelerator(shortcut: Shortcut) -> Option<Accelerator> {
 fn text_editing_key(command: Command) -> bool {
     matches!(
         command,
-        Command::Undo | Command::Redo | Command::SelectAll | Command::Deselect
+        Command::Undo
+            | Command::Redo
+            | Command::SelectAll
+            | Command::Deselect
+            | Command::Copy
+            | Command::Cut
+            | Command::Paste
     )
 }
 

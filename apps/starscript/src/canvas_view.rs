@@ -197,6 +197,19 @@ impl CanvasView {
         )
     }
 
+    /// Where Paste puts the middle of what it pastes: the Canvas point under `pointer` (the
+    /// last cursor position) when it is over the Canvas, else the middle of what is visible.
+    /// Uses this tab's own zoom and pan.
+    pub fn paste_point(&self, pointer: Option<egui::Pos2>) -> Option<[f64; 2]> {
+        pointer
+            .and_then(|pointer| self.canvas_point(pointer))
+            .or_else(|| {
+                self.view
+                    .as_ref()
+                    .map(|view| view.to_canvas(zoom::centre(view)))
+            })
+    }
+
     /// Zoom as a share of 1:1, in points rather than physical pixels.
     pub fn zoom(&self, pixels_per_point: f64) -> Option<f64> {
         self.view.map(|view| view.zoom / pixels_per_point)

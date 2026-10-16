@@ -11,7 +11,7 @@ use ssmap_core::scatter::{self, ScatterBrush, ScatterStroke, Terrain};
 use ssmap_core::{
     Align, Blob, Command, CommandError, DefaultLayers, EmbedAsset, EmbedFont, ExecuteError,
     History, Id, Label, Map, MultiPolygon, Node, NodeRef, ObjectKind, Op, PickIndex, Point, Rect,
-    ResolvedLabel, RoughnessCache, Selection, Stamp, StampIndex,
+    ResolvedLabel, RoughnessCache, Selection, Stamp, StampIndex, Subtree,
 };
 use ssmap_fonts::FALLBACK_FAMILY;
 use ssmap_render::wgpu;
@@ -20,6 +20,8 @@ use ssmap_render::{
     MapScene, SpriteStore,
 };
 
+use crate::clipboard::Clipboard;
+use crate::handles::Bounds;
 use crate::layer_tree::node_name;
 use crate::toast::{Toast, ToastAction, ToastKind, Toasts};
 use crate::tools::ToolId;
@@ -69,6 +71,10 @@ pub struct Editor {
     pub selected_asset: Option<AssetRef>,
     /// The scatter brush's settings. Its radius is half the shared `brush_size`.
     pub scatter: ScatterBrush,
+    /// What Copy or Cut last took. Paste reads it back.
+    clipboard: Option<Clipboard>,
+    /// The clipboard as text, until the app mirrors it to the system clipboard.
+    clipboard_text: Option<String>,
 }
 
 /// What a new Object is, for choosing the Layer it goes into.
@@ -132,6 +138,8 @@ impl Editor {
             default_layers: DefaultLayers::default(),
             active_tool: ToolId::Select,
             scatter: ScatterBrush::default(),
+            clipboard: None,
+            clipboard_text: None,
             brush_size: DEFAULT_BRUSH_SIZE,
             erase_default: false,
             node_edit: None,
@@ -968,6 +976,197 @@ impl Editor {
         Some(copies)
     }
 
+    /// Whether Paste has anything to paste.
+    pub fn has_clipboard(&self) -> bool {
+        self.clipboard.is_some()
+    }
+
+    /// The text to mirror to the system clipboard after a Copy or Cut, once.
+    pub fn take_clipboard_text(&mut self) -> Option<String> {
+        self.clipboard_text.take()
+    }
+
+    /// The selected branches, in stacking order, without any that sit inside another selected
+    /// branch.
+    fn selected_roots(&self) -> Vec<Id> {
+        let listed: HashSet<Id> = self.selection.iter().copied().collect();
+        let mut roots: Vec<(Vec<usize>, Id)> = Vec::new();
+        for &id in &self.selection {
+            if !self.map.contains(id) || roots.iter().any(|(_, r)| *r == id) {
+                continue;
+            }
+            let inside = std::iter::successors(self.map.parent(id), |&p| self.map.parent(p))
+                .any(|ancestor| listed.contains(&ancestor));
+            if !inside {
+                roots.push((self.tree_path(id), id));
+            }
+        }
+        roots.sort();
+        roots.into_iter().map(|(_, id)| id).collect()
+    }
+
+    /// The sibling positions from the root down to `id`: sorting by it gives stacking order.
+    fn tree_path(&self, id: Id) -> Vec<usize> {
+        let mut path = Vec::new();
+        let mut at = id;
+        loop {
+            let parent = self.map.parent(at);
+            path.push(
+                self.map
+                    .children(parent)
+                    .iter()
+                    .position(|&c| c == at)
+                    .unwrap_or(0),
+            );
+            match parent {
+                Some(parent) => at = parent,
+                None => break,
+            }
+        }
+        path.reverse();
+        path
+    }
+
+    fn subtree(&self, id: Id) -> Subtree {
+        Subtree {
+            id,
+            node: self.map.node(id).expect("listed ids exist").clone(),
+            children: self
+                .map
+                .children(Some(id))
+                .iter()
+                .map(|&child| self.subtree(child))
+                .collect(),
+        }
+    }
+
+    /// Copies the selected Layers and Objects, with everything inside them, locked ones too.
+    /// Returns false when nothing is selected.
+    pub fn copy_selection(&mut self) -> bool {
+        let roots = self.selected_roots();
+        if roots.is_empty() {
+            return false;
+        }
+        let mut objects = Vec::new();
+        let mut pending = roots.clone();
+        while let Some(id) = pending.pop() {
+            match self.map.node(id) {
+                Some(Node::Object(_)) => objects.push(id),
+                _ => pending.extend(self.map.children(Some(id))),
+            }
+        }
+        // A Stamp whose art is not installed has no box, so it counts as its position.
+        let mut points: Vec<[f64; 2]> = objects
+            .iter()
+            .filter(|&&id| self.stamp(id).is_some() && self.stamp_bounds(id).is_none())
+            .filter_map(|&id| self.stamp(id).map(|stamp| stamp.position))
+            .collect();
+        if let Some(bounds) = Bounds::of_ids(self, &objects) {
+            points.extend([bounds.min, bounds.max]);
+        }
+        let centre = Bounds::around(&points).map(|bounds| bounds.centre());
+        let subtrees = roots.iter().map(|&id| self.subtree(id)).collect();
+        let clipboard = Clipboard::new(subtrees, centre);
+        self.clipboard_text = Some(clipboard.to_text());
+        self.clipboard = Some(clipboard);
+        true
+    }
+
+    /// Copies the selection, then removes the originals as one Undo step. Locked Layers and
+    /// Objects are copied but stay.
+    pub fn cut_selection(&mut self) {
+        if self.gesture_open || !self.copy_selection() {
+            return;
+        }
+        let roots = self.selected_roots();
+        let removable: Vec<Id> = roots
+            .iter()
+            .copied()
+            .filter(|&id| !self.branch_locked(id))
+            .collect();
+        if removable.len() < roots.len() {
+            self.info("Locked layers were copied but not cut");
+        }
+        if !removable.is_empty() {
+            self.run_selecting(Command::Delete { ids: removable }, Vec::new());
+        }
+    }
+
+    /// Whether `id`, a Layer above it or anything inside it is locked.
+    fn branch_locked(&self, id: Id) -> bool {
+        let mut stack = vec![id];
+        self.map.is_locked(id) || {
+            let mut found = false;
+            while let Some(at) = stack.pop() {
+                found |= self.map.node(at).is_some_and(Node::locked);
+                stack.extend(self.map.children(Some(at)));
+            }
+            found
+        }
+    }
+
+    /// Pastes what Copy or Cut took, as one Undo step, with the middle of the pasted Objects
+    /// at `at` (Canvas units). It goes above the selected Layer, or on top when nothing is
+    /// selected, and the pasted items become the Selection. Returns their ids.
+    pub fn paste(&mut self, at: [f64; 2]) -> Option<Vec<Id>> {
+        if self.gesture_open {
+            return None;
+        }
+        let clipboard = self.clipboard.clone()?;
+        let (parent, index) = self.paste_destination(clipboard.has_objects)?;
+        let mut new_ids = Vec::new();
+        let mut tops = Vec::new();
+        for root in &clipboard.subtrees {
+            tops.push(Id::new());
+            new_ids.push(tops[tops.len() - 1]);
+            let mut pending: Vec<&Subtree> = root.children.iter().rev().collect();
+            while let Some(tree) = pending.pop() {
+                new_ids.push(Id::new());
+                pending.extend(tree.children.iter().rev());
+            }
+        }
+        let offset = clipboard
+            .centre
+            .map_or([0.0, 0.0], |c| [at[0] - c[0], at[1] - c[1]]);
+        let command = Command::Paste {
+            parent,
+            index,
+            subtrees: clipboard.subtrees,
+            new_ids,
+            offset,
+        };
+        self.run_selecting(command, tops.clone()).then_some(tops)
+    }
+
+    /// The Layer (`None` for the root) and position pasted items go in. Layers go just above
+    /// the selected item; Objects need a Layer, so they go on top of the selected Layer, or
+    /// of the Layer holding the selected Object, or of the active Layer.
+    fn paste_destination(&mut self, has_objects: bool) -> Option<(Option<Id>, Option<usize>)> {
+        let selected = self.selected_roots().last().copied();
+        if !has_objects {
+            return Some(match selected {
+                Some(id) => {
+                    let parent = self.map.parent(id);
+                    let index = self.map.children(parent).iter().position(|&c| c == id)? + 1;
+                    (parent, Some(index))
+                }
+                None => (None, None),
+            });
+        }
+        let layer = match selected.and_then(|id| self.map.node(id).map(|n| (id, n.is_layer()))) {
+            Some((id, true)) => Some(id),
+            Some((id, false)) => self.map.parent(id),
+            None => self.active_layer.filter(|&id| self.map.contains(id)),
+        };
+        match layer {
+            Some(layer) => Some((Some(layer), None)),
+            None => {
+                self.info("Select a layer to paste into");
+                None
+            }
+        }
+    }
+
     /// The Objects directly on the active Layer.
     pub fn active_layer_objects(&self) -> Vec<Id> {
         let Some(layer) = self.active_layer.filter(|&id| self.map.contains(id)) else {
@@ -1454,6 +1653,103 @@ mod tests {
         assert_eq!(editor.undo_label(), Some("Duplicate Layer"));
         editor.undo();
         assert_eq!(editor.map.children(None), &[first, second]);
+    }
+
+    fn add_stamp(editor: &mut Editor, layer: Id, x: f64, y: f64) -> Id {
+        let id = Id::new();
+        assert!(editor.run(Command::CreateStamp {
+            id,
+            parent: layer,
+            index: None,
+            stamp: Box::new(Stamp::new("pack/asset".parse().unwrap(), [x, y])),
+        }));
+        id
+    }
+
+    fn stamp_position(editor: &Editor, id: Id) -> [f64; 2] {
+        editor.stamp(id).unwrap().position
+    }
+
+    #[test]
+    fn a_paste_puts_the_middle_of_the_copied_objects_under_the_point() {
+        let mut editor = editor();
+        let layer = editor.new_layer().unwrap();
+        let a = add_stamp(&mut editor, layer, 10.0, 10.0);
+        let b = add_stamp(&mut editor, layer, 30.0, 20.0);
+        editor.select(vec![a, b]);
+        assert!(editor.copy_selection());
+        // The middle of the two Stamps is (20, 15).
+        let pasted = editor.paste([100.0, 200.0]).unwrap();
+        assert_eq!(pasted.len(), 2);
+        assert_eq!(stamp_position(&editor, pasted[0]), [90.0, 195.0]);
+        assert_eq!(stamp_position(&editor, pasted[1]), [110.0, 205.0]);
+        assert_eq!(editor.selection(), &pasted[..]);
+        // The originals stay where they were, and one undo removes the paste.
+        assert_eq!(stamp_position(&editor, a), [10.0, 10.0]);
+        assert_eq!(editor.undo_label(), Some("Paste"));
+        editor.undo();
+        assert_eq!(editor.map.children(Some(layer)), &[a, b]);
+    }
+
+    #[test]
+    fn pasted_layers_go_above_the_selected_layer_and_keep_their_structure() {
+        let mut editor = editor();
+        let first = editor.new_layer().unwrap();
+        let stamp = add_stamp(&mut editor, first, 5.0, 5.0);
+        let second = editor.new_layer().unwrap();
+        editor.select(vec![first]);
+        editor.copy_selection();
+        let pasted = editor.paste([0.0, 0.0]).unwrap();
+        assert_eq!(editor.map.children(None), &[first, pasted[0], second]);
+        assert_eq!(editor.map.children(Some(pasted[0])).len(), 1);
+        assert_ne!(editor.map.children(Some(pasted[0])), &[stamp]);
+        assert_eq!(node_name(&editor.map, pasted[0]), "Layer 1 copy");
+        // With nothing selected a paste lands on top.
+        editor.deselect();
+        let top = editor.paste([0.0, 0.0]).unwrap();
+        assert_eq!(editor.map.children(None).last(), Some(&top[0]));
+    }
+
+    #[test]
+    fn cut_removes_the_originals_in_one_step_and_skips_locked_layers() {
+        let mut editor = editor();
+        let open = editor.new_layer().unwrap();
+        let locked = editor.new_layer().unwrap();
+        assert!(editor.run(Command::SetLocked {
+            id: locked,
+            locked: true
+        }));
+        editor.select(vec![open, locked]);
+        editor.cut_selection();
+        assert_eq!(editor.map.children(None), &[locked]);
+        assert_eq!(editor.undo_label(), Some("Delete"));
+        // Both were copied, the locked one with its lock.
+        let pasted = editor.paste([0.0, 0.0]).unwrap();
+        assert_eq!(pasted.len(), 2);
+        editor.undo();
+        editor.undo();
+        assert_eq!(editor.map.children(None), &[open, locked]);
+    }
+
+    #[test]
+    fn pasting_objects_needs_a_layer() {
+        let mut editor = editor();
+        let layer = editor.new_layer().unwrap();
+        let a = add_stamp(&mut editor, layer, 1.0, 1.0);
+        editor.select(vec![a]);
+        editor.copy_selection();
+        let pasted = editor.paste([1.0, 1.0]).unwrap();
+        assert_eq!(editor.map.parent(pasted[0]), Some(layer));
+        assert_eq!(editor.map.children(Some(layer)).len(), 2);
+    }
+
+    #[test]
+    fn a_paste_with_nothing_copied_does_nothing() {
+        let mut editor = editor();
+        editor.new_layer().unwrap();
+        assert!(editor.paste([0.0, 0.0]).is_none());
+        editor.deselect();
+        assert!(!editor.copy_selection());
     }
 
     #[test]

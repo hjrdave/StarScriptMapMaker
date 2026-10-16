@@ -3,7 +3,7 @@
 //! the handles, and scales Labels.
 
 use eframe::egui;
-use ssmap_core::{Halo, Label, LabelStyles, Node, Rect, Stamp};
+use ssmap_core::{Halo, Id, Label, LabelStyles, Node, Rect, Stamp};
 use ssmap_render::View;
 
 use crate::editor::Editor;
@@ -94,8 +94,14 @@ impl Bounds {
     /// Combines the outlines of every selected Object that has one, and the text blocks
     /// of selected Labels.
     pub fn of_selection(editor: &mut Editor) -> Option<Self> {
+        let ids = editor.selection().to_vec();
+        Self::of_ids(editor, &ids)
+    }
+
+    /// The same for the Objects `ids` name.
+    pub fn of_ids(editor: &mut Editor, ids: &[Id]) -> Option<Self> {
         let mut points: Vec<[f64; 2]> = Vec::new();
-        for id in editor.selection().to_vec() {
+        for &id in ids {
             if let Some((label, layout)) = editor.label_layout(id) {
                 points.extend(layout.corners(&label));
                 continue;

@@ -20,6 +20,9 @@ pub enum Command {
     Undo,
     Redo,
     Delete,
+    Copy,
+    Cut,
+    Paste,
     Duplicate,
     SelectAll,
     Deselect,
@@ -57,13 +60,16 @@ pub enum Command {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
     A,
+    C,
     E,
     J,
     N,
     O,
     S,
     T,
+    V,
     W,
+    X,
     Z,
     Plus,
     Minus,
@@ -98,6 +104,9 @@ impl Shortcut {
     pub fn label(self, mac: bool) -> String {
         let key = match (self.key, mac) {
             (Key::A, _) => "A".to_owned(),
+            (Key::C, _) => "C".to_owned(),
+            (Key::V, _) => "V".to_owned(),
+            (Key::X, _) => "X".to_owned(),
             (Key::E, _) => "E".to_owned(),
             (Key::J, _) => "J".to_owned(),
             (Key::N, _) => "N".to_owned(),
@@ -156,6 +165,9 @@ pub fn shortcut(command: Command) -> Option<Shortcut> {
         Undo => Shortcut::new(c, !s, !a, Key::Z),
         Redo => Shortcut::new(c, s, !a, Key::Z),
         Delete | DeleteNodes => Shortcut::new(!c, !s, !a, Key::Backspace),
+        Copy => Shortcut::new(c, !s, !a, Key::C),
+        Cut => Shortcut::new(c, !s, !a, Key::X),
+        Paste => Shortcut::new(c, !s, !a, Key::V),
         Duplicate => Shortcut::new(c, !s, !a, Key::J),
         SelectAll => Shortcut::new(c, !s, !a, Key::A),
         Deselect => Shortcut::new(c, s, !a, Key::A),
@@ -196,6 +208,8 @@ pub struct State {
     pub redo_label: Option<String>,
     pub can_redo: bool,
     pub has_selection: bool,
+    /// Copy or Cut has taken something Paste can put back.
+    pub can_paste: bool,
     /// The active Layer has Objects to select.
     pub can_select_all: bool,
     pub has_active_layer: bool,
@@ -306,6 +320,9 @@ pub fn menus(state: &State) -> Vec<Menu> {
             map && state.can_redo,
         ),
         Separator,
+        item(Cut, "Cut", map && state.has_selection),
+        item(Copy, "Copy", map && state.has_selection),
+        item(Paste, "Paste", map && state.can_paste),
         item(Duplicate, "Duplicate", map && state.has_selection),
         item(Delete, "Delete", map && state.has_selection),
         item(SelectAll, "Select All", map && state.can_select_all),
@@ -478,6 +495,7 @@ mod tests {
         }
         let m = menus_for(&State {
             has_selection: true,
+            can_paste: true,
             can_select_all: true,
             has_active_layer: true,
             can_combine: true,
