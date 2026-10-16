@@ -18,6 +18,7 @@ pub mod icons;
 mod label_styles;
 mod layer_tree;
 pub mod menu;
+pub mod native_menu;
 pub mod new_map;
 pub mod prop_widgets;
 mod properties;
@@ -148,6 +149,9 @@ pub struct MapMakerApp {
     /// Commands whose key the egui handler leaves alone, because something else (the native
     /// menu on macOS) owns it. Each key is then handled once.
     shortcuts_off: HashSet<menu::Command>,
+    /// The native menu bar, on macOS; `None` elsewhere and in UI tests, which use the egui bar.
+    #[cfg(target_os = "macos")]
+    native_menu: Option<native_menu::mac::MacMenu>,
 }
 
 impl MapMakerApp {
@@ -218,6 +222,12 @@ impl MapMakerApp {
                 tab
             })
             .collect();
+        // Without a GPU (UI tests) there is no real window, and muda only works from the
+        // main thread, so those runs keep the egui menu bar.
+        #[cfg(target_os = "macos")]
+        let native_menu = gpu.then(|| native_menu::mac::MacMenu::new(&cc.egui_ctx));
+        #[cfg(not(target_os = "macos"))]
+        let native_menu: Option<()> = None;
         Self {
             home_active: tabs.is_empty(),
             tabs,
@@ -233,7 +243,14 @@ impl MapMakerApp {
             recent: RecentFiles::load(cc.storage),
             shell: shell::Shell::load(cc.storage),
             drop_focus: false,
-            shortcuts_off: HashSet::new(),
+            // The native menu owns the ⌘ keys; the egui handler leaves them alone.
+            shortcuts_off: if native_menu.is_some() {
+                native_menu::owned_commands().into_iter().collect()
+            } else {
+                HashSet::new()
+            },
+            #[cfg(target_os = "macos")]
+            native_menu,
             updates: UpdateCheck::load(cc.storage),
             new_map_dialog: NewMapDialog::default(),
             export_dialog: ExportDialog::default(),
@@ -825,6 +842,55 @@ impl MapMakerApp {
         if let Some(command) = chosen {
             self.run_command(command);
         }
+    }
+
+    /// Whether the native menu bar stands in for the egui one.
+    fn native_menu_shown(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        return self.native_menu.is_some();
+        #[cfg(not(target_os = "macos"))]
+        false
+    }
+
+    /// Runs the native menu items chosen since the last frame.
+    #[cfg(target_os = "macos")]
+    fn native_menu_actions(&mut self, ctx: &egui::Context) {
+        use native_menu::mac::Action;
+        let Some(mut native) = self.native_menu.take() else {
+            return;
+        };
+        let dialog_open = self.dialog_open();
+        for action in native.take_actions() {
+            match action {
+                // The window's close request asks about unsaved Maps.
+                Action::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                // A dialog has the keyboard, as it does for the shortcuts.
+                _ if dialog_open => {}
+                Action::Command(command) => self.run_command(command),
+                Action::OpenRecent(path) => self.open_recent(&path),
+            }
+        }
+        self.native_menu = Some(native);
+    }
+
+    /// Brings the native menu bar up to date with the active tab.
+    #[cfg(target_os = "macos")]
+    fn native_menu_sync(&mut self, ctx: &egui::Context) {
+        let Some(mut native) = self.native_menu.take() else {
+            return;
+        };
+        let state = self.menu_state();
+        let text_focus = ctx.egui_wants_keyboard_input()
+            || self
+                .tabs
+                .get(self.active)
+                .is_some_and(|tab| tab.canvas_view.editing_text());
+        native.sync(native_menu::mac::Spec {
+            app: native_menu::app_items(&state),
+            menus: native_menu::menus(&state, text_focus),
+            recent: self.recent.paths().to_vec(),
+        });
+        self.native_menu = Some(native);
     }
 
     fn open_recent(&mut self, path: &Path) {
@@ -1742,6 +1808,18 @@ impl eframe::App for MapMakerApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        #[cfg(target_os = "macos")]
+        self.native_menu_actions(ui.ctx());
+        self.show(ui);
+        // After the frame, so the menu shows what this frame changed.
+        #[cfg(target_os = "macos")]
+        self.native_menu_sync(ui.ctx());
+    }
+}
+
+impl MapMakerApp {
+    /// One frame of the editor.
+    fn show(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         // Dialogs take the keyboard while they are open.
         self.handle_close(&ctx);
@@ -1774,7 +1852,9 @@ impl eframe::App for MapMakerApp {
             .exact_size(theme::metrics::TITLE_BAR_WITH_TABS)
             .frame(strip)
             .show(ui, |ui| self.tab_strip(ui, !dialog_open));
-        egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui));
+        if !self.native_menu_shown() {
+            egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui));
+        }
         if self.home_active() {
             self.home_screen(ui);
             self.journal(&ctx);

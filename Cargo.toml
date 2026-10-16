@@ -25,6 +25,8 @@ geo = { version = "0.33", default-features = false }
 image = { version = "0.25", default-features = false, features = ["png"] }
 insta = { version = "1.49", features = ["glob", "json"] }
 lyon = "1.0"
+# Native macOS menu bar (app crate, macOS only).
+muda = { version = "0.21", default-features = false }
 png = "0.18"
 pollster = "1.0"
 proptest = "1.12"
