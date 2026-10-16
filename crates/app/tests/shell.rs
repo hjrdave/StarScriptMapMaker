@@ -173,3 +173,20 @@ fn the_status_bar_summarises_the_selection() {
     harness.run();
     assert!(harness.query_by_label_contains("Active Layer: ").is_some());
 }
+
+#[test]
+fn the_panel_shortcuts_are_not_also_taken_as_tab_shortcuts() {
+    // egui ignores an extra Alt, so Cmd+Alt+1 would match Cmd+1 (Home) if the tab shortcuts ran
+    // first. Ctrl+Tab cycles tabs and must not also hide the panels, which plain Tab does.
+    let mut harness = app();
+    assert!(!harness.state().home_active());
+    harness.key_press_modifiers(BOTH, egui::Key::Num1);
+    harness.run();
+    assert!(harness.state().shell().layers_collapsed());
+    assert!(!harness.state().home_active());
+
+    harness.key_press_modifiers(egui::Modifiers::CTRL, egui::Key::Tab);
+    harness.run();
+    assert!(harness.state().home_active());
+    assert!(harness.state().shell().properties_shown());
+}
