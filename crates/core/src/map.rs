@@ -400,6 +400,30 @@ impl Map {
             .any(|n| self.node(n).is_some_and(Node::locked))
     }
 
+    /// The nearest locked Layer above `id`, the one that makes `id` "locked by parent".
+    pub fn locked_ancestor(&self, id: Id) -> Option<Id> {
+        std::iter::successors(self.parent(id), |&p| self.parent(p))
+            .find(|&ancestor| self.node(ancestor).is_some_and(Node::locked))
+    }
+
+    /// `id` is locked only through a Layer above it, not by its own Lock.
+    pub fn locked_by_parent(&self, id: Id) -> bool {
+        self.node(id).is_some_and(|node| !node.locked()) && self.locked_ancestor(id).is_some()
+    }
+
+    /// `id` is hidden itself or through a Layer above it, so it does not draw.
+    pub fn is_hidden(&self, id: Id) -> bool {
+        std::iter::successors(Some(id), |&n| self.parent(n))
+            .any(|n| matches!(self.node(n), Some(Node::Layer(l)) if !l.visible))
+    }
+
+    /// Whether Layers and Objects can be dragged into `id`: it must be a Layer that is not
+    /// locked, itself or through a Layer above it. A locked Group refuses new content as well
+    /// as edits to what it holds.
+    pub fn accepts_children(&self, id: Id) -> bool {
+        matches!(self.node(id), Some(Node::Layer(_))) && !self.is_locked(id)
+    }
+
     /// Checks the tree's structural rules. A Map built only through Ops always passes.
     pub fn validate(&self) -> Result<(), InvariantError> {
         let mut seen = HashSet::new();
