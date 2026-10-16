@@ -52,24 +52,34 @@ impl ToolId {
             ToolId::Lasso => "Lasso",
             ToolId::Label => "Label",
             ToolId::Stamp => "Stamp",
-            ToolId::Scatter => "Scatter",
+            ToolId::Scatter => "Scatter Brush",
             ToolId::StampEraser => "Stamp Eraser",
             ToolId::ExportRegion => "Export Region",
         }
     }
 
-    pub fn shortcut(self) -> egui::Key {
+    /// The key and modifiers that select the tool. Scatter Brush is ⇧S, so check it before
+    /// Stamp's S: egui ignores an extra Shift when matching.
+    pub fn shortcut(self) -> (egui::Modifiers, egui::Key) {
+        let none = egui::Modifiers::NONE;
         match self {
-            ToolId::Select => egui::Key::V,
-            ToolId::Pan => egui::Key::H,
-            ToolId::LandBrush => egui::Key::B,
-            ToolId::Lasso => egui::Key::L,
-            ToolId::Label => egui::Key::T,
-            ToolId::Stamp => egui::Key::S,
-            ToolId::Scatter => egui::Key::C,
-            ToolId::StampEraser => egui::Key::E,
-            ToolId::ExportRegion => egui::Key::X,
+            ToolId::Select => (none, egui::Key::V),
+            ToolId::Pan => (none, egui::Key::H),
+            ToolId::LandBrush => (none, egui::Key::B),
+            ToolId::Lasso => (none, egui::Key::L),
+            ToolId::Label => (none, egui::Key::T),
+            ToolId::Stamp => (none, egui::Key::S),
+            ToolId::Scatter => (egui::Modifiers::SHIFT, egui::Key::S),
+            ToolId::StampEraser => (none, egui::Key::E),
+            ToolId::ExportRegion => (none, egui::Key::X),
         }
+    }
+
+    /// The shortcut as shown in the UI, such as "V" or "⇧S".
+    pub fn shortcut_text(self) -> String {
+        let (modifiers, key) = self.shortcut();
+        let shift = if modifiers.shift { "⇧" } else { "" };
+        format!("{shift}{}", key.name())
     }
 }
 
@@ -450,7 +460,7 @@ fn export_region_tool(
 fn land_brush(editor: &mut Editor, view: &View, state: &mut ToolState, input: &CanvasInput<'_>) {
     let response = input.response;
     let radius = editor.brush_size / 2.0;
-    let erase_held = response.ctx.input(|i| i.modifiers.alt);
+    let erase_held = response.ctx.input(|i| i.modifiers.alt) != editor.erase_default;
     if response.hovered() {
         response.ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
     }
@@ -1046,7 +1056,7 @@ pub fn paint_overlay(
         return;
     }
     let palette = crate::theme::palette(painter.ctx());
-    let erase_held = painter.ctx().input(|i| i.modifiers.alt);
+    let erase_held = painter.ctx().input(|i| i.modifiers.alt) != editor.erase_default;
     let erasing = state.stroke.as_ref().map_or(erase_held, |s| s.erase);
     let (fill, line) = if erasing {
         (palette.danger.gamma_multiply(0.3), palette.danger)

@@ -27,6 +27,8 @@ mod tab_strip;
 mod tessellation;
 pub mod theme;
 pub mod toast;
+mod tool_dock;
+mod tool_section;
 pub mod tools;
 pub mod update;
 pub mod zoom;
@@ -42,7 +44,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::asset_browser::AssetBrowser;
 use crate::credits::Credits;
 use crate::document::Document;
 use crate::editor::Editor;
@@ -111,7 +112,6 @@ pub struct MapMakerApp {
     recovery_dir: Option<PathBuf>,
     /// Whether the Canvas renderer is installed, so new tabs get a tessellation cache.
     gpu: bool,
-    asset_browser: AssetBrowser,
     /// The installed Asset packs' art, shared with the Canvas renderer and picking.
     sprites: SpriteStore,
     credits: Credits,
@@ -222,7 +222,6 @@ impl MapMakerApp {
             gpu,
             awaiting_save: None,
             unsaved_prompt: None,
-            asset_browser: AssetBrowser::default(),
             sprites,
             credits,
             recent: RecentFiles::load(cc.storage),
@@ -1304,8 +1303,12 @@ impl MapMakerApp {
                     editor.select(Vec::new());
                 }
             }
-            for tool in ToolId::ALL {
-                if input.consume_key(Modifiers::NONE, tool.shortcut()) {
+            // Shifted shortcuts first: egui ignores an extra Shift, so ⇧S would also read as S.
+            let mut tools = ToolId::ALL;
+            tools.sort_by_key(|tool| !tool.shortcut().0.shift);
+            for tool in tools {
+                let (modifiers, key) = tool.shortcut();
+                if input.consume_key(modifiers, key) {
                     editor.active_tool = tool;
                 }
             }
@@ -1334,31 +1337,6 @@ impl MapMakerApp {
                 return;
             };
             let editor = &mut tab.editor;
-            for tool in ToolId::ALL {
-                let selected = editor.active_tool == tool;
-                if ui
-                    .selectable_label(selected, tool.label())
-                    .on_hover_text(format!("{} ({:?})", tool.label(), tool.shortcut()))
-                    .clicked()
-                {
-                    editor.active_tool = tool;
-                }
-            }
-            if tools::uses_brush_size(editor.active_tool) {
-                ui.add(
-                    egui::Slider::new(&mut editor.brush_size, tools::BRUSH_SIZES)
-                        .logarithmic(true)
-                        .max_decimals(0)
-                        .text("Size"),
-                )
-                .on_hover_text(format!(
-                    "Brush diameter in Canvas units ([ and ]). Hold {} to erase.",
-                    tools::ERASE_MODIFIER
-                ));
-            }
-            if editor.active_tool == ToolId::Scatter {
-                scatter_settings(ui, &mut editor.scatter);
-            }
             ui.toggle_value(&mut tab.label_styles.open, "Label styles");
             ui.separator();
             let undo_hint = editor.undo_label().map(|l| format!("Undo {l}"));
@@ -1615,10 +1593,6 @@ impl eframe::App for MapMakerApp {
             .exact_size(theme::metrics::STATUS_BAR)
             .show(ui, |ui| self.status_bar(ui));
         let tab = &mut self.tabs[self.active];
-        egui::Panel::bottom("assets")
-            .resizable(true)
-            .default_size(150.0)
-            .show(ui, |ui| self.asset_browser.show(ui, &mut tab.editor));
         let layout = self.shell.current_layout();
         // The window grew: an overlay for a panel that now shows in full has nothing to open.
         if layout.layers != shell::PanelMode::Rail {
@@ -1683,6 +1657,7 @@ impl eframe::App for MapMakerApp {
         let canvas = egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ui, |ui| tab.canvas_view.show(ui, &mut tab.editor));
+        tool_dock::show(&ctx, canvas.response.rect, &mut tab.editor.active_tool);
         if let Some(action) = toast::show(&ctx, canvas.response.rect, tab.editor.toasts_mut()) {
             tab.editor.run_toast_action(action);
         }
@@ -1782,26 +1757,6 @@ fn layers_panel(
         }
     });
     tab.layer_tree.show(ui, &mut tab.editor, footer);
-}
-
-/// The scatter brush's settings, in a menu beside the toolbar.
-fn scatter_settings(ui: &mut egui::Ui, brush: &mut ssmap_core::scatter::ScatterBrush) {
-    use ssmap_core::scatter::Placement;
-    ui.menu_button("Scatter settings", |ui| {
-        ui.add(egui::Slider::new(&mut brush.density, 0.5..=100.0).text("Density"))
-            .on_hover_text("Stamps per 100 by 100 Canvas units");
-        ui.add(egui::Slider::new(&mut brush.spacing, 0.0..=200.0).text("Spacing"))
-            .on_hover_text("The least distance between two Stamps in a stroke");
-        ui.add(egui::Slider::new(&mut brush.size_jitter, 0.0..=0.9).text("Size jitter"));
-        ui.add(egui::Slider::new(&mut brush.rotation_jitter, 0.0..=180.0).text("Rotation jitter"))
-            .on_hover_text("Degrees either way");
-        ui.checkbox(&mut brush.random_flip, "Random flip");
-        ui.checkbox(&mut brush.random_variant, "Random variant");
-        ui.separator();
-        ui.radio_value(&mut brush.placement, Placement::Land, "Land only");
-        ui.radio_value(&mut brush.placement, Placement::Water, "Water only");
-        ui.radio_value(&mut brush.placement, Placement::Anywhere, "Anywhere");
-    });
 }
 
 #[cfg(test)]

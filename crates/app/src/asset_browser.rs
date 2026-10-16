@@ -1,5 +1,6 @@
-//! The Asset browser: the installed Asset packs, filtered by pack, category and a search over
-//! names and tags. Choosing an Asset arms the Stamp tool with it.
+//! The Asset picker: the installed Asset packs, filtered by pack, category and a search over
+//! names and tags, as a grid of thumbnails. It sits in the Stamp and Scatter Brush tool
+//! sections of Properties; choosing an Asset sets `Editor::selected_asset`.
 
 use std::collections::HashMap;
 
@@ -7,10 +8,12 @@ use eframe::egui;
 use ssmap_core::asset::{Asset, AssetRef, Pack, PackLibrary};
 
 use crate::editor::Editor;
-use crate::tools::ToolId;
+use crate::theme;
 
-/// A thumbnail's side, in points.
-const THUMBNAIL: f32 = 56.0;
+/// Thumbnails per row.
+const COLUMNS: usize = 4;
+/// The grid scrolls past this height, in points.
+const GRID_MAX_HEIGHT: f32 = 240.0;
 
 #[derive(Default)]
 pub struct AssetBrowser {
@@ -58,6 +61,24 @@ fn categories<'a>(packs: impl Iterator<Item = &'a Pack>) -> Vec<&'a str> {
     categories
 }
 
+/// What a thumbnail says to a screen reader (and on hover): the name and reference, the
+/// size of its Variant group and whether its pack must be credited.
+fn thumbnail_label(
+    reference: &AssetRef,
+    asset: &Asset,
+    variants: usize,
+    attribution: bool,
+) -> String {
+    let mut label = format!("{} ({reference})", asset.name);
+    if variants > 1 {
+        label.push_str(&format!(", {variants} variants"));
+    }
+    if attribution {
+        label.push_str(", attribution required");
+    }
+    label
+}
+
 impl AssetBrowser {
     pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         let Some(library) = editor.sprites().map(|sprites| sprites.library().clone()) else {
@@ -75,9 +96,15 @@ impl AssetBrowser {
         {
             self.pack = None;
         }
+        ui.add(
+            egui::TextEdit::singleline(&mut self.search)
+                .hint_text("Search names and tags")
+                .desired_width(f32::INFINITY),
+        );
         ui.horizontal(|ui| {
-            ui.strong("Assets");
+            let width = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
             egui::ComboBox::from_id_salt("asset pack")
+                .width(width)
                 .selected_text(self.pack.as_deref().unwrap_or("All packs"))
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut self.pack, None, "All packs");
@@ -100,6 +127,7 @@ impl AssetBrowser {
                 self.category = None;
             }
             egui::ComboBox::from_id_salt("asset category")
+                .width(width)
                 .selected_text(self.category.as_deref().unwrap_or("All categories"))
                 .show_ui(ui, |ui| {
                     ui.selectable_value(&mut self.category, None, "All categories");
@@ -111,56 +139,147 @@ impl AssetBrowser {
                         );
                     }
                 });
-            ui.add(
-                egui::TextEdit::singleline(&mut self.search)
-                    .hint_text("Search names and tags")
-                    .desired_width(180.0),
-            );
         });
-        ui.separator();
-        let mut chosen = None;
-        let (shown_pack, shown_category, search) = (
-            self.pack.clone(),
-            self.category.clone(),
-            self.search.clone(),
-        );
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                for pack in library
-                    .packs()
-                    .iter()
-                    .filter(|pack| shown_pack.as_ref().is_none_or(|id| *id == pack.id))
-                {
-                    for asset in pack
-                        .assets
-                        .iter()
-                        .filter(|asset| matches(asset, shown_category.as_deref(), &search))
-                    {
-                        let Ok(reference) = AssetRef::new(pack.id.clone(), asset.id.clone()) else {
-                            continue;
-                        };
-                        let selected = editor.selected_asset.as_ref() == Some(&reference);
-                        if self.thumbnail_button(ui, editor, &reference, asset, selected) {
-                            chosen = Some(reference);
-                        }
-                    }
+        ui.add_space(theme::SPACING[1]);
+
+        let mut shown_assets = Vec::new();
+        for pack in library
+            .packs()
+            .iter()
+            .filter(|pack| self.pack.as_ref().is_none_or(|id| *id == pack.id))
+        {
+            for asset in pack
+                .assets
+                .iter()
+                .filter(|asset| matches(asset, self.category.as_deref(), &self.search))
+            {
+                if let Ok(reference) = AssetRef::new(pack.id.clone(), asset.id.clone()) {
+                    shown_assets.push((pack, asset, reference));
                 }
-            });
-        });
+            }
+        }
+        let mut chosen = None;
+        if shown_assets.is_empty() {
+            self.empty_state(ui);
+        } else {
+            let gap = ui.spacing().item_spacing.x;
+            let side = ((ui.available_width() - gap * (COLUMNS - 1) as f32) / COLUMNS as f32)
+                .floor()
+                .max(24.0);
+            egui::ScrollArea::vertical()
+                .id_salt("asset grid")
+                .max_height(GRID_MAX_HEIGHT)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    for row in shown_assets.chunks(COLUMNS) {
+                        ui.horizontal(|ui| {
+                            for (pack, asset, reference) in row {
+                                let selected = editor.selected_asset.as_ref() == Some(reference);
+                                let variants = asset
+                                    .variant_group
+                                    .as_deref()
+                                    .map_or(0, |group| pack.variant_group(group).count());
+                                if self.thumbnail(
+                                    ui,
+                                    editor,
+                                    reference,
+                                    asset,
+                                    Thumbnail {
+                                        side,
+                                        selected,
+                                        variants,
+                                        attribution: pack.attribution_required,
+                                    },
+                                ) {
+                                    chosen = Some(reference.clone());
+                                }
+                            }
+                        });
+                    }
+                });
+        }
         if let Some(reference) = chosen {
             editor.selected_asset = Some(reference);
-            editor.active_tool = ToolId::Stamp;
+        }
+        self.picked(ui, editor, &library);
+    }
+
+    /// "No Assets match “…”" with the two ways out.
+    fn empty_state(&mut self, ui: &mut egui::Ui) {
+        let palette = theme::palette(ui.ctx());
+        let text = if self.search.trim().is_empty() {
+            "No Assets in this selection".to_owned()
+        } else {
+            format!("No Assets match “{}”", self.search.trim())
+        };
+        ui.add_space(theme::SPACING[2]);
+        ui.label(
+            egui::RichText::new(text)
+                .size(theme::BODY)
+                .color(palette.text_secondary),
+        );
+        ui.horizontal(|ui| {
+            if ui.button("Search all categories").clicked() {
+                self.category = None;
+                self.pack = None;
+            }
+            if ui.button("Clear search").clicked() {
+                self.search.clear();
+            }
+        });
+    }
+
+    /// Under the grid: the picked Asset's pack · author · licence, and the attribution
+    /// notice when its pack needs one.
+    fn picked(&self, ui: &mut egui::Ui, editor: &Editor, library: &PackLibrary) {
+        let Some(reference) = &editor.selected_asset else {
+            return;
+        };
+        let palette = theme::palette(ui.ctx());
+        ui.add_space(theme::SPACING[1]);
+        let Some((pack, asset)) = library.asset(reference) else {
+            ui.label(
+                egui::RichText::new("Pack missing")
+                    .size(theme::CAPTION)
+                    .color(palette.warn),
+            );
+            ui.label(
+                egui::RichText::new(reference.to_string())
+                    .size(theme::CAPTION)
+                    .color(palette.text_tertiary),
+            );
+            return;
+        };
+        ui.label(
+            egui::RichText::new(&asset.name)
+                .size(theme::BODY)
+                .color(palette.text_primary),
+        );
+        ui.label(
+            egui::RichText::new(format!(
+                "{} · {} · {}",
+                pack.name, asset.author, asset.licence
+            ))
+            .size(theme::CAPTION)
+            .color(palette.text_tertiary),
+        );
+        if pack.attribution_required {
+            ui.label(
+                egui::RichText::new("Attribution required: this pack is credited on export.")
+                    .size(theme::CAPTION)
+                    .color(palette.gold_text),
+            );
         }
     }
 
-    /// One Asset as a button showing its art. Returns whether it was clicked.
-    fn thumbnail_button(
+    /// One Asset as a thumbnail button showing its art. Returns whether it was clicked.
+    fn thumbnail(
         &mut self,
         ui: &mut egui::Ui,
         editor: &Editor,
         reference: &AssetRef,
         asset: &Asset,
-        selected: bool,
+        look: Thumbnail,
     ) -> bool {
         let texture = self
             .thumbnails
@@ -179,22 +298,95 @@ impl AssetBrowser {
                 ))
             })
             .clone();
-        let size = egui::Vec2::splat(THUMBNAIL);
-        let response = match texture {
-            Some(texture) => ui.add(
-                egui::Button::image(
-                    egui::Image::new(&texture)
-                        .fit_to_exact_size(size)
-                        .maintain_aspect_ratio(true),
-                )
-                .selected(selected),
-            ),
-            None => ui.add_sized(size, egui::Button::new(&asset.name).selected(selected)),
+        let palette = theme::palette(ui.ctx());
+        let (rect, response) =
+            ui.allocate_exact_size(egui::Vec2::splat(look.side), egui::Sense::click());
+        let label = thumbnail_label(reference, asset, look.variants, look.attribution);
+        response.widget_info(|| {
+            egui::WidgetInfo::selected(
+                egui::WidgetType::Button,
+                ui.is_enabled(),
+                look.selected,
+                &label,
+            )
+        });
+        let painter = ui.painter();
+        let (fill, stroke) = if look.selected {
+            (palette.bg_raised, egui::Stroke::new(1.5, palette.gold))
+        } else if response.hovered() {
+            (
+                palette.hover_fill,
+                egui::Stroke::new(1.0, palette.border_strong),
+            )
+        } else {
+            (
+                palette.bg_field,
+                egui::Stroke::new(1.0, palette.border_subtle),
+            )
         };
-        response
-            .on_hover_text(format!("{} ({reference})", asset.name))
-            .clicked()
+        painter.rect(
+            rect,
+            theme::RADIUS_FIELD,
+            fill,
+            stroke,
+            egui::StrokeKind::Inside,
+        );
+        let inner = rect.shrink(5.0);
+        match texture {
+            Some(texture) => {
+                let size = texture.size_vec2();
+                let scale = (inner.width() / size.x).min(inner.height() / size.y);
+                let art = egui::Rect::from_center_size(inner.center(), size * scale);
+                painter.image(
+                    texture.id(),
+                    art,
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    egui::Color32::WHITE,
+                );
+            }
+            None => {
+                painter.text(
+                    inner.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "?",
+                    egui::FontId::proportional(theme::HEADING),
+                    palette.text_tertiary,
+                );
+            }
+        }
+        if look.variants > 1 {
+            let galley = painter.layout_no_wrap(
+                look.variants.to_string(),
+                egui::FontId::proportional(theme::CAPTION),
+                palette.text_secondary,
+            );
+            let size = galley.size() + egui::vec2(6.0, 2.0);
+            let chip =
+                egui::Rect::from_min_size(rect.right_bottom() - size - egui::vec2(2.0, 2.0), size);
+            painter.rect_filled(chip, theme::RADIUS_CHIP, palette.bg_panel);
+            painter.galley(
+                chip.min + egui::vec2(3.0, 1.0),
+                galley,
+                palette.text_secondary,
+            );
+        }
+        if look.attribution {
+            painter.circle_filled(rect.right_top() + egui::vec2(-7.0, 7.0), 3.0, palette.gold);
+        }
+        response.on_hover_text(label).clicked()
     }
+}
+
+/// How one thumbnail is drawn.
+#[derive(Clone, Copy)]
+struct Thumbnail {
+    side: f32,
+    /// Armed: the Asset the tool will place.
+    selected: bool,
+    /// The size of its Variant group, 0 when it has none.
+    variants: usize,
+    /// Its pack must be credited on export: a gold dot.
+    attribution: bool,
 }
 
 #[cfg(test)]
