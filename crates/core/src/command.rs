@@ -39,6 +39,11 @@ pub enum Command {
         id: Id,
         name: String,
     },
+    /// Names an Object. An empty name clears it, back to the kind's default.
+    RenameObject {
+        id: Id,
+        name: String,
+    },
     /// Moves a Layer or Object to `index` among `parent`'s children, counted after it leaves
     /// its old place.
     Move {
@@ -310,6 +315,8 @@ pub enum CommandError {
     DefaultLabelStyle,
     #[error("{0} is not a Stamp")]
     NotAStamp(Id),
+    #[error("{0} is not an Object")]
+    NotAnObject(Id),
     #[error("cannot embed: {0}")]
     InvalidEmbed(String),
     #[error("invalid Stamp: {0}")]
@@ -324,6 +331,7 @@ impl Command {
         match self {
             Command::CreateLayer { .. } => "Create Layer",
             Command::RenameLayer { .. } => "Rename Layer",
+            Command::RenameObject { .. } => "Rename Object",
             Command::Move { .. } => "Move",
             Command::SetVisible { .. } => "Change Visibility",
             Command::SetLocked { .. } => "Change Lock",
@@ -395,6 +403,13 @@ impl Command {
                 layer(map, *id)?;
                 unlocked(map, *id)?;
                 Ok(vec![set(*id, Property::Name(name.clone()))])
+            }
+            Command::RenameObject { id, name } => {
+                if !matches!(existing(map, *id)?, Node::Object(_)) {
+                    return Err(CommandError::NotAnObject(*id));
+                }
+                unlocked(map, *id)?;
+                Ok(vec![set(*id, Property::Name(name.trim().to_owned()))])
             }
             Command::Move { id, parent, index } => {
                 unlocked_branch(map, *id)?;

@@ -151,7 +151,11 @@ pub fn landmass_name(map: &Map, id: Id) -> String {
 
 pub fn node_name(map: &Map, id: Id) -> String {
     match map.node(id) {
+        Some(Node::Layer(layer)) if layer.name.trim().is_empty() => "Layer".to_owned(),
         Some(Node::Layer(layer)) => layer.name.clone(),
+        Some(Node::Object(Object {
+            name: Some(name), ..
+        })) => name.clone(),
         Some(Node::Object(object)) => match &object.kind {
             ObjectKind::Landmass(_) => "Landmass".to_owned(),
             ObjectKind::Lake(_) => "Lake".to_owned(),
@@ -322,7 +326,11 @@ impl LayerTree {
                     if let Some((id, name)) = self.renaming.take()
                         && name != node_name(&editor.map, id)
                     {
-                        editor.run(Command::RenameLayer { id, name });
+                        let command = match editor.map.node(id) {
+                            Some(Node::Object(_)) => Command::RenameObject { id, name },
+                            _ => Command::RenameLayer { id, name },
+                        };
+                        editor.run(command);
                     }
                 }
                 Action::CancelRename => self.renaming = None,
@@ -567,7 +575,7 @@ impl LayerTree {
             let add = ui.input(|i| i.modifiers.command);
             actions.push(Action::Select(row.id, add));
         }
-        if response.double_clicked() && layer.is_some() {
+        if response.double_clicked() {
             actions.push(Action::StartRename(row.id));
         }
         // A Depth-sorted Layer orders its own Stamps; they can still be dragged to another Layer.
@@ -577,8 +585,12 @@ impl LayerTree {
         if is_depth_sorted_stamp(map, row.id) {
             response.clone().on_hover_text(DEPTH_SORT_HINT);
         }
-        if let Some(layer) = layer {
-            response.context_menu(|ui| {
+        response.context_menu(|ui| {
+            if ui.button("Rename").clicked() {
+                actions.push(Action::StartRename(row.id));
+                ui.close();
+            }
+            if let Some(layer) = layer {
                 let selected = selected_landmass(map, editor.selection());
                 if ui
                     .add_enabled(
@@ -604,8 +616,8 @@ impl LayerTree {
                     }));
                     ui.close();
                 }
-            });
-        }
+            }
+        });
         if response.dnd_hover_payload::<Id>().is_some()
             && let Some(target) = drop_target(ui, rect, row.id, layer.is_some())
         {
@@ -1015,6 +1027,44 @@ mod tests {
         harness.get_by_label("Depth-sorted");
         assert!(harness.query_by_label("Clipped to Landmass").is_none());
         assert!(harness.query_by_label_contains("%").is_none());
+    }
+
+    #[test]
+    fn a_stamp_can_be_renamed_and_an_empty_name_restores_the_default() {
+        use ssmap_core::Stamp;
+        let (mut editor, a, _) = editor_with_two_layers();
+        let id = Id::new();
+        let stamp = Stamp::new("p/a".parse().unwrap(), [0.0, 0.0]);
+        editor
+            .map
+            .apply(Op::Insert {
+                parent: Some(a),
+                index: 0,
+                subtree: Subtree {
+                    id,
+                    node: Node::Object(Object::new(ObjectKind::Stamp(stamp))),
+                    children: vec![],
+                },
+            })
+            .unwrap();
+        assert_eq!(node_name(&editor.map, id), "Stamp");
+        assert!(editor.run(Command::RenameObject {
+            id,
+            name: "  Old Keep ".into()
+        }));
+        assert_eq!(node_name(&editor.map, id), "Old Keep");
+        assert!(editor.run(Command::RenameObject {
+            id,
+            name: String::new()
+        }));
+        assert_eq!(node_name(&editor.map, id), "Stamp");
+        editor.undo();
+        assert_eq!(node_name(&editor.map, id), "Old Keep");
+        // Layers are renamed with their own Command.
+        assert!(!editor.run(Command::RenameObject {
+            id: a,
+            name: "x".into()
+        }));
     }
 
     #[test]
