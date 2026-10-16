@@ -954,7 +954,7 @@ impl MapMakerApp {
 
     /// Runs the native menu items chosen since the last frame.
     #[cfg(target_os = "macos")]
-    fn native_menu_actions(&mut self, ctx: &egui::Context) {
+    fn native_menu_actions(&mut self) {
         use native_menu::mac::Action;
         let Some(mut native) = self.native_menu.take() else {
             return;
@@ -2014,7 +2014,7 @@ impl eframe::App for MapMakerApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
-        self.native_menu_actions(ui.ctx());
+        self.native_menu_actions();
         self.show(ui);
         // After the frame, so the menu shows what this frame changed.
         #[cfg(target_os = "macos")]
