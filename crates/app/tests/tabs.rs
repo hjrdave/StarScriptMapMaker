@@ -180,7 +180,7 @@ fn saving_a_map_never_saved_from_the_close_question_goes_through_save_as() {
     harness.run();
     harness.get_by_label("Save").click();
     harness.run();
-    harness.get_by_label("Save Map As");
+    assert!(harness.state().save_dialog_open());
     assert_eq!(harness.state().tabs().len(), 1, "closes only once saved");
 }
 
