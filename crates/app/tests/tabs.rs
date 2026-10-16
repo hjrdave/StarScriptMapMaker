@@ -316,3 +316,101 @@ fn each_tab_writes_its_own_journal_and_recovery_opens_each_in_a_tab() {
     assert!(!first.exists());
     assert!(second.exists());
 }
+
+fn open_three(harness: &mut Harness<'_, MapMakerApp>, dir: &Path) {
+    for name in ["a.ssmap", "b.ssmap"] {
+        let path = saved_map(dir, name);
+        harness.state_mut().open_path(&path);
+    }
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 3);
+}
+
+#[test]
+fn number_shortcuts_jump_to_home_a_tab_and_the_last_tab() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut harness = app(None);
+    open_three(&mut harness, dir.path());
+    let command = egui::Modifiers::COMMAND;
+
+    harness.key_press_modifiers(command, egui::Key::Num1);
+    harness.run();
+    assert!(harness.state().home_active());
+    harness.key_press_modifiers(command, egui::Key::Num3);
+    harness.run();
+    assert!(!harness.state().home_active());
+    assert_eq!(harness.state().active_tab(), 1);
+    harness.key_press_modifiers(command, egui::Key::Num2);
+    harness.run();
+    assert_eq!(harness.state().active_tab(), 0);
+    harness.key_press_modifiers(command, egui::Key::Num9);
+    harness.run();
+    assert_eq!(harness.state().active_tab(), 2);
+    // No fifth tab: nothing moves.
+    harness.key_press_modifiers(command, egui::Key::Num6);
+    harness.run();
+    assert_eq!(harness.state().active_tab(), 2);
+}
+
+#[test]
+fn control_tab_cycles_through_home_and_the_maps() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut harness = app(None);
+    open_three(&mut harness, dir.path());
+
+    harness.key_press_modifiers(egui::Modifiers::CTRL, egui::Key::Tab);
+    harness.run();
+    assert!(harness.state().home_active());
+    harness.key_press_modifiers(
+        egui::Modifiers::CTRL | egui::Modifiers::SHIFT,
+        egui::Key::Tab,
+    );
+    harness.run();
+    assert!(!harness.state().home_active());
+    assert_eq!(harness.state().active_tab(), 2);
+}
+
+#[test]
+fn close_tab_shortcut_closes_a_map_but_never_home() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut harness = app(None);
+    open_three(&mut harness, dir.path());
+    let command = egui::Modifiers::COMMAND;
+
+    harness.key_press_modifiers(command, egui::Key::W);
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 2);
+    harness.key_press_modifiers(command, egui::Key::Num1);
+    harness.run();
+    harness.key_press_modifiers(command, egui::Key::W);
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 2);
+    assert!(harness.state().home_active());
+}
+
+#[test]
+fn new_map_shortcut_and_plus_open_the_dialog() {
+    let mut harness = app(None);
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::T);
+    harness.run();
+    harness.get_by_label("Cancel").click();
+    harness.run();
+    assert!(harness.query_by_label("Cancel").is_none());
+    harness.get_by_label("New Map").click();
+    harness.run();
+    harness.get_by_label("Cancel");
+}
+
+#[test]
+fn clicking_home_and_a_map_tab_switches_between_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut harness = app(None);
+    open_three(&mut harness, dir.path());
+    harness.get_by_label("Home").click();
+    harness.run();
+    assert!(harness.state().home_active());
+    harness.get_by_label("a.ssmap").click();
+    harness.run();
+    assert!(!harness.state().home_active());
+    assert_eq!(harness.state().active_tab(), 1);
+}
