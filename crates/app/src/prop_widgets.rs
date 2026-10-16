@@ -1022,6 +1022,30 @@ pub fn segmented(ui: &mut egui::Ui, options: &[&str], selected: &mut usize) -> b
     changed
 }
 
+/// A label with the provenance dot, a control after it (a dropdown, say) and the trailing
+/// glyph or reset arrow. Returns whether reset was clicked.
+pub fn field_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    provenance: Provenance,
+    body: impl FnOnce(&mut egui::Ui),
+) -> bool {
+    ui.horizontal(|ui| {
+        let (rect, _) = ui.allocate_exact_size(
+            Vec2::new(label_width(ui, label, provenance), metrics::FIELD[0]),
+            Sense::hover(),
+        );
+        paint_label(ui, rect, label, provenance);
+        ui.scope(|ui| {
+            let room = (ui.available_width() - gap_before_trailing(ui, provenance)).max(40.0);
+            ui.set_max_width(room);
+            body(ui);
+        });
+        trailing(ui, label, provenance)
+    })
+    .inner
+}
+
 /// A checkbox with its label, at the field height. Returns whether it changed.
 pub fn checkbox_row(ui: &mut egui::Ui, label: &str, checked: &mut bool) -> bool {
     ui.scope(|ui| {
