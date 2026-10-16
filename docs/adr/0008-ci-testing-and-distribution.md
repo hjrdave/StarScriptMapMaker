@@ -19,7 +19,8 @@ Comparisons allow a per-pixel tolerance and a cap on the share of pixels that di
 
 ## Gates
 
-- **Every PR:** `cargo fmt --check`, `clippy -D warnings`, tests on all three OSes, golden tests on Linux and Windows, `cargo deny`, and a `cargo tree` check that `core` never depends on egui or wgpu.
+- **Every PR:** `cargo fmt --check`, `clippy -D warnings`, tests on macOS arm64, `cargo deny`, and a `cargo tree` check that `core` never depends on egui or wgpu.
+  - *Amended after acceptance, by the author's decision:* the Linux and Windows test jobs were removed from PR CI to save time. They were the only jobs with a software adapter (lavapipe, WARP), so golden image tests no longer run in CI; on macOS the render tests are smoke tests only. Run the golden tests locally on Linux (lavapipe) when changing rendering. Lint and `cargo deny` still run on Linux, and the nightly and release package builds still cover all three OSes.
 - **Nightly:** criterion benchmarks for save, open and command apply at 100k Stamps on Linux. They fail only above 2× the ADR 0005 targets and otherwise post trend numbers. Nightly also runs full release builds.
 
 ## Distribution
