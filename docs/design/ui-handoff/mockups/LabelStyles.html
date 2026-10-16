@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Label styles manager</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&amp;family=IM+Fell+Double+Pica:ital@0;1&amp;family=Uncial+Antiqua&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0B0C0E}
+a{color:#E3B85A;text-decoration:none}a:hover{color:#F0CF7A}
+.w{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,sans-serif;font-size:12px;line-height:16px;color:#ECE6D8;-webkit-font-smoothing:antialiased}
+.back{width:1000px;height:760px;background:#0E1013;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.win{width:880px;height:640px;background:#1B1E23;border:1px solid #3B414B;border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.6);display:flex;flex-direction:column;overflow:hidden}
+.tb{height:40px;display:flex;align-items:center;padding:0 14px;gap:8px;background:#191B20;border-bottom:1px solid #272B32;flex:none}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sm{width:14px;height:14px}
+.btn{height:26px;padding:0 10px;border-radius:6px;border:1px solid #3B414B;background:#262A31;color:#ECE6D8;font:inherit;font-weight:500;display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;white-space:nowrap}
+.btn.dis{opacity:.45}
+.meta{font-size:11px;color:#9D9788;font-variant-numeric:tabular-nums}
+.li{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:8px;margin:0 8px 4px}
+.li.sel{background:#3A311C;box-shadow:inset 0 0 0 1px #8A6C2C}
+.sw{height:44px;border-radius:5px;background:#EADCB3;display:flex;align-items:center;justify-content:center;color:#3B2F20;overflow:hidden}
+.fld{display:flex;align-items:center;gap:8px;min-height:30px}
+.fld>label{width:96px;color:#B4AE9F;flex:none}
+.num{display:inline-flex;align-items:center;height:24px;background:#111317;border:1px solid #2E333B;border-radius:4px;padding:0 8px;gap:6px;font-variant-numeric:tabular-nums;color:#ECE6D8;box-sizing:border-box}
+.num i{font-style:normal;color:#8F8A7C;font-size:11px}
+.seg{display:flex;background:#111317;border:1px solid #2E333B;border-radius:6px;padding:2px;gap:2px}
+.seg span{padding:2px 10px;border-radius:4px;color:#B4AE9F;line-height:16px;flex:1;text-align:center}
+.seg span.on{background:#3A3F47;color:#ECE6D8}
+.tog{width:28px;height:16px;border-radius:8px;background:#C99D42;position:relative;flex:none}
+.tog::after{content:"";position:absolute;right:2px;top:2px;width:12px;height:12px;border-radius:50%;background:#1A1406}
+.swc{width:20px;height:20px;border-radius:4px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.25);flex:none}
+.lbl{font-size:11px;font-weight:600;color:#B4AE9F;letter-spacing:.4px;text-transform:uppercase;margin:14px 0 4px}
+</style>
+</helmet>
+<div class="w back">
+  <div class="win" role="dialog" aria-labelledby="ls-t">
+    <div class="tb">
+      <div style="display:flex;gap:8px;width:60px"><span style="width:12px;height:12px;border-radius:50%;background:#FF5F57"></span><span style="width:12px;height:12px;border-radius:50%;background:#FEBC2E"></span><span style="width:12px;height:12px;border-radius:50%;background:#28C840"></span></div>
+      <div id="ls-t" style="flex:1;text-align:center;font-weight:600;font-size:13px;margin-right:60px">Label styles — Isles of Valdren</div>
+    </div>
+    <div style="flex:1;display:flex;min-height:0">
+      <!-- style list -->
+      <div style="width:260px;flex:none;border-right:1px solid #272B32;display:flex;flex-direction:column">
+        <div style="padding:10px 12px;display:flex;align-items:center;gap:6px"><b style="flex:1;font-weight:600">5 Label styles</b>
+          <button class="btn" style="padding:0 8px" aria-label="New Label style"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button></div>
+        <div class="li"><div class="sw"><span style="font-family:Cinzel,serif;font-weight:700;font-size:20px;letter-spacing:6px">REALM</span></div><div style="display:flex;justify-content:space-between"><span>Realm</span><span class="meta">2 Labels</span></div></div>
+        <div class="li sel"><div class="sw"><span style="font-family:Cinzel,serif;font-weight:600;font-size:15px;letter-spacing:3px;text-shadow:0 0 2px #EADCB3">CITY</span></div><div style="display:flex;justify-content:space-between"><span style="color:#F0CF7A;font-weight:600">City</span><span class="meta">9 Labels · 1 overridden</span></div></div>
+        <div class="li"><div class="sw" style="background:#C3C7AE"><span style="font-family:'IM Fell Double Pica',serif;font-style:italic;font-size:19px;letter-spacing:2px;color:#4D5848">Sea</span></div><div style="display:flex;justify-content:space-between"><span>Sea</span><span class="meta">4 Labels</span></div></div>
+        <div class="li"><div class="sw"><span style="font-family:'IM Fell Double Pica',serif;font-style:italic;font-size:17px">Range</span></div><div style="display:flex;justify-content:space-between"><span>Range</span><span class="meta">3 Labels</span></div></div>
+        <div class="li"><div class="sw"><span style="font-family:'Uncial Antiqua',serif;font-size:15px">Ruin</span></div><div style="display:flex;justify-content:space-between"><span>Ruin</span><span class="meta">Unused</span></div></div>
+      </div>
+      <!-- editor -->
+      <div style="flex:1;display:flex;flex-direction:column;padding:16px 20px;min-width:0">
+        <div style="height:120px;border-radius:8px;background:#EADCB3;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px #CDB683">
+          <div style="font-family:Cinzel,serif;font-weight:600;font-size:28px;letter-spacing:7px;color:#3B2F20;text-align:center;line-height:32px">CORVALE</div>
+          <div style="font-family:Cinzel,serif;font-weight:600;font-size:14px;letter-spacing:4px;color:#3B2F20">FREE CITY</div>
+        </div>
+        <div style="display:flex;gap:28px">
+          <div style="flex:1">
+            <div class="lbl">Type</div>
+            <div class="fld"><label>Name</label><div class="num" style="flex:1">City</div></div>
+            <div class="fld"><label>Font</label><span class="btn" style="flex:1;justify-content:space-between;font-family:Cinzel,serif">Cinzel <svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></span></div>
+            <div class="fld"><label>Weight</label><div class="seg" style="flex:1"><span>Regular</span><span class="on">SemiBold</span><span>Bold</span></div></div>
+            <div class="fld"><label>Size</label><span class="num" style="flex:1">44 <i>pt</i></span></div>
+            <div class="fld"><label>Tracking</label><span class="num" style="flex:1">18 <i>%</i></span></div>
+            <div class="fld"><label>Line height</label><span class="num" style="flex:1">1.15</span></div>
+            <div class="fld"><label>All caps</label><span class="tog" role="switch" aria-checked="true" aria-label="All caps"></span></div>
+          </div>
+          <div style="flex:1">
+            <div class="lbl">Appearance</div>
+            <div class="fld"><label>Fill</label><span class="swc" style="background:#3B2F20"></span><span class="num" style="flex:1">3B2F20</span></div>
+            <div class="fld"><label>Opacity</label><span class="num" style="flex:1">100 <i>%</i></span></div>
+            <div class="fld"><label>Halo</label><span class="swc" style="background:#EADCB3"></span><span class="num" style="flex:1">2 <i>px</i></span></div>
+            <div class="fld"><label>Halo opacity</label><span class="num" style="flex:1">90 <i>%</i></span></div>
+            <div class="fld"><label>Align</label><div class="seg" style="flex:1"><span>Left</span><span class="on">Centre</span><span>Right</span></div></div>
+            <div class="fld"><label>Rotation</label><span class="num" style="flex:1">0°</span></div>
+          </div>
+        </div>
+        <div style="flex:1"></div>
+        <div style="display:flex;gap:8px;align-items:center;border-top:1px solid #272B32;padding-top:12px">
+          <button class="btn">Duplicate</button>
+          <button class="btn dis" disabled title="In use by 9 Labels">Delete</button>
+          <span class="meta" style="margin-left:4px">Changes apply live to all 9 Labels, except fields they override.</span>
+          <span style="flex:1"></span>
+          <button class="btn">Select Labels using City</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1000,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

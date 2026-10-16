@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Export progress dialogs</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#0B0C0E}
+a{color:#E3B85A;text-decoration:none}a:hover{color:#F0CF7A}
+.w{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,sans-serif;font-size:12px;line-height:16px;color:#ECE6D8;-webkit-font-smoothing:antialiased}
+.back{width:1000px;height:560px;background:#0E1013;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;gap:40px}
+.ghost{position:absolute;inset:24px;border-radius:12px;background:#14161A;border:1px solid #23262C;opacity:.55}
+.dlg{position:relative;width:420px;background:#1F2228;border:1px solid #3B414B;border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.6);display:flex;flex-direction:column}
+.cap{position:absolute;top:-28px;left:0;font-size:11px;color:#9D9788;letter-spacing:.4px;text-transform:uppercase;font-weight:600}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.btn{height:28px;padding:0 14px;border-radius:6px;border:1px solid #3B414B;background:#2A2E35;color:#ECE6D8;font:inherit;font-weight:500;display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;white-space:nowrap}
+.btn.pri{background:#D4A84A;border-color:#D4A84A;color:#1A1406;font-weight:600}
+.meta{font-size:11px;color:#9D9788;font-variant-numeric:tabular-nums}
+.bar{height:6px;border-radius:3px;background:#33383F;overflow:hidden}
+.bar b{display:block;height:100%;background:#D4A84A;border-radius:3px}
+.df{display:flex;align-items:center;gap:8px;padding:12px 18px;border-top:1px solid #2E333B}
+</style>
+</helmet>
+<div class="w back">
+  <div class="ghost"></div>
+
+  <div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="p1">
+    <span class="cap">In progress</span>
+    <div style="padding:18px;display:flex;gap:14px">
+      <svg viewBox="0 0 40 40" width="40" height="40" aria-hidden="true" style="flex:none"><rect x="3" y="7" width="34" height="26" rx="3" fill="#2A2E35" stroke="#5A5F68"/><path d="M8 26l8-9 6 6 4-4 6 7" fill="none" stroke="#D4A84A" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      <div style="flex:1;min-width:0">
+        <div id="p1" style="font-size:13px;font-weight:600">Exporting “Isles of Valdren.png”</div>
+        <div class="meta" style="margin-top:2px">20,480 × 14,400 px · Whole Canvas · transparent</div>
+        <div class="bar" style="margin-top:14px" role="progressbar" aria-valuenow="62" aria-valuemin="0" aria-valuemax="100" aria-label="Export progress"><b style="width:62%"></b></div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px"><span class="meta">Rendering tile 23 of 36</span><span class="meta">About 40 s left</span></div>
+      </div>
+    </div>
+    <div class="df"><span class="meta">You can keep the window open; editing is paused.</span><span style="flex:1"></span><button class="btn">Cancel</button></div>
+  </div>
+
+  <div class="dlg" role="alertdialog" aria-modal="true" aria-labelledby="p2">
+    <span class="cap">Finished</span>
+    <div style="padding:18px;display:flex;gap:14px">
+      <svg viewBox="0 0 40 40" width="40" height="40" aria-hidden="true" style="flex:none"><circle cx="20" cy="20" r="16" fill="#1F3324" stroke="#5FA06A"/><path d="M13 20.5l5 5 9-10" fill="none" stroke="#8FD49A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div style="flex:1;min-width:0">
+        <div id="p2" style="font-size:13px;font-weight:600">Exported “Isles of Valdren.png”</div>
+        <div class="meta" style="margin-top:2px">20,480 × 14,400 px · 214 MB · 1 min 52 s</div>
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:flex-start;background:#262A31;border-radius:6px;padding:8px 10px">
+          <svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="color:#E3B85A;width:14px;height:14px;margin-top:1px"><path d="M3.5 14V2.5M3.5 3h8.5l-2 3 2 3H3.5"/></svg>
+          <span style="color:#D9D3C4">Saved credits for 3 Assets alongside the PNG.</span>
+        </div>
+      </div>
+    </div>
+    <div class="df"><button class="btn">Show in Finder</button><span style="flex:1"></span><button class="btn">Re-export</button><button class="btn pri">Done</button></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1000,"height":560}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

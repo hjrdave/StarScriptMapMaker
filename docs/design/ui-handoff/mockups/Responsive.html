@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Responsive behaviour and icons</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#0B0C0E}
+a{color:#E3B85A}a:hover{color:#F0CF7A}
+.w{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,sans-serif;font-size:12px;line-height:16px;color:#ECE6D8;-webkit-font-smoothing:antialiased}
+.page{width:1440px;height:1080px;box-sizing:border-box;background:#121418;padding:56px 64px;display:flex;flex-direction:column;gap:28px}
+h2{margin:0 0 14px;font-size:13px;line-height:18px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:#E3B85A}
+.card{background:#1B1E23;border:1px solid #272B32;border-radius:12px;padding:20px 22px}
+.meta{font-size:11px;color:#9D9788;font-variant-numeric:tabular-nums}
+.mono{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:11px}
+.kbd{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:11px;color:#C9C2B2;background:#14161A;border:1px solid #3B414B;border-radius:4px;padding:0 4px;line-height:15px}
+.wf{border:1px solid #3B414B;border-radius:6px;overflow:hidden;background:#14161A;display:flex;flex-direction:column}
+.wf .t{height:10px;background:#22252B;border-bottom:1px solid #30353D;flex:none;display:flex;align-items:stretch;padding-left:18px}
+.wf .t i{width:30px;border-left:1px solid #3B414B}
+.wf .t i.on{background:#30353D;box-shadow:inset 0 -1px 0 #D4A84A}
+.wf .dock{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);width:40px;height:6px;border-radius:2px;background:#3B414B}
+.wf .b{flex:1;display:flex;min-height:0}
+.wf .L{background:#262A31;border-right:1px solid #3B414B}
+.wf .R{background:#262A31;border-left:1px solid #3B414B}
+.wf .C{flex:1;background:#0F1114;position:relative;display:flex;align-items:center;justify-content:center}
+.wf .C i{display:block;width:62%;height:58%;background:#C9BD98;border-radius:2px}
+.wf .s{height:5px;background:#1C1F24;border-top:1px solid #30353D;flex:none}
+.bp{display:flex;flex-direction:column;gap:10px}
+.bp b{font-weight:600;font-size:13px}
+ul{margin:0;padding-left:18px;color:#B4AE9F;line-height:19px}
+li{margin-bottom:4px}
+li b{color:#ECE6D8;font-weight:600}
+</style>
+</helmet>
+<div class="w page">
+  <div style="font-size:24px;font-weight:600;line-height:30px">Responsive behaviour <span class="meta" style="font-size:13px;font-weight:400;margin-left:8px">window widths in points; the canvas always keeps at least 480 pt</span></div>
+
+  <div class="card">
+    <h2>Breakpoints</h2>
+    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:28px;align-items:end">
+      <div class="bp">
+        <div class="wf" style="width:288px;height:180px"><div class="t"><i></i><i class="on"></i><i></i></div><div class="b"><div class="L" style="width:46px"></div><div class="C"><i></i><span class="dock"></span></div><div class="R" style="width:58px"></div></div><div class="s"></div></div>
+        <b>≥ 1360 — Full</b>
+        <span class="meta">Layers 232 · canvas · Properties 288.</span>
+      </div>
+      <div class="bp">
+        <div class="wf" style="width:248px;height:166px"><div class="t"><i></i><i class="on"></i><i></i></div><div class="b"><div class="L" style="width:34px"></div><div class="C"><i></i><span class="dock"></span></div><div class="R" style="width:50px"></div></div><div class="s"></div></div>
+        <b>1180–1359 — Narrow Layers</b>
+        <span class="meta">Layers narrows to 200 and hides counts. Properties stays at 288.</span>
+      </div>
+      <div class="bp">
+        <div class="wf" style="width:220px;height:150px"><div class="t"><i></i><i class="on"></i><i></i></div><div class="b"><div class="L" style="width:8px"></div><div class="C"><i></i><span class="dock"></span></div><div class="R" style="width:50px"></div></div><div class="s"></div></div>
+        <b>1024–1179 — Layers rail</b>
+        <span class="meta">Layers collapses to a 40 pt rail (same as the user collapsing it). Click opens it as an overlay.</span>
+      </div>
+      <div class="bp">
+        <div class="wf" style="width:205px;height:128px"><div class="t"><i></i><i class="on"></i><i></i></div><div class="b"><div class="L" style="width:8px"></div><div class="C"><i></i><span class="dock"></span><div style="position:absolute;right:6px;top:6px;width:44px;height:58px;background:#2E333B;border:1px solid #3B414B;border-radius:3px"></div></div><div class="R" style="width:9px"></div></div><div class="s"></div></div>
+        <b>Minimum 1024 × 640</b>
+        <span class="meta">Both panels are rails; Properties opens as a floating inspector pinned top-right of the canvas. Window can’t shrink further.</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:28px">
+    <div class="card" style="flex:1">
+      <h2>Collapse rules</h2>
+      <ul>
+        <li><b>Left is always Layers, right is always Properties.</b> Properties stacks the active tool’s settings on top (brush tips, the Asset picker, Label style) and the selection — or the active Layer when nothing is selected — below.</li>
+        <li><b>Collapsing Layers:</b> the header button or <span class="kbd">⌘⌥1</span> folds it to a 40 pt rail showing the selection path; click the rail to expand.</li>
+        <li><b>Toggles:</b> <span class="kbd">⌘⌥1</span> Layers, <span class="kbd">⌘⌥2</span> Properties, <span class="kbd">⇥</span> hides both (focus on the map; the tool dock stays).</li>
+        <li><b>User choice wins:</b> a panel the user collapsed stays collapsed when the window grows; auto-collapse only reverses its own changes.</li>
+        <li><b>Resizable:</b> Layers 200–360, Properties 260–360, drag the divider; double-click resets. Widths persist per Map window.</li>
+        <li><b>Tab bar:</b> Home is always first and can’t be closed. Map tabs shrink from 220 to 120 pt, then scroll with chevrons. <span class="kbd">⌘1</span> Home, <span class="kbd">⌘2–9</span> jump, <span class="kbd">⌘T</span> New Map, <span class="kbd">⌘W</span> close (asks to save if dirty). Opening a Map that’s already in a tab focuses it.</li>
+        <li><b>Tool dock</b> keeps all 9 tools at every size and always centres on the canvas area, never over a panel.</li>
+        <li><b>Status bar</b> hides frame time first, then real-world coordinates, below 1180.</li>
+        <li><b>Canvas</b> keeps its zoom centre when panels open or close, so the map never jumps under the cursor.</li>
+      </ul>
+    </div>
+
+    <div class="card" style="flex:1">
+      <h2>Retina-sharp icons (1× / 2×)</h2>
+      <div style="display:flex;gap:28px;align-items:flex-end;margin-bottom:16px">
+        <div style="display:flex;flex-direction:column;gap:6px;align-items:center">
+          <svg viewBox="0 0 16 16" width="96" height="96" role="img" aria-label="Brush icon hinted at 1x" shape-rendering="crispEdges" style="background:#14161A;border-radius:4px">
+            <g fill="#ECE6D8"><rect x="11" y="2" width="1" height="1"/><rect x="12" y="3" width="1" height="1"/><rect x="13" y="4" width="1" height="1"/><rect x="10" y="3" width="1" height="1"/><rect x="9" y="4" width="1" height="1"/><rect x="8" y="5" width="1" height="1"/><rect x="7" y="6" width="1" height="1"/><rect x="6" y="7" width="1" height="1"/><rect x="12" y="5" width="1" height="1"/><rect x="11" y="6" width="1" height="1"/><rect x="10" y="7" width="1" height="1"/><rect x="9" y="8" width="1" height="1"/><rect x="8" y="9" width="1" height="1"/><rect x="7" y="9" width="1" height="1"/><rect x="5" y="8" width="1" height="1"/><rect x="4" y="9" width="1" height="1"/><rect x="3" y="10" width="1" height="2"/><rect x="2" y="12" width="1" height="2"/><rect x="3" y="13" width="3" height="1"/><rect x="6" y="12" width="1" height="1"/><rect x="7" y="10" width="1" height="2"/></g>
+          </svg>
+          <span class="meta">1× · 1 px strokes, hand-hinted</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;align-items:center">
+          <svg viewBox="0 0 16 16" width="96" height="96" role="img" aria-label="Brush icon at 2x" style="background:#14161A;border-radius:4px">
+            <path d="M11.5 2 14 4.5 8 10.5 5.5 8ZM5.5 8C3.5 8.3 3 10 2.5 13.5 6 13 7.7 12.5 8 10.5" fill="none" stroke="#ECE6D8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="meta">2× · 1.5 pt = 3 px strokes</span>
+        </div>
+        <div style="flex:1;color:#B4AE9F;line-height:18px">Same 16-pt geometry, two rasters.</div>
+      </div>
+      <ul>
+        <li><b>Source:</b> one SVG per icon on the 16 pt grid, plus a hinted <span class="mono">@1x</span> SVG when the 1.5 pt stroke would blur at 1×.</li>
+        <li><b>Build step:</b> rasterise with <span class="mono">resvg</span> into one texture atlas per scale (16 px and 32 px cells), white glyphs on transparent, packed with a <span class="mono">build.rs</span>.</li>
+        <li><b>Runtime:</b> choose the atlas from <span class="mono">ctx.pixels_per_point()</span> (≥ 1.5 → 2×), draw with <span class="mono">Image::tint(color)</span> so state colour stays a token. Snap icon rects to whole physical pixels.</li>
+        <li><b>Other scales</b> (Windows 125%/150%): use the 2× atlas downsampled with linear filtering; never upscale 1×.</li>
+        <li><b>Map content</b> (Stamps, Labels) is rendered from vectors at canvas zoom, so it is never limited to these atlases.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1080}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

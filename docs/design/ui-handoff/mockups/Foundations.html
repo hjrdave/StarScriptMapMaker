@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Foundations</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0B0C0E}
+a{color:#E3B85A}a:hover{color:#F0CF7A}
+.w{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,sans-serif;font-size:12px;line-height:16px;color:#ECE6D8;-webkit-font-smoothing:antialiased}
+.page{width:1440px;height:1760px;box-sizing:border-box;background:#121418;padding:56px 64px;display:flex;flex-direction:column;gap:36px}
+h2{margin:0 0 14px;font-size:13px;line-height:18px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:#E3B85A}
+.card{background:#1B1E23;border:1px solid #272B32;border-radius:12px;padding:20px 22px}
+.meta{font-size:11px;color:#9D9788;font-variant-numeric:tabular-nums}
+.mono{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:11px}
+.tk{display:grid;grid-template-columns:28px 28px 170px 74px 74px minmax(0,1fr);gap:10px;align-items:center;height:28px;border-bottom:1px solid #23262C}
+.sw{width:28px;height:20px;border-radius:4px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.btn{height:26px;padding:0 10px;border-radius:6px;border:1px solid #3B414B;background:#262A31;color:#ECE6D8;font:inherit;font-weight:500;display:inline-flex;align-items:center;gap:6px;box-sizing:border-box;white-space:nowrap}
+.st{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.st .cap{font-size:11px;color:#9D9788}
+.num{display:inline-flex;align-items:center;height:22px;width:110px;background:#111317;border:1px solid #2E333B;border-radius:4px;padding:0 6px;gap:6px;font-variant-numeric:tabular-nums;box-sizing:border-box}
+.num i{font-style:normal;color:#8F8A7C;font-size:11px}
+.ovr{width:6px;height:6px;border-radius:50%;background:#E3B85A;flex:none}
+</style>
+</helmet>
+<div class="w page">
+  <div style="display:flex;align-items:flex-end;gap:24px">
+    <svg viewBox="0 0 64 64" width="52" height="52" aria-hidden="true"><circle cx="32" cy="32" r="27" fill="none" stroke="#8A6C2C" stroke-width="1.2"/><path d="M32 4l5 23 23 5-23 5-5 23-5-23-23-5 23-5Z" fill="#D4A84A"/><path d="M32 4l5 23-5 5ZM60 32l-23 5-5-5ZM32 60l-5-23 5-5ZM4 32l23-5 5 5Z" fill="#8A6C2C"/></svg>
+    <div style="flex:1">
+      <div style="font-family:Cinzel,serif;font-weight:600;font-size:34px;line-height:40px;letter-spacing:3px">StarScript Foundations</div>
+      <div style="color:#B4AE9F;font-size:13px;margin-top:6px">Ink-dark chrome, parchment content, one gold accent. The map is always the brightest thing on screen.</div>
+    </div>
+    <div class="meta" style="text-align:right">egui-ready: flat fills, 1px strokes,<br>rounded rects, at most one shadow per layer</div>
+  </div>
+
+  <div style="display:flex;gap:28px;align-items:flex-start">
+    <!-- Colour tokens -->
+    <div class="card" style="flex:1.35">
+      <h2>Colour tokens</h2>
+      <div class="tk" style="height:22px;border-bottom:1px solid #2E333B"><span class="meta">Dark</span><span class="meta">Light</span><span class="meta">Token</span><span class="meta">Dark</span><span class="meta">Light</span><span class="meta">Use</span></div>
+      <sc-for list="{{tokens}}" as="t" hint-placeholder-count="19">
+        <div class="tk">
+          <span class="sw" style="background:{{t.d}}"></span>
+          <span class="sw" style="background:{{t.l}}"></span>
+          <span class="mono" style="color:#ECE6D8">{{t.n}}</span>
+          <span class="mono" style="color:#B4AE9F">{{t.d}}</span>
+          <span class="mono" style="color:#B4AE9F">{{t.l}}</span>
+          <span class="meta" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{t.u}}</span>
+        </div>
+      </sc-for>
+      <div class="meta" style="margin-top:12px">All text pairs ≥ 4.5:1 on their panel: text.primary 13.4:1, text.secondary 7.7:1, text.tertiary 5.8:1, gold text 11.3:1 on bg.panel (dark). Light tertiary 5.0:1.</div>
+    </div>
+
+    <div style="flex:1;display:flex;flex-direction:column;gap:28px">
+      <!-- Map content palette -->
+      <div class="card">
+        <h2>Map content palette</h2>
+        <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px">
+          <div><div style="height:56px;border-radius:6px;background:#EADCB3"></div><div style="margin-top:6px">Parchment</div><div class="mono meta">EADCB3</div></div>
+          <div><div style="height:56px;border-radius:6px;background:#3B2F20"></div><div style="margin-top:6px">Ink</div><div class="mono meta">3B2F20</div></div>
+          <div><div style="height:56px;border-radius:6px;background:#C3C7AE"></div><div style="margin-top:6px">Sea</div><div class="mono meta">C3C7AE</div></div>
+          <div><div style="height:56px;border-radius:6px;background:#8F987F"></div><div style="margin-top:6px">Ripple</div><div class="mono meta">8F987F</div></div>
+          <div><div style="height:56px;border-radius:6px;background:#9DAA76"></div><div style="margin-top:6px">Forest</div><div class="mono meta">9DAA76</div></div>
+        </div>
+        <div class="meta" style="margin-top:10px">Map defaults, not chrome. Selection and tool overlays use select.blue and gold so they never read as map ink.</div>
+      </div>
+      <!-- Type -->
+      <div class="card">
+        <h2>Type scale</h2>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;align-items:baseline;gap:16px"><span class="meta" style="width:110px;flex:none">Display · 30/36</span><span style="font-family:Cinzel,serif;font-weight:600;font-size:30px;line-height:36px;letter-spacing:2px">StarScript</span></div>
+          <div style="display:flex;align-items:baseline;gap:16px"><span class="meta" style="width:110px;flex:none">Title · 15/20 ·600</span><span style="font-size:15px;line-height:20px;font-weight:600">Export PNG</span></div>
+          <div style="display:flex;align-items:baseline;gap:16px"><span class="meta" style="width:110px;flex:none">Heading · 13/18 ·600</span><span style="font-size:13px;line-height:18px;font-weight:600">Isles of Valdren</span></div>
+          <div style="display:flex;align-items:baseline;gap:16px"><span class="meta" style="width:110px;flex:none">Body · 12/16</span><span>Roughness, Shore style, Layers — the default for all UI</span></div>
+          <div style="display:flex;align-items:baseline;gap:16px"><span class="meta" style="width:110px;flex:none">Caption · 11/14 (min)</span><span style="font-size:11px;line-height:14px;color:#B4AE9F">Zoom 84% · 1,284 Stamps · Frame 4.1 ms</span></div>
+          <div style="display:flex;align-items:baseline;gap:16px"><span class="meta" style="width:110px;flex:none">Mono · 11/15</span><span class="mono" style="color:#C9C2B2">⌘⇧S  EADCB3  48213</span></div>
+        </div>
+        <div class="meta" style="margin-top:12px">UI: SF Pro (system) — Inter/Noto Sans fallback on Windows/Linux. Cinzel only for brand moments; map Label fonts never appear in chrome except the font picker. Numbers use tabular figures.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:28px;align-items:stretch">
+    <!-- Spacing / radii / elevation -->
+    <div class="card" style="flex:1">
+      <h2>Spacing · radii · elevation</h2>
+      <div style="display:flex;align-items:flex-end;gap:14px">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:2px;height:2px;background:#D4A84A"></div><span class="meta">2</span></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:4px;height:4px;background:#D4A84A"></div><span class="meta">4</span></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:6px;height:6px;background:#D4A84A"></div><span class="meta">6</span></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:8px;height:8px;background:#D4A84A"></div><span class="meta">8</span></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:12px;height:12px;background:#D4A84A"></div><span class="meta">12</span></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:16px;height:16px;background:#D4A84A"></div><span class="meta">16</span></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:20px;height:20px;background:#D4A84A"></div><span class="meta">20</span></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:24px;height:24px;background:#D4A84A"></div><span class="meta">24</span></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:32px;height:32px;background:#D4A84A"></div><span class="meta">32</span></div>
+        <div class="meta" style="margin-left:12px;line-height:16px">Fixed metrics: title bar with tabs 38 · status 24 · panel head 34 · layer row 26 · field 22–26 · Layers 232 (left, collapses to 40) · Properties 288 (right)</div>
+      </div>
+      <div style="display:flex;gap:14px;margin-top:24px">
+        <div style="flex:1;text-align:center"><div style="height:44px;border:1px solid #5A5F68;border-radius:3px"></div><div class="meta" style="margin-top:6px">3 · chips</div></div>
+        <div style="flex:1;text-align:center"><div style="height:44px;border:1px solid #5A5F68;border-radius:4px"></div><div class="meta" style="margin-top:6px">4 · fields, kbd</div></div>
+        <div style="flex:1;text-align:center"><div style="height:44px;border:1px solid #5A5F68;border-radius:6px"></div><div class="meta" style="margin-top:6px">6 · buttons, tools</div></div>
+        <div style="flex:1;text-align:center"><div style="height:44px;border:1px solid #5A5F68;border-radius:8px"></div><div class="meta" style="margin-top:6px">8 · popovers, HUD</div></div>
+        <div style="flex:1;text-align:center"><div style="height:44px;border:1px solid #5A5F68;border-radius:12px"></div><div class="meta" style="margin-top:6px">12 · windows, dialogs</div></div>
+      </div>
+      <div style="display:flex;gap:18px;margin-top:28px;padding:22px;background:#14161A;border-radius:8px">
+        <div style="flex:1;height:64px;border-radius:8px;background:#1B1E23;border:1px solid #272B32;display:flex;align-items:center;justify-content:center;flex-direction:column"><b style="font-weight:600">e0 Flat</b><span class="meta">border only · panels</span></div>
+        <div style="flex:1;height:64px;border-radius:8px;background:#24282F;border:1px solid #3B414B;box-shadow:0 4px 12px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;flex-direction:column"><b style="font-weight:600">e1 HUD</b><span class="meta">y4 blur12 · 45%</span></div>
+        <div style="flex:1;height:64px;border-radius:8px;background:#24282F;border:1px solid #3B414B;box-shadow:0 8px 24px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;flex-direction:column"><b style="font-weight:600">e2 Popover</b><span class="meta">y8 blur24 · 50%</span></div>
+        <div style="flex:1;height:64px;border-radius:12px;background:#1F2228;border:1px solid #3B414B;box-shadow:0 24px 60px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;flex-direction:column"><b style="font-weight:600">e3 Dialog</b><span class="meta">y24 blur60 · 60%</span></div>
+      </div>
+      <div class="meta" style="margin-top:10px">Each maps to one <span class="mono">epaint::Shadow</span> (offset, blur, spread 0, colour). No backdrop blur; modal scrim is a flat rgba(8,9,11,.55).</div>
+    </div>
+
+    <!-- Icons -->
+    <div class="card" style="flex:1">
+      <h2>Iconography</h2>
+      <div style="display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:10px">
+        <sc-for list="{{icons}}" as="i" hint-placeholder-count="32">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 0;border-radius:6px;background:#14161A">
+            <svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:20px;height:20px;color:#ECE6D8"><path d="{{i.d}}" stroke-width="{{i.sw}}"/></svg>
+            <span class="meta" style="font-size:11px;white-space:nowrap">{{i.n}}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display:flex;gap:20px;margin-top:18px;align-items:center">
+        <svg viewBox="0 0 16 16" width="112" height="112" aria-label="Brush icon on 16 px grid" role="img" style="background:#14161A;border-radius:6px;flex:none">
+          <g stroke="#2A2E35" stroke-width=".06"><path d="M1 0V16M2 0V16M3 0V16M4 0V16M5 0V16M6 0V16M7 0V16M8 0V16M9 0V16M10 0V16M11 0V16M12 0V16M13 0V16M14 0V16M15 0V16M0 1H16M0 2H16M0 3H16M0 4H16M0 5H16M0 6H16M0 7H16M0 8H16M0 9H16M0 10H16M0 11H16M0 12H16M0 13H16M0 14H16M0 15H16"/></g>
+          <rect x="1.5" y="1.5" width="13" height="13" fill="none" stroke="#3A311C" stroke-width=".1"/>
+          <path d="M11.5 2 14 4.5 8 10.5 5.5 8ZM5.5 8C3.5 8.3 3 10 2.5 13.5 6 13 7.7 12.5 8 10.5" fill="none" stroke="#F0CF7A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div style="color:#B4AE9F;line-height:18px">16 px grid, 1.5 px stroke, round caps and joins, 1.5 px live-area inset. 14 px variant for layer rows. Drawn in <span class="mono">currentColor</span> so state colour comes from the parent. Kind icons (Landmass, Lake, Stamp, Label, Layer) are always paired with a name — never colour alone.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- States -->
+  <div class="card">
+    <h2>Component states</h2>
+    <div style="display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:12px">
+      <div class="st"><span class="cap">Default</span><button class="btn">Re-roll</button></div>
+      <div class="st"><span class="cap">Hover</span><button class="btn" style="background:#30353D;border-color:#4A505B">Re-roll</button></div>
+      <div class="st"><span class="cap">Active / pressed</span><button class="btn" style="background:#3A311C;border-color:#8A6C2C;color:#F0CF7A">Re-roll</button></div>
+      <div class="st"><span class="cap">Focus</span><button class="btn" style="box-shadow:0 0 0 3px rgba(212,168,74,.35);border-color:#D4A84A">Re-roll</button></div>
+      <div class="st"><span class="cap">Disabled</span><button class="btn" style="opacity:.45" disabled>Union</button></div>
+      <div class="st"><span class="cap">Locked</span><span class="btn" style="color:#9D9788"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:14px;height:14px;color:#ECE6D8"><path d="M5.5 7.5v-2a2.5 2.5 0 0 1 5 0v2"/><rect x="4" y="7.5" width="8" height="6" rx="1" style="fill:currentColor"/></svg>Background</span></div>
+      <div class="st"><span class="cap">Inherited lock</span><span class="btn" style="color:#9D9788;border-style:dashed"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:14px;height:14px;stroke-dasharray:1.6 1.6"><path d="M4 7.5h8v6H4ZM5.5 7.5v-2a2.5 2.5 0 0 1 5 0v2"/></svg>Parchment</span></div>
+      <div class="st"><span class="cap">Inherited value</span><span class="num" style="color:#B4AE9F;font-style:italic">Map default<svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:12px;height:12px;margin-left:auto;color:#8F8A7C"><path d="M6 10 10 6M5 7.5 3.8 8.7a2.3 2.3 0 0 0 3.3 3.3L8.3 11M7.7 5l1.2-1.2a2.3 2.3 0 0 1 3.3 3.3L11 8.3"/></svg></span></div>
+      <div class="st"><span class="cap">Overridden value</span><span class="num" style="border-color:#8A6C2C"><span class="ovr"></span>3 <i>lines</i><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:12px;height:12px;margin-left:auto;color:#E3B85A"><path d="M3.5 6H10a3 3 0 0 1 0 6H7M6 3.5 3.5 6 6 8.5"/></svg></span></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:20px;color:#B4AE9F;line-height:18px">
+      <div><b style="color:#ECE6D8;font-weight:600">Never colour alone.</b> Active = gold fill + inset ring. Overridden = gold dot + reset arrow. Inherited = italic + link glyph. Locked = filled padlock; inherited lock = dashed padlock. Hidden = slashed eye + italic name.</div>
+      <div><b style="color:#ECE6D8;font-weight:600">Mixed values</b> show the word “Mixed” in tertiary italic. Scrubbing a mixed field offsets every selected Object relatively; typing sets them all.</div>
+      <div><b style="color:#ECE6D8;font-weight:600">Light theme</b> swaps the token column only. Gold darkens to #8A6414 to keep 5:1 on parchment panels; overlays (select.blue) darken to #2F78B8.</div>
+    </div>
+  </div>
+
+  <!-- Light sample -->
+  <div style="display:flex;gap:28px">
+    <div style="flex:1;background:#F4EEE0;border:1px solid #D9CEB6;border-radius:12px;padding:16px;color:#231E15;display:flex;gap:18px">
+      <div style="width:220px">
+        <div style="font-weight:600;margin-bottom:8px">Layers <span style="font-weight:400;color:#6E6452">· light</span></div>
+        <div style="height:26px;display:flex;align-items:center;gap:6px;padding:0 6px;border-radius:5px;background:#F1E2B8;box-shadow:inset 0 0 0 1px #C9A55A;color:#231E15"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:14px;height:14px;color:#7A5810"><path d="M3 6c0-2.5 3-3.5 5-2.5 2-1.5 5.5 0 5 3 1.5 2 0 5.5-3 5.5-2 1.8-6 1-6.5-1.5C2 9.5 2 7.5 3 6Z"/></svg>Valdren mainland</div>
+        <div style="height:26px;display:flex;align-items:center;gap:6px;padding:0 6px;color:#231E15"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:14px;height:14px;color:#5A5040"><path d="M2 6c2-1.5 4 1.5 6 0s4 1.5 6 0M2 10c2-1.5 4 1.5 6 0s4 1.5 6 0"/></svg>Mere of Ash</div>
+        <div style="height:26px;display:flex;align-items:center;gap:6px;padding:0 6px;color:#6E6452;font-style:italic"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:14px;height:14px;stroke-dasharray:1.6 1.6"><path d="M4 7.5h8v6H4ZM5.5 7.5v-2a2.5 2.5 0 0 1 5 0v2"/></svg>Parchment</div>
+      </div>
+      <div style="flex:1">
+        <div style="font-weight:600;margin-bottom:8px">Shore style</div>
+        <div style="display:flex;align-items:center;gap:8px;height:28px"><span style="width:80px;color:#5A5040">Outline</span><span style="color:#6E6452;font-style:italic">Map default · 1.8 px ink</span></div>
+        <div style="display:flex;align-items:center;gap:8px;height:28px"><span style="width:80px;color:#7A5810;display:flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:#8A6414"></span>Ripples</span><span style="height:22px;display:inline-flex;align-items:center;padding:0 6px;background:#FFFCF4;border:1px solid #C9A55A;border-radius:4px">3 lines</span></div>
+        <div style="display:flex;gap:8px;margin-top:8px"><span style="height:26px;padding:0 12px;border-radius:6px;background:#8A6414;color:#FFF8E6;display:inline-flex;align-items:center;font-weight:600">Export</span><span style="height:26px;padding:0 12px;border-radius:6px;background:#FBF7EC;border:1px solid #BFB298;display:inline-flex;align-items:center">Cancel</span></div>
+      </div>
+    </div>
+    <div style="flex:1;background:#1B1E23;border:1px solid #272B32;border-radius:12px;padding:16px;display:flex;gap:18px">
+      <div style="width:220px">
+        <div style="font-weight:600;margin-bottom:8px">Layers <span style="font-weight:400;color:#9D9788">· dark</span></div>
+        <div style="height:26px;display:flex;align-items:center;gap:6px;padding:0 6px;border-radius:5px;background:#3A311C;box-shadow:inset 0 0 0 1px #6E5626"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:14px;height:14px;color:#F0CF7A"><path d="M3 6c0-2.5 3-3.5 5-2.5 2-1.5 5.5 0 5 3 1.5 2 0 5.5-3 5.5-2 1.8-6 1-6.5-1.5C2 9.5 2 7.5 3 6Z"/></svg>Valdren mainland</div>
+        <div style="height:26px;display:flex;align-items:center;gap:6px;padding:0 6px"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:14px;height:14px;color:#9D9788"><path d="M2 6c2-1.5 4 1.5 6 0s4 1.5 6 0M2 10c2-1.5 4 1.5 6 0s4 1.5 6 0"/></svg>Mere of Ash</div>
+        <div style="height:26px;display:flex;align-items:center;gap:6px;padding:0 6px;color:#9D9788;font-style:italic"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:14px;height:14px;stroke-dasharray:1.6 1.6"><path d="M4 7.5h8v6H4ZM5.5 7.5v-2a2.5 2.5 0 0 1 5 0v2"/></svg>Parchment</div>
+      </div>
+      <div style="flex:1">
+        <div style="font-weight:600;margin-bottom:8px">Shore style</div>
+        <div style="display:flex;align-items:center;gap:8px;height:28px"><span style="width:80px;color:#B4AE9F">Outline</span><span style="color:#9D9788;font-style:italic">Map default · 1.8 px ink</span></div>
+        <div style="display:flex;align-items:center;gap:8px;height:28px"><span style="width:80px;color:#F0CF7A;display:flex;align-items:center;gap:5px"><span class="ovr"></span>Ripples</span><span class="num" style="width:auto;border-color:#8A6C2C">3 lines</span></div>
+        <div style="display:flex;gap:8px;margin-top:8px"><span class="btn" style="background:#D4A84A;border-color:#D4A84A;color:#1A1406;font-weight:600">Export</span><span class="btn">Cancel</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1760}}'>
+class Component extends DCLogic {
+  renderVals() {
+    var tokens = [
+      { n: 'bg.window', d: '#14161A', l: '#E9E2D0', u: 'Window body, behind panels' },
+      { n: 'bg.chrome', d: '#191B20', l: '#E2D9C3', u: 'Title bar with tabs, status bar' },
+      { n: 'bg.panel', d: '#1B1E23', l: '#F4EEE0', u: 'Layers, Properties, Assets' },
+      { n: 'bg.raised', d: '#262A31', l: '#FBF7EC', u: 'Buttons, chips, thumbnails' },
+      { n: 'bg.field', d: '#111317', l: '#FFFCF4', u: 'Numeric and text fields' },
+      { n: 'bg.canvas', d: '#0F1114', l: '#D6CDB8', u: 'Pasteboard around the Map' },
+      { n: 'border.subtle', d: '#272B32', l: '#D9CEB6', u: 'Panel dividers' },
+      { n: 'border.strong', d: '#3B414B', l: '#BFB298', u: 'Controls, popovers, dialogs' },
+      { n: 'text.primary', d: '#ECE6D8', l: '#231E15', u: 'Labels, values' },
+      { n: 'text.secondary', d: '#B4AE9F', l: '#5A5040', u: 'Field labels, idle icons' },
+      { n: 'text.tertiary', d: '#9D9788', l: '#6E6452', u: 'Meta, inherited, hints' },
+      { n: 'accent.gold', d: '#D4A84A', l: '#8A6414', u: 'Primary button, slider fill, active ring' },
+      { n: 'accent.goldText', d: '#F0CF7A', l: '#7A5810', u: 'Active tool, overridden labels' },
+      { n: 'accent.goldSubtle', d: '#3A311C', l: '#F1E2B8', u: 'Selected row, active tool fill' },
+      { n: 'overlay.select', d: '#4FA3E0', l: '#2F78B8', u: 'Selection, nodes, marquee' },
+      { n: 'overlay.clip', d: '#7FB6E6', l: '#2F6A9E', u: 'Clip-to-Landmass glyph' },
+      { n: 'status.warn', d: '#F2B65A', l: '#8A5A0E', u: 'Large export, licence gaps' },
+      { n: 'status.danger', d: '#F2A093', l: '#A63A2A', u: 'Discard, delete' },
+      { n: 'status.ok', d: '#8FD49A', l: '#2F7A3C', u: 'Export finished' }
+    ];
+    var icons = [
+      { n: 'Select', d: 'M4 2.5V13l2.8-2.6 1.8 3.6 1.8-.8-1.8-3.6 3.9-.2Z', sw: 1.5 },
+      { n: 'Pan', d: 'M8 1.5v13M1.5 8h13M6 3.5l2-2 2 2M6 12.5l2 2 2-2M3.5 6l-2 2 2 2M12.5 6l2 2-2 2', sw: 1.5 },
+      { n: 'Land Brush', d: 'M11.5 2 14 4.5 8 10.5 5.5 8ZM5.5 8C3.5 8.3 3 10 2.5 13.5 6 13 7.7 12.5 8 10.5', sw: 1.5 },
+      { n: 'Lasso', d: 'M8.5 2.7c3.3 0 6 1.7 6 3.8s-2.7 3.8-6 3.8-6-1.7-6-3.8 2.7-3.8 6-3.8ZM5 9.6c-.8 1.4-.4 3 1 3.4 1 .3 1.2 1.2.4 2', sw: 1.5 },
+      { n: 'Label', d: 'M3 5V3.5h10V5M8 3.5V13M6 13h4', sw: 1.5 },
+      { n: 'Stamp', d: 'M1.5 13 6 5l2.5 4 2-2.5 4 6.5Z', sw: 1.5 },
+      { n: 'Scatter', d: 'M3 4h.01M7.5 2.5h.01M12 4.5h.01M4.5 8h.01M9 7.5h.01M13 9h.01M3 12h.01M7.5 12.5h.01M11.5 13h.01', sw: 2.6 },
+      { n: 'Stamp Eraser', d: 'M6 13.5h8M2.8 9.7l5.8-5.8a1.4 1.4 0 0 1 2 0l2 2a1.4 1.4 0 0 1 0 2l-5.4 5.4H5l-2.2-2.2a1 1 0 0 1 0-1.4ZM5.6 6.9l4 4', sw: 1.5 },
+      { n: 'Export Region', d: 'M4 1.5V12h10.5M1.5 4H12v10.5', sw: 1.5 },
+      { n: 'Landmass', d: 'M3 6c0-2.5 3-3.5 5-2.5 2-1.5 5.5 0 5 3 1.5 2 0 5.5-3 5.5-2 1.8-6 1-6.5-1.5C2 9.5 2 7.5 3 6Z', sw: 1.5 },
+      { n: 'Lake', d: 'M2 6c2-1.5 4 1.5 6 0s4 1.5 6 0M2 10c2-1.5 4 1.5 6 0s4 1.5 6 0', sw: 1.5 },
+      { n: 'Label kind', d: 'M4 4h8M8 4v8.5', sw: 1.5 },
+      { n: 'Layer / Group', d: 'M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3M2 11l6 3 6-3', sw: 1.5 },
+      { n: 'Visible', d: 'M1.5 8C3 5 5.3 3.5 8 3.5S13 5 14.5 8C13 11 10.7 12.5 8 12.5S3 11 1.5 8ZM9.5 8a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z', sw: 1.5 },
+      { n: 'Hidden', d: 'M1.5 8C3 5 5.3 3.5 8 3.5S13 5 14.5 8C13 11 10.7 12.5 8 12.5S3 11 1.5 8ZM2.5 2.5l11 11', sw: 1.5 },
+      { n: 'Lock', d: 'M4 7.5h8v6H4ZM5.5 7.5v-2a2.5 2.5 0 0 1 5 0v2', sw: 1.5 },
+      { n: 'Clip', d: 'M4 2.5v7a2 2 0 0 0 2 2h7.5M11 9l2.5 2.5L11 14', sw: 1.5 },
+      { n: 'Depth-sort', d: 'M5 3v10M3 11l2 2 2-2M11 13V3M9 5l2-2 2 2', sw: 1.5 },
+      { n: 'Inherited', d: 'M6 10 10 6M5 7.5 3.8 8.7a2.3 2.3 0 0 0 3.3 3.3L8.3 11M7.7 5l1.2-1.2a2.3 2.3 0 0 1 3.3 3.3L11 8.3', sw: 1.5 },
+      { n: 'Reset', d: 'M3.5 6H10a3 3 0 0 1 0 6H7M6 3.5 3.5 6 6 8.5', sw: 1.5 },
+      { n: 'Re-roll', d: 'M4.5 2.5h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2ZM5.5 5.5h.01M10.5 5.5h.01M8 8h.01M5.5 10.5h.01M10.5 10.5h.01', sw: 1.5 },
+      { n: 'Attribution', d: 'M3.5 14V2.5M3.5 3h8.5l-2 3 2 3H3.5', sw: 1.5 },
+      { n: 'Nodes', d: 'M2.5 2h3v3h-3ZM10.5 11h3v3h-3ZM5.5 3.5c4 0 6.5 2 6.5 7.5', sw: 1.5 },
+      { n: 'Union', d: 'M2 2h7v4h5v8H7v-5H2Z', sw: 1.5 },
+      { n: 'Subtract', d: 'M2 2h9v5H7v4H2ZM9 9h5v5H9Z', sw: 1.5 },
+      { n: 'Split apart', d: 'M2 2h5v5H2ZM9 9h5v5H9ZM9 2l5 5M7 9l-5 5', sw: 1.5 },
+      { n: 'Search', d: 'M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM10.5 10.5 14 14', sw: 1.5 },
+      { n: 'Add', d: 'M8 3v10M3 8h10', sw: 1.5 },
+      { n: 'Undo', d: 'M3.5 6H10a3 3 0 0 1 0 6H7M6 3.5 3.5 6 6 8.5', sw: 1.5 },
+      { n: 'Export', d: 'M8 2v8M5 7l3 3 3-3M3 12.5v1h10v-1', sw: 1.5 },
+      { n: 'Warning', d: 'M8 2.5 14.5 13.5h-13ZM8 6.5v3M8 11.5v.01', sw: 1.5 },
+      { n: 'More', d: 'M3.5 8h.01M8 8h.01M12.5 8h.01', sw: 2.4 }
+    ];
+    return { tokens: tokens, icons: icons };
+  }
+}
+</script>
+</body>
+</html>
