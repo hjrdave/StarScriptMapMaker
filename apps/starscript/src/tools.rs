@@ -133,8 +133,17 @@ pub struct ToolState {
     region_drag: Option<(RegionDrag, ExportRegion)>,
     /// A box-select in node-edit mode: where it began and where the pointer is, in Canvas units.
     marquee: Option<(Point, Point)>,
+    /// A box-select dragged from empty Canvas with the Select tool.
+    select_box: Option<SelectBox>,
     /// The Label whose text is being typed in the overlay box.
     pub editing: Option<TextEditing>,
+}
+
+/// A box-select in progress, in Canvas units. Shift keeps what was selected when it began.
+struct SelectBox {
+    start: Point,
+    end: Point,
+    keep: Vec<Id>,
 }
 
 /// A lasso loop being drawn: freehand while the button is held, or corner by corner.
@@ -164,6 +173,7 @@ impl ToolState {
     pub fn clear_node_gestures(&mut self) {
         self.node_drag = None;
         self.marquee = None;
+        self.select_box = None;
     }
 }
 
@@ -286,14 +296,41 @@ pub fn canvas_input(
                 && let Some(pos) = response.ctx.input(|i| i.pointer.press_origin())
             {
                 let duplicate = response.ctx.input(|i| i.modifiers.alt);
-                start_drag(
-                    editor,
-                    state,
-                    bounds,
-                    grip_at(pos),
-                    to_canvas(pos),
-                    duplicate,
-                );
+                let point = to_canvas(pos);
+                let grip = grip_at(pos);
+                let on_selection = bounds.is_some_and(|b| b.contains(point));
+                if grip.is_none() && !on_selection && editor.pick(point).is_none() {
+                    // Empty Canvas or pasteboard: the drag draws a selection box.
+                    let keep = if shift {
+                        editor.selection().to_vec()
+                    } else {
+                        Vec::new()
+                    };
+                    state.select_box = Some(SelectBox {
+                        start: point,
+                        end: point,
+                        keep,
+                    });
+                } else {
+                    start_drag(editor, state, bounds, grip, point, duplicate);
+                }
+            }
+            if let Some(select_box) = &mut state.select_box {
+                if response.dragged_by(egui::PointerButton::Primary)
+                    && let Some(pos) = response.interact_pointer_pos()
+                {
+                    select_box.end = to_canvas(pos);
+                }
+                if response.drag_stopped() {
+                    let done = state.select_box.take().expect("a box in progress");
+                    let mut selection = done.keep;
+                    for id in objects_in_box(editor, done.start, done.end) {
+                        if !selection.contains(&id) {
+                            selection.push(id);
+                        }
+                    }
+                    editor.select(selection);
+                }
             }
             let over_selection = || {
                 let pos = response.hover_pos()?;
@@ -1096,6 +1133,19 @@ pub fn paint_overlay(
 ) {
     if editor.active_tool == ToolId::Select {
         paint_nodes(painter, editor, view, state, origin, hover, ppp);
+        if let Some(select_box) = &state.select_box {
+            let select = crate::theme::palette(painter.ctx()).select;
+            let to_screen = |p: Point| crate::handles::to_screen(view, origin, ppp, p);
+            let rect =
+                egui::Rect::from_two_pos(to_screen(select_box.start), to_screen(select_box.end));
+            painter.rect_filled(rect, 0.0, select.gamma_multiply(0.16));
+            painter.rect_stroke(
+                rect,
+                0.0,
+                egui::Stroke::new(1.5, select),
+                egui::StrokeKind::Middle,
+            );
+        }
     }
     if let Some(bounds) = custom_region(editor) {
         // Editor-only: drawn with egui over the Canvas, so it never reaches an export.
@@ -1233,6 +1283,32 @@ fn region_mesh(
             .collect();
     }
     mesh
+}
+
+/// The unlocked Objects whose bounds meet the box between `a` and `b`, in draw order. Reaches
+/// the pasteboard as well as the Canvas.
+fn objects_in_box(editor: &mut Editor, a: Point, b: Point) -> Vec<Id> {
+    let (min, max) = (
+        [a[0].min(b[0]), a[1].min(b[1])],
+        [a[0].max(b[0]), a[1].max(b[1])],
+    );
+    let candidates: Vec<Id> = editor
+        .map
+        .draw_order()
+        .into_iter()
+        .filter(|&id| !editor.map.is_locked(id))
+        .collect();
+    candidates
+        .into_iter()
+        .filter(|&id| {
+            Bounds::of_ids(editor, &[id]).is_some_and(|bounds| {
+                bounds.min[0] <= max[0]
+                    && bounds.max[0] >= min[0]
+                    && bounds.min[1] <= max[1]
+                    && bounds.max[1] >= min[1]
+            })
+        })
+        .collect()
 }
 
 /// A click: selects what is under the pointer, Shift adds or removes it, and empty Canvas

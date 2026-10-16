@@ -140,6 +140,9 @@ pub struct CanvasView {
     pending_zoom: Option<Zoom>,
     /// The zoom menu's percentage text.
     zoom_field: String,
+    /// Where the right-click that opened the Canvas menu landed, in Canvas units: Paste puts
+    /// the pasted items' middle there.
+    menu_point: Option<[f64; 2]>,
 }
 
 impl CanvasView {
@@ -156,6 +159,7 @@ impl CanvasView {
             gesture_until: 0.0,
             pending_zoom: None,
             zoom_field: String::new(),
+            menu_point: None,
         }
     }
 
@@ -261,6 +265,7 @@ impl CanvasView {
                 pixels_per_point: ppp,
             },
         );
+        Self::context_menu(&mut self.menu_point, &response, editor, view, rect, ppp);
         if let Some(pointer) = response.hover_pos() {
             let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));
             let factor = f64::from(pinch) * (f64::from(scroll) / 200.0).exp();
@@ -336,6 +341,73 @@ impl CanvasView {
         );
         self.node_banner(ui, editor, rect);
         self.text_box(ui, editor, &view, rect.min, ppp);
+    }
+
+    /// The right-click menu of the Select tool. A right-click on something not yet selected
+    /// selects it first; the items are the Edit menu's Commands, nothing more.
+    fn context_menu(
+        menu_point: &mut Option<[f64; 2]>,
+        response: &egui::Response,
+        editor: &mut Editor,
+        view: &View,
+        rect: egui::Rect,
+        ppp: f64,
+    ) {
+        if editor.active_tool != ToolId::Select || editor.node_edit().is_some() {
+            return;
+        }
+        if response.secondary_clicked()
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            let local = pos - rect.min;
+            let point = view.to_canvas([f64::from(local.x) * ppp, f64::from(local.y) * ppp]);
+            *menu_point = Some(point);
+            if let Some(id) = editor.pick(point)
+                && !editor.is_selected(id)
+            {
+                editor.select(vec![id]);
+            }
+        }
+        let at = *menu_point;
+        response.context_menu(|ui| {
+            let has_selection = !editor.selection().is_empty();
+            if ui
+                .add_enabled(has_selection, egui::Button::new("Copy"))
+                .clicked()
+            {
+                editor.copy_selection();
+                ui.close();
+            }
+            if ui
+                .add_enabled(has_selection, egui::Button::new("Cut"))
+                .clicked()
+            {
+                editor.cut_selection();
+                ui.close();
+            }
+            if ui
+                .add_enabled(editor.has_clipboard(), egui::Button::new("Paste"))
+                .clicked()
+            {
+                let centre = at.unwrap_or_else(|| view.to_canvas(zoom::centre(view)));
+                editor.paste(centre);
+                ui.close();
+            }
+            if ui
+                .add_enabled(has_selection, egui::Button::new("Group"))
+                .clicked()
+            {
+                editor.group_selection();
+                ui.close();
+            }
+            if ui
+                .add_enabled(has_selection, egui::Button::new("Delete"))
+                .clicked()
+            {
+                editor.delete_selection();
+                ui.close();
+            }
+        });
     }
 
     /// The banner shown while nodes are edited. Cancel drops a gesture in progress or else
