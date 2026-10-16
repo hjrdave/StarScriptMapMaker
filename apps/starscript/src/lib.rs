@@ -184,6 +184,10 @@ struct WindowState {
     pack_install: pack_install::PackInstall,
     /// The Map file a Home card's Delete asked about; the dialog confirms before it is trashed.
     delete_prompt: Option<PathBuf>,
+    /// The id of the Asset pack a card's Delete asked about; the dialog confirms first.
+    pack_delete_prompt: Option<String>,
+    /// Moves a pack folder to the Trash; tests swap it for one that touches nothing.
+    pack_trash: fn(&Path) -> Result<(), String>,
     /// A Paste into a Map that lacks something the copied layers need: the popup asks first.
     paste_prompt: Option<PastePrompt>,
     /// A tab's unsaved-changes question was answered Save for a Map never saved: what to do
@@ -299,6 +303,8 @@ impl MapMakerApp {
             home: home::Home::default(),
             awaiting_save: None,
             delete_prompt: None,
+            pack_delete_prompt: None,
+            pack_trash: file_actions::move_to_trash,
             paste_prompt: None,
             shell: shell::Shell::load(cc.storage),
             drop_focus: false,
@@ -797,6 +803,7 @@ impl MapMakerApp {
             || self.win.awaiting_save.is_some()
             || self.app.unsaved_prompt.is_some()
             || self.win.delete_prompt.is_some()
+            || self.win.pack_delete_prompt.is_some()
             || self.win.paste_prompt.is_some()
             || self.win.new_map_dialog.open
             || self.win.export_dialog.open
@@ -1306,7 +1313,88 @@ impl MapMakerApp {
         self.recovery_dialog(ctx);
         self.unsaved_dialog(ctx);
         self.delete_dialog(ctx);
+        self.pack_delete_dialog(ctx);
         self.paste_dialog(ctx);
+    }
+
+    /// How many Stamps across the open Maps place an Asset of pack `id`.
+    pub fn pack_stamp_count(&self, id: &str) -> usize {
+        let library = self.app.sprites.library();
+        self.win
+            .tabs
+            .iter()
+            .map(|tab| library.pack_usage(&tab.editor.map, id))
+            .sum()
+    }
+
+    /// Confirms moving an Asset pack to the Trash. Cancel is the default: Enter and Esc cancel.
+    fn pack_delete_dialog(&mut self, ctx: &egui::Context) {
+        let Some(id) = self.win.pack_delete_prompt.clone() else {
+            return;
+        };
+        let name = self
+            .app
+            .sprites
+            .library()
+            .pack(&id)
+            .map_or_else(|| id.clone(), |pack| pack.name.clone());
+        let stamps = self.pack_stamp_count(&id);
+        let mut delete = false;
+        let mut cancel = false;
+        let shown = dialog::show(
+            ctx,
+            "delete_pack",
+            &format!("Delete “{name}”?"),
+            380.0,
+            |ui| {
+                ui.label(format!(
+                    "The pack is moved to the {}, so you can put it back from there.",
+                    file_actions::TRASH_NAME
+                ));
+                ui.add_space(6.0);
+                ui.label(pack_page::stamp_usage_label(stamps));
+                dialog::buttons(ui, |ui| {
+                    let danger = theme::palette(ui.ctx()).danger;
+                    let button =
+                        egui::Button::new(egui::RichText::new("Delete").strong()).fill(danger);
+                    if ui.add(button).clicked() {
+                        delete = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                });
+            },
+        );
+        if shown.cancelled || dialog::enter_confirms(ctx) {
+            cancel = true;
+        }
+        if delete {
+            self.win.pack_delete_prompt = None;
+            let roots = self.app.pack_roots.clone();
+            // The library refuses built-in packs and anything outside the user packs folder.
+            let mut library = PackLibrary::clone(&self.app.sprites.library());
+            match library.delete_pack(&id, &roots, self.win.pack_trash) {
+                Ok(_) => {
+                    for problem in self.reload_packs(&roots) {
+                        eprintln!("Asset pack problem: {problem}");
+                    }
+                }
+                Err(err) => self.notify_error(format!("Couldn’t delete “{name}”: {err}")),
+            }
+        } else if cancel {
+            self.win.pack_delete_prompt = None;
+        }
+    }
+
+    /// Sets what moves a pack to the Trash, for tests.
+    pub fn set_pack_trash(&mut self, trash: fn(&Path) -> Result<(), String>) {
+        self.win.pack_trash = trash;
+    }
+
+    /// Whether the delete-pack confirmation is showing, for tests.
+    pub fn pack_delete_prompt_open(&self) -> bool {
+        self.win.pack_delete_prompt.is_some()
     }
 
     /// Lists what the copied layers need that this Map lacks and asks whether to paste anyway.
@@ -1978,6 +2066,7 @@ impl MapMakerApp {
                 home::Action::Credits => self.app.credits.open = true,
                 home::Action::AddPack => self.win.pack_dialog.folder(&ctx, "Add Asset pack", None),
                 home::Action::AddPackFolder(folder) => self.add_pack(&ctx, folder),
+                home::Action::DeletePack(id) => self.win.pack_delete_prompt = Some(id),
                 home::Action::DismissPackStatus => self.win.pack_install.dismiss(),
             }
         }
