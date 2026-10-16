@@ -98,6 +98,17 @@ impl PackLibrary {
         self.packs.push(pack);
     }
 
+    /// Adds a freshly installed pack. The caller has already checked its id is free.
+    pub(super) fn add_installed(&mut self, pack: Pack) {
+        self.packs.push(pack);
+    }
+
+    /// Removes and returns the pack with this id.
+    pub(super) fn remove(&mut self, id: &str) -> Option<Pack> {
+        let index = self.packs.iter().position(|pack| pack.id == id)?;
+        Some(self.packs.remove(index))
+    }
+
     pub fn packs(&self) -> &[Pack] {
         &self.packs
     }
