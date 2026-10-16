@@ -99,7 +99,7 @@ fn a_locked_layer_refuses_edits_with_a_visible_message() {
     let layer = *harness.state().editor().map.children(None).last().unwrap();
     assert!(harness.state().editor().map.node(layer).unwrap().locked());
 
-    // The hide toggle is refused, and the reason shows in the status bar.
+    // The hide toggle is refused, and the reason shows as a toast.
     harness.get_by_label("Layer 5").hover();
     harness.run();
     harness.query_all_by_label("Hide").next().unwrap().click();
@@ -107,7 +107,7 @@ fn a_locked_layer_refuses_edits_with_a_visible_message() {
     let editor = harness.state().editor();
     let message = "“Layer 5” is locked";
     assert_eq!(editor.notice().map(|n| n.text.as_str()), Some(message));
-    harness.get_by_label(message);
+    harness.get_by_label(&format!("Error: {message}"));
     assert!(matches!(
         editor.map.node(layer),
         Some(ssmap_core::Node::Layer(l)) if l.visible
@@ -235,7 +235,7 @@ fn a_file_that_fails_to_open_shows_why() {
         harness.state().editor().notice().map(|n| n.text.as_str()),
         Some(message)
     );
-    harness.get_by_label(message);
+    harness.get_by_label(&format!("Error: {message}"));
     assert!(harness.state().document().path().is_none());
 }
 
