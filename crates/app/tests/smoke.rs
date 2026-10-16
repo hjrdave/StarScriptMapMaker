@@ -59,6 +59,24 @@ fn a_new_map_opens_with_the_starter_layers_and_label_styles() {
 }
 
 #[test]
+fn the_theme_is_installed_dark_by_default() {
+    let harness = app();
+    let ctx = &harness.ctx;
+    // The harness has no system theme, so the dark fallback applies.
+    assert_eq!(ctx.theme(), egui::Theme::Dark);
+    let style = ctx.style_of(ctx.theme());
+    assert_eq!(
+        style.visuals.panel_fill,
+        ssmap_app::theme::Palette::DARK.bg_panel
+    );
+    assert_eq!(
+        ctx.style_of(egui::Theme::Light).visuals.panel_fill,
+        ssmap_app::theme::Palette::LIGHT.bg_panel
+    );
+    assert_eq!(style.text_styles[&egui::TextStyle::Body].size, 12.0);
+}
+
+#[test]
 fn a_locked_layer_refuses_edits_with_a_visible_message() {
     let mut harness = app();
     harness.get_by_label("New Layer").click();
