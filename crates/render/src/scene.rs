@@ -16,9 +16,16 @@ use ssmap_core::{
 use crate::canvas::{ClipScope, Content};
 use crate::color::Color;
 use crate::color::ColorExt as _;
+use crate::profile::{self, Stage};
 use crate::stamp::{PlacedStamp, StampDraw};
 use crate::text::{Fonts, LabelLayout, LayoutKey};
 use crate::vector::{FillRule, ObjectRef, Paint, VectorGroup, VectorShape};
+
+/// The roughened outline of `id`, timed as the Roughness stage (a cache hit is near free).
+fn outline(roughness: &mut RoughnessCache, map: &Map, id: Id) -> Option<Arc<MultiPolygon>> {
+    let _stage = profile::stage(Stage::Roughness);
+    roughness.outline(map, id)
+}
 
 /// The Map's drawn Objects and the derived data behind them. The editor keeps one per open
 /// Map; export builds its own.
@@ -74,6 +81,7 @@ impl MapScene {
     /// What the Canvas draws for `map`, rebuilt only when the Map has changed since.
     /// Landmasses and Lakes use their roughened outlines from `roughness`.
     pub fn content(&mut self, map: &Map, roughness: &mut RoughnessCache) -> Content {
+        let _stage = profile::stage(Stage::Update);
         if self
             .built
             .as_ref()
@@ -115,7 +123,7 @@ impl MapScene {
                     .filter(|&&other| map.parent(other) == Some(layer))
                 {
                     if let (Some(shore), Some(outline)) =
-                        (map.shore(sibling), roughness.outline(map, sibling))
+                        (map.shore(sibling), outline(roughness, map, sibling))
                     {
                         let first = groups.len();
                         ripple_groups(&outline, shore, layer_opacity(map, sibling), &mut groups);
@@ -191,7 +199,7 @@ impl MapScene {
                 },
             }),
             kind => {
-                let (Some(fill), Some(outline)) = (kind.fill(), roughness.outline(map, id)) else {
+                let (Some(fill), Some(outline)) = (kind.fill(), outline(roughness, map, id)) else {
                     return;
                 };
                 // One path per part, each holding its exterior and holes, filled even-odd so
@@ -267,8 +275,7 @@ fn clip_scope(
             })
             .collect()
     };
-    let land = roughness
-        .outline(map, target)
+    let land = outline(roughness, map, target)
         .map(|outline| fills(&outline))
         .unwrap_or_default();
     let after = order
@@ -279,7 +286,7 @@ fn clip_scope(
     for &id in &order[after..] {
         if let Some(Node::Object(object)) = map.node(id)
             && matches!(object.kind, ObjectKind::Lake(_))
-            && let Some(outline) = roughness.outline(map, id)
+            && let Some(outline) = outline(roughness, map, id)
         {
             holes.extend(fills(&outline));
         }

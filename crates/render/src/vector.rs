@@ -18,6 +18,7 @@ pub use lyon::tessellation::FillRule;
 
 use crate::canvas::{CLIP_INSIDE, StencilUse};
 use crate::color::{Color, ColorExt as _};
+use crate::profile::{self, Stage};
 
 /// How a path is painted.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -718,6 +719,7 @@ fn resolve_chunk(
     tessellators: &mut Tessellators,
     building: bool,
 ) -> (Vec<Option<Arc<GroupMesh>>>, Vec<ObjectRef>) {
+    let _stage = profile::stage(Stage::Tessellation);
     let mut found: HashMap<Id, Option<Vec<Arc<GroupMesh>>>> = HashMap::new();
     let mut missing = Vec::new();
     let meshes = range
@@ -795,6 +797,7 @@ fn resolve(
     cache: &TessellationCache,
     tessellators: &mut Tessellators,
 ) -> Vec<Option<Arc<GroupMesh>>> {
+    let _stage = profile::stage(Stage::Tessellation);
     let mut by_object: HashMap<Id, Vec<&VectorGroup>> = HashMap::new();
     for group in groups {
         if let Some(object) = group.object {

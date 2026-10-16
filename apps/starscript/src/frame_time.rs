@@ -20,6 +20,7 @@ use ssmap_core::{
     AssetRef, Canvas, Command, DistanceUnit, Id, Landmass, Layer, Map, MultiPolygon, Node, Object,
     ObjectKind, Op, PlacedStamp, Polygon, Scale, Stamp, Subtree,
 };
+use ssmap_render::profile::{self, Stage, StageTimes};
 use ssmap_render::{
     CanvasRenderer, CanvasScene, Fonts, GpuCapabilities, Headless, MapScene, SpriteStore, View,
 };
@@ -129,6 +130,15 @@ pub fn run(args: &[OsString]) -> i32 {
         })
         .unwrap_or_else(|| AssetRef::new("bench", "peak").expect("a valid reference"));
     print!("{adapter}");
+    #[cfg(feature = "profiling")]
+    let Some(recorder) = profile::Recorder::install() else {
+        eprintln!("error: another tracing subscriber is already installed");
+        return 1;
+    };
+    #[cfg(feature = "profiling")]
+    let take_stages = || Some(recorder.take());
+    #[cfg(not(feature = "profiling"))]
+    let take_stages = || None;
     for &script in &options.scripts {
         let capabilities = GpuCapabilities::query(&gpu.adapter);
         let measured = measure(
@@ -137,8 +147,8 @@ pub fn run(args: &[OsString]) -> i32 {
             &library,
             &asset,
             script,
-            options.scale,
-            options.frames,
+            &options,
+            &take_stages,
         );
         print!("{}", report(script, &measured));
     }
@@ -154,6 +164,8 @@ struct Measured {
     scene: Vec<Duration>,
     /// Upload and draw, until the GPU is done.
     render: Vec<Duration>,
+    /// The six stages of each frame, when built with the `profiling` feature.
+    stages: Vec<StageTimes>,
 }
 
 fn measure(
@@ -162,10 +174,10 @@ fn measure(
     library: &Arc<PackLibrary>,
     asset: &AssetRef,
     script: Script,
-    scale: f64,
-    limit: Option<usize>,
+    options: &Options,
+    take_stages: &dyn Fn() -> Option<StageTimes>,
 ) -> Measured {
-    let (map, layer) = large_map(scale, asset.clone());
+    let (map, layer) = large_map(options.scale, asset.clone());
     let mut world = World::new(map, layer, LANDMASSES, script);
     let mut renderer = CanvasRenderer::new(&gpu.device, capabilities);
     renderer.set_sprites(SpriteStore::synchronous(library.clone()));
@@ -182,29 +194,38 @@ fn measure(
         let built = started.elapsed();
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         renderer.render(&gpu.device, &gpu.queue, &mut encoder, &canvas, view);
-        gpu.queue.submit([encoder.finish()]);
-        gpu.device
-            .poll(ssmap_render::wgpu::PollType::wait_indefinitely())
-            .expect("the GPU finishes its work");
+        {
+            let _draw = profile::stage(Stage::Draw);
+            gpu.queue.submit([encoder.finish()]);
+            gpu.device
+                .poll(ssmap_render::wgpu::PollType::wait_indefinitely())
+                .expect("the GPU finishes its work");
+        }
         (built, started.elapsed() - built)
     };
     // The first frame uploads the Map's geometry and Stamps and roughens every outline, which
     // is not what the script measures.
     draw(&mut world, &views[0]);
+    take_stages();
     let mut measured = Measured {
         total: Vec::new(),
         edit: Vec::new(),
         scene: Vec::new(),
         render: Vec::new(),
+        stages: Vec::new(),
     };
-    let frames = scripts::frames(script).min(limit.unwrap_or(usize::MAX));
+    let frames = scripts::frames(script).min(options.frames.unwrap_or(usize::MAX));
     for frame in 0..frames {
         let view = views.get(frame + 1).unwrap_or(&views[views.len() - 1]);
         let started = Instant::now();
-        scripts::edit(script, frame, &mut world);
+        {
+            let _input = profile::stage(Stage::Input);
+            scripts::edit(script, frame, &mut world);
+        }
         let edit = started.elapsed();
         let (scene, render) = draw(&mut world, view);
         measured.total.push(started.elapsed());
+        measured.stages.extend(take_stages());
         measured.edit.push(edit);
         measured.scene.push(scene);
         measured.render.push(render);
@@ -317,11 +338,22 @@ fn report(script: Script, measured: &Measured) -> String {
         verdict(stats.p95 < STRETCH_BUDGET),
     );
     let _ = writeln!(text, "stages (ms)      p50      p95      p99    worst");
-    for (name, frames) in [
-        ("edit", &measured.edit),
-        ("scene", &measured.scene),
-        ("render", &measured.render),
-    ] {
+    let rows: Vec<(&str, Vec<Duration>)> = if measured.stages.is_empty() {
+        vec![
+            ("edit", measured.edit.clone()),
+            ("scene", measured.scene.clone()),
+            ("render", measured.render.clone()),
+        ]
+    } else {
+        Stage::ALL
+            .into_iter()
+            .map(|stage| {
+                let times = measured.stages.iter().map(|frame| frame[stage]);
+                (stage.name(), times.collect())
+            })
+            .collect()
+    };
+    for (name, frames) in &rows {
         let stats = Stats::new(frames);
         let _ = writeln!(
             text,
@@ -332,7 +364,25 @@ fn report(script: Script, measured: &Measured) -> String {
             ms(stats.worst)
         );
     }
+    if let Some(share) = coverage(measured) {
+        let _ = writeln!(
+            text,
+            "stages add up to {:.1}% of the frame time",
+            share * 100.0
+        );
+    }
     text
+}
+
+/// How much of the summed frame time the stages account for, `None` without stage timing.
+/// A little under 1: setup between the stages is in none of them.
+fn coverage(measured: &Measured) -> Option<f64> {
+    if measured.stages.is_empty() {
+        return None;
+    }
+    let staged: Duration = measured.stages.iter().map(StageTimes::total).sum();
+    let total: Duration = measured.total.iter().sum();
+    (!total.is_zero()).then(|| staged.as_secs_f64() / total.as_secs_f64())
 }
 
 /// A Map like the `large_map` benchmark's, scaled by `scale`, and its Layer, which holds the
@@ -417,6 +467,57 @@ mod tests {
         assert_eq!(stats.worst, Duration::from_millis(100));
         assert_eq!(stats.mean, Duration::from_micros(50_500));
         assert_eq!(Stats::new(&[]).worst, Duration::ZERO);
+    }
+
+    #[test]
+    fn the_report_lists_every_stage_and_they_add_up_to_the_frame() {
+        let ms = Duration::from_millis;
+        let mut measured = Measured {
+            total: Vec::new(),
+            edit: Vec::new(),
+            scene: Vec::new(),
+            render: Vec::new(),
+            stages: Vec::new(),
+        };
+        for frame in 0..10 {
+            let mut stages = StageTimes::default();
+            stages[Stage::Input] = ms(1);
+            stages[Stage::Update] = ms(2);
+            stages[Stage::Roughness] = ms(3);
+            stages[Stage::Tessellation] = ms(1);
+            stages[Stage::Upload] = ms(1);
+            stages[Stage::Draw] = ms(2 + frame % 2);
+            // Setup between the stages is in none of them.
+            measured
+                .total
+                .push(stages.total() + Duration::from_micros(100));
+            measured.stages.push(stages);
+        }
+        let text = report(Script::Paint, &measured);
+        for stage in Stage::ALL {
+            assert!(text.contains(&format!("  {:<12} ", stage.name())), "{text}");
+        }
+        let share = coverage(&measured).unwrap();
+        assert!((0.95..=1.0).contains(&share), "{share}");
+        assert!(text.contains("stages add up to 99."), "{text}");
+    }
+
+    #[test]
+    fn without_stage_timing_the_report_has_three_stages() {
+        let measured = Measured {
+            total: vec![Duration::from_millis(5)],
+            edit: vec![Duration::from_millis(1)],
+            scene: vec![Duration::from_millis(2)],
+            render: vec![Duration::from_millis(2)],
+            stages: Vec::new(),
+        };
+        assert_eq!(coverage(&measured), None);
+        let text = report(Script::Paint, &measured);
+        assert!(
+            text.contains("  edit ") && text.contains("  render "),
+            "{text}"
+        );
+        assert!(!text.contains("add up"), "{text}");
     }
 
     #[test]

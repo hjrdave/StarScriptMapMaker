@@ -11,6 +11,8 @@ fn main() -> eframe::Result {
     if ssmap_app::frame_time::requested(&args) {
         std::process::exit(ssmap_app::frame_time::run(&args));
     }
+    // With the profiling feature, time the stages of every frame for the overlay (F3).
+    ssmap_app::overlay::record();
     // A double-clicked Map file arrives as an argument on Windows and Linux. macOS sends an
     // open-documents event instead, which winit does not expose yet (see docs/packaging.md).
     let launch_file = ssmap_app::launch_file(std::env::args_os().skip(1));

@@ -12,6 +12,7 @@ use wgpu::util::DeviceExt;
 use crate::color::{Color, ColorExt as _};
 use crate::gpu::GpuCapabilities;
 use crate::ocean::{OceanPass, OceanUniform};
+use crate::profile::{self, Stage};
 use crate::sprite::SpriteStore;
 use crate::stamp::{PlacedStamp, StampRenderer};
 use crate::vector::{
@@ -369,6 +370,7 @@ impl CanvasRenderer {
         scene: &CanvasScene,
         view: &View,
     ) -> &wgpu::Texture {
+        let upload = profile::stage(Stage::Upload);
         let backdrop = BackdropKey {
             canvas_size: scene.canvas_size,
             canvas_origin: scene.canvas_origin,
@@ -437,6 +439,8 @@ impl CanvasRenderer {
         }
         self.ensure_target(device, view.size);
         queue.write_buffer(&self.view_uniform, 0, bytemuck::bytes_of(&view.uniform()));
+        drop(upload);
+        let _draw = profile::stage(Stage::Draw);
 
         let target = self.target.as_ref().expect("ensured above");
         let (attachment, resolve_target) = match &target.msaa {

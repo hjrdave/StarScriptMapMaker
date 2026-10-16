@@ -23,6 +23,7 @@ pub mod menu;
 pub mod native_dialog;
 pub mod native_menu;
 pub mod new_map;
+pub mod overlay;
 mod pack_page;
 pub mod prop_widgets;
 mod properties;
@@ -126,6 +127,8 @@ struct AppState {
     /// Closing the window only hides it and leaves the app running (macOS); elsewhere closing
     /// the window quits.
     close_hides_window: bool,
+    /// The frame-time overlay, off by default (F3 in debug and profiling builds).
+    overlay: overlay::Overlay,
     /// Quit was asked for (⌘Q) and is handled next frame.
     quit_requested: bool,
     /// Commands whose key the egui handler leaves alone, because something else (the native
@@ -263,6 +266,7 @@ impl MapMakerApp {
             render_state: cc.wgpu_render_state.clone(),
             egui_ctx: cc.egui_ctx.clone(),
             close_hides_window: cfg!(target_os = "macos"),
+            overlay: overlay::Overlay::default(),
             quit_requested: false,
         };
         let win = WindowState {
@@ -2141,6 +2145,8 @@ impl MapMakerApp {
     /// One frame of the editor.
     fn show(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        self.app.overlay.begin_frame(&ctx);
+        self.app.overlay.show(&ctx);
         // ⌘+ and ⌘− zoom the Canvas only: keep egui's whole-UI zoom off and the scale at 1.
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
         if ctx.zoom_factor() != 1.0 {
@@ -2175,6 +2181,7 @@ impl MapMakerApp {
             }
         }
         if !dialog_open {
+            let _input = ssmap_render::profile::stage(ssmap_render::profile::Stage::Input);
             self.open_dropped_files(&ctx);
             self.shortcuts(&ctx);
         }
