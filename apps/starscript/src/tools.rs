@@ -10,7 +10,8 @@ use lyon::tessellation::{
 };
 use ssmap_core::land::{self, BrushStroke};
 use ssmap_core::{
-    Affine, Command, ExportRegion, Id, Label, LabelStyles, MultiPolygon, NodeRef, Point, Stamp,
+    Affine, Command, ExportRegion, Id, Label, LabelStyles, Membership, MultiPolygon, Node, NodeRef,
+    Point, Stamp,
 };
 use ssmap_render::View;
 
@@ -322,6 +323,9 @@ pub fn canvas_input(
                         editor.gesture_replace(first);
                     }
                     for command in commands {
+                        editor.gesture(command);
+                    }
+                    if let Some(command) = membership_command(editor, drag, to_canvas(pos)) {
                         editor.gesture(command);
                     }
                 }
@@ -1335,6 +1339,46 @@ fn start_drag(
         stamps,
         copies,
     });
+}
+
+/// The `SetMembership` Command a move drag ends each frame with: the pointer at `point`
+/// decides the board the dragged Objects belong to, inside the Canvas or off it, as in Figma.
+/// `None` when nothing changes board, or for a resize or rotation.
+fn membership_command(editor: &Editor, drag: &Drag, point: [f64; 2]) -> Option<Command> {
+    if drag.grip.is_some() {
+        return None;
+    }
+    let canvas = editor.map.canvas.rect();
+    let inside = point[0] >= canvas.min[0]
+        && point[0] <= canvas.max[0]
+        && point[1] >= canvas.min[1]
+        && point[1] <= canvas.max[1];
+    let target = if inside {
+        Membership::Canvas
+    } else {
+        Membership::Pasteboard
+    };
+    let moved: Vec<Id> = match &drag.copies {
+        Some((_, new_ids)) => new_ids.clone(),
+        None => drag
+            .outlines
+            .iter()
+            .copied()
+            .chain(drag.labels.iter().map(|(id, _)| *id))
+            .chain(drag.stamps.iter().map(|(id, _)| *id))
+            .collect(),
+    };
+    let ids: Vec<Id> = moved
+        .into_iter()
+        .filter(|&id| {
+            matches!(editor.map.node(id), Some(Node::Object(o)) if o.membership != target)
+                && !editor.map.is_locked(id)
+        })
+        .collect();
+    (!ids.is_empty()).then_some(Command::SetMembership {
+        ids,
+        membership: target,
+    })
 }
 
 /// What a drag does to each Label, from how it was when the drag began.

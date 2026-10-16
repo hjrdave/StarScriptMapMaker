@@ -500,6 +500,65 @@ fn select_move_and_resize_landmasses_and_lakes() {
     assert_eq!(harness.state().editor().selection(), [island]);
 }
 
+fn membership(harness: &Harness<'_, MapMakerApp>, id: ssmap_core::Id) -> ssmap_core::Membership {
+    match harness.state().editor().map.node(id) {
+        Some(ssmap_core::Node::Object(object)) => object.membership,
+        _ => panic!("an Object"),
+    }
+}
+
+#[test]
+fn dragging_an_object_on_and_off_the_canvas_changes_its_board_in_one_undo_step() {
+    use ssmap_core::Membership;
+    let (map, island, _) = island_map();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1280.0, 800.0))
+        .build_eframe(|cc| MapMakerApp::with_map(cc, map, None));
+    harness.run();
+    let screen = |harness: &Harness<'_, MapMakerApp>, point| {
+        harness.state().canvas_to_screen(point).unwrap()
+    };
+    // Select the island first, as the toolbar resizes the Canvas once something is selected.
+    let at = screen(&harness, [50.0, 300.0]);
+    harness.hover_at(at);
+    harness.run();
+    harness.drag_at(at);
+    harness.drop_at(at);
+    harness.run();
+    assert_eq!(membership(&harness, island), Membership::Canvas);
+
+    // Across the edge with the pointer still on the Canvas: it stays a member.
+    let from = screen(&harness, [50.0, 300.0]);
+    let to = screen(&harness, [10.0, 300.0]);
+    drag(&mut harness, from, to, true);
+    assert!(
+        outline_start(&harness, island)[0] < 0.0,
+        "straddles the edge"
+    );
+    assert_eq!(membership(&harness, island), Membership::Canvas);
+
+    // The pointer off the Canvas: it becomes a pasteboard object, in one undo step.
+    let from = screen(&harness, [10.0, 300.0]);
+    let off = screen(&harness, [-30.0, 300.0]);
+    drag(&mut harness, from, off, true);
+    assert_eq!(membership(&harness, island), Membership::Pasteboard);
+    assert_eq!(harness.state().editor().undo_label(), Some("Move"));
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
+    harness.run();
+    assert_eq!(membership(&harness, island), Membership::Canvas);
+    assert!(outline_start(&harness, island)[0] < 0.0, "undo is one step");
+
+    // Dropping it off the Canvas again, then back on, makes it a member again.
+    let from = screen(&harness, [10.0, 300.0]);
+    let off = screen(&harness, [-30.0, 300.0]);
+    drag(&mut harness, from, off, true);
+    assert_eq!(membership(&harness, island), Membership::Pasteboard);
+    let from = screen(&harness, [-30.0, 300.0]);
+    let on = screen(&harness, [60.0, 300.0]);
+    drag(&mut harness, from, on, true);
+    assert_eq!(membership(&harness, island), Membership::Canvas);
+}
+
 #[test]
 fn a_landmass_gets_its_own_roughness_in_one_undo_step() {
     let (map, island, _) = island_map();
