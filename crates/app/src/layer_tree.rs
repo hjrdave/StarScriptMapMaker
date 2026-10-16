@@ -8,9 +8,16 @@ use eframe::egui;
 use ssmap_core::{Command, Id, Map, Node, Object, ObjectKind};
 
 use crate::editor::Editor;
+use crate::icons::{self, Icon};
+use crate::theme::{self, Palette, metrics};
 
-const ROW_HEIGHT: f32 = 22.0;
+const ROW_HEIGHT: f32 = metrics::LAYER_ROW;
 const INDENT: f32 = 14.0;
+/// Side of the chevron, eye and lock buttons in a row.
+const ROW_BUTTON: f32 = 18.0;
+/// Glyph size inside a row.
+const ROW_GLYPH: f32 = 14.0;
+const FOOTER_HEIGHT: f32 = 24.0;
 
 /// Why a Depth-sorted Layer's Stamps can't be reordered by hand.
 pub const DEPTH_SORT_HINT: &str = "Depth sort is on for this Layer: Stamps are listed in the order they draw, by Anchor height. Move a Stamp to re-sort it.";
@@ -156,6 +163,76 @@ pub fn node_name(map: &Map, id: Id) -> String {
     }
 }
 
+/// How a row looks, apart from selection and hover.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct RowState {
+    /// A hidden Layer: slashed eye, name italic and dim.
+    pub hidden: bool,
+    /// Locked itself: filled padlock.
+    pub locked: bool,
+    /// Locked only through a Layer above: dashed padlock, dim name, not toggleable here.
+    pub locked_by_parent: bool,
+}
+
+impl RowState {
+    pub fn of(map: &Map, id: Id) -> Self {
+        let Some(node) = map.node(id) else {
+            return Self {
+                hidden: false,
+                locked: false,
+                locked_by_parent: false,
+            };
+        };
+        let locked = node.locked();
+        Self {
+            hidden: matches!(node, Node::Layer(layer) if !layer.visible),
+            locked,
+            locked_by_parent: !locked && map.is_locked(id),
+        }
+    }
+
+    /// Hidden names go italic, so the state is never colour alone.
+    pub fn italic(self) -> bool {
+        self.hidden
+    }
+
+    fn dim(self) -> bool {
+        self.hidden || self.locked_by_parent
+    }
+}
+
+/// How many Objects and Layers the Map holds.
+pub fn counts(map: &Map) -> (usize, usize) {
+    let layers = map
+        .ids()
+        .filter(|&id| map.node(id).is_some_and(Node::is_layer))
+        .count();
+    (map.ids().count() - layers, layers)
+}
+
+/// "3 Objects · 2 Layers".
+pub fn footer_text(objects: usize, layers: usize) -> String {
+    let plural =
+        |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+    format!(
+        "{} · {}",
+        plural(objects, "Object", "Objects"),
+        plural(layers, "Layer", "Layers")
+    )
+}
+
+fn kind_icon(node: &Node) -> Icon {
+    match node {
+        Node::Layer(_) => Icon::Layer,
+        Node::Object(object) => match object.kind {
+            ObjectKind::Landmass(_) => Icon::Landmass,
+            ObjectKind::Lake(_) => Icon::Lake,
+            ObjectKind::Stamp(_) => Icon::Stamp,
+            ObjectKind::Label(_) => Icon::LabelKind,
+        },
+    }
+}
+
 #[derive(Default)]
 pub struct LayerTree {
     collapsed: HashSet<Id>,
@@ -163,6 +240,8 @@ pub struct LayerTree {
     renaming: Option<(Id, String)>,
     /// Rows cached by Map revision and collapse state, so huge trees aren't walked every frame.
     cache: Option<(u64, u64, Vec<Row>)>,
+    /// Object and Layer counts by Map revision, for the same reason.
+    counts: Option<(u64, (usize, usize))>,
     collapse_generation: u64,
 }
 
@@ -177,29 +256,36 @@ enum Action {
 
 impl LayerTree {
     pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
-        ui.heading("Layers");
-        ui.separator();
         let revision = editor.map.revision();
         let rows = match self.cache.take() {
             Some((r, g, rows)) if r == revision && g == self.collapse_generation => rows,
             _ => rows(&editor.map, &self.collapsed),
+        };
+        let (objects, layers) = match self.counts {
+            Some((r, counts)) if r == revision => counts,
+            _ => {
+                let counts = counts(&editor.map);
+                self.counts = Some((revision, counts));
+                counts
+            }
         };
         if rows.is_empty() {
             ui.weak("No Layers yet. Use New Layer to add one.");
         }
 
         let mut actions = Vec::new();
-        egui::ScrollArea::vertical().auto_shrink(false).show_rows(
-            ui,
-            ROW_HEIGHT,
-            rows.len(),
-            |ui, range| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        let list_height = (ui.available_height() - FOOTER_HEIGHT).max(ROW_HEIGHT);
+        egui::ScrollArea::vertical()
+            .auto_shrink(false)
+            .max_height(list_height)
+            .show_rows(ui, ROW_HEIGHT, rows.len(), |ui, range| {
                 for row in &rows[range] {
                     self.row(ui, editor, *row, &mut actions);
                 }
-            },
-        );
+            });
         self.cache = Some((revision, self.collapse_generation, rows));
+        footer(ui, &footer_text(objects, layers));
 
         for action in actions {
             match action {
@@ -247,68 +333,205 @@ impl LayerTree {
             egui::vec2(ui.available_width(), ROW_HEIGHT),
             egui::Sense::click_and_drag(),
         );
-        let visuals = ui.visuals();
-        if editor.is_selected(row.id) {
-            ui.painter()
-                .rect_filled(rect, 2.0, visuals.selection.bg_fill);
-        } else if response.hovered() {
-            ui.painter()
-                .rect_filled(rect, 2.0, visuals.widgets.hovered.weak_bg_fill);
+        let palette = theme::palette(ui.ctx());
+        let selected = editor.is_selected(row.id);
+        let state = RowState::of(map, row.id);
+        let hovering = ui.rect_contains_pointer(rect);
+        if selected {
+            ui.painter().rect_filled(rect, 2.0, palette.gold_subtle);
+            ui.painter().rect_stroke(
+                rect,
+                2.0,
+                egui::Stroke::new(1.0, palette.gold_ring),
+                egui::StrokeKind::Inside,
+            );
+        } else if hovering {
+            ui.painter().rect_filled(rect, 2.0, palette.tab_hover);
         }
 
-        let mut child = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(rect)
-                .layout(egui::Layout::left_to_right(egui::Align::Center)),
-        );
-        child.add_space(4.0 + INDENT * row.depth as f32);
         let layer = match node {
             Node::Layer(layer) => Some(layer),
             Node::Object(_) => None,
         };
+
+        // Trailing indicators are laid out right to left first, so the name knows how much
+        // room is left.
+        let mut trailing = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(rect.shrink2(egui::vec2(4.0, 0.0)))
+                .layout(egui::Layout::right_to_left(egui::Align::Center)),
+        );
+        trailing.spacing_mut().item_spacing.x = 2.0;
+        let mut trailing_left = rect.right();
+        // Lock: always when locked, otherwise on hover.
+        if state.locked_by_parent {
+            // Shown so the inherited lock is visible, but it can't be toggled on the child.
+            let (r, lock) =
+                trailing.allocate_exact_size(egui::Vec2::splat(ROW_BUTTON), egui::Sense::click());
+            let label = "Locked by parent Layer";
+            lock.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, false, label));
+            icons::paint(
+                &trailing,
+                r,
+                Icon::LockDashed,
+                ROW_GLYPH,
+                palette.text_tertiary,
+            );
+            lock.on_hover_text(label);
+            trailing_left = trailing.min_rect().left();
+        } else if state.locked || hovering {
+            let (icon, label, tint) = if state.locked {
+                (Icon::LockFilled, "Unlock", palette.text_primary)
+            } else {
+                (Icon::Lock, "Lock", palette.text_tertiary)
+            };
+            if icons::icon_button_with(
+                &mut trailing,
+                icon,
+                label,
+                ROW_BUTTON,
+                ROW_GLYPH,
+                Some(tint),
+            )
+            .clicked()
+            {
+                actions.push(Action::Run(Command::SetLocked {
+                    id: row.id,
+                    locked: !state.locked,
+                }));
+            }
+            trailing_left = trailing.min_rect().left();
+        }
+        if let Some(layer) = layer {
+            // Eye: always when hidden, otherwise on hover.
+            if state.hidden || hovering {
+                let (icon, label, tint) = if layer.visible {
+                    (Icon::Visible, "Hide", palette.text_tertiary)
+                } else {
+                    (Icon::Hidden, "Show", palette.text_primary)
+                };
+                if icons::icon_button_with(
+                    &mut trailing,
+                    icon,
+                    label,
+                    ROW_BUTTON,
+                    ROW_GLYPH,
+                    Some(tint),
+                )
+                .clicked()
+                {
+                    actions.push(Action::Run(Command::SetVisible {
+                        id: row.id,
+                        visible: !layer.visible,
+                    }));
+                }
+                trailing_left = trailing.min_rect().left();
+            }
+            if editor.active_layer() == Some(row.id) {
+                indicator(
+                    &mut trailing,
+                    Icon::ActiveLayer,
+                    palette.gold,
+                    "Active Layer (new Objects go here)",
+                );
+                trailing_left = trailing.min_rect().left();
+            }
+            let percent = (layer.opacity * 100.0).round();
+            if percent != 100.0 {
+                let text = format!("{percent:.0}%");
+                trailing
+                    .add(
+                        egui::Label::new(
+                            egui::RichText::new(&text)
+                                .size(theme::CAPTION)
+                                .color(palette.text_secondary),
+                        )
+                        .selectable(false)
+                        .sense(egui::Sense::hover()),
+                    )
+                    .on_hover_text(format!("Opacity {text}"));
+                trailing_left = trailing.min_rect().left();
+            }
+            if layer.depth_sort {
+                indicator(
+                    &mut trailing,
+                    Icon::DepthSort,
+                    palette.text_secondary,
+                    "Depth-sorted",
+                );
+                trailing_left = trailing.min_rect().left();
+            }
+            if layer.clip.is_some() {
+                indicator(
+                    &mut trailing,
+                    Icon::Clip,
+                    palette.clip,
+                    "Clipped to Landmass",
+                );
+                trailing_left = trailing.min_rect().left();
+            }
+        }
+
+        let left = egui::Rect::from_min_max(
+            rect.min,
+            egui::pos2((trailing_left - 4.0).max(rect.left()), rect.bottom()),
+        );
+        let mut child = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(left)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        child.spacing_mut().item_spacing.x = 4.0;
+        child.add_space(4.0 + INDENT * row.depth as f32);
         let has_children = !map.children(Some(row.id)).is_empty();
         if layer.is_some() && has_children {
             let collapsed = self.collapsed.contains(&row.id);
-            let (arrow, name) = if collapsed {
-                ("⏵", "Expand")
+            let (icon, name) = if collapsed {
+                (Icon::ChevronRight, "Expand")
             } else {
-                ("⏷", "Collapse")
+                (Icon::ChevronDown, "Collapse")
             };
-            if icon_button(&mut child, arrow, name).clicked() {
+            if icons::icon_button_with(
+                &mut child,
+                icon,
+                name,
+                ROW_BUTTON,
+                ROW_GLYPH,
+                Some(palette.text_tertiary),
+            )
+            .clicked()
+            {
                 actions.push(Action::Toggle(row.id));
             }
         } else {
-            child.add_space(16.0);
+            child.add_space(ROW_BUTTON);
         }
-        if let Some(layer) = layer {
-            let (eye, name) = if layer.visible {
-                ("👁", "Hide")
-            } else {
-                ("◌", "Show")
-            };
-            if icon_button(&mut child, eye, name).clicked() {
-                actions.push(Action::Run(Command::SetVisible {
-                    id: row.id,
-                    visible: !layer.visible,
-                }));
-            }
-        }
-        let locked = node.locked();
-        let (lock, name) = if locked {
-            ("🔒", "Unlock")
+        let (kind_rect, _) =
+            child.allocate_exact_size(egui::Vec2::splat(icons::GRID), egui::Sense::hover());
+        let kind_tint = if selected {
+            palette.gold_text
+        } else if state.dim() {
+            palette.text_tertiary
         } else {
-            ("🔓", "Lock")
+            palette.text_secondary
         };
-        if icon_button(&mut child, lock, name).clicked() {
-            actions.push(Action::Run(Command::SetLocked {
-                id: row.id,
-                locked: !locked,
-            }));
-        }
+        icons::paint(&child, kind_rect, kind_icon(node), icons::GRID, kind_tint);
 
         match &mut self.renaming {
             Some((id, text)) if *id == row.id => {
-                let edit = child.add(egui::TextEdit::singleline(text).desired_width(f32::INFINITY));
+                let edit = egui::Frame::new()
+                    .fill(palette.bg_field)
+                    .stroke(egui::Stroke::new(1.0, palette.gold))
+                    .corner_radius(theme::RADIUS_FIELD)
+                    .inner_margin(egui::Margin::symmetric(6, 0))
+                    .show(&mut child, |ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(text)
+                                .frame(egui::Frame::NONE)
+                                .desired_width(f32::INFINITY),
+                        )
+                    })
+                    .inner;
                 if !edit.has_focus() && !edit.lost_focus() {
                     edit.request_focus();
                 }
@@ -319,12 +542,17 @@ impl LayerTree {
                 }
             }
             _ => {
-                let name = node_name(map, row.id);
-                let mut text = egui::RichText::new(name);
-                if layer.is_some_and(|l| !l.visible) {
-                    text = text.weak();
-                }
-                if layer.is_some_and(|l| l.clip.is_some()) {
+                let color = if state.dim() {
+                    palette.text_tertiary
+                } else if selected {
+                    palette.text_primary
+                } else {
+                    palette.text_secondary
+                };
+                let mut text = egui::RichText::new(node_name(map, row.id))
+                    .size(theme::BODY)
+                    .color(color);
+                if state.italic() {
                     text = text.italics();
                 }
                 child.add(egui::Label::new(text).selectable(false).truncate());
@@ -377,7 +605,7 @@ impl LayerTree {
         if response.dnd_hover_payload::<Id>().is_some()
             && let Some(target) = drop_target(ui, rect, row.id, layer.is_some())
         {
-            paint_drop_indicator(ui, rect, target);
+            paint_drop_indicator(ui, palette, rect, target);
             if let Some(dropped) = response.dnd_release_payload::<Id>()
                 && let Some(command) = move_command(map, *dropped, target)
             {
@@ -387,12 +615,38 @@ impl LayerTree {
     }
 }
 
-/// A frameless icon button whose tooltip and accessible name is `name`.
-fn icon_button(ui: &mut egui::Ui, icon: &str, name: &str) -> egui::Response {
-    let response = ui.add(egui::Button::new(icon).frame(false));
-    response
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), name));
-    response.on_hover_text(name)
+/// A read-only glyph with a tooltip; `label` is its accessible name too.
+fn indicator(ui: &mut egui::Ui, icon: Icon, tint: egui::Color32, label: &str) {
+    let (rect, response) =
+        ui.allocate_exact_size(egui::Vec2::splat(ROW_BUTTON), egui::Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, label));
+    icons::paint(ui, rect, icon, ROW_GLYPH, tint);
+    response.on_hover_text(label);
+}
+
+/// The Object and Layer counts under the list.
+fn footer(ui: &mut egui::Ui, text: &str) {
+    let palette = theme::palette(ui.ctx());
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), FOOTER_HEIGHT),
+        egui::Sense::hover(),
+    );
+    ui.painter().hline(
+        rect.x_range(),
+        rect.top(),
+        egui::Stroke::new(1.0, palette.border_subtle),
+    );
+    let mut child = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    child.add_space(theme::SPACING[3]);
+    child.label(
+        egui::RichText::new(text)
+            .size(theme::CAPTION)
+            .color(palette.text_tertiary),
+    );
 }
 
 /// Top quarter drops above, bottom quarter below; the middle drops into a Layer, or splits
@@ -413,16 +667,22 @@ fn drop_target(ui: &egui::Ui, rect: egui::Rect, id: Id, is_layer: bool) -> Optio
     })
 }
 
-fn paint_drop_indicator(ui: &egui::Ui, rect: egui::Rect, target: DropTarget) {
-    let stroke = egui::Stroke::new(2.0, ui.visuals().selection.stroke.color);
+/// A gold line with a ring at its start between rows; a gold ring round the row to drop into.
+fn paint_drop_indicator(ui: &egui::Ui, palette: &Palette, rect: egui::Rect, target: DropTarget) {
+    let stroke = egui::Stroke::new(2.0, palette.gold);
     let painter = ui.painter();
+    let line = |y: f32| {
+        painter.hline((rect.left() + 20.0)..=rect.right(), y, stroke);
+        painter.circle(
+            egui::pos2(rect.left() + 18.0, y),
+            4.0,
+            palette.bg_panel,
+            stroke,
+        );
+    };
     match target {
-        DropTarget::Above(_) => {
-            painter.hline(rect.x_range(), rect.top(), stroke);
-        }
-        DropTarget::Below(_) => {
-            painter.hline(rect.x_range(), rect.bottom(), stroke);
-        }
+        DropTarget::Above(_) => line(rect.top()),
+        DropTarget::Below(_) => line(rect.bottom()),
         DropTarget::Into(_) => {
             painter.rect_stroke(rect, 2.0, stroke, egui::StrokeKind::Inside);
         }
@@ -647,5 +907,134 @@ mod tests {
             editor.redo();
         }
         assert_eq!(editor.map.view(), done);
+    }
+
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+
+    struct Fixture {
+        editor: Editor,
+        tree: LayerTree,
+    }
+
+    fn harness(editor: Editor) -> Harness<'static, Fixture> {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(260.0, 400.0))
+            .build_ui_state(
+                |ui, fixture: &mut Fixture| {
+                    theme::install(&ui.ctx().clone());
+                    fixture.tree.show(ui, &mut fixture.editor);
+                },
+                Fixture {
+                    editor,
+                    tree: LayerTree::default(),
+                },
+            );
+        harness.run();
+        harness
+    }
+
+    fn editor_with_two_layers() -> (Editor, Id, Id) {
+        let mut editor = Editor::new(Map::new(Canvas::new(
+            100,
+            100,
+            Scale::new(1.0, DistanceUnit::Miles),
+        )));
+        let a = editor.new_layer().unwrap();
+        let b = editor.new_layer().unwrap();
+        (editor, a, b)
+    }
+
+    #[test]
+    fn a_hidden_row_is_italic_with_the_slashed_eye() {
+        let (mut editor, a, b) = editor_with_two_layers();
+        assert!(editor.run(Command::SetVisible {
+            id: a,
+            visible: false
+        }));
+        assert!(RowState::of(&editor.map, a).italic());
+        assert!(!RowState::of(&editor.map, b).italic());
+        let harness = harness(editor);
+        // Only the hidden row shows its eye (as "Show") without hover.
+        harness.get_by_label("Show");
+        assert!(harness.query_by_label("Hide").is_none());
+    }
+
+    #[test]
+    fn a_child_of_a_locked_layer_shows_a_dashed_padlock_that_does_nothing() {
+        let (mut editor, a, b) = editor_with_two_layers();
+        let command = move_command(&editor.map, b, DropTarget::Into(a)).unwrap();
+        assert!(editor.run(command));
+        assert!(editor.run(Command::SetLocked {
+            id: a,
+            locked: true
+        }));
+        let state = RowState::of(&editor.map, b);
+        assert!(state.locked_by_parent && !state.locked);
+        assert!(!RowState::of(&editor.map, a).locked_by_parent);
+
+        let revision = editor.map.revision();
+        let selection = editor.selection().to_vec();
+        let mut harness = harness(editor);
+        harness.get_by_label("Unlock"); // the parent's own filled padlock
+        harness.get_by_label("Locked by parent Layer").click();
+        harness.run();
+        let editor = &harness.state().editor;
+        assert_eq!(editor.map.revision(), revision);
+        assert!(!editor.map.node(b).unwrap().locked());
+        assert_eq!(editor.selection(), selection);
+    }
+
+    #[test]
+    fn the_active_layer_shows_the_target() {
+        let (editor, a, _) = editor_with_two_layers();
+        let mut harness = harness(editor);
+        harness.state_mut().editor.select(vec![a]);
+        harness.run();
+        // One target, on the one active Layer.
+        assert_eq!(
+            harness
+                .query_all_by_label("Active Layer (new Objects go here)")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn indicators_show_clip_depth_sort_and_opacity() {
+        let (mut editor, a, _) = editor_with_two_layers();
+        assert!(editor.run(Command::SetDepthSort {
+            id: a,
+            depth_sort: true
+        }));
+        let harness = harness(editor);
+        harness.get_by_label("Depth-sorted");
+        assert!(harness.query_by_label("Clipped to Landmass").is_none());
+        assert!(harness.query_by_label_contains("%").is_none());
+    }
+
+    #[test]
+    fn the_footer_counts_objects_and_layers() {
+        use ssmap_core::{MultiPolygon, Polygon};
+        let (mut editor, a, _) = editor_with_two_layers();
+        assert_eq!(footer_text(0, 2), "0 Objects · 2 Layers");
+        assert_eq!(footer_text(1, 1), "1 Object · 1 Layer");
+        assert!(editor.run(Command::CreateLandmass {
+            id: Id::new(),
+            parent: a,
+            index: None,
+            geometry: MultiPolygon(vec![Polygon {
+                exterior: vec![[0.0, 0.0], [50.0, 0.0], [50.0, 50.0], [0.0, 50.0]],
+                holes: vec![],
+            }]),
+            fill: None,
+        }));
+        assert_eq!(counts(&editor.map), (1, 2));
+        let mut harness = harness(editor);
+        harness.get_by_label("1 Object · 2 Layers");
+        // The count follows the Map.
+        harness.state_mut().editor.new_layer();
+        harness.run();
+        harness.get_by_label("1 Object · 3 Layers");
     }
 }

@@ -4,6 +4,7 @@
 use eframe::egui;
 
 use crate::editor::Editor;
+use crate::theme;
 use ssmap_core::asset::{PackCredit, PackLibrary};
 use ssmap_fonts::FAMILIES;
 
@@ -65,21 +66,37 @@ impl Credits {
         &self.page
     }
 
-    pub fn show(&mut self, ctx: &egui::Context, editor: &mut Editor) {
+    /// Shows the window. `editor` is the active Map's, for the credits it owes; `None` on Home.
+    pub fn show(&mut self, ctx: &egui::Context, editor: Option<&mut Editor>) {
         let page = &self.page;
         egui::Window::new("Credits")
             .open(&mut self.open)
             .default_width(480.0)
             .vscroll(true)
             .show(ctx, |ui| {
-                map_credits(ui, editor);
-                ui.heading("Asset packs");
+                let palette = theme::palette(ui.ctx());
+                ui.label(
+                    egui::RichText::new("Credits")
+                        .size(theme::TITLE)
+                        .color(palette.text_primary)
+                        .strong(),
+                );
+                ui.add_space(6.0);
+                if let Some(editor) = editor {
+                    map_credits(ui, editor);
+                }
+                section_heading(ui, "Asset packs");
                 if page.packs.is_empty() {
                     ui.label("No Asset packs are loaded.");
                 }
                 for pack in &page.packs {
                     ui.add_space(6.0);
-                    ui.strong(&pack.name);
+                    ui.horizontal(|ui| {
+                        if pack.attribution_required {
+                            attribution_dot(ui);
+                        }
+                        ui.strong(&pack.name);
+                    });
                     ui.label(&pack.credits);
                     ui.label(format!("Licence: {}", pack.licence));
                     if let Some(url) = &pack.licence_url {
@@ -92,11 +109,16 @@ impl Credits {
                         ui.hyperlink(source);
                     }
                     if pack.attribution_required {
-                        ui.label("Attribution is required when you export a Map using it.");
+                        ui.label(
+                            egui::RichText::new(
+                                "Attribution is required when you export a Map using it.",
+                            )
+                            .color(palette.gold_text),
+                        );
                     }
                 }
                 ui.add_space(8.0);
-                ui.heading("Fonts");
+                section_heading(ui, "Fonts");
                 for font in &page.fonts {
                     ui.add_space(6.0);
                     egui::CollapsingHeader::new(&font.family)
@@ -109,6 +131,25 @@ impl Credits {
                 }
             });
     }
+}
+
+fn section_heading(ui: &mut egui::Ui, text: &str) {
+    let palette = theme::palette(ui.ctx());
+    ui.label(
+        egui::RichText::new(text)
+            .size(theme::HEADING)
+            .color(palette.text_secondary)
+            .strong(),
+    );
+    ui.separator();
+}
+
+/// The gold dot that marks a pack whose Assets ask to be credited, as in the Asset picker.
+fn attribution_dot(ui: &mut egui::Ui) {
+    let palette = theme::palette(ui.ctx());
+    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(10.0), egui::Sense::hover());
+    ui.painter().circle_filled(rect.center(), 3.0, palette.gold);
+    response.on_hover_text("Attribution required");
 }
 
 /// The credit lines this Map owes, with actions to copy them or add them to the Map.

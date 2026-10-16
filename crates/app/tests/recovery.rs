@@ -24,6 +24,13 @@ fn app(recovery_dir: &Path) -> Harness<'static, MapMakerApp> {
         .with_size(egui::vec2(1280.0, 800.0))
         .build_eframe(move |cc| MapMakerApp::with_recovery_dir(cc, Some(recovery_dir.clone())));
     harness.run();
+    // The app starts on Home with no Map; these tests edit one.
+    harness.state_mut().new_map(Canvas::new(
+        4096,
+        3072,
+        Scale::new(0.25, DistanceUnit::Miles),
+    ));
+    harness.run();
     harness
 }
 

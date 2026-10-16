@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use ssmap_core::file::{FORMAT_VERSION, FileError, MapFile, SaveStats, read_preview};
+use ssmap_core::file::{FORMAT_VERSION, FileError, MapFile, SaveStats, read_canvas, read_preview};
 use ssmap_core::{
     Canvas, Color, Command, DistanceUnit, Halo, Id, Label, Lake, Landmass, Layer, Map, MapDefaults,
     MultiPolygon, Node, Object, ObjectKind, Op, Polygon, Property, Roughness, Scale, Stamp,
@@ -255,6 +255,21 @@ fn the_preview_is_refreshed_on_every_save() {
     );
     file.save(&map, None).unwrap();
     assert_eq!(read_preview(&file_path).unwrap(), None);
+}
+
+#[test]
+fn the_canvas_is_read_without_opening_the_map() {
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = path(&dir, "world.ssmap");
+    let canvas = Canvas::new(640, 480, Scale::new(2.5, DistanceUnit::Miles));
+    MapFile::create(&file_path, &Map::new(canvas.clone()), None).unwrap();
+    assert_eq!(read_canvas(&file_path).unwrap(), canvas);
+    assert!(read_canvas(path(&dir, "missing.ssmap")).is_err());
+    std::fs::write(path(&dir, "text.ssmap"), b"not a map").unwrap();
+    assert!(matches!(
+        read_canvas(path(&dir, "text.ssmap")),
+        Err(FileError::NotAMapFile)
+    ));
 }
 
 #[test]

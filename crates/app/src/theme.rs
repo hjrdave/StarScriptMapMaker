@@ -247,6 +247,8 @@ pub fn install(ctx: &Context) {
     ctx.set_theme(ThemePreference::System);
     // Used when the system theme is unknown.
     ctx.options_mut(|o| o.fallback_theme = Theme::Dark);
+    // ⌘+ and ⌘− zoom the Canvas, not the whole UI.
+    ctx.options_mut(|o| o.zoom_with_keyboard = false);
     for theme in [Theme::Dark, Theme::Light] {
         ctx.set_style_of(theme, style_for(theme));
     }

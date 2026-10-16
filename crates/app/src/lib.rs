@@ -2,6 +2,7 @@
 //! [`MapMakerApp`], so UI tests can drive the same app headlessly.
 
 mod asset_browser;
+mod canvas_controls;
 mod canvas_view;
 pub mod credits;
 pub mod dialog;
@@ -12,6 +13,7 @@ pub mod export_region;
 pub mod export_run;
 pub mod frame_time;
 pub mod handles;
+pub mod home;
 pub mod icons;
 mod label_styles;
 mod layer_tree;
@@ -20,25 +22,29 @@ pub mod prop_widgets;
 mod properties;
 mod recent;
 pub mod recovery;
+pub mod shell;
 pub mod tab;
 mod tab_strip;
 mod tessellation;
 pub mod theme;
+pub mod toast;
+mod tool_dock;
+mod tool_section;
 pub mod tools;
 pub mod update;
+pub mod zoom;
 
 use eframe::{egui, egui_wgpu};
 use egui_file_dialog::{DialogState, FileDialog, Filter};
 use ssmap_core::asset::{PackLibrary, PackRoots};
 use ssmap_core::file::{JournalBase, MapFile, PREVIEW_SIZE, remove_journal};
-use ssmap_core::{CREDITS_CHUNK_KEYWORD, Canvas, DistanceUnit, Map, Scale};
+use ssmap_core::{CREDITS_CHUNK_KEYWORD, Canvas, Map};
 use ssmap_render::{ExportJob, PngMeta, SpriteStore, TessellationCache};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::asset_browser::AssetBrowser;
 use crate::credits::Credits;
 use crate::document::Document;
 use crate::editor::Editor;
@@ -101,15 +107,20 @@ pub struct MapMakerApp {
     home_active: bool,
     /// The tab strip's scroll position and the like.
     strip: tab_strip::State,
+    /// The Home tab's list, search and thumbnails.
+    home: home::Home,
     /// Where journals of Maps never saved go; `None` turns them off.
     recovery_dir: Option<PathBuf>,
     /// Whether the Canvas renderer is installed, so new tabs get a tessellation cache.
     gpu: bool,
-    asset_browser: AssetBrowser,
     /// The installed Asset packs' art, shared with the Canvas renderer and picking.
     sprites: SpriteStore,
     credits: Credits,
     recent: RecentFiles,
+    /// Panel widths and collapse state, the same for every tab.
+    shell: shell::Shell,
+    /// ⇥ just toggled the panels: clear keyboard focus at the next frame.
+    drop_focus: bool,
     updates: UpdateCheck,
     new_map_dialog: NewMapDialog,
     export_dialog: ExportDialog,
@@ -139,26 +150,27 @@ impl MapMakerApp {
         Self::with_recovery_dir(cc, Recovery::default_unsaved_dir())
     }
 
-    /// Starts with a blank Map, keeping journals of Maps never saved in `recovery_dir`
-    /// (`None` turns them off) and offering any a crash left there.
+    /// Starts on the Home tab with no Map open, keeping journals of Maps never saved in
+    /// `recovery_dir` (`None` turns them off) and offering any a crash left there.
     pub fn with_recovery_dir(
         cc: &eframe::CreationContext<'_>,
         recovery_dir: Option<PathBuf>,
     ) -> Self {
-        // Every session starts with a Map from the starter template at the default size.
-        let canvas = Canvas::new(4096, 3072, Scale::new(0.25, DistanceUnit::Miles));
-        let (map, layers, problem) = new_map::start_map(canvas);
-        let mut app = Self::with_map(cc, map, recovery_dir);
-        app.tabs[0].editor.default_layers = layers;
-        if let Some(problem) = problem {
-            app.tabs[0].editor.error(problem);
-        }
-        app
+        Self::build(cc, None, recovery_dir)
     }
 
+    /// Starts with `map` open in a tab.
     pub fn with_map(
         cc: &eframe::CreationContext<'_>,
         map: Map,
+        recovery_dir: Option<PathBuf>,
+    ) -> Self {
+        Self::build(cc, Some(map), recovery_dir)
+    }
+
+    fn build(
+        cc: &eframe::CreationContext<'_>,
+        map: Option<Map>,
         recovery_dir: Option<PathBuf>,
     ) -> Self {
         theme::install(&cc.egui_ctx);
@@ -189,25 +201,33 @@ impl MapMakerApp {
         };
         let mut unsaved_found = Recovery::new(recovery_dir.clone()).find_unsaved();
         unsaved_found.reverse();
-        let mut tab = MapTab::new(
-            map,
-            gpu.then(TessellationCache::new),
-            Recovery::new(recovery_dir.clone()),
-        );
-        tab.editor.set_sprites(sprites.clone());
+        let tabs: Vec<MapTab> = map
+            .into_iter()
+            .map(|map| {
+                let mut tab = MapTab::new(
+                    map,
+                    gpu.then(TessellationCache::new),
+                    Recovery::new(recovery_dir.clone()),
+                );
+                tab.editor.set_sprites(sprites.clone());
+                tab
+            })
+            .collect();
         Self {
-            tabs: vec![tab],
+            home_active: tabs.is_empty(),
+            tabs,
             active: 0,
-            home_active: false,
             strip: tab_strip::State::default(),
+            home: home::Home::default(),
             recovery_dir,
             gpu,
             awaiting_save: None,
             unsaved_prompt: None,
-            asset_browser: AssetBrowser::default(),
             sprites,
             credits,
             recent: RecentFiles::load(cc.storage),
+            shell: shell::Shell::load(cc.storage),
+            drop_focus: false,
             updates: UpdateCheck::load(cc.storage),
             new_map_dialog: NewMapDialog::default(),
             export_dialog: ExportDialog::default(),
@@ -224,6 +244,11 @@ impl MapMakerApp {
 
     pub fn editor(&self) -> &Editor {
         self.tab().editor()
+    }
+
+    /// The panels' widths and collapse state.
+    pub fn shell(&self) -> &shell::Shell {
+        &self.shell
     }
 
     pub fn document(&self) -> &Document {
@@ -369,7 +394,7 @@ impl MapMakerApp {
     /// file open.
     pub fn open_path(&mut self, path: &Path) -> bool {
         if let Some(index) = self.tab_for(path) {
-            self.active = index;
+            self.focus_tab(index);
             return true;
         }
         match Document::open(path) {
@@ -379,6 +404,7 @@ impl MapMakerApp {
                 tab.editor
                     .start_background_roughness(move || ctx.request_repaint());
                 self.recent.add(path);
+                self.home.forget(path);
                 tab.editor.info(format!("Opened “{}”", tab.document.name()));
                 find_recovery(&mut tab, path);
                 self.push_tab(tab);
@@ -453,6 +479,7 @@ impl MapMakerApp {
             Ok(_) => {
                 let _ = remove_journal(&found.path);
                 self.recent.add(&copy_path);
+                self.home.forget(&copy_path);
                 let skipped = match skipped {
                     0 => String::new(),
                     1 => " (1 change no longer applied)".into(),
@@ -642,6 +669,7 @@ impl MapMakerApp {
                 tab.recovery.reset();
                 if let Some(path) = tab.document.path() {
                     self.recent.add(path);
+                    self.home.forget(path);
                 }
                 tab.editor.info(format!("Saved “{}”", tab.document.name()));
                 true
@@ -714,6 +742,7 @@ impl MapMakerApp {
                         self.open_path(&path);
                     } else {
                         self.recent.remove(&path);
+                        self.home.forget(&path);
                         self.notify_error(format!("“{}” no longer exists", path.display()));
                     }
                 }
@@ -1140,6 +1169,20 @@ impl MapMakerApp {
         }
         use egui::{Key, KeyboardShortcut, Modifiers};
         let shortcut = |modifiers, key| KeyboardShortcut::new(modifiers, key);
+        // The panel shortcuts come first: egui ignores extra Alt, so Cmd+Alt+1 would
+        // otherwise also match Cmd+1 (Home) below.
+        ctx.input_mut(|input| {
+            let both = Modifiers::COMMAND | Modifiers::ALT;
+            if input.consume_shortcut(&shortcut(both, Key::Num1)) {
+                self.shell.toggle_layers();
+            }
+            if input.consume_shortcut(&shortcut(both, Key::Num2)) {
+                self.shell.toggle_properties();
+            }
+            if input.consume_key(Modifiers::NONE, Key::Tab) {
+                self.shell.toggle_panels();
+            }
+        });
         let (new_map, number, step) = ctx.input_mut(|input| {
             let new_map = input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::T));
             let number = [
@@ -1179,15 +1222,21 @@ impl MapMakerApp {
             let slot = tab_strip::cycle(self.current_slot(), self.tabs.len(), forward);
             self.show_slot(slot);
         }
-        let (open, save, save_as, close_tab) = ctx.input_mut(|input| {
+        let (new_map, open, save, save_as, close_tab) = ctx.input_mut(|input| {
+            // Cmd+Shift+N is New Layer, below.
+            let new_map = !input.modifiers.shift
+                && input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::N));
             // Shift+S first: plain Cmd+S would also match it.
             let save_as =
                 input.consume_shortcut(&shortcut(Modifiers::COMMAND | Modifiers::SHIFT, Key::S));
             let save = input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::S));
             let open = input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::O));
             let close_tab = input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::W));
-            (open, save, save_as, close_tab)
+            (new_map, open, save, save_as, close_tab)
         });
+        if new_map {
+            self.new_map_dialog.open = true;
+        }
         if open {
             self.show_open_dialog();
         }
@@ -1204,8 +1253,31 @@ impl MapMakerApp {
         } else if save {
             self.save();
         }
+        let zoom = ctx.input_mut(|input| {
+            if input.consume_key(Modifiers::COMMAND, Key::Plus)
+                || input.consume_key(Modifiers::COMMAND, Key::Equals)
+            {
+                Some(zoom::Zoom::In)
+            } else if input.consume_key(Modifiers::COMMAND, Key::Minus) {
+                Some(zoom::Zoom::Out)
+            } else if input.consume_key(Modifiers::SHIFT, Key::Num0) {
+                Some(zoom::Zoom::Percent(1.0))
+            } else if input.consume_key(Modifiers::SHIFT, Key::Num1) {
+                Some(zoom::Zoom::Fit)
+            } else if input.consume_key(Modifiers::SHIFT, Key::Num2) {
+                Some(zoom::Zoom::Selection)
+            } else {
+                None
+            }
+        });
+        if let Some(zoom) = zoom {
+            self.tabs[self.active].canvas_view.request_zoom(zoom);
+        }
         let editor = &mut self.tabs[self.active].editor;
         ctx.input_mut(|input| {
+            if editor.node_edit().is_some() && input.consume_key(Modifiers::NONE, Key::Enter) {
+                editor.leave_node_edit();
+            }
             if input.consume_shortcut(&shortcut(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z))
                 || input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::Y))
             {
@@ -1236,8 +1308,12 @@ impl MapMakerApp {
                     editor.select(Vec::new());
                 }
             }
-            for tool in ToolId::ALL {
-                if input.consume_key(Modifiers::NONE, tool.shortcut()) {
+            // Shifted shortcuts first: egui ignores an extra Shift, so ⇧S would also read as S.
+            let mut tools = ToolId::ALL;
+            tools.sort_by_key(|tool| !tool.shortcut().0.shift);
+            for tool in tools {
+                let (modifiers, key) = tool.shortcut();
+                if input.consume_key(modifiers, key) {
                     editor.active_tool = tool;
                 }
             }
@@ -1266,39 +1342,6 @@ impl MapMakerApp {
                 return;
             };
             let editor = &mut tab.editor;
-            for tool in ToolId::ALL {
-                let selected = editor.active_tool == tool;
-                if ui
-                    .selectable_label(selected, tool.label())
-                    .on_hover_text(format!("{} ({:?})", tool.label(), tool.shortcut()))
-                    .clicked()
-                {
-                    editor.active_tool = tool;
-                }
-            }
-            if tools::uses_brush_size(editor.active_tool) {
-                ui.add(
-                    egui::Slider::new(&mut editor.brush_size, tools::BRUSH_SIZES)
-                        .logarithmic(true)
-                        .max_decimals(0)
-                        .text("Size"),
-                )
-                .on_hover_text(format!(
-                    "Brush diameter in Canvas units ([ and ]). Hold {} to erase.",
-                    tools::ERASE_MODIFIER
-                ));
-            }
-            if editor.active_tool == ToolId::Scatter {
-                scatter_settings(ui, &mut editor.scatter);
-            }
-            if editor.can_shuffle()
-                && ui
-                    .button("Shuffle Variant")
-                    .on_hover_text("Re-roll each selected Stamp within its Variant group")
-                    .clicked()
-            {
-                editor.shuffle_variants();
-            }
             ui.toggle_value(&mut tab.label_styles.open, "Label styles");
             ui.separator();
             let undo_hint = editor.undo_label().map(|l| format!("Undo {l}"));
@@ -1321,28 +1364,6 @@ impl MapMakerApp {
                 .clicked()
             {
                 editor.delete_selection();
-            }
-            ui.separator();
-            if ui
-                .add_enabled(editor.can_combine(), egui::Button::new("Union"))
-                .on_hover_text("Merge the selected Landmasses into the topmost one")
-                .clicked()
-            {
-                editor.union_selection();
-            }
-            if ui
-                .add_enabled(editor.can_combine(), egui::Button::new("Subtract"))
-                .on_hover_text("Cut the topmost selected Landmass out of the others")
-                .clicked()
-            {
-                editor.subtract_selection();
-            }
-            if ui
-                .add_enabled(editor.can_split(), egui::Button::new("Split Apart"))
-                .on_hover_text("Make each part of the selected Landmasses a Landmass of its own")
-                .clicked()
-            {
-                editor.split_selection();
             }
         });
     }
@@ -1380,34 +1401,91 @@ impl MapMakerApp {
         }
     }
 
+    /// The Home tab: the Maps the app knows of, and what the user does with them.
+    fn home_screen(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let tabs: Vec<home::OpenTab> = self
+            .tabs
+            .iter()
+            .map(|tab| home::OpenTab {
+                path: tab.document.path().map(Path::to_path_buf),
+                name: tab.document.name(),
+                canvas: (tab.editor.map.canvas.width, tab.editor.map.canvas.height),
+            })
+            .collect();
+        self.home.entered();
+        self.home.poll(&ctx);
+        let wanted: Vec<PathBuf> = self
+            .recent
+            .paths()
+            .iter()
+            .cloned()
+            .chain(tabs.iter().filter_map(|tab| tab.path.clone()))
+            .collect();
+        self.home.request(wanted.iter().map(PathBuf::as_path));
+        let known = home::known_entries(self.recent.paths(), &tabs, |path| self.home.info(path));
+        let open = home::open_entries(&tabs, |path| self.home.info(path));
+        let data = home::Data {
+            known: &known,
+            open: &open,
+            packs: self.credits.page().packs.len(),
+        };
+        self.credits.show(&ctx, None);
+        self.updates.show(&ctx);
+        let actions = self.home.show(ui, &data, &mut self.updates);
+        if self.home.loading() {
+            ctx.request_repaint_after(Duration::from_millis(50));
+        }
+        for action in actions {
+            match action {
+                home::Action::NewMap => self.new_map_dialog.open = true,
+                home::Action::OpenDialog => self.show_open_dialog(),
+                home::Action::Open(path) => {
+                    self.open_path(&path);
+                }
+                home::Action::Focus(index) => self.focus_tab(index),
+                home::Action::Remove(path) => {
+                    self.recent.remove(&path);
+                    self.home.forget(&path);
+                }
+                home::Action::Credits => self.credits.open = true,
+            }
+        }
+    }
+
     fn status_bar(&mut self, ui: &mut egui::Ui) {
         let Some(tab) = self.tabs.get(self.active) else {
             return;
         };
-        ui.horizontal(|ui| {
-            if let Some(notice) = tab.editor.notice() {
-                let color = if notice.is_error {
-                    ui.visuals().error_fg_color
-                } else {
-                    ui.visuals().text_color()
-                };
-                ui.colored_label(color, &notice.text);
-                ui.ctx().request_repaint_after(
-                    editor::NOTICE_DURATION.saturating_sub(notice.shown_at.elapsed()),
-                );
+        let palette = theme::palette(ui.ctx());
+        let text = |text: String| {
+            egui::RichText::new(text)
+                .size(theme::CAPTION)
+                .color(palette.text_secondary)
+        };
+        ui.horizontal_centered(|ui| {
+            ui.add_space(theme::SPACING[3]);
+            let ctx = ui.ctx().clone();
+            let ppp = f64::from(ctx.pixels_per_point());
+            if let Some(zoom) = tab.canvas_view.zoom(ppp) {
+                ui.label(text(format!("{:.0}%", zoom * 100.0)));
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let ppp = f64::from(ui.ctx().pixels_per_point());
-                if let Some(zoom) = tab.canvas_view.zoom(ppp) {
-                    ui.label(format!("{:.0}%", zoom * 100.0));
-                }
-                if let Some(layer) = tab.editor.active_layer() {
-                    ui.weak(format!(
-                        "Active Layer: {}",
-                        layer_tree::node_name(&tab.editor.map, layer)
-                    ));
-                }
-            });
+            let point = ctx
+                .pointer_hover_pos()
+                .and_then(|pointer| tab.canvas_view.canvas_point(pointer));
+            if let Some(point) = point {
+                ui.separator();
+                ui.label(text(shell::cursor_text(&tab.editor.map.canvas, point)));
+            }
+            let summary = shell::selection_summary(
+                &tab.editor.map,
+                tab.editor.selection(),
+                tab.editor.active_layer(),
+            );
+            if !summary.is_empty() {
+                ui.separator();
+                ui.label(text(summary));
+            }
         });
     }
 }
@@ -1496,6 +1574,7 @@ fn recovery_modal(ctx: &egui::Context, text: &str, recover: &str) -> Option<Reco
 impl eframe::App for MapMakerApp {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         self.recent.store(storage);
+        self.shell.store(storage);
         self.updates.store(storage);
     }
 
@@ -1504,10 +1583,20 @@ impl eframe::App for MapMakerApp {
         // Dialogs take the keyboard while they are open.
         self.handle_close(&ctx);
         let dialog_open = self.dialog_open();
+        if std::mem::take(&mut self.drop_focus) {
+            // The ⇥ that toggled the panels also moved keyboard focus into one of them.
+            ctx.memory_mut(|memory| {
+                if let Some(id) = memory.focused() {
+                    memory.surrender_focus(id);
+                }
+            });
+        }
+        let panels_were_hidden = self.shell.panels_hidden();
         if !dialog_open {
             self.open_dropped_files(&ctx);
             self.shortcuts(&ctx);
         }
+        self.drop_focus = self.shell.panels_hidden() != panels_were_hidden;
         self.dialogs(&ctx);
         self.update_title(&ctx);
         let strip = egui::Frame::NONE.fill(theme::palette(&ctx).bg_chrome);
@@ -1517,60 +1606,84 @@ impl eframe::App for MapMakerApp {
             .show(ui, |ui| self.tab_strip(ui, !dialog_open));
         egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
         if self.home_active() {
-            // Until the Home screen exists this is a placeholder.
-            self.updates.show(&ctx);
-            egui::CentralPanel::default().show(ui, |ui| {
-                if self.tabs.is_empty() {
-                    ui.centered_and_justified(|ui| {
-                        ui.weak("No Map is open. Use File → New Map… or Open…");
-                    });
-                }
-            });
+            self.home_screen(ui);
+            self.journal(&ctx);
             return;
         }
+        self.home.left();
         let tab = &mut self.tabs[self.active];
-        self.credits.show(&ctx, &mut tab.editor);
+        self.credits.show(&ctx, Some(&mut tab.editor));
         tab.label_styles.show(&ctx, &mut tab.editor);
         self.updates.show(&ctx);
-        egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));
+        egui::Panel::bottom("status")
+            .exact_size(theme::metrics::STATUS_BAR)
+            .show(ui, |ui| self.status_bar(ui));
         let tab = &mut self.tabs[self.active];
-        egui::Panel::bottom("assets")
-            .resizable(true)
-            .default_size(150.0)
-            .show(ui, |ui| self.asset_browser.show(ui, &mut tab.editor));
-        egui::Panel::left("layers")
-            .resizable(true)
-            .default_size(240.0)
-            .show(ui, |ui| tab.layer_tree.show(ui, &mut tab.editor));
-        egui::Panel::right("properties")
-            .resizable(true)
-            .default_size(260.0)
-            .show(ui, |ui| tab.properties.show(ui, &mut tab.editor));
-        egui::CentralPanel::default()
+        let mut layers_divider = None;
+        let mut properties_divider = None;
+        if self.shell.layers_shown() {
+            let collapsed = self.shell.layers_collapsed();
+            let panel = egui::Panel::left("layers")
+                .resizable(false)
+                .exact_size(self.shell.layers_layout_width())
+                .show(ui, |ui| {
+                    if collapsed {
+                        let path = shell::selection_path(&tab.editor.map, tab.editor.selection());
+                        if shell::layers_rail(ui, &path) {
+                            self.shell.set_layers_collapsed(false);
+                        }
+                        return;
+                    }
+                    shell::panel_header(ui, "Layers", |ui| {
+                        if icons::icon_button(
+                            ui,
+                            icons::Icon::CollapseLeft,
+                            "Collapse Layers (⌘⌥1)",
+                        )
+                        .clicked()
+                        {
+                            self.shell.set_layers_collapsed(true);
+                        }
+                        // Right to left: this lands just left of Collapse.
+                        if icons::icon_button(ui, icons::Icon::Add, "New Layer (⇧⌘N)").clicked()
+                        {
+                            tab.editor.new_layer();
+                        }
+                    });
+                    tab.layer_tree.show(ui, &mut tab.editor);
+                });
+            if !collapsed {
+                layers_divider = Some(panel.response.rect);
+            }
+        }
+        if self.shell.properties_shown() {
+            let panel = egui::Panel::right("properties")
+                .resizable(false)
+                .exact_size(self.shell.width(shell::Side::Right))
+                .show(ui, |ui| tab.properties.show(ui, &mut tab.editor));
+            if tab.properties.take_manage_label_styles() {
+                tab.label_styles.open = true;
+            }
+            properties_divider = Some(panel.response.rect);
+        }
+        let canvas = egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ui, |ui| tab.canvas_view.show(ui, &mut tab.editor));
+        tool_dock::show(&ctx, canvas.response.rect, &mut tab.editor.active_tool);
+        if let Some(action) = toast::show(&ctx, canvas.response.rect, tab.editor.toasts_mut()) {
+            tab.editor.run_toast_action(action);
+        }
+        // After the Canvas, so the strips on its edges win the pointer over it.
+        for (side, rect) in [
+            (shell::Side::Left, layers_divider),
+            (shell::Side::Right, properties_divider),
+        ] {
+            if let Some(rect) = rect {
+                shell::divider(ui, &mut self.shell, side, rect);
+            }
+        }
         self.journal(&ctx);
     }
-}
-
-/// The scatter brush's settings, in a menu beside the toolbar.
-fn scatter_settings(ui: &mut egui::Ui, brush: &mut ssmap_core::scatter::ScatterBrush) {
-    use ssmap_core::scatter::Placement;
-    ui.menu_button("Scatter settings", |ui| {
-        ui.add(egui::Slider::new(&mut brush.density, 0.5..=100.0).text("Density"))
-            .on_hover_text("Stamps per 100 by 100 Canvas units");
-        ui.add(egui::Slider::new(&mut brush.spacing, 0.0..=200.0).text("Spacing"))
-            .on_hover_text("The least distance between two Stamps in a stroke");
-        ui.add(egui::Slider::new(&mut brush.size_jitter, 0.0..=0.9).text("Size jitter"));
-        ui.add(egui::Slider::new(&mut brush.rotation_jitter, 0.0..=180.0).text("Rotation jitter"))
-            .on_hover_text("Degrees either way");
-        ui.checkbox(&mut brush.random_flip, "Random flip");
-        ui.checkbox(&mut brush.random_variant, "Random variant");
-        ui.separator();
-        ui.radio_value(&mut brush.placement, Placement::Land, "Land only");
-        ui.radio_value(&mut brush.placement, Placement::Water, "Water only");
-        ui.radio_value(&mut brush.placement, Placement::Anywhere, "Anywhere");
-    });
 }
 
 #[cfg(test)]

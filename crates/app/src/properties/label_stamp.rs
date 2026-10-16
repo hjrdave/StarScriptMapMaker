@@ -1,0 +1,444 @@
+//! The Label and Stamp sections of the properties panel.
+
+use eframe::egui;
+use ssmap_core::{Align, Command, Id, Label, LabelStyles, Landmass, ResolvedLabel, Stamp};
+use ssmap_fonts::LABEL_FAMILIES;
+
+use super::{PropertiesPanel, row};
+use crate::editor::Editor;
+use crate::prop_widgets::{self, Edit, Provenance, ScrubSpec, SectionHeader};
+
+/// What a Label field needs to write its edit back.
+struct LabelEdit<'a> {
+    id: Id,
+    label: &'a Label,
+    styles: &'a LabelStyles,
+}
+
+fn provenance(overridden: bool) -> Provenance {
+    if overridden {
+        Provenance::Overridden
+    } else {
+        Provenance::Inherited
+    }
+}
+
+impl PropertiesPanel {
+    pub(super) fn label_properties(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        id: Id,
+        locked: bool,
+        label: &Label,
+    ) {
+        let overrides = [
+            label.font.is_some(),
+            label.size.is_some(),
+            label.letter_spacing.is_some(),
+            label.line_height.is_some(),
+            label.all_caps.is_some(),
+            label.fill.is_some(),
+            label.opacity.is_some(),
+            label.halo.is_some(),
+        ]
+        .into_iter()
+        .filter(|&overridden| overridden)
+        .count();
+        let badge = format!("{overrides} overridden");
+        let header = SectionHeader {
+            kind: "label",
+            title: "Label",
+            badge: (overrides > 0).then_some(badge.as_str()),
+            action: None,
+        };
+        prop_widgets::section(ui, header, |ui| {
+            self.label_fields(ui, editor, id, locked, label, overrides);
+        });
+    }
+
+    fn label_fields(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        id: Id,
+        locked: bool,
+        label: &Label,
+        overrides: usize,
+    ) {
+        ui.label("Text");
+        let text = match &mut self.text_edit {
+            Some((editing, text)) if *editing == id => text,
+            _ => {
+                self.text_edit = Some((id, label.text.clone()));
+                &mut self.text_edit.as_mut().expect("just set").1
+            }
+        };
+        let field = ui.add(
+            egui::TextEdit::multiline(text)
+                .desired_rows(2)
+                .desired_width(f32::INFINITY),
+        );
+        if field.lost_focus() && *text != label.text {
+            let next = Label {
+                text: text.clone(),
+                ..label.clone()
+            };
+            if !editor.run(Command::SetLabel {
+                id,
+                label: Box::new(next),
+            }) {
+                self.text_edit = None;
+            }
+        } else if !field.has_focus() && *text != label.text {
+            // Changed elsewhere (undo, the text box on the Canvas): show the Map's value.
+            *text = label.text.clone();
+        }
+
+        let styles = editor.map.label_styles().clone();
+        let mut restyled = None;
+        prop_widgets::field_row(ui, "Label style", Provenance::Plain, |ui| {
+            let current = styles
+                .get(label.style)
+                .unwrap_or_else(|| styles.default_style());
+            egui::ComboBox::from_id_salt("style")
+                .selected_text(&current.name)
+                .show_ui(ui, |ui| {
+                    for style in styles.iter() {
+                        if ui
+                            .selectable_label(style.id == current.id, &style.name)
+                            .clicked()
+                        {
+                            restyled = Some(Label {
+                                style: style.id,
+                                ..label.clone()
+                            });
+                        }
+                    }
+                });
+        });
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(overrides > 0, egui::Button::new("Reset overrides"))
+                .on_hover_text("Follow the style again")
+                .clicked()
+            {
+                restyled = Some(Label {
+                    font: None,
+                    size: None,
+                    letter_spacing: None,
+                    line_height: None,
+                    all_caps: None,
+                    fill: None,
+                    opacity: None,
+                    halo: None,
+                    ..label.clone()
+                });
+            }
+            if ui.button("Manage Label styles…").clicked() {
+                self.manage_label_styles = true;
+            }
+        });
+        if let Some(next) = restyled {
+            editor.run(Command::SetLabel {
+                id,
+                label: Box::new(next),
+            });
+            return;
+        }
+
+        // Edits are made on the resolved settings; only what changed becomes an override.
+        let mut next = label.resolve(&styles);
+        let ctx = LabelEdit {
+            id,
+            label,
+            styles: &styles,
+        };
+
+        let font = provenance(label.font.is_some());
+        let mut edit = Edit::default();
+        let reset = prop_widgets::field_row(ui, "Font", font, |ui| {
+            egui::ComboBox::from_id_salt("font")
+                .selected_text(&next.font.family)
+                .show_ui(ui, |ui| {
+                    for family in LABEL_FAMILIES {
+                        if ui
+                            .selectable_value(&mut next.font.family, (*family).to_owned(), *family)
+                            .clicked()
+                        {
+                            edit = Edit::instant();
+                        }
+                    }
+                });
+        });
+        edit.reset = reset;
+        self.label_apply(editor, &ctx, edit, &next, |l| l.font = None);
+
+        let mut weight = f64::from(next.font.weight);
+        let edit = prop_widgets::scrub_field(
+            ui,
+            &mut weight,
+            &ScrubSpec::new("Weight")
+                .range(100.0, 900.0)
+                .step(1.0)
+                .provenance(font),
+        );
+        if edit.changed {
+            next.font.weight = weight as u16;
+        }
+        self.label_apply(editor, &ctx, edit, &next, |l| l.font = None);
+        if prop_widgets::checkbox_row(ui, "Italic", &mut next.font.italic) {
+            self.label_apply(editor, &ctx, Edit::instant(), &next, |l| l.font = None);
+        }
+
+        let edit = prop_widgets::scrub_field(
+            ui,
+            &mut next.size,
+            &ScrubSpec::new("Size")
+                .unit(" u")
+                .range(0.1, 100_000.0)
+                .step(0.5)
+                .decimals(1)
+                .provenance(provenance(label.size.is_some())),
+        );
+        self.label_apply(editor, &ctx, edit, &next, |l| l.size = None);
+
+        let edit = prop_widgets::scrub_field(
+            ui,
+            &mut next.letter_spacing,
+            &ScrubSpec::new("Letter spacing")
+                .unit(" em")
+                .range(-10.0, 10.0)
+                .step(0.005)
+                .decimals(3)
+                .provenance(provenance(label.letter_spacing.is_some())),
+        );
+        self.label_apply(editor, &ctx, edit, &next, |l| l.letter_spacing = None);
+
+        let edit = prop_widgets::scrub_field(
+            ui,
+            &mut next.line_height,
+            &ScrubSpec::new("Line height")
+                .unit("×")
+                .range(0.1, 10.0)
+                .step(0.01)
+                .decimals(2)
+                .provenance(provenance(label.line_height.is_some())),
+        );
+        self.label_apply(editor, &ctx, edit, &next, |l| l.line_height = None);
+
+        let mut edit = Edit::default();
+        let reset =
+            prop_widgets::field_row(ui, "All caps", provenance(label.all_caps.is_some()), |ui| {
+                if prop_widgets::checkbox_row(ui, "On", &mut next.all_caps) {
+                    edit = Edit::instant();
+                }
+            });
+        edit.reset = reset;
+        self.label_apply(editor, &ctx, edit, &next, |l| l.all_caps = None);
+
+        let mut align = match next.align {
+            Align::Left => 0,
+            Align::Centre => 1,
+            Align::Right => 2,
+        };
+        if prop_widgets::segmented(ui, &["Left", "Centre", "Right"], &mut align) {
+            next.align = [Align::Left, Align::Centre, Align::Right][align];
+            self.label_apply(editor, &ctx, Edit::instant(), &next, |_| {});
+        }
+
+        let edit = prop_widgets::scrub_field(
+            ui,
+            &mut next.rotation,
+            &ScrubSpec::new("Rotation").unit("°").step(0.5).decimals(1),
+        );
+        self.label_apply(editor, &ctx, edit, &next, |_| {});
+
+        let mut colour = Some(next.fill);
+        let response = prop_widgets::swatch(
+            ui,
+            "Fill",
+            &mut colour,
+            false,
+            provenance(label.fill.is_some()),
+        );
+        if response.edit.changed {
+            next.fill = colour.unwrap_or(next.fill);
+        }
+        self.label_apply(editor, &ctx, response.edit, &next, |l| l.fill = None);
+
+        let mut percent = f64::from(next.opacity) * 100.0;
+        let edit = prop_widgets::slider(
+            ui,
+            &mut percent,
+            &ScrubSpec::new("Opacity")
+                .unit("%")
+                .range(0.0, 100.0)
+                .provenance(provenance(label.opacity.is_some())),
+        );
+        if edit.changed {
+            next.opacity = (percent / 100.0).clamp(0.0, 1.0) as f32;
+        }
+        self.label_apply(editor, &ctx, edit, &next, |l| l.opacity = None);
+
+        let halo = provenance(label.halo.is_some());
+        let edit = prop_widgets::scrub_field(
+            ui,
+            &mut next.halo.width,
+            &ScrubSpec::new("Halo")
+                .unit(" u")
+                .range(0.0, 100_000.0)
+                .step(0.1)
+                .decimals(1)
+                .provenance(halo),
+        );
+        self.label_apply(editor, &ctx, edit, &next, |l| l.halo = None);
+        let mut colour = Some(next.halo.color);
+        let response = prop_widgets::swatch(ui, "Halo colour", &mut colour, false, halo);
+        if response.edit.changed {
+            next.halo.color = colour.unwrap_or(next.halo.color);
+        }
+        self.label_apply(editor, &ctx, response.edit, &next, |l| l.halo = None);
+
+        let mut lock = locked;
+        if prop_widgets::checkbox_row(ui, "Locked", &mut lock) {
+            editor.run(Command::SetLocked { id, locked: lock });
+        }
+    }
+
+    /// Applies what a Label field did: a reset clears that one override with `clear`, anything
+    /// else writes `next`, one Undo step per scrub.
+    fn label_apply(
+        &mut self,
+        editor: &mut Editor,
+        ctx: &LabelEdit<'_>,
+        edit: Edit,
+        next: &ResolvedLabel,
+        clear: impl FnOnce(&mut Label),
+    ) {
+        if edit.reset {
+            let mut cleared = ctx.label.clone();
+            clear(&mut cleared);
+            editor.run(Command::SetLabel {
+                id: ctx.id,
+                label: Box::new(cleared),
+            });
+            return;
+        }
+        self.live
+            .apply(editor, edit, "Edit Label", || Command::SetLabel {
+                id: ctx.id,
+                label: Box::new(ctx.label.with_resolved(ctx.styles, next)),
+            });
+    }
+
+    /// Every field of a Stamp. A scrub is one gesture, a click one step.
+    pub(super) fn stamp_properties(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        id: Id,
+        locked: bool,
+        stamp: &Stamp,
+    ) {
+        let caption = editor.asset_caption(&stamp.asset);
+        let header = SectionHeader {
+            kind: "stamp",
+            title: "Stamp",
+            badge: None,
+            action: None,
+        };
+        prop_widgets::section(ui, header, |ui| {
+            row(ui, "Asset", |ui| {
+                ui.label(&caption);
+            });
+            let mut next = stamp.clone();
+
+            let spec = |label| ScrubSpec::new(label).step(0.5).decimals(1);
+            let edit = prop_widgets::scrub_field(ui, &mut next.position[0], &spec("Position X"));
+            self.stamp_apply(editor, id, edit, &next);
+            let edit = prop_widgets::scrub_field(ui, &mut next.position[1], &spec("Position Y"));
+            self.stamp_apply(editor, id, edit, &next);
+
+            let mut percent = next.scale * 100.0;
+            let edit = prop_widgets::scrub_field(
+                ui,
+                &mut percent,
+                &ScrubSpec::new("Scale").unit("%").range(1.0, 10_000.0),
+            );
+            if edit.changed {
+                next.scale = percent / 100.0;
+            }
+            self.stamp_apply(editor, id, edit, &next);
+
+            let edit = prop_widgets::scrub_field(
+                ui,
+                &mut next.rotation,
+                &ScrubSpec::new("Rotation").unit("°").step(0.5).decimals(1),
+            );
+            self.stamp_apply(editor, id, edit, &next);
+
+            prop_widgets::field_row(ui, "Flip", Provenance::Plain, |ui| {
+                if prop_widgets::checkbox_row(ui, "Horizontal", &mut next.flip) {
+                    self.stamp_apply(editor, id, Edit::instant(), &next);
+                }
+            });
+
+            let mut tint = next.tint;
+            let response = prop_widgets::swatch(ui, "Tint", &mut tint, true, Provenance::Plain);
+            if response.edit.changed {
+                next.tint = tint;
+            }
+            self.stamp_apply(editor, id, response.edit, &next);
+
+            let mut own = next.fill.is_some();
+            prop_widgets::field_row(ui, "Fill", Provenance::Plain, |ui| {
+                if prop_widgets::checkbox_row(ui, "Own colour", &mut own) {
+                    next.fill = own.then_some(Landmass::DEFAULT_FILL);
+                    self.stamp_apply(editor, id, Edit::instant(), &next);
+                }
+            });
+            if let Some(fill) = next.fill {
+                let mut colour = Some(fill);
+                let response =
+                    prop_widgets::swatch(ui, "Fill colour", &mut colour, false, Provenance::Plain);
+                if response.edit.changed {
+                    next.fill = colour;
+                }
+                self.stamp_apply(editor, id, response.edit, &next);
+            }
+
+            let mut percent = f64::from(next.opacity) * 100.0;
+            let edit = prop_widgets::slider(
+                ui,
+                &mut percent,
+                &ScrubSpec::new("Opacity").unit("%").range(0.0, 100.0),
+            );
+            if edit.changed {
+                next.opacity = (percent / 100.0).clamp(0.0, 1.0) as f32;
+            }
+            self.stamp_apply(editor, id, edit, &next);
+
+            let mut lock = locked;
+            if prop_widgets::checkbox_row(ui, "Locked", &mut lock) {
+                editor.run(Command::SetLocked { id, locked: lock });
+            }
+
+            if ui
+                .add_enabled(editor.can_shuffle(), egui::Button::new("Shuffle variant"))
+                .on_hover_text("Re-roll this Stamp within its Variant group")
+                .clicked()
+            {
+                editor.shuffle_variants();
+            }
+        });
+    }
+
+    fn stamp_apply(&mut self, editor: &mut Editor, id: Id, edit: Edit, next: &Stamp) {
+        self.live
+            .apply(editor, edit, "Edit Stamp", || Command::SetStamp {
+                id,
+                stamp: Box::new(next.clone()),
+            });
+    }
+}
