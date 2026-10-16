@@ -22,6 +22,7 @@ pub mod menu;
 pub mod native_dialog;
 pub mod native_menu;
 pub mod new_map;
+mod pack_page;
 pub mod prop_widgets;
 mod properties;
 mod recent;
@@ -1683,6 +1684,7 @@ impl MapMakerApp {
             known: &known,
             open: &open,
             packs: self.credits.page().packs.len(),
+            sprites: Some(&self.sprites),
         };
         self.credits.show(&ctx, None);
         self.updates.show(&ctx);

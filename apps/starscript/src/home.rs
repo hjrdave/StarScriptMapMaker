@@ -17,6 +17,7 @@ use eframe::egui::{self, Color32, Rect, vec2};
 
 use crate::file_actions;
 use crate::icons::{self, Icon};
+use crate::pack_page::{self, PackPage};
 use crate::theme;
 use crate::update::UpdateCheck;
 
@@ -30,6 +31,8 @@ pub enum View {
     Recent,
     /// The Maps open in tabs, including those never saved.
     OpenTabs,
+    /// The installed Asset packs, not a list of Maps.
+    Packs,
 }
 
 impl View {
@@ -38,6 +41,7 @@ impl View {
             View::All => "All maps",
             View::Recent => "Recent",
             View::OpenTabs => "Open in tabs",
+            View::Packs => "Asset packs",
         }
     }
 }
@@ -226,6 +230,7 @@ pub fn select<'a>(
     let source = match view {
         View::OpenTabs => open,
         View::All | View::Recent => known,
+        View::Packs => &[],
     };
     let query = query.trim().to_lowercase();
     let mut entries: Vec<&Entry> = source
@@ -292,6 +297,8 @@ pub struct Data<'a> {
     pub open: &'a [Entry],
     /// The installed Asset pack count.
     pub packs: usize,
+    /// The Asset packs' art, for the Asset packs page.
+    pub sprites: Option<&'a ssmap_render::SpriteStore>,
 }
 
 struct Loaded {
@@ -307,6 +314,7 @@ pub struct Home {
     pub view: View,
     pub query: String,
     pub sort: Sort,
+    pack_page: PackPage,
     infos: HashMap<PathBuf, Info>,
     thumbnails: HashMap<PathBuf, egui::TextureHandle>,
     requested: HashSet<PathBuf>,
@@ -547,8 +555,16 @@ impl Home {
         }
         ui.add_space(12.0);
         section_label(ui, "Library");
-        // A plain row: there is no Asset packs page yet.
-        rail_row_inert(ui, "Asset packs", Some(data.packs));
+        if rail_row(
+            ui,
+            self.view == View::Packs,
+            View::Packs.title(),
+            Some(data.packs),
+        )
+        .clicked()
+        {
+            self.view = View::Packs;
+        }
         if rail_row(ui, false, "Credits & licences", None).clicked() {
             out.push(Action::Credits);
         }
@@ -564,6 +580,14 @@ impl Home {
 
     fn main(&mut self, ui: &mut egui::Ui, data: &Data<'_>, out: &mut Vec<Action>) {
         let p = theme::palette(ui.ctx());
+        if self.view == View::Packs {
+            for action in self.pack_page.show(ui, data.sprites) {
+                match action {
+                    pack_page::Action::Credits => out.push(Action::Credits),
+                }
+            }
+            return;
+        }
         egui::Frame::NONE
             .inner_margin(egui::Margin {
                 left: 32,
@@ -683,12 +707,6 @@ fn rail_row(
     });
     paint_rail_row(ui, rect, selected, response.hovered(), label, count);
     response
-}
-
-fn rail_row_inert(ui: &mut egui::Ui, label: &str, count: Option<usize>) {
-    let (rect, _) =
-        ui.allocate_exact_size(vec2(ui.available_width(), ROW_HEIGHT), egui::Sense::hover());
-    paint_rail_row(ui, rect, false, false, label, count);
 }
 
 fn paint_rail_row(

@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use eframe::egui;
 use ssmap_core::asset::{Asset, AssetRef, Pack, PackLibrary};
+use ssmap_render::SpriteStore;
 
 use crate::editor::Editor;
 use crate::theme;
@@ -48,9 +49,9 @@ pub fn matches(asset: &Asset, category: Option<&str>, search: &str) -> bool {
 /// A thumbnail's texture, with whether its art is light enough to need the off-white tile.
 /// Worked out once, when the texture is made.
 #[derive(Clone)]
-struct ThumbArt {
-    texture: egui::TextureHandle,
-    light: bool,
+pub(crate) struct ThumbArt {
+    pub texture: egui::TextureHandle,
+    pub light: bool,
 }
 
 /// Mean luminance (0 to 1) above which art counts as white or very light.
@@ -76,7 +77,7 @@ fn default_pack(library: &PackLibrary) -> Option<String> {
 }
 
 /// The distinct categories of `packs`, sorted.
-fn categories<'a>(packs: impl Iterator<Item = &'a Pack>) -> Vec<&'a str> {
+pub(crate) fn categories<'a>(packs: impl Iterator<Item = &'a Pack>) -> Vec<&'a str> {
     let mut categories: Vec<&str> = packs
         .flat_map(|pack| &pack.assets)
         .map(|asset| asset.category.as_str())
@@ -88,7 +89,7 @@ fn categories<'a>(packs: impl Iterator<Item = &'a Pack>) -> Vec<&'a str> {
 
 /// What a thumbnail says to a screen reader (and on hover): the name and reference, the
 /// size of its Variant group and whether its pack must be credited.
-fn thumbnail_label(
+pub(crate) fn thumbnail_label(
     reference: &AssetRef,
     asset: &Asset,
     variants: usize,
@@ -309,110 +310,124 @@ impl AssetBrowser {
         let texture = self
             .thumbnails
             .entry(reference.clone())
-            .or_insert_with(|| {
-                let sprite = editor.sprites()?.get_installed(reference)?;
-                let art = &sprite.art;
-                let pixels = art.unpremultiplied();
-                let light = is_light_art(&pixels);
-                let image = egui::ColorImage::from_rgba_unmultiplied(
-                    [art.width as usize, art.height as usize],
-                    &pixels,
-                );
-                let texture = ui.ctx().load_texture(
-                    reference.to_string(),
-                    image,
-                    egui::TextureOptions::LINEAR,
-                );
-                Some(ThumbArt { texture, light })
-            })
+            .or_insert_with(|| load_art(ui.ctx(), editor.sprites()?, reference))
             .clone();
-        let palette = theme::palette(ui.ctx());
-        let (rect, response) =
-            ui.allocate_exact_size(egui::Vec2::splat(look.side), egui::Sense::click());
-        let label = thumbnail_label(reference, asset, look.variants, look.attribution);
-        response.widget_info(|| {
-            egui::WidgetInfo::selected(
-                egui::WidgetType::Button,
-                ui.is_enabled(),
-                look.selected,
-                &label,
-            )
-        });
-        let painter = ui.painter();
-        let fill = match &texture {
-            Some(art) if art.light => palette.thumb_bg_light_art,
-            _ => palette.thumb_bg,
-        };
-        let stroke = if look.selected {
-            egui::Stroke::new(1.5, palette.gold)
-        } else if response.hovered() {
-            egui::Stroke::new(1.0, palette.border_strong)
-        } else {
-            egui::Stroke::new(1.0, palette.border_subtle)
-        };
-        painter.rect(
-            rect,
-            theme::RADIUS_FIELD,
-            fill,
-            stroke,
-            egui::StrokeKind::Inside,
-        );
-        let inner = rect.shrink(5.0);
-        match texture {
-            Some(ThumbArt { texture, .. }) => {
-                let size = texture.size_vec2();
-                let scale = (inner.width() / size.x).min(inner.height() / size.y);
-                let art = egui::Rect::from_center_size(inner.center(), size * scale);
-                painter.image(
-                    texture.id(),
-                    art,
-                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                    egui::Color32::WHITE,
-                );
-            }
-            None => {
-                painter.text(
-                    inner.center(),
-                    egui::Align2::CENTER_CENTER,
-                    "?",
-                    egui::FontId::proportional(theme::HEADING),
-                    palette.text_tertiary,
-                );
-            }
-        }
-        if look.variants > 1 {
-            let galley = painter.layout_no_wrap(
-                look.variants.to_string(),
-                egui::FontId::proportional(theme::CAPTION),
-                palette.text_secondary,
-            );
-            let size = galley.size() + egui::vec2(6.0, 2.0);
-            let chip =
-                egui::Rect::from_min_size(rect.right_bottom() - size - egui::vec2(2.0, 2.0), size);
-            painter.rect_filled(chip, theme::RADIUS_CHIP, palette.bg_panel);
-            painter.galley(
-                chip.min + egui::vec2(3.0, 1.0),
-                galley,
-                palette.text_secondary,
-            );
-        }
-        if look.attribution {
-            painter.circle_filled(rect.right_top() + egui::vec2(-7.0, 7.0), 3.0, palette.gold);
-        }
-        response.on_hover_text(label).clicked()
+        paint_thumbnail(ui, texture, reference, asset, look).clicked()
     }
+}
+
+/// Makes the texture for an installed Asset's art, `None` when it cannot be loaded.
+pub(crate) fn load_art(
+    ctx: &egui::Context,
+    sprites: &SpriteStore,
+    reference: &AssetRef,
+) -> Option<ThumbArt> {
+    let sprite = sprites.get_installed(reference)?;
+    let art = &sprite.art;
+    let pixels = art.unpremultiplied();
+    let light = is_light_art(&pixels);
+    let image = egui::ColorImage::from_rgba_unmultiplied(
+        [art.width as usize, art.height as usize],
+        &pixels,
+    );
+    let texture = ctx.load_texture(reference.to_string(), image, egui::TextureOptions::LINEAR);
+    Some(ThumbArt { texture, light })
+}
+
+/// Draws one Asset as a square thumbnail tile and returns its response.
+pub(crate) fn paint_thumbnail(
+    ui: &mut egui::Ui,
+    texture: Option<ThumbArt>,
+    reference: &AssetRef,
+    asset: &Asset,
+    look: Thumbnail,
+) -> egui::Response {
+    let palette = theme::palette(ui.ctx());
+    let (rect, response) =
+        ui.allocate_exact_size(egui::Vec2::splat(look.side), egui::Sense::click());
+    let label = thumbnail_label(reference, asset, look.variants, look.attribution);
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::Button,
+            ui.is_enabled(),
+            look.selected,
+            &label,
+        )
+    });
+    let painter = ui.painter();
+    let fill = match &texture {
+        Some(art) if art.light => palette.thumb_bg_light_art,
+        _ => palette.thumb_bg,
+    };
+    let stroke = if look.selected {
+        egui::Stroke::new(1.5, palette.gold)
+    } else if response.hovered() {
+        egui::Stroke::new(1.0, palette.border_strong)
+    } else {
+        egui::Stroke::new(1.0, palette.border_subtle)
+    };
+    painter.rect(
+        rect,
+        theme::RADIUS_FIELD,
+        fill,
+        stroke,
+        egui::StrokeKind::Inside,
+    );
+    let inner = rect.shrink(5.0);
+    match texture {
+        Some(ThumbArt { texture, .. }) => {
+            let size = texture.size_vec2();
+            let scale = (inner.width() / size.x).min(inner.height() / size.y);
+            let art = egui::Rect::from_center_size(inner.center(), size * scale);
+            painter.image(
+                texture.id(),
+                art,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+        }
+        None => {
+            painter.text(
+                inner.center(),
+                egui::Align2::CENTER_CENTER,
+                "?",
+                egui::FontId::proportional(theme::HEADING),
+                palette.text_tertiary,
+            );
+        }
+    }
+    if look.variants > 1 {
+        let galley = painter.layout_no_wrap(
+            look.variants.to_string(),
+            egui::FontId::proportional(theme::CAPTION),
+            palette.text_secondary,
+        );
+        let size = galley.size() + egui::vec2(6.0, 2.0);
+        let chip =
+            egui::Rect::from_min_size(rect.right_bottom() - size - egui::vec2(2.0, 2.0), size);
+        painter.rect_filled(chip, theme::RADIUS_CHIP, palette.bg_panel);
+        painter.galley(
+            chip.min + egui::vec2(3.0, 1.0),
+            galley,
+            palette.text_secondary,
+        );
+    }
+    if look.attribution {
+        painter.circle_filled(rect.right_top() + egui::vec2(-7.0, 7.0), 3.0, palette.gold);
+    }
+    response.on_hover_text(label)
 }
 
 /// How one thumbnail is drawn.
 #[derive(Clone, Copy)]
-struct Thumbnail {
-    side: f32,
+pub(crate) struct Thumbnail {
+    pub side: f32,
     /// Armed: the Asset the tool will place.
-    selected: bool,
+    pub selected: bool,
     /// The size of its Variant group, 0 when it has none.
-    variants: usize,
+    pub variants: usize,
     /// Its pack must be credited on export: a gold dot.
-    attribution: bool,
+    pub attribution: bool,
 }
 
 #[cfg(test)]
