@@ -587,7 +587,6 @@ impl PropertiesPanel {
     }
 }
 
-/// "Layer › Object" for a selected Object, or the Layer's own name.
 /// Where the Canvas's top-left corner goes so that the `anchor` point of the grid stays fixed
 /// in the workspace while the Canvas becomes `width` by `height`.
 fn anchored_origin(canvas: &Canvas, width: u32, height: u32, anchor: (u8, u8)) -> [f64; 2] {
@@ -609,6 +608,7 @@ fn anchor_name(x: u8, y: u8) -> String {
     }
 }
 
+/// "Layer › Object" for a selected Object, or the Layer's own name.
 fn breadcrumb(ui: &mut egui::Ui, map: &Map, id: Id) {
     let text = match (map.node(id), map.parent(id)) {
         (Some(Node::Object(_)), Some(layer)) => {
