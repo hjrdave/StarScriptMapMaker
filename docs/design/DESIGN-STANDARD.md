@@ -82,6 +82,10 @@ Title bar (tabs) → Layers panel | Canvas | Properties panel → status bar. De
 
 The macOS window buttons (close, minimize, zoom) are **vertically centered** in the tab bar, on one shared center line with the tab labels, icons, close buttons and the `+` button. Tabs are short: the tab bar is 38 px (the native title-bar row height) unless the buttons can't be centered at that height, so the buttons never sit above the middle of the tabs. The strip stays a window drag region.
 
+### Pop-out windows
+
+A tab can be popped out into its own window (drag it out of the tab strip, or right-click ▸ Move Tab to New Window) and returned the same way. Every window is a full editor with its own title bar, tab strip, panels and status bar; the native menu bar acts on the focused window. A Map is open in only one place at a time. Assets and layers can be dragged from one window to another (drop lands where the mouse is, with a clear drop highlight on the target window). Windows share one app process (shared settings, recent maps and Asset packs) but keep their own panel sizes, zoom, selection and undo history.
+
 ### New tab
 
 The **+** button (and ⌘T) opens a blank **New Tab** start page, not the New Map dialog. It is a quick "recent" screen: the **last 6** Maps as thumbnail cards ordered by **most recently updated**, a **Create new map** card, and an **Open a file** button for the file system. Picking any of these opens or creates the Map in that tab, and the tab then takes the Map's name. It has no side rail, search or sorting; the full list lives on the Home tab. A blank New Tab has nothing to save, so closing it shows no Save prompt. With no recent Maps, show only Create new map and Open a file.
@@ -162,6 +166,7 @@ Changes the owner has decided after the handoff. The sections above already refl
 | Asset thumbnails use a white background, off-white for white Assets | Handoff used the dark panel as the thumbnail background | #231 | Open |
 | Tabs are shorter so the macOS window buttons are vertically centered, like Figma's | Handoff gave the bar height but not the button alignment | #232 | Open |
 | Multi-select with context menu (copy, cut, group) and copy/paste between tabs | Handoff had no selection context menu or cross-tab paste | #235 | Open |
+| Tabs can be popped out into separate windows; Assets and layers can be dragged between windows | Handoff had a single window with tabs | #236 | Open |
 | New tab opens a start page (last 6 Maps by most recently updated, Create new map, Open a file) instead of the New Map dialog | Handoff: `+` = New Map | #223 | Open |
 | One Stamp tool: click places, drag scatters; no separate Scatter Brush | Handoff had Stamp and Scatter Brush as separate tools | #219 | Open |
 
