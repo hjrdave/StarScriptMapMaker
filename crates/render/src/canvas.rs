@@ -31,15 +31,32 @@ const STENCIL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Stencil8;
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Backdrop {
     pub water: Color,
-    /// How strongly the ocean texture lightens and darkens the water, from 0 to 1.
+    /// How strongly the ocean texture lightens and darkens the water, from 0 to 1. At 0 the
+    /// water is flat.
     pub texture_strength: f32,
+    /// Stretches the texture's noise; 1 is the default size.
+    pub texture_scale: f32,
+    /// The colour the texture lightens towards.
+    pub texture_light: Color,
+    /// The colour the texture darkens towards.
+    pub texture_dark: Color,
 }
 
 impl Default for Backdrop {
     fn default() -> Self {
+        Self::from(&ssmap_core::Background::default())
+    }
+}
+
+impl From<&ssmap_core::Background> for Backdrop {
+    fn from(background: &ssmap_core::Background) -> Self {
+        let texture = &background.texture;
         Self {
-            water: Color::rgb(0x3d, 0x6e, 0x8c),
-            texture_strength: 0.3,
+            water: background.water,
+            texture_strength: texture.strength,
+            texture_scale: texture.scale,
+            texture_light: texture.light,
+            texture_dark: texture.dark,
         }
     }
 }
@@ -158,7 +175,7 @@ impl CanvasScene {
     pub fn new(canvas: &ssmap_core::Canvas) -> Self {
         Self {
             canvas_size: [f64::from(canvas.width), f64::from(canvas.height)],
-            backdrop: Backdrop::default(),
+            backdrop: Backdrop::from(&canvas.background),
             pasteboard: Color::rgb(0x1c, 0x1c, 0x1f),
             content: Content::default(),
             quality: Quality::Full,
@@ -504,8 +521,11 @@ impl CanvasRenderer {
             queue,
             OceanUniform {
                 canvas_size: [w, h],
-                strength: scene.backdrop.texture_strength,
-                _pad: 0.0,
+                strength: scene.backdrop.texture_strength.clamp(0.0, 1.0),
+                // Keeps the shader's division finite.
+                scale: scene.backdrop.texture_scale.max(0.01),
+                light: scene.backdrop.texture_light.to_linear_premultiplied(),
+                dark: scene.backdrop.texture_dark.to_linear_premultiplied(),
             },
         );
         self.drawn_backdrop = Some(scene);

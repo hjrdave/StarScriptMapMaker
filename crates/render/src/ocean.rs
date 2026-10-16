@@ -8,7 +8,10 @@ use wgpu::util::DeviceExt;
 pub(crate) struct OceanUniform {
     pub(crate) canvas_size: [f32; 2],
     pub(crate) strength: f32,
-    pub(crate) _pad: f32,
+    pub(crate) scale: f32,
+    /// Linear, premultiplied colours the noise lightens and darkens towards.
+    pub(crate) light: [f32; 4],
+    pub(crate) dark: [f32; 4],
 }
 
 pub(crate) struct OceanPass {

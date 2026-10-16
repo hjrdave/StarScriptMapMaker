@@ -25,6 +25,8 @@ fn app(recovery_dir: &Path) -> Harness<'static, MapMakerApp> {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1280.0, 800.0))
         .build_eframe(move |cc| MapMakerApp::with_recovery_dir(cc, Some(recovery_dir.clone())));
+    // These tests cover the quit path, which is what closing does off macOS.
+    harness.state_mut().set_close_hides_window(false);
     harness.run();
     // The app starts on Home with no Map; these tests edit one.
     harness.state_mut().new_map(Canvas::new(
