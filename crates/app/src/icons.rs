@@ -88,6 +88,8 @@ icons! {
     Unlock, "Unlock", "unlock";
     Shape, "Shape", "shape";
     ActiveLayer, "Active layer", "active-layer";
+    LockFilled, "Lock filled", "lock-filled";
+    LockDashed, "Lock dashed", "lock-dashed";
 }
 
 /// Hand-hinted 1x replacements, by icon. None yet: the thinned 1 px stroke is crisp enough
@@ -292,7 +294,20 @@ pub fn paint_flipped(
 /// The glyph is tinted from the current egui visuals until the Phase 2 theme (#157) supplies
 /// palette colours.
 pub fn icon_button(ui: &mut egui::Ui, icon: Icon, label: &str) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(24.0), egui::Sense::click());
+    icon_button_with(ui, icon, label, 24.0, GRID, None)
+}
+
+/// [`icon_button`] with its button `side` and glyph `size` in points, and optionally a `tint`
+/// in place of the visuals' text colour.
+pub fn icon_button_with(
+    ui: &mut egui::Ui,
+    icon: Icon,
+    label: &str,
+    side: f32,
+    size: f32,
+    tint: Option<egui::Color32>,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(side), egui::Sense::click());
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
     });
@@ -302,7 +317,13 @@ pub fn icon_button(ui: &mut egui::Ui, icon: Icon, label: &str) -> egui::Response
             ui.painter()
                 .rect_filled(rect, visuals.corner_radius, visuals.weak_bg_fill);
         }
-        paint(ui, rect, icon, GRID, visuals.fg_stroke.color);
+        paint(
+            ui,
+            rect,
+            icon,
+            size,
+            tint.unwrap_or(visuals.fg_stroke.color),
+        );
     }
     response.on_hover_text(label)
 }
