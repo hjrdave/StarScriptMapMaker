@@ -118,7 +118,7 @@ The New Map dialog has a **template picker**: thumbnail cards with a name (same 
 
 ### Tool dock
 
-Floating, bottom-centre of the canvas area. Groups: Select V, Pan H │ Land Brush B, Lasso L, Label T │ Stamp S, Stamp Eraser E │ Art board (crop icon; shortcut to be decided, see #240). Active tool = gold-subtle fill + gold inset ring. Tooltip above the button after 500 ms: name + shortcut, on **one line** (no wrapping).
+Floating, bottom-centre of the canvas area. Groups: Select V, Pan H │ Land Brush B, Lasso L, Label T │ Stamp S, Stamp Eraser E │ Art board A (crop icon). Active tool = gold-subtle fill + gold inset ring. Tooltip above the button after 500 ms: name + shortcut, on **one line** (no wrapping).
 
 ### Zoom control
 
