@@ -104,7 +104,7 @@ Floating, bottom-centre of the canvas area. Groups: Select V, Pan H │ Land Bru
 
 ### Zoom control
 
-Bottom-right: `−` | percentage | `+`. The percentage button shows the percentage only, with no extra icon. Its dropdown offers an editable % field, Zoom to Fit, Zoom to Selection, and the preset levels.
+Bottom-right: `−` | percentage | `+`. The percentage button shows the percentage only, with no extra icon. Its dropdown offers an editable % field, Zoom to Fit, Zoom to Selection, and the preset levels. ⌘+ (also ⌘=) and ⌘− zoom the **Canvas only**; they never scale the UI.
 
 ### Alerts (toasts)
 
