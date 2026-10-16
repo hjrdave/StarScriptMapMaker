@@ -15,6 +15,7 @@ pub mod icons;
 mod label_styles;
 mod layer_tree;
 pub mod new_map;
+pub mod prop_widgets;
 mod properties;
 mod recent;
 pub mod recovery;
