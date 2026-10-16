@@ -20,6 +20,7 @@ pub mod prop_widgets;
 mod properties;
 mod recent;
 pub mod recovery;
+pub mod shell;
 pub mod tab;
 mod tab_strip;
 mod tessellation;
@@ -112,6 +113,10 @@ pub struct MapMakerApp {
     sprites: SpriteStore,
     credits: Credits,
     recent: RecentFiles,
+    /// Panel widths and collapse state, the same for every tab.
+    shell: shell::Shell,
+    /// ⇥ just toggled the panels: clear keyboard focus at the next frame.
+    drop_focus: bool,
     updates: UpdateCheck,
     new_map_dialog: NewMapDialog,
     export_dialog: ExportDialog,
@@ -218,6 +223,8 @@ impl MapMakerApp {
             sprites,
             credits,
             recent: RecentFiles::load(cc.storage),
+            shell: shell::Shell::load(cc.storage),
+            drop_focus: false,
             updates: UpdateCheck::load(cc.storage),
             new_map_dialog: NewMapDialog::default(),
             export_dialog: ExportDialog::default(),
@@ -234,6 +241,11 @@ impl MapMakerApp {
 
     pub fn editor(&self) -> &Editor {
         self.tab().editor()
+    }
+
+    /// The panels' widths and collapse state.
+    pub fn shell(&self) -> &shell::Shell {
+        &self.shell
     }
 
     pub fn document(&self) -> &Document {
@@ -1150,6 +1162,20 @@ impl MapMakerApp {
         }
         use egui::{Key, KeyboardShortcut, Modifiers};
         let shortcut = |modifiers, key| KeyboardShortcut::new(modifiers, key);
+        // The panel shortcuts come first: egui ignores extra Alt, so Cmd+Alt+1 would
+        // otherwise also match Cmd+1 (Home) below.
+        ctx.input_mut(|input| {
+            let both = Modifiers::COMMAND | Modifiers::ALT;
+            if input.consume_shortcut(&shortcut(both, Key::Num1)) {
+                self.shell.toggle_layers();
+            }
+            if input.consume_shortcut(&shortcut(both, Key::Num2)) {
+                self.shell.toggle_properties();
+            }
+            if input.consume_key(Modifiers::NONE, Key::Tab) {
+                self.shell.toggle_panels();
+            }
+        });
         let (new_map, number, step) = ctx.input_mut(|input| {
             let new_map = input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::T));
             let number = [
@@ -1452,30 +1478,54 @@ impl MapMakerApp {
         let Some(tab) = self.tabs.get(self.active) else {
             return;
         };
-        ui.horizontal(|ui| {
+        let palette = theme::palette(ui.ctx());
+        let text = |text: String| {
+            egui::RichText::new(text)
+                .size(theme::CAPTION)
+                .color(palette.text_secondary)
+        };
+        ui.horizontal_centered(|ui| {
+            ui.add_space(theme::SPACING[3]);
+            let ctx = ui.ctx().clone();
+            let ppp = f64::from(ctx.pixels_per_point());
+            if let Some(zoom) = tab.canvas_view.zoom(ppp) {
+                ui.label(text(format!("{:.0}%", zoom * 100.0)));
+            }
+            let point = ctx
+                .pointer_hover_pos()
+                .and_then(|pointer| tab.canvas_view.canvas_point(pointer));
+            if let Some(point) = point {
+                ui.separator();
+                ui.label(text(shell::cursor_text(&tab.editor.map.canvas, point)));
+            }
+            let summary = shell::selection_summary(
+                &tab.editor.map,
+                tab.editor.selection(),
+                tab.editor.active_layer(),
+            );
+            if !summary.is_empty() {
+                ui.separator();
+                ui.label(text(summary));
+            }
+            // Notices move out of the status bar in #166.
             if let Some(notice) = tab.editor.notice() {
-                let color = if notice.is_error {
-                    ui.visuals().error_fg_color
-                } else {
-                    ui.visuals().text_color()
-                };
-                ui.colored_label(color, &notice.text);
-                ui.ctx().request_repaint_after(
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.add_space(theme::SPACING[3]);
+                    let color = if notice.is_error {
+                        ui.visuals().error_fg_color
+                    } else {
+                        palette.text_primary
+                    };
+                    ui.label(
+                        egui::RichText::new(&notice.text)
+                            .size(theme::CAPTION)
+                            .color(color),
+                    );
+                });
+                ctx.request_repaint_after(
                     editor::NOTICE_DURATION.saturating_sub(notice.shown_at.elapsed()),
                 );
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let ppp = f64::from(ui.ctx().pixels_per_point());
-                if let Some(zoom) = tab.canvas_view.zoom(ppp) {
-                    ui.label(format!("{:.0}%", zoom * 100.0));
-                }
-                if let Some(layer) = tab.editor.active_layer() {
-                    ui.weak(format!(
-                        "Active Layer: {}",
-                        layer_tree::node_name(&tab.editor.map, layer)
-                    ));
-                }
-            });
         });
     }
 }
@@ -1531,6 +1581,7 @@ enum UnsavedChoice {
 impl eframe::App for MapMakerApp {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         self.recent.store(storage);
+        self.shell.store(storage);
         self.updates.store(storage);
     }
 
@@ -1539,10 +1590,20 @@ impl eframe::App for MapMakerApp {
         // Dialogs take the keyboard while they are open.
         self.handle_close(&ctx);
         let dialog_open = self.dialog_open();
+        if std::mem::take(&mut self.drop_focus) {
+            // The ⇥ that toggled the panels also moved keyboard focus into one of them.
+            ctx.memory_mut(|memory| {
+                if let Some(id) = memory.focused() {
+                    memory.surrender_focus(id);
+                }
+            });
+        }
+        let panels_were_hidden = self.shell.panels_hidden();
         if !dialog_open {
             self.open_dropped_files(&ctx);
             self.shortcuts(&ctx);
         }
+        self.drop_focus = self.shell.panels_hidden() != panels_were_hidden;
         self.dialogs(&ctx);
         self.update_title(&ctx);
         let strip = egui::Frame::NONE.fill(theme::palette(&ctx).bg_chrome);
@@ -1561,23 +1622,70 @@ impl eframe::App for MapMakerApp {
         self.credits.show(&ctx, Some(&mut tab.editor));
         tab.label_styles.show(&ctx, &mut tab.editor);
         self.updates.show(&ctx);
-        egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));
+        egui::Panel::bottom("status")
+            .exact_size(theme::metrics::STATUS_BAR)
+            .show(ui, |ui| self.status_bar(ui));
         let tab = &mut self.tabs[self.active];
         egui::Panel::bottom("assets")
             .resizable(true)
             .default_size(150.0)
             .show(ui, |ui| self.asset_browser.show(ui, &mut tab.editor));
-        egui::Panel::left("layers")
-            .resizable(true)
-            .default_size(240.0)
-            .show(ui, |ui| tab.layer_tree.show(ui, &mut tab.editor));
-        egui::Panel::right("properties")
-            .resizable(true)
-            .default_size(260.0)
-            .show(ui, |ui| tab.properties.show(ui, &mut tab.editor));
+        let mut layers_divider = None;
+        let mut properties_divider = None;
+        if self.shell.layers_shown() {
+            let collapsed = self.shell.layers_collapsed();
+            let panel = egui::Panel::left("layers")
+                .resizable(false)
+                .exact_size(self.shell.layers_layout_width())
+                .show(ui, |ui| {
+                    if collapsed {
+                        let path = shell::selection_path(&tab.editor.map, tab.editor.selection());
+                        if shell::layers_rail(ui, &path) {
+                            self.shell.set_layers_collapsed(false);
+                        }
+                        return;
+                    }
+                    shell::panel_header(ui, "Layers", |ui| {
+                        if icons::icon_button(
+                            ui,
+                            icons::Icon::CollapseLeft,
+                            "Collapse Layers (⌘⌥1)",
+                        )
+                        .clicked()
+                        {
+                            self.shell.set_layers_collapsed(true);
+                        }
+                        // Right to left: this lands just left of Collapse.
+                        if icons::icon_button(ui, icons::Icon::Add, "New Layer (⇧⌘N)").clicked()
+                        {
+                            tab.editor.new_layer();
+                        }
+                    });
+                    tab.layer_tree.show(ui, &mut tab.editor);
+                });
+            if !collapsed {
+                layers_divider = Some(panel.response.rect);
+            }
+        }
+        if self.shell.properties_shown() {
+            let panel = egui::Panel::right("properties")
+                .resizable(false)
+                .exact_size(self.shell.width(shell::Side::Right))
+                .show(ui, |ui| tab.properties.show(ui, &mut tab.editor));
+            properties_divider = Some(panel.response.rect);
+        }
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ui, |ui| tab.canvas_view.show(ui, &mut tab.editor));
+        // After the Canvas, so the strips on its edges win the pointer over it.
+        for (side, rect) in [
+            (shell::Side::Left, layers_divider),
+            (shell::Side::Right, properties_divider),
+        ] {
+            if let Some(rect) = rect {
+                shell::divider(ui, &mut self.shell, side, rect);
+            }
+        }
         self.journal(&ctx);
     }
 }
