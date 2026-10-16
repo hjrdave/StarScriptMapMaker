@@ -220,6 +220,12 @@ pub mod metrics {
     /// Tool button size, width then height.
     pub const TOOL_BUTTON: [f32; 2] = [32.0, 30.0];
     pub const TOOL_DOCK_BOTTOM_OFFSET: f32 = 40.0;
+    /// Inner margin of the tool dock's frame, per side.
+    pub const TOOL_DOCK_MARGIN: f32 = 4.0;
+    /// Height of the tool dock: one button row, the margins and the 1pt stroke on both sides.
+    pub const TOOL_DOCK_HEIGHT: f32 = TOOL_BUTTON[1] + 2.0 * TOOL_DOCK_MARGIN + 2.0;
+    /// Distance from the Canvas's bottom edge to the shared centre line of the floating bars.
+    pub const FLOATING_BAR_CENTER_OFFSET: f32 = TOOL_DOCK_BOTTOM_OFFSET + TOOL_DOCK_HEIGHT / 2.0;
     pub const MIN_WINDOW: [f32; 2] = [1024.0, 640.0];
 }
 

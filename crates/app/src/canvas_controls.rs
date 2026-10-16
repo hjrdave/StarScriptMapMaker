@@ -6,7 +6,7 @@ use eframe::egui;
 use crate::theme::{self, Palette};
 use crate::zoom::{PRESETS, Zoom};
 
-/// Gap between the zoom control and the Canvas's right and bottom edges, in points.
+/// Gap between the zoom control and the Canvas's right edge, in points.
 const EDGE_GAP: f32 = 16.0;
 /// Gap between the node-edit banner and the Canvas's top edge, in points.
 const BANNER_GAP: f32 = 12.0;
@@ -27,6 +27,14 @@ pub enum BannerAction {
     Done,
 }
 
+/// Where the zoom control's right-centre sits: on the tool dock's vertical centre line.
+fn zoom_control_anchor(canvas: egui::Rect) -> egui::Pos2 {
+    egui::pos2(
+        canvas.right() - EDGE_GAP,
+        canvas.bottom() - theme::metrics::FLOATING_BAR_CENTER_OFFSET,
+    )
+}
+
 /// The `−` | `84% ▾` | `+` control over the bottom-right of `canvas`. `percent` is the current
 /// zoom as a share of 1:1 in points; `field` keeps the menu's percentage text between frames.
 pub fn zoom_control(
@@ -40,8 +48,8 @@ pub fn zoom_control(
     let mut chosen = None;
     egui::Area::new(egui::Id::new("zoom_control"))
         .order(egui::Order::Foreground)
-        .pivot(egui::Align2::RIGHT_BOTTOM)
-        .fixed_pos(canvas.right_bottom() - egui::vec2(EDGE_GAP, EDGE_GAP))
+        .pivot(egui::Align2::RIGHT_CENTER)
+        .fixed_pos(zoom_control_anchor(canvas))
         .show(ctx, |ui| {
             panel_frame(palette).show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -168,4 +176,18 @@ pub fn node_banner(
                 });
         });
     action
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zoom_control_centre_matches_tool_dock_centre() {
+        let canvas = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(800.0, 600.0));
+        let dock_centre = canvas.bottom()
+            - theme::metrics::TOOL_DOCK_BOTTOM_OFFSET
+            - theme::metrics::TOOL_DOCK_HEIGHT / 2.0;
+        assert_eq!(zoom_control_anchor(canvas).y, dock_centre);
+    }
 }
