@@ -2019,11 +2019,11 @@ impl eframe::App for MapMakerApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
-        self.app.native_menu_actions(ui.ctx());
+        self.native_menu_actions(ui.ctx());
         self.show(ui);
         // After the frame, so the menu shows what this frame changed.
         #[cfg(target_os = "macos")]
-        self.app.native_menu_sync(ui.ctx());
+        self.native_menu_sync(ui.ctx());
     }
 }
 
