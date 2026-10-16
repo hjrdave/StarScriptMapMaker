@@ -150,7 +150,7 @@ pub struct TabInfo {
 }
 
 /// What the user did in the strip.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum Action {
     Show(Slot),
     Close(usize),
@@ -159,6 +159,11 @@ pub enum Action {
     MoveToNewWindow(usize),
     /// Put tab `n` of a popped-out window back in the main window.
     MoveToMainWindow(usize),
+    /// Tab `n` was dragged and let go with the pointer at `at`, in this window's points.
+    Dropped {
+        index: usize,
+        at: egui::Pos2,
+    },
 }
 
 /// Which window a strip belongs to, which decides what its tabs' context menu offers.
@@ -170,11 +175,46 @@ pub enum Placement {
     Popped,
 }
 
+/// Where the strip and its Map tabs were last drawn, in the window's own points, so a tab
+/// dropped on it lands at the right place.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Geometry {
+    pub strip: Rect,
+    /// Left edge of the first Map tab when not scrolled.
+    pub tabs_left: f32,
+    pub tab_width: f32,
+    pub scroll: f32,
+}
+
+impl Geometry {
+    /// The position among the `count` Map tabs a tab dropped at `x` lands in: before the tab
+    /// whose left half `x` is in, or at the end.
+    pub fn drop_index(&self, x: f32, count: usize) -> usize {
+        if self.tab_width <= 0.0 {
+            return count;
+        }
+        let tabs = (x - self.tabs_left + self.scroll) / self.tab_width;
+        (tabs + 0.5).floor().clamp(0.0, count as f32) as usize
+    }
+}
+
+impl Default for Geometry {
+    fn default() -> Self {
+        Self {
+            strip: Rect::NOTHING,
+            tabs_left: 0.0,
+            tab_width: 0.0,
+            scroll: 0.0,
+        }
+    }
+}
+
 /// The strip's own memory between frames.
 #[derive(Default)]
 pub struct State {
     scroll: f32,
     revealed: Option<(Slot, usize)>,
+    pub geometry: Geometry,
 }
 
 fn tab_text(name: &str, color: Color32, width: f32) -> egui::text::LayoutJob {
@@ -301,6 +341,12 @@ pub fn show(
     }
     state.scroll = state.scroll.clamp(0.0, fit.max_scroll(tabs.len()));
 
+    state.geometry = Geometry {
+        strip: column(strip.min.x, strip.width()),
+        tabs_left: viewport_left,
+        tab_width: width,
+        scroll: state.scroll,
+    };
     let pointer = ui.input(|i| i.pointer.hover_pos());
     ui.scope_builder(egui::UiBuilder::new().max_rect(viewport), |ui| {
         ui.set_clip_rect(viewport);
@@ -314,8 +360,16 @@ pub fn show(
             let body = ui.interact(
                 rect.intersect(viewport),
                 ui.id().with(("tab", index)),
-                Sense::click(),
+                Sense::click_and_drag(),
             );
+            if body.dragged() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+            }
+            if body.drag_stopped()
+                && let Some(at) = ui.input(|i| i.pointer.latest_pos())
+            {
+                actions.push(Action::Dropped { index, at });
+            }
             body.widget_info(|| {
                 egui::WidgetInfo::selected(
                     egui::WidgetType::Button,
@@ -506,6 +560,26 @@ mod tests {
         assert_eq!(cycle(Slot::Home, 2, false), Slot::Map(1));
         assert_eq!(cycle(Slot::Map(0), 2, false), Slot::Home);
         assert_eq!(cycle(Slot::Home, 0, true), Slot::Home);
+    }
+
+    #[test]
+    fn a_dropped_tab_lands_before_the_tab_whose_left_half_it_is_on() {
+        let geometry = Geometry {
+            strip: Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(800.0, 40.0)),
+            tabs_left: 100.0,
+            tab_width: 200.0,
+            scroll: 0.0,
+        };
+        assert_eq!(geometry.drop_index(10.0, 3), 0);
+        assert_eq!(geometry.drop_index(150.0, 3), 0);
+        assert_eq!(geometry.drop_index(250.0, 3), 1);
+        assert_eq!(geometry.drop_index(450.0, 3), 2);
+        assert_eq!(geometry.drop_index(790.0, 3), 3);
+        let scrolled = Geometry {
+            scroll: 200.0,
+            ..geometry
+        };
+        assert_eq!(scrolled.drop_index(150.0, 3), 1);
     }
 
     #[test]
