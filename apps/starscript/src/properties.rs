@@ -43,7 +43,8 @@ impl PropertiesPanel {
         std::mem::take(&mut self.manage_label_styles)
     }
 
-    pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+    /// Returns true when the collapse control at the bottom was clicked.
+    pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) -> bool {
         // A change ends when the pointer is released, or when Escape cancelled it.
         self.live.apply(editor, Edit::default(), "", || {
             unreachable!("nothing changed")
@@ -51,13 +52,33 @@ impl PropertiesPanel {
         // The Map section starts collapsed; the others start open.
         prop_widgets::default_closed(ui.ctx(), "map");
         crate::shell::panel_header(ui, "Properties", |_| {});
+        let footer = crate::layer_tree::FOOTER_HEIGHT;
+        // The control is pinned to the panel's bottom edge, where the collapsed strip has it too.
+        let panel = ui.max_rect();
+        let rect = egui::Rect::from_min_max(
+            egui::pos2(panel.left(), panel.bottom() - footer),
+            panel.right_bottom(),
+        );
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
+            .max_height((rect.top() - ui.cursor().top()).max(0.0))
             .show(ui, |ui| {
                 self.tool_section.show(ui, editor);
                 ui.add_space(theme::SPACING[1]);
                 self.selection(ui, editor);
             });
+        ui.painter().hline(
+            rect.x_range(),
+            rect.top(),
+            egui::Stroke::new(1.0, theme::palette(ui.ctx()).border_subtle),
+        );
+        let mut bar = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        bar.add_space(theme::SPACING[2]);
+        crate::shell::properties_collapse_button(&mut bar, false).clicked()
     }
 
     fn selection(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {

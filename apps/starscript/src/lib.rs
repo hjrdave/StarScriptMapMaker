@@ -2263,8 +2263,7 @@ impl MapMakerApp {
                     .exact_size(layout.properties.width())
                     .show(ui, |ui| {
                         if shell::properties_rail(ui) {
-                            let open = self.win.shell.properties_overlay();
-                            self.win.shell.set_properties_overlay(!open);
+                            self.win.shell.click_properties_rail();
                         }
                     });
                 properties_rail = Some(panel.response.rect);
@@ -2274,6 +2273,9 @@ impl MapMakerApp {
                     .resizable(false)
                     .exact_size(width)
                     .show(ui, |ui| tab.properties.show(ui, &mut tab.editor));
+                if panel.inner {
+                    self.win.shell.toggle_properties();
+                }
                 if tab.properties.take_manage_label_styles() {
                     tab.label_styles.open = true;
                 }
@@ -2334,7 +2336,10 @@ impl MapMakerApp {
                     overlay_frame.show(ui, |ui| {
                         ui.set_width(width);
                         ui.set_height(height);
-                        tab.properties.show(ui, &mut tab.editor);
+                        if tab.properties.show(ui, &mut tab.editor) {
+                            // Collapsing the floating inspector just closes it.
+                            self.win.shell.close_overlays();
+                        }
                     });
                 });
             if tab.properties.take_manage_label_styles() {
