@@ -1732,8 +1732,6 @@ fn egui_key(key: menu::Key) -> egui::Key {
     }
 }
 
-/// Takes the key press that runs `command`, unless its shortcut is switched off. The key is
-/// read from the menu model, so the label and the handling are one binding.
 /// The Canvas zoom keys the native menu does not match: ⌘= and ⌘+ in, ⌘− out.
 fn canvas_zoom_keys(input: &mut egui::InputState) -> Option<menu::Command> {
     use egui::{Key, Modifiers};
@@ -1748,6 +1746,8 @@ fn canvas_zoom_keys(input: &mut egui::InputState) -> Option<menu::Command> {
     }
 }
 
+/// Takes the key press that runs `command`, unless its shortcut is switched off. The key is
+/// read from the menu model, so the label and the handling are one binding.
 fn consume(
     input: &mut egui::InputState,
     off: &HashSet<menu::Command>,
