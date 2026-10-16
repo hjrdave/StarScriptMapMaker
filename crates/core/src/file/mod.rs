@@ -376,6 +376,15 @@ pub fn read_preview(path: impl AsRef<Path>) -> Result<Option<Vec<u8>>, FileError
     read_meta(&conn, "preview")
 }
 
+/// Reads the Canvas of a Map file without opening the Map, as for a Map browser's size label.
+pub fn read_canvas(path: impl AsRef<Path>) -> Result<Canvas, FileError> {
+    let conn = connect(path.as_ref(), OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    read_version(&conn)?;
+    let json: String = read_meta(&conn, "canvas")?
+        .ok_or_else(|| FileError::Damaged("the Canvas is missing".into()))?;
+    serde_json::from_str(&json).map_err(|err| FileError::Damaged(format!("the Canvas: {err}")))
+}
+
 /// Writes a file at a temporary path beside `path` with `prepare` and a save, then renames
 /// it over `path`, so a crash never leaves a half-written file there.
 fn save_via_temp(

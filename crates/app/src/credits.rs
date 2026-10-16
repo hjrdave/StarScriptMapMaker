@@ -66,7 +66,8 @@ impl Credits {
         &self.page
     }
 
-    pub fn show(&mut self, ctx: &egui::Context, editor: &mut Editor) {
+    /// Shows the window. `editor` is the active Map's, for the credits it owes; `None` on Home.
+    pub fn show(&mut self, ctx: &egui::Context, editor: Option<&mut Editor>) {
         let page = &self.page;
         egui::Window::new("Credits")
             .open(&mut self.open)
@@ -81,7 +82,9 @@ impl Credits {
                         .strong(),
                 );
                 ui.add_space(6.0);
-                map_credits(ui, editor);
+                if let Some(editor) = editor {
+                    map_credits(ui, editor);
+                }
                 section_heading(ui, "Asset packs");
                 if page.packs.is_empty() {
                     ui.label("No Asset packs are loaded.");

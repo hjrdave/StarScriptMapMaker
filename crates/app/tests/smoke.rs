@@ -5,11 +5,21 @@ use eframe::egui;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use ssmap_app::MapMakerApp;
+use ssmap_core::{Canvas, DistanceUnit, Scale};
 
 fn app() -> Harness<'static, MapMakerApp> {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1280.0, 800.0))
         .build_eframe(|cc| MapMakerApp::with_recovery_dir(cc, None));
+    harness.run();
+    // The app starts on Home with no Map; most tests here want one to work in.
+    assert!(harness.state().tabs().is_empty());
+    assert!(harness.state().home_active());
+    harness.state_mut().new_map(Canvas::new(
+        4096,
+        3072,
+        Scale::new(0.25, DistanceUnit::Miles),
+    ));
     harness.run();
     harness
 }

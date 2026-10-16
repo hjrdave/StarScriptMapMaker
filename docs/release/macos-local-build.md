@@ -50,6 +50,15 @@ The build is unsigned (ADR 0008), so macOS blocks it the first time.
 - [ ] Open enough Maps that the tabs shrink to 120 px and the strip scrolls with chevrons;
       the active tab scrolls into view.
 - [ ] ⌘T (New Map), ⌘W, ⌘1 (Home), ⌘2–⌘9 (⌘9 is the last tab), ⌃Tab and ⌃⇧Tab.
+- [ ] Home tab (#162): launching with no file shows Home and no Map tab; launching with a
+      file opens it in a tab. The left rail is 232 px with All maps, Recent, Open in tabs
+      (counts), Asset packs, Credits & licences (opens the Credits window) and the version.
+      The grid has 4 columns, the dashed New Map card first (⌘N), then one card per Map with
+      its preview, name, "Edited … ago", Canvas size and an "Open in tab" chip when open.
+      Search, the Last edited / Name sort and Open… work. Delete a listed file: its card
+      shows as missing with "Remove from list". With ten or more Maps the first frame is not
+      held up while previews load. On a first launch (reset the stored choice) the update
+      banner shows at the bottom of Home; Not now and Check automatically both dismiss it.
 - [ ] Check both the dark and the light theme.
 - [ ] Open a large Map. Pan and zoom; note how smooth it feels.
 - [ ] Run the frame-time measurement and record the numbers on #92:

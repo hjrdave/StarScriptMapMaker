@@ -29,7 +29,8 @@ fn main() -> eframe::Result {
         Box::new(move |cc| {
             let mut app = ssmap_app::MapMakerApp::new(cc);
             if let Some(path) = launch_file {
-                // A file that fails to open leaves a blank Map and an error in the status bar.
+                // With no file the app starts on Home. A file that fails to open leaves Home
+                // showing and prints the error.
                 app.open_path(&path);
             }
             Ok(Box::new(app))
