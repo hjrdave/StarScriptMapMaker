@@ -84,7 +84,7 @@ The macOS window buttons (close, minimize, zoom) are **vertically centered** in 
 
 ### Pop-out windows
 
-A tab can be popped out into its own window (drag it out of the tab strip, or right-click ▸ Move Tab to New Window) and returned the same way. Every window is a full editor with its own title bar, tab strip, panels and status bar; the native menu bar acts on the focused window. A Map is open in only one place at a time. Assets and layers can be dragged from one window to another (drop lands where the mouse is, with a clear drop highlight on the target window). Windows share one app process (shared settings, recent maps and Asset packs) but keep their own panel sizes, zoom, selection and undo history.
+Tab dragging works like Chrome. A tab can be popped out into its own window (drag it out of the tab strip, or right-click ▸ Move Tab to New Window) and popped back in by dragging it onto another window's tab strip, where an insertion gap shows and the tab snaps in on release (or right-click ▸ Move Tab to Window ▸). A window left with no tabs closes. Every window is a full editor with its own title bar, tab strip, panels and status bar; the native menu bar acts on the focused window. A Map is open in only one place at a time. Assets and layers can be dragged from one window to another (drop lands where the mouse is, with a clear drop highlight on the target window). Windows share one app process (shared settings, recent maps and Asset packs) but keep their own panel sizes, zoom, selection and undo history.
 
 ### New tab
 
