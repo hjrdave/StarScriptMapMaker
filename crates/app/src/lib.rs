@@ -393,11 +393,42 @@ impl MapMakerApp {
         tab
     }
 
-    /// Adds `tab` after the others and shows it.
+    /// Adds `tab` after the others and shows it. A blank tab on show takes it instead, so a
+    /// Map opened or created from the start page opens in that tab.
     fn push_tab(&mut self, tab: MapTab) {
+        if self.start_page_showing() {
+            let mut blank = std::mem::replace(&mut self.tabs[self.active], tab);
+            blank.recovery.reset();
+        } else {
+            self.tabs.push(tab);
+            self.active = self.tabs.len() - 1;
+        }
+        self.home_active = false;
+    }
+
+    /// Opens a blank tab with the start page and shows it.
+    pub fn new_blank_tab(&mut self) {
+        let recovery = Recovery::new(self.recovery_dir.clone());
+        self.push_blank(MapTab::blank(
+            self.gpu.then(TessellationCache::new),
+            recovery,
+        ));
+    }
+
+    fn push_blank(&mut self, tab: MapTab) {
         self.tabs.push(tab);
         self.active = self.tabs.len() - 1;
         self.home_active = false;
+    }
+
+    /// Whether the start page of a blank tab is what the window shows.
+    fn start_page_showing(&self) -> bool {
+        !self.home_active() && self.tabs.get(self.active).is_some_and(MapTab::is_blank)
+    }
+
+    /// Whether a Map's editor is what the window shows: neither Home nor a start page.
+    fn map_showing(&self) -> bool {
+        !self.home_active() && !self.start_page_showing()
     }
 
     /// Shows a message on the active tab's status bar, or on stderr when no Map is open.
@@ -760,7 +791,7 @@ impl MapMakerApp {
 
     /// The Editor of the Map showing, for tests; `None` on Home.
     pub fn active_editor_mut(&mut self) -> Option<&mut Editor> {
-        if self.home_active() {
+        if !self.map_showing() {
             return None;
         }
         self.tabs.get_mut(self.active).map(|tab| &mut tab.editor)
@@ -776,13 +807,13 @@ impl MapMakerApp {
                 .iter()
                 .enumerate()
                 .map(|(index, tab)| menu::TabState {
-                    name: tab.document.name(),
+                    name: tab.name(),
                     active: !self.home_active() && index == self.active,
                 })
                 .collect(),
             ..menu::State::default()
         };
-        if self.home_active() {
+        if !self.map_showing() {
             return state;
         }
         let editor = &self.tab().editor;
@@ -916,7 +947,8 @@ impl MapMakerApp {
     pub fn run_command(&mut self, command: menu::Command) {
         use menu::Command as C;
         match command {
-            C::NewMap | C::NewTab => self.new_map_dialog.open = true,
+            C::NewMap => self.new_map_dialog.open = true,
+            C::NewTab => self.new_blank_tab(),
             C::Open => self.show_open_dialog(),
             C::Home => self.show_slot(tab_strip::Slot::Home),
             C::ToggleLayers => self.shell.toggle_layers(),
@@ -939,10 +971,10 @@ impl MapMakerApp {
         }
     }
 
-    /// The commands that act on the Map showing; they do nothing on Home.
+    /// The commands that act on the Map showing; they do nothing on Home or a start page.
     fn run_map_command(&mut self, command: menu::Command) {
         use menu::Command as C;
-        if self.home_active() {
+        if !self.map_showing() {
             return;
         }
         match command {
@@ -1332,7 +1364,7 @@ impl MapMakerApp {
                 } else {
                     ""
                 };
-                format!("{}{dirty} — StarScript Map Maker", tab.document.name())
+                format!("{}{dirty} — StarScript Map Maker", tab.name())
             }
             None => "StarScript Map Maker".to_owned(),
         };
@@ -1394,7 +1426,7 @@ impl MapMakerApp {
             (new_map, number, step)
         });
         if new_map {
-            self.new_map_dialog.open = true;
+            self.new_blank_tab();
         }
         if let Some(n) = number {
             self.show_tab_number(n);
@@ -1423,8 +1455,8 @@ impl MapMakerApp {
             self.close_tab(self.active);
             return;
         }
-        // Home has no Map to save or edit.
-        if self.home_active() {
+        // Home and a start page have no Map to save or edit.
+        if !self.map_showing() {
             return;
         }
         if save_as {
@@ -1526,7 +1558,7 @@ impl MapMakerApp {
             .tabs
             .iter()
             .map(|tab| tab_strip::TabInfo {
-                name: tab.document.name(),
+                name: tab.name(),
                 path: tab.document.path().map(|path| path.display().to_string()),
                 unsaved: tab.has_unsaved_changes(),
             })
@@ -1548,13 +1580,14 @@ impl MapMakerApp {
             match action {
                 tab_strip::Action::Show(slot) => self.show_slot(slot),
                 tab_strip::Action::Close(index) => self.close_tab(index),
-                tab_strip::Action::NewMap => self.new_map_dialog.open = true,
+                tab_strip::Action::NewMap => self.new_blank_tab(),
             }
         }
     }
 
-    /// The Home tab: the Maps the app knows of, and what the user does with them.
-    fn home_screen(&mut self, ui: &mut egui::Ui) {
+    /// The Home tab: the Maps the app knows of, and what the user does with them. With
+    /// `start_page` it is the lighter start page of a blank tab, where a Map opens in that tab.
+    fn home_screen(&mut self, ui: &mut egui::Ui, start_page: bool) {
         let ctx = ui.ctx().clone();
         let tabs: Vec<home::OpenTab> = self
             .tabs
@@ -1563,6 +1596,7 @@ impl MapMakerApp {
                 path: tab.document.path().map(Path::to_path_buf),
                 name: tab.document.name(),
                 canvas: (tab.editor.map.canvas.width, tab.editor.map.canvas.height),
+                blank: tab.is_blank(),
             })
             .collect();
         self.home.entered();
@@ -1584,7 +1618,11 @@ impl MapMakerApp {
         };
         self.credits.show(&ctx, None);
         self.updates.show(&ctx);
-        let actions = self.home.show(ui, &data, &mut self.updates);
+        let actions = if start_page {
+            self.home.start_page(ui, &data)
+        } else {
+            self.home.show(ui, &data, &mut self.updates)
+        };
         if self.home.loading() {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
@@ -1855,8 +1893,8 @@ impl MapMakerApp {
         if !self.native_menu_shown() {
             egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui));
         }
-        if self.home_active() {
-            self.home_screen(ui);
+        if self.home_active() || self.start_page_showing() {
+            self.home_screen(ui, !self.home_active());
             self.journal(&ctx);
             return;
         }

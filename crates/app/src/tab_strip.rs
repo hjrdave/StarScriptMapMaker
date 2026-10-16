@@ -413,14 +413,14 @@ pub fn show(
         plus_left = right.max.x;
     }
 
-    // New Map.
+    // New Tab.
     let plus = column(plus_left, layout::NEW_TAB_BUTTON);
-    let response = flat_button(ui, plus, "tab-new", "New Map");
+    let response = flat_button(ui, plus, "tab-new", "New Tab");
     icons::paint(ui, plus, Icon::Add, icons::GRID, p.text_secondary);
     if response.clicked() {
         actions.push(Action::NewMap);
     }
-    response.on_hover_text("New Map");
+    response.on_hover_text("New Tab");
 
     actions
 }

@@ -91,6 +91,80 @@ fn the_new_map_card_opens_the_new_map_dialog() {
 }
 
 #[test]
+fn a_new_tab_shows_a_start_page_that_is_not_a_map() {
+    let mut harness = app();
+    harness.state_mut().new_blank_tab();
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 1);
+    assert!(harness.state().tabs()[0].is_blank());
+    assert!(!harness.state().home_active());
+    harness.get_by_label("New Map: blank or from template");
+    harness.get_by_label("Open…");
+    // Neither the rail nor the Map's panels.
+    assert!(harness.query_by_label("Credits & licences").is_none());
+    assert!(harness.query_by_label("New Layer").is_none());
+    // Nothing to save, so closing asks nothing.
+    harness.state_mut().close_tab(0);
+    harness.run();
+    assert!(harness.state().tabs().is_empty());
+}
+
+#[test]
+fn command_t_opens_a_blank_tab() {
+    let mut harness = app();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::T);
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 1);
+    assert!(harness.state().tabs()[0].is_blank());
+}
+
+#[test]
+fn a_recent_map_opens_in_the_blank_tab_and_an_open_one_is_focused() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = saved_map(dir.path(), "first.ssmap");
+    let second = saved_map(dir.path(), "second.ssmap");
+    let mut harness = app();
+    harness.state_mut().open_path(&first);
+    harness.state_mut().open_path(&second);
+    harness.state_mut().close_tab(1);
+    harness.state_mut().new_blank_tab();
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 2);
+
+    harness.get_by_label("Open second").click();
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 2);
+    assert!(!harness.state().tabs()[1].is_blank());
+    assert_eq!(harness.state().tabs()[1].document().name(), "second.ssmap");
+    assert_eq!(harness.state().active_tab(), 1);
+
+    // Already open elsewhere: that tab is focused and the blank one stays.
+    harness.state_mut().new_blank_tab();
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 3);
+    harness.get_by_label("Open first").click();
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 3);
+    assert_eq!(harness.state().active_tab(), 0);
+    assert!(harness.state().tabs()[2].is_blank());
+}
+
+#[test]
+fn a_map_created_from_the_start_page_opens_in_that_tab() {
+    let mut harness = app();
+    harness.state_mut().new_blank_tab();
+    harness.run();
+    harness
+        .get_by_label("New Map: blank or from template")
+        .click();
+    harness.run();
+    harness.get_by_label("Create").click();
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 1);
+    assert!(!harness.state().tabs()[0].is_blank());
+}
+
+#[test]
 fn a_missing_file_can_be_removed_from_the_list() {
     let dir = tempfile::tempdir().unwrap();
     let path = saved_map(dir.path(), "gone.ssmap");
