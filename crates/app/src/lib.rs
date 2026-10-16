@@ -1343,28 +1343,6 @@ impl MapMakerApp {
             {
                 editor.delete_selection();
             }
-            ui.separator();
-            if ui
-                .add_enabled(editor.can_combine(), egui::Button::new("Union"))
-                .on_hover_text("Merge the selected Landmasses into the topmost one")
-                .clicked()
-            {
-                editor.union_selection();
-            }
-            if ui
-                .add_enabled(editor.can_combine(), egui::Button::new("Subtract"))
-                .on_hover_text("Cut the topmost selected Landmass out of the others")
-                .clicked()
-            {
-                editor.subtract_selection();
-            }
-            if ui
-                .add_enabled(editor.can_split(), egui::Button::new("Split Apart"))
-                .on_hover_text("Make each part of the selected Landmasses a Landmass of its own")
-                .clicked()
-            {
-                editor.split_selection();
-            }
         });
     }
 

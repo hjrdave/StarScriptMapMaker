@@ -24,8 +24,8 @@ fn launches_and_creates_a_layer() {
     harness.run();
     let map = &harness.state().editor().map;
     assert_eq!(map.children(None).len(), 5);
-    // The new Layer shows in the tree and is selected.
-    harness.get_by_label("Layer 5");
+    // The new Layer shows in the tree (and in the Properties breadcrumb) and is selected.
+    assert!(harness.query_all_by_label("Layer 5").next().is_some());
     assert_eq!(
         harness.state().editor().selection(),
         &map.children(None)[4..]
@@ -495,13 +495,13 @@ fn a_landmass_gets_its_own_roughness_in_one_undo_step() {
     assert_eq!(harness.state().editor().selection(), [island]);
     assert_eq!(roughness(&harness), None);
 
-    // Unticking "Use the Map default" gives the island its own copy of the default.
-    harness.get_by_label("Use the Map default").click();
+    // Re-rolling gives the island its own copy of the default, with another seed.
+    harness.get_by_label("Re-roll").click();
     harness.run();
-    assert_eq!(
-        roughness(&harness).as_ref(),
-        Some(&harness.state().editor().map.defaults().roughness)
-    );
+    let default = harness.state().editor().map.defaults().roughness.clone();
+    let own = roughness(&harness).expect("an override");
+    assert_eq!((own.amount, own.scale), (default.amount, default.scale));
+    assert_ne!(own.seed, default.seed);
     assert_eq!(
         harness.state().editor().undo_label(),
         Some("Change Roughness")
@@ -629,12 +629,23 @@ fn a_landmass_gets_its_own_shore_style_in_one_undo_step() {
     assert_eq!(harness.state().editor().selection(), [island]);
     assert_eq!(shore(&harness), None);
 
-    harness.get_by_label("Use the Map style").click();
+    // Typing a new outline width gives the island its own copy of the default style.
+    let default = harness.state().editor().map.defaults().shore.clone();
+    let shown = format!("{:.1} u", default.outline.width);
+    harness
+        .get_all_by_value(&shown)
+        .next()
+        .expect("a field")
+        .click();
     harness.run();
-    assert_eq!(
-        shore(&harness).as_ref(),
-        Some(&harness.state().editor().map.defaults().shore)
-    );
+    // The field being typed in has focus.
+    harness.event(egui::Event::Text("+8.5".to_owned()));
+    harness.run();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    let own = shore(&harness).expect("an override");
+    assert_eq!(own.outline.width, default.outline.width + 8.5);
+    assert_eq!(own.ripples, default.ripples);
     assert_eq!(
         harness.state().editor().undo_label(),
         Some("Change Shore Style")
