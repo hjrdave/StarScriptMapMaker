@@ -92,6 +92,9 @@ stages (ms)      p50      p95      p99    worst
   the frame:
   - `edit`: applying the input to the Map: brush geometry, the Command, picking.
   - `scene`: rebuilding the scene from the Map: roughness generation and tessellation.
+    The rings shore ripples and shading follow are computed on a thread of their own, as in
+    the editor, so an edit that changes an outline shows its old rings for a frame or a few
+    until the new ones land. Their cost does not appear here; export waits for them.
   - `render`: upload and draw, until the GPU reports it is done.
 - For a finer breakdown build with the `profiling` feature (next section).
 - The frame includes waiting for the GPU to finish. The editor overlaps the CPU and the GPU, so a

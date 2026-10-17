@@ -424,6 +424,16 @@ impl Editor {
         std::thread::spawn(move || rebuild.run(repaint));
     }
 
+    /// Computes the rings shore ripples and shading follow on a thread of their own, so
+    /// dragging a Roughness slider over a rough coastline never waits for them. `repaint` is
+    /// called as each Object's rings land.
+    pub fn compute_shore_rings_in_background(
+        &mut self,
+        repaint: impl Fn() + Send + Sync + 'static,
+    ) {
+        self.scene.compute_rings_in_background(repaint);
+    }
+
     /// Whether roughened outlines are still being computed in the background.
     pub fn outlines_rebuilding(&self) -> bool {
         self.roughness.is_rebuilding()

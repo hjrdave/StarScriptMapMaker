@@ -132,9 +132,9 @@ impl ExportJob {
                     return Ok(ExportStep::Working(ExportStatus::WaitingForDerivedData));
                 }
                 let content = content.get_or_insert_with(|| {
-                    // Content built while outlines were placeholders must not be reused.
-                    cx.scene.invalidate();
-                    cx.scene.content(cx.map, cx.roughness)
+                    // Content built while outlines were placeholders, or around rings still
+                    // being computed, must not be reused.
+                    cx.scene.complete_content(cx.map, cx.roughness)
                 });
                 if !cx.renderer.is_ready(content) {
                     return Ok(ExportStep::Working(ExportStatus::WaitingForDerivedData));

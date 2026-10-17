@@ -113,9 +113,9 @@ impl TiledExport<'_> {
 
         status(ExportStatus::WaitingForDerivedData);
         self.roughness.wait_until_ready();
-        // Content built while outlines were placeholders must not be reused.
-        self.scene.invalidate();
-        let content = self.scene.content(self.map, self.roughness);
+        // Content built while outlines were placeholders, or around rings still being
+        // computed, must not be reused.
+        let content = self.scene.complete_content(self.map, self.roughness);
         self.renderer.wait_until_ready(&content);
 
         let mut scene = CanvasScene::new(&self.map.canvas).with_content(content);
