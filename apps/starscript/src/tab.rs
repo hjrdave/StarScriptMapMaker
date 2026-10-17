@@ -24,6 +24,7 @@ use ssmap_core::file::FileError;
 use ssmap_core::{Canvas, DistanceUnit, Map, Scale};
 use ssmap_render::TessellationCache;
 
+use crate::app::{Pending, RecoveryPrompt};
 use crate::canvas_view::CanvasView;
 use crate::document::Document;
 use crate::editor::Editor;
@@ -31,7 +32,6 @@ use crate::label_styles::LabelStylesPanel;
 use crate::layer_tree::LayerTree;
 use crate::properties::PropertiesPanel;
 use crate::recovery::Recovery;
-use crate::{Pending, RecoveryPrompt};
 
 pub struct MapTab {
     pub(crate) editor: Editor,
