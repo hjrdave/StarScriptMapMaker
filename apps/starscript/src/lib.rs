@@ -146,6 +146,17 @@ struct AppState {
     returning: Vec<MapTab>,
     /// Tabs dragged and dropped this frame, settled once every window's frame is over.
     tab_drops: Vec<TabDrop>,
+    /// Assets and Layers let go this frame, settled like `tab_drops`.
+    payload_drops: Vec<PayloadDrop>,
+    /// Where on the screen the pointer is while an Asset or Layer is dragged: windows under it
+    /// show a drop highlight.
+    drag_hover: Option<egui::Pos2>,
+    /// The window and tab index whose Layers panel a Layer is being dragged out of.
+    drag_source: Option<(egui::ViewportId, usize)>,
+    /// Some window showed a drop highlight last frame, so the drag shows the copy cursor.
+    drag_copy: bool,
+    /// Some window shows a drop highlight this frame.
+    drag_over_target: bool,
     /// The native menu bar, on macOS; `None` elsewhere and in UI tests, which use the egui bar.
     #[cfg(target_os = "macos")]
     native_menu: Option<native_menu::mac::MacMenu>,
@@ -178,6 +189,11 @@ struct WindowState {
     /// The size of this window's content, to tell whether a dropped tab is over the window at
     /// all.
     content_size: egui::Vec2,
+    /// Where the Canvas and the Layers panel were drawn (in the window's own coordinates), which
+    /// an Asset or Layer dragged from another window can be dropped on. `None` while the window
+    /// shows no Map.
+    canvas_zone: Option<egui::Rect>,
+    layers_zone: Option<egui::Rect>,
     /// The Home tab's list, search and thumbnails.
     home: home::Home,
     /// Panel widths and collapse state, the same for every tab in the window.
@@ -242,7 +258,33 @@ struct TabDrop {
     at: egui::Pos2,
 }
 
+/// What is dragged out of a Layers panel or an Asset browser.
+enum Dragged {
+    Asset(ssmap_core::asset::AssetRef),
+    Layer(ssmap_core::Id),
+}
+
+/// An Asset or Layer let go after a drag, with where on the screen.
+struct PayloadDrop {
+    item: Dragged,
+    /// The window and tab index of the Map a Layer was dragged out of.
+    source: Option<(egui::ViewportId, usize)>,
+    at: egui::Pos2,
+}
+
 impl WindowState {
+    /// Where the Canvas is on the screen.
+    fn canvas_on_screen(&self) -> Option<egui::Rect> {
+        self.canvas_zone
+            .map(|zone| zone.translate(self.screen_origin.to_vec2()))
+    }
+
+    /// Where the Layers panel is on the screen.
+    fn layers_on_screen(&self) -> Option<egui::Rect> {
+        self.layers_zone
+            .map(|zone| zone.translate(self.screen_origin.to_vec2()))
+    }
+
     /// Takes tab `index` out with its Recovery journal and everything else, and keeps the same
     /// tab active if it can.
     fn take_tab(&mut self, index: usize) -> MapTab {
@@ -361,6 +403,11 @@ impl MapMakerApp {
             clipboard: None,
             returning: Vec::new(),
             tab_drops: Vec::new(),
+            payload_drops: Vec::new(),
+            drag_hover: None,
+            drag_source: None,
+            drag_copy: false,
+            drag_over_target: false,
         };
         let win = WindowState {
             home_active: tabs.is_empty(),
@@ -369,6 +416,8 @@ impl MapMakerApp {
             strip: tab_strip::State::default(),
             screen_origin: egui::Pos2::ZERO,
             content_size: egui::Vec2::ZERO,
+            canvas_zone: None,
+            layers_zone: None,
             home: home::Home::default(),
             awaiting_save: None,
             delete_prompt: None,
@@ -693,6 +742,8 @@ impl MapMakerApp {
             strip: tab_strip::State::default(),
             screen_origin: egui::Pos2::ZERO,
             content_size: egui::Vec2::ZERO,
+            canvas_zone: None,
+            layers_zone: None,
             home: home::Home::default(),
             shell: shell::Shell::default(),
             drop_focus: false,
@@ -2734,6 +2785,7 @@ impl eframe::App for MapMakerApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
         self.native_menu_actions(ui.ctx());
+        self.app.drag_copy = std::mem::take(&mut self.app.drag_over_target);
         self.show(ui);
         self.show_popped(ui.ctx());
         // After the frame, so the menu shows what this frame changed.
@@ -2778,6 +2830,7 @@ impl MapMakerApp {
             self.win.home_active = false;
         }
         self.settle_tab_drops();
+        self.settle_payload_drops();
     }
 
     /// One frame of the editor.
@@ -2846,6 +2899,8 @@ impl MapMakerApp {
             // The last tab just left; the window goes after this frame.
             return;
         }
+        self.win.canvas_zone = None;
+        self.win.layers_zone = None;
         if self.home_active() || self.start_page_showing() {
             self.home_screen(ui, !self.home_active());
             self.journal(&ctx);
@@ -2929,6 +2984,8 @@ impl MapMakerApp {
         let canvas = egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ui, |ui| tab.canvas_view.show(ui, &mut tab.editor));
+        self.win.canvas_zone = Some(canvas.response.rect);
+        self.win.layers_zone = layers_divider;
         tool_dock::show(&ctx, canvas.response.rect, &mut tab.editor.active_tool);
         if let Some(action) = toast::show(&ctx, canvas.response.rect, tab.editor.toasts_mut()) {
             tab.editor.run_toast_action(action);
@@ -2969,6 +3026,7 @@ impl MapMakerApp {
                     });
                 });
             overlay_rect = Some(area.response.rect);
+            self.win.layers_zone = overlay_rect;
         } else if self.win.shell.properties_overlay() {
             const MARGIN: f32 = 8.0;
             let width = self.win.shell.width(shell::Side::Right);
@@ -3005,7 +3063,189 @@ impl MapMakerApp {
                 self.win.shell.close_overlays();
             }
         }
+        self.track_drag(&ctx);
         self.journal(&ctx);
+    }
+
+    /// While an Asset or Layer is dragged: shows the copy cursor and a highlight on the Canvas
+    /// and Layers panel of this window when the pointer is over them (a Layer from its own Map
+    /// is a move, not a copy), and queues the drop when it is let go.
+    fn track_drag(&mut self, ctx: &egui::Context) {
+        use egui::DragAndDrop;
+        let item = if let Some(asset) = DragAndDrop::payload::<ssmap_core::asset::AssetRef>(ctx) {
+            Dragged::Asset((*asset).clone())
+        } else if let Some(id) = DragAndDrop::payload::<ssmap_core::Id>(ctx) {
+            Dragged::Layer(*id)
+        } else {
+            self.app.drag_hover = None;
+            self.app.drag_copy = false;
+            self.app.drag_source = None;
+            return;
+        };
+        let origin = self.win.screen_origin.to_vec2();
+        let pointer = ctx.input(|i| i.pointer.latest_pos());
+        // The window whose Layers panel is being dragged from is where the drag started.
+        let here = (self.win.viewport, self.win.active);
+        if std::mem::take(&mut self.win.tabs[self.win.active].layer_tree.dragging) {
+            self.app.drag_source = Some(here);
+        }
+        if ctx.input(|i| i.pointer.any_released())
+            && let Some(at) = pointer
+        {
+            self.app.payload_drops.push(PayloadDrop {
+                item,
+                source: self.app.drag_source.take(),
+                at: at + origin,
+            });
+            DragAndDrop::clear_payload(ctx);
+            self.app.drag_hover = None;
+            self.app.egui_ctx.request_repaint();
+            return;
+        }
+        if ctx.input(|i| i.pointer.primary_down())
+            && let Some(at) = pointer
+        {
+            self.app.drag_hover = Some(at + origin);
+        }
+        if self.app.drag_copy {
+            ctx.set_cursor_icon(egui::CursorIcon::Copy);
+        }
+        let Some(hover) = self.app.drag_hover else {
+            return;
+        };
+        let mut zones = Vec::new();
+        match item {
+            Dragged::Asset(_) => zones.extend(self.win.canvas_on_screen()),
+            Dragged::Layer(_) if self.app.drag_source != Some(here) => {
+                zones.extend(self.win.canvas_on_screen());
+                zones.extend(self.win.layers_on_screen());
+            }
+            Dragged::Layer(_) => {}
+        }
+        if let Some(zone) = zones.into_iter().find(|zone| zone.contains(hover)) {
+            let palette = theme::palette(ctx);
+            let painter = ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("drop highlight"),
+            ));
+            let zone = zone.translate(-origin);
+            painter.rect_filled(zone, 0.0, palette.gold_subtle);
+            painter.rect_stroke(
+                zone.shrink(1.0),
+                0.0,
+                egui::Stroke::new(2.0, palette.gold_ring),
+                egui::StrokeKind::Inside,
+            );
+            self.app.drag_over_target = true;
+            ctx.request_repaint();
+        }
+    }
+
+    /// Settles the Assets and Layers dropped this frame, once every window has had its frame:
+    /// an Asset on a Canvas is placed there; a Layer on a Canvas or a Layers panel is copied
+    /// into that window's Map, which is one Undo step there, and the Map it came from is
+    /// unchanged. The topmost window under the pointer takes it.
+    fn settle_payload_drops(&mut self) {
+        for drop in std::mem::take(&mut self.app.payload_drops) {
+            let mut windows: Vec<&mut WindowState> = std::iter::once(&mut self.win)
+                .chain(self.popped.iter_mut())
+                .collect();
+            let Some(target) = windows.iter().rposition(|w| {
+                w.canvas_on_screen()
+                    .is_some_and(|zone| zone.contains(drop.at))
+                    || matches!(drop.item, Dragged::Layer(_))
+                        && w.layers_on_screen()
+                            .is_some_and(|zone| zone.contains(drop.at))
+            }) else {
+                continue;
+            };
+            let clipboard = match (&drop.item, drop.source) {
+                (Dragged::Layer(id), Some((viewport, index))) => {
+                    let Some(source) = windows.iter().position(|w| w.viewport == viewport) else {
+                        continue;
+                    };
+                    // Dropped back on its own Map: that is a move, which the Layers panel does.
+                    if target == source && windows[source].active == index {
+                        continue;
+                    }
+                    let Some(clipboard) = windows[source]
+                        .tabs
+                        .get_mut(index)
+                        .and_then(|tab| tab.editor.drag_clipboard(*id))
+                    else {
+                        continue;
+                    };
+                    Some(clipboard)
+                }
+                (Dragged::Layer(_), None) => continue,
+                (Dragged::Asset(_), _) => None,
+            };
+            let window = &mut *windows[target];
+            let origin = window.screen_origin;
+            let on_canvas = window
+                .canvas_on_screen()
+                .is_some_and(|zone| zone.contains(drop.at));
+            let tab = &mut window.tabs[window.active];
+            let point = tab
+                .canvas_view
+                .canvas_point(drop.at - origin.to_vec2())
+                .filter(|_| on_canvas)
+                .or_else(|| tab.canvas_view.paste_point(None));
+            let Some(point) = point else {
+                continue;
+            };
+            match (drop.item, clipboard) {
+                (Dragged::Asset(asset), _) if on_canvas => {
+                    tab.editor.drop_asset(asset, point);
+                }
+                (Dragged::Layer(_), Some(clipboard)) => {
+                    tab.editor.paste_clipboard(clipboard, point);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Test hook: lets go of the Asset `asset` with the pointer at `at` on the screen, as the
+    /// end of a drag from an Asset browser does.
+    #[doc(hidden)]
+    pub fn drop_asset(&mut self, asset: ssmap_core::asset::AssetRef, at: egui::Pos2) {
+        self.app.payload_drops.push(PayloadDrop {
+            item: Dragged::Asset(asset),
+            source: None,
+            at,
+        });
+        self.app.egui_ctx.request_repaint();
+    }
+
+    /// Test hook: lets go of the Layer or Object `id` of the active Map of window `window` (0 is
+    /// the main one) with the pointer at `at` on the screen, as the end of a drag from that
+    /// window's Layers panel does.
+    #[doc(hidden)]
+    pub fn drop_layer(&mut self, window: usize, id: ssmap_core::Id, at: egui::Pos2) {
+        let state = if window == 0 {
+            &self.win
+        } else {
+            &self.popped[window - 1]
+        };
+        self.app.payload_drops.push(PayloadDrop {
+            item: Dragged::Layer(id),
+            source: Some((state.viewport, state.active)),
+            at,
+        });
+        self.app.egui_ctx.request_repaint();
+    }
+
+    /// Test hook: where window `window`'s Canvas and Layers panel are on the screen (0 is the
+    /// main window).
+    #[doc(hidden)]
+    pub fn drop_zones(&self, window: usize) -> (Option<egui::Rect>, Option<egui::Rect>) {
+        let state = if window == 0 {
+            &self.win
+        } else {
+            &self.popped[window - 1]
+        };
+        (state.canvas_on_screen(), state.layers_on_screen())
     }
 }
 

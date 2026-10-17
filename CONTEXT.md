@@ -113,7 +113,7 @@ One open Map in the window, with its own editor, unsaved-changes state and view.
 _Avoid_: Document, window, project
 
 **Popped-out window**:
-A window a Tab was moved into, with its own tab strip, panels and dialogs. Asset packs, Recent files and crash recovery stay shared; the Home tab lives only in the main window. A Tab can be dragged onto another window's tab strip (it lands at the drop position, keeping its undo history and unsaved changes) or dropped outside every window to pop out.
+A window a Tab was moved into, with its own tab strip, panels and dialogs. Asset packs, Recent files and crash recovery stay shared; the Home tab lives only in the main window. A Tab can be dragged onto another window's tab strip (it lands at the drop position, keeping its undo history and unsaved changes) or dropped outside every window to pop out. An Asset dragged from any window's Asset browser onto a Canvas is placed there, and a Layer dragged onto another window's Canvas or Layers panel is copied into that Map (the source is unchanged); each drop is one Undo step in the target Map only. Copy and Paste work across windows through the shared clipboard.
 _Avoid_: Detached window, second window
 
 **Home tab**:

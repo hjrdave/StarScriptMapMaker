@@ -340,3 +340,146 @@ fn a_tab_dropped_on_its_own_strip_reorders() {
     assert_eq!(harness.state().active_tab(), 0);
     assert_eq!(harness.state().editor().map.children(None).len(), layers);
 }
+
+/// Pops the second Map out, so window 0 holds the first and window 1 the second.
+fn two_windows() -> Harness<'static, MapMakerApp> {
+    let mut harness = app();
+    harness.state_mut().run_command(Command::MoveTabToNewWindow);
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().window_count(), 2);
+    harness
+}
+
+/// A point inside `zone` near its bottom left, which the popped-out window (floating over the
+/// main one in these tests) does not cover.
+fn near_bottom_left(zone: egui::Rect) -> egui::Pos2 {
+    zone.left_bottom() + egui::vec2(30.0, -20.0)
+}
+
+fn main_layers(harness: &Harness<'_, MapMakerApp>) -> usize {
+    harness.state().editor().map.children(None).len()
+}
+
+#[test]
+fn an_asset_dropped_on_another_windows_map_is_placed_there() {
+    use ssmap_core::asset::{PackLibrary, PackRoots};
+    use ssmap_render::SpriteStore;
+    let mut harness = two_windows();
+    let roots = PackRoots {
+        built_in: std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../crates/core/tests/packs"),
+        user: None,
+    };
+    let (library, problems) = PackLibrary::load(&roots);
+    assert!(problems.is_empty(), "{problems:?}");
+    let layer = {
+        let editor = harness.state_mut().active_editor_mut().unwrap();
+        editor.set_sprites(SpriteStore::new(std::sync::Arc::new(library)));
+        editor.new_layer().unwrap()
+    };
+    harness.run();
+    let popped_before = popped_layers(&harness);
+    let at = near_bottom_left(harness.state().drop_zones(0).0.expect("a Canvas"));
+
+    // Dragged out of the popped-out window's browser, dropped on the main window's Canvas.
+    let asset = "test-pack/mountain-1".parse().unwrap();
+    harness.state_mut().drop_asset(asset, at);
+    harness.run();
+    harness.run();
+    let editor = harness.state().editor();
+    assert_eq!(editor.map.children(Some(layer)).len(), 1);
+    assert_eq!(editor.undo_label(), Some("Add Stamp"));
+
+    // One Undo step in the target Map only.
+    harness.state_mut().run_command(Command::Undo);
+    harness.run();
+    assert!(
+        harness
+            .state()
+            .editor()
+            .map
+            .children(Some(layer))
+            .is_empty()
+    );
+    assert_eq!(popped_layers(&harness), popped_before);
+}
+
+#[test]
+fn a_layer_dropped_on_another_windows_map_or_layers_panel_is_copied() {
+    let mut harness = two_windows();
+    harness
+        .state_mut()
+        .in_popped_window(0, |app| app.run_command(Command::NewLayer));
+    harness.run();
+    let layer = harness.state().popped_tabs(0)[0]
+        .editor()
+        .map
+        .children(None)[0];
+    let (popped, before) = (popped_layers(&harness), main_layers(&harness));
+
+    let (canvas, layers) = harness.state().drop_zones(0);
+    for (n, zone) in [canvas, layers].into_iter().enumerate() {
+        let at = near_bottom_left(zone.expect("a drop zone"));
+        harness.state_mut().drop_layer(1, layer, at);
+        harness.run();
+        harness.run();
+        assert_eq!(main_layers(&harness), before + n + 1);
+    }
+    // The source Map is unchanged.
+    assert_eq!(popped_layers(&harness), popped);
+
+    // Each drop was one Undo step in the target Map.
+    harness.state_mut().run_command(Command::Undo);
+    harness.run();
+    assert_eq!(main_layers(&harness), before + 1);
+    assert_eq!(popped_layers(&harness), popped);
+}
+
+#[test]
+fn a_layer_dropped_outside_every_drop_zone_does_nothing() {
+    let mut harness = two_windows();
+    harness
+        .state_mut()
+        .in_popped_window(0, |app| app.run_command(Command::NewLayer));
+    harness.run();
+    let layer = harness.state().popped_tabs(0)[0]
+        .editor()
+        .map
+        .children(None)[0];
+    let before = main_layers(&harness);
+    harness
+        .state_mut()
+        .drop_layer(1, layer, egui::pos2(-500.0, -500.0));
+    harness.run();
+    harness.run();
+    assert_eq!(main_layers(&harness), before);
+}
+
+#[test]
+fn copy_in_one_window_pastes_into_another() {
+    let mut harness = two_windows();
+    harness
+        .state_mut()
+        .in_popped_window(0, |app| app.run_command(Command::NewLayer));
+    harness.run();
+    harness.state_mut().in_popped_window(0, |app| {
+        let editor = app.active_editor_mut().unwrap();
+        let layer = editor.map.children(None)[0];
+        editor.select(vec![layer]);
+        app.run_command(Command::Copy);
+    });
+    harness.run();
+    harness.run();
+    let (popped, before) = (popped_layers(&harness), main_layers(&harness));
+
+    harness.state_mut().run_command(Command::Paste);
+    harness.run();
+    assert_eq!(main_layers(&harness), before + 1);
+    assert_eq!(popped_layers(&harness), popped);
+
+    harness.state_mut().run_command(Command::Undo);
+    harness.run();
+    assert_eq!(main_layers(&harness), before);
+    assert_eq!(popped_layers(&harness), popped);
+}

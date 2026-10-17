@@ -1246,8 +1246,30 @@ impl Editor {
         if roots.is_empty() {
             return false;
         }
+        let clipboard = self.clipboard_of(&roots);
+        self.clipboard_text = Some(clipboard.to_text());
+        self.clipboard = Some(clipboard);
+        true
+    }
+
+    /// What dragging the Layer or Object `id` out of this Map would copy: the whole Selection
+    /// when `id` is part of it, else `id` alone. `None` when `id` is not in this Map.
+    pub fn drag_clipboard(&mut self, id: Id) -> Option<Clipboard> {
+        if !self.map.contains(id) {
+            return None;
+        }
+        let roots = if self.selection.contains(&id) {
+            self.selected_roots()
+        } else {
+            vec![id]
+        };
+        Some(self.clipboard_of(&roots))
+    }
+
+    /// The branches `roots` as a clipboard, with the middle of their Objects as its centre.
+    fn clipboard_of(&mut self, roots: &[Id]) -> Clipboard {
         let mut objects = Vec::new();
-        let mut pending = roots.clone();
+        let mut pending = roots.to_vec();
         while let Some(id) = pending.pop() {
             match self.map.node(id) {
                 Some(Node::Object(_)) => objects.push(id),
@@ -1265,10 +1287,7 @@ impl Editor {
         }
         let centre = Bounds::around(&points).map(|bounds| bounds.centre());
         let subtrees = roots.iter().map(|&id| self.subtree(id)).collect();
-        let clipboard = Clipboard::new(subtrees, centre);
-        self.clipboard_text = Some(clipboard.to_text());
-        self.clipboard = Some(clipboard);
-        true
+        Clipboard::new(subtrees, centre)
     }
 
     /// Copies the selection, then removes the originals as one Undo step. Locked Layers and
@@ -1311,7 +1330,16 @@ impl Editor {
         if self.gesture_open {
             return None;
         }
-        let mut clipboard = self.clipboard.clone()?;
+        let clipboard = self.clipboard.clone()?;
+        self.paste_clipboard(clipboard, at)
+    }
+
+    /// Pastes `clipboard` as [`Editor::paste`] does, leaving this Map's own clipboard alone:
+    /// what a Layer or Object dragged in from another window's Map copies.
+    pub fn paste_clipboard(&mut self, mut clipboard: Clipboard, at: [f64; 2]) -> Option<Vec<Id>> {
+        if self.gesture_open {
+            return None;
+        }
         let (parent, index) = self.paste_destination(clipboard.has_objects)?;
         self.map
             .fit_for_paste(&mut clipboard.subtrees, bundled_family, FALLBACK_FAMILY);
@@ -1615,6 +1643,13 @@ impl Editor {
         self.select(vec![id]);
         self.end_gesture();
         Some(id)
+    }
+
+    /// Places `asset`, dragged in from an Asset browser, as a Stamp at `position` the way
+    /// [`Editor::place_stamp`] places the selected Asset, which it makes the selected one.
+    pub fn drop_asset(&mut self, asset: AssetRef, position: [f64; 2]) -> Option<Id> {
+        self.selected_asset = Some(asset);
+        self.place_stamp(position)
     }
 
     /// Finishes a scatter brush stroke: scatters Stamps of the selected Asset along `points` in

@@ -312,7 +312,12 @@ impl AssetBrowser {
             .entry(reference.clone())
             .or_insert_with(|| load_art(ui.ctx(), editor.sprites()?, reference))
             .clone();
-        paint_thumbnail(ui, texture, reference, asset, look).clicked()
+        let response = paint_thumbnail(ui, texture, reference, asset, look);
+        // Dropped on a Map in any window, it is placed there.
+        if response.dragged() {
+            response.dnd_set_drag_payload(reference.clone());
+        }
+        response.clicked()
     }
 }
 
@@ -344,7 +349,7 @@ pub(crate) fn paint_thumbnail(
 ) -> egui::Response {
     let palette = theme::palette(ui.ctx());
     let (rect, response) =
-        ui.allocate_exact_size(egui::Vec2::splat(look.side), egui::Sense::click());
+        ui.allocate_exact_size(egui::Vec2::splat(look.side), egui::Sense::click_and_drag());
     let label = thumbnail_label(reference, asset, look.variants, look.attribution);
     response.widget_info(|| {
         egui::WidgetInfo::selected(
