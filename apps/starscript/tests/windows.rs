@@ -310,6 +310,21 @@ fn the_only_tab_of_a_popped_out_window_stays_when_dropped_outside() {
 }
 
 #[test]
+fn a_tab_dropped_over_a_window_body_stays_put() {
+    let mut harness = app();
+    harness.state_mut().run_command(Command::NewLayer);
+    harness.run();
+    let strip = harness.state().strip_rect(0);
+    // Well below the strip, over the canvas and panels of the main window.
+    let at = egui::pos2(strip.center().x, strip.max.y + 200.0);
+    harness.state_mut().drop_tab(0, 1, at);
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().window_count(), 1);
+    assert_eq!(harness.state().tabs().len(), 2);
+}
+
+#[test]
 fn a_tab_dropped_on_its_own_strip_reorders() {
     let mut harness = app();
     harness.state_mut().run_command(Command::NewLayer);

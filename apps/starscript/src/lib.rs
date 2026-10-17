@@ -175,6 +175,9 @@ struct WindowState {
     /// Where this window's content starts on the screen, to tell which window a dropped tab
     /// is over.
     screen_origin: egui::Pos2,
+    /// The size of this window's content, to tell whether a dropped tab is over the window at
+    /// all.
+    content_size: egui::Vec2,
     /// The Home tab's list, search and thumbnails.
     home: home::Home,
     /// Panel widths and collapse state, the same for every tab in the window.
@@ -255,6 +258,11 @@ impl WindowState {
         self.tabs
             .get(index)
             .is_some_and(|tab| !tab.is_blank() && tab.pending.is_none())
+    }
+
+    /// The whole window content on the screen.
+    fn content_on_screen(&self) -> egui::Rect {
+        egui::Rect::from_min_size(self.screen_origin, self.content_size)
     }
 
     /// The strip on the screen.
@@ -360,6 +368,7 @@ impl MapMakerApp {
             active: 0,
             strip: tab_strip::State::default(),
             screen_origin: egui::Pos2::ZERO,
+            content_size: egui::Vec2::ZERO,
             home: home::Home::default(),
             awaiting_save: None,
             delete_prompt: None,
@@ -574,6 +583,7 @@ impl MapMakerApp {
     }
 
     /// Test hook: where window `window`'s tab strip is on the screen (0 is the main window).
+    #[doc(hidden)]
     pub fn strip_rect(&self, window: usize) -> egui::Rect {
         if window == 0 {
             self.win.strip_on_screen()
@@ -583,6 +593,7 @@ impl MapMakerApp {
     }
 
     /// Test hook: where the Map tabs of window `window` start, and how wide each is.
+    #[doc(hidden)]
     pub fn tab_layout(&self, window: usize) -> (f32, f32) {
         let state = if window == 0 {
             &self.win
@@ -597,7 +608,8 @@ impl MapMakerApp {
     }
 
     /// Settles the tabs dropped this frame: onto the strip of the window under the pointer, at
-    /// the drop position, or out into a window of their own when no window is under it. Runs
+    /// the drop position, or out into a window of their own when no window is under it. Dropped over a
+    /// window but off its strip they stay put. Runs
     /// once every window has had its frame, so all of them can be reached.
     fn settle_tab_drops(&mut self) {
         for drop in std::mem::take(&mut self.app.tab_drops) {
@@ -638,6 +650,10 @@ impl MapMakerApp {
                     window.active = to;
                     window.home_active = false;
                 }
+                // Over a window but off its strip: the tab stays where it is.
+                None if windows
+                    .iter()
+                    .any(|w| w.content_on_screen().contains(drop.at)) => {}
                 // The only tab of a popped-out window is already in a window of its own.
                 None if !windows[source].main && windows[source].tabs.len() == 1 => {}
                 None => {
@@ -676,6 +692,7 @@ impl MapMakerApp {
             home_active: false,
             strip: tab_strip::State::default(),
             screen_origin: egui::Pos2::ZERO,
+            content_size: egui::Vec2::ZERO,
             home: home::Home::default(),
             shell: shell::Shell::default(),
             drop_focus: false,
@@ -2342,6 +2359,9 @@ impl MapMakerApp {
             ui.input(|i| i.viewport().inner_rect)
                 .map_or(egui::Pos2::ZERO, |rect| rect.min)
         };
+        self.win.content_size = ui
+            .input(|i| i.viewport().inner_rect)
+            .map_or_else(|| ui.ctx().content_rect().size(), |rect| rect.size());
         let origin = self.win.screen_origin;
         let viewport = self.win.viewport;
         let actions = ui
