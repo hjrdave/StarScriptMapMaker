@@ -705,7 +705,7 @@ impl MapMakerApp {
             pack_install: pack_install::PackInstall::default(),
             delete_prompt: None,
             pack_delete_prompt: None,
-            pack_trash: file_actions::move_to_trash,
+            pack_trash: self.win.pack_trash,
             paste_prompt: None,
             awaiting_save: None,
             close_allowed: false,
