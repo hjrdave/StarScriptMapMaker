@@ -9,7 +9,7 @@ use lyon::math::point;
 use lyon::path::Path;
 use ssmap_core::land;
 use ssmap_core::{
-    ContentHash, Id, Landmass, Map, Membership, MultiPolygon, Node, ObjectKind, Polygon,
+    Affine, ContentHash, Id, Landmass, Map, Membership, MultiPolygon, Node, ObjectKind, Polygon,
     ResolvedLabel, RoughnessCache, ShoreStyle,
 };
 
@@ -34,6 +34,9 @@ pub struct MapScene {
     /// The embedded font files `fonts` was built with in place of the bundled ones.
     font_overrides: Vec<(String, ContentHash)>,
     layouts: HashMap<Id, (LayoutKey, Arc<LabelLayout>)>,
+    /// The rings each Landmass and Lake draws its ripples and shading along, so an edit offsets
+    /// only the outlines it changed.
+    shore_rings: HashMap<Id, ShoreRings>,
     /// The content last built, and the Map revision it was built from.
     built: Option<(u64, Content)>,
 }
@@ -46,6 +49,7 @@ impl MapScene {
             fonts,
             font_overrides: Vec::new(),
             layouts: HashMap::new(),
+            shore_rings: HashMap::new(),
             built: None,
         }
     }
@@ -53,6 +57,7 @@ impl MapScene {
     /// Forgets everything derived, as when another Map opens.
     pub fn clear(&mut self) {
         self.layouts.clear();
+        self.shore_rings.clear();
         self.built = None;
     }
 
@@ -126,7 +131,12 @@ impl MapScene {
                         (map.shore(sibling), outline(roughness, map, sibling))
                     {
                         let first = groups.len();
-                        ripple_groups(&outline, shore, layer_opacity(map, sibling), &mut groups);
+                        ripple_groups(
+                            &mut |distance| self.offset_ring(sibling, &outline, distance),
+                            shore,
+                            layer_opacity(map, sibling),
+                            &mut groups,
+                        );
                         mark_object(map, sibling, &mut groups[first..]);
                     }
                 }
@@ -144,6 +154,7 @@ impl MapScene {
             }
         }
         self.layouts.retain(|id, _| seen.contains(id));
+        self.shore_rings.retain(|_, entry| entry.end_build());
         let content = Content::with_clips(groups, stamps, clips);
         self.built = Some((map.revision(), content.clone()));
         content
@@ -160,6 +171,47 @@ impl MapScene {
         let layout = Arc::new(LabelLayout::shape(&mut self.fonts, label));
         self.layouts.insert(id, (key, layout.clone()));
         layout
+    }
+
+    /// `outline`, the roughened outline of `id`, grown by `distance` (shrunk when negative).
+    /// Offsetting a rough outline is slow, so the ring is kept until the outline changes; when
+    /// it only moved, the kept rings move with it. A ring is grown from the nearest kept ring
+    /// on the same side, which is smoother and so far quicker to offset: growing by `a` then
+    /// `b` is growing by `a + b`.
+    fn offset_ring(
+        &mut self,
+        id: Id,
+        outline: &Arc<MultiPolygon>,
+        distance: f64,
+    ) -> Arc<MultiPolygon> {
+        let entry = self.shore_rings.entry(id).or_insert_with(|| ShoreRings {
+            outline: outline.clone(),
+            rings: Vec::new(),
+        });
+        entry.follow(outline);
+        if let Some(kept) = entry
+            .rings
+            .iter_mut()
+            .find(|kept| kept.distance.to_bits() == distance.to_bits())
+        {
+            kept.used = true;
+            return kept.ring.clone();
+        }
+        let (base, base_distance) = entry
+            .rings
+            .iter()
+            .filter(|kept| {
+                kept.distance.signum() == distance.signum() && kept.distance.abs() < distance.abs()
+            })
+            .max_by(|a, b| a.distance.abs().total_cmp(&b.distance.abs()))
+            .map_or((outline, 0.0), |kept| (&kept.ring, kept.distance));
+        let ring = Arc::new(land::offset(base, distance - base_distance));
+        entry.rings.push(OffsetRing {
+            distance,
+            ring: ring.clone(),
+            used: true,
+        });
+        ring
     }
 
     /// Adds what the Object `id` draws, faded by the opacity of the Layers holding it.
@@ -210,7 +262,12 @@ impl MapScene {
                     VectorGroup::fill(polygon_path(polygon), color, FillRule::EvenOdd)
                 }));
                 if let Some(shore) = map.shore(id) {
-                    shading_groups(&outline, shore, opacity, groups);
+                    shading_groups(
+                        &mut |distance| self.offset_ring(id, &outline, distance),
+                        shore,
+                        opacity,
+                        groups,
+                    );
                     if shore.outline.width > 0.0 {
                         groups.push(stroke(
                             region_path(&outline),
@@ -222,6 +279,50 @@ impl MapScene {
                 }
             }
         }
+    }
+}
+
+/// The offset rings of one Object's roughened outline, kept between builds.
+struct ShoreRings {
+    /// The outline the rings were made from.
+    outline: Arc<MultiPolygon>,
+    rings: Vec<OffsetRing>,
+}
+
+struct OffsetRing {
+    distance: f64,
+    ring: Arc<MultiPolygon>,
+    /// Whether the build in progress has drawn it.
+    used: bool,
+}
+
+impl ShoreRings {
+    /// Makes the rings fit `outline`: moved along with it if it is the old outline moved,
+    /// otherwise dropped.
+    fn follow(&mut self, outline: &Arc<MultiPolygon>) {
+        if Arc::ptr_eq(&self.outline, outline) {
+            return;
+        }
+        match self.outline.translation_to(outline) {
+            Some([0.0, 0.0]) => {}
+            Some(offset) => {
+                let shift = Affine::translate(offset);
+                for kept in &mut self.rings {
+                    kept.ring = Arc::new(kept.ring.transformed(&shift));
+                }
+            }
+            None => self.rings.clear(),
+        }
+        self.outline = outline.clone();
+    }
+
+    /// Forgets the rings the finished build did not draw, and whether it is still needed.
+    fn end_build(&mut self) -> bool {
+        self.rings.retain(|kept| kept.used);
+        for kept in &mut self.rings {
+            kept.used = false;
+        }
+        !self.rings.is_empty()
     }
 }
 
@@ -329,7 +430,7 @@ fn faded(mut color: Color, factor: f64) -> Color {
 
 /// Lines stepping outward from the coast, each fainter than the last.
 fn ripple_groups(
-    outline: &MultiPolygon,
+    offset: &mut impl FnMut(f64) -> Arc<MultiPolygon>,
     shore: &ShoreStyle,
     opacity: f32,
     groups: &mut Vec<VectorGroup>,
@@ -344,7 +445,7 @@ fn ripple_groups(
         } else {
             0.0
         };
-        let ring = land::offset(outline, ripples.spacing * f64::from(k));
+        let ring = offset(ripples.spacing * f64::from(k));
         groups.push(
             stroke(
                 region_path(&ring),
@@ -362,7 +463,7 @@ const SHADING_BANDS: u32 = 6;
 
 /// A glow inward from the coast: bands along rings inset from it, each fainter than the last.
 fn shading_groups(
-    outline: &MultiPolygon,
+    offset: &mut impl FnMut(f64) -> Arc<MultiPolygon>,
     shore: &ShoreStyle,
     opacity: f32,
     groups: &mut Vec<VectorGroup>,
@@ -374,7 +475,7 @@ fn shading_groups(
     let band = shading.width / f64::from(SHADING_BANDS);
     for i in 0..SHADING_BANDS {
         let middle = (f64::from(i) + 0.5) / f64::from(SHADING_BANDS);
-        let ring = land::offset(outline, -middle * shading.width);
+        let ring = offset(-middle * shading.width);
         if ring.is_empty() {
             break;
         }
@@ -497,6 +598,75 @@ mod tests {
         label.size = Some(96.0);
         let bigger = label.resolve(map.label_styles());
         assert!(!Arc::ptr_eq(&before, &scene.label_layout(id, &bigger)));
+    }
+
+    fn rough_island() -> Arc<MultiPolygon> {
+        let square = MultiPolygon(vec![Polygon {
+            exterior: vec![[0.0, 0.0], [400.0, 0.0], [400.0, 400.0], [0.0, 400.0]],
+            holes: Vec::new(),
+        }]);
+        Arc::new(ssmap_core::roughen(
+            &square,
+            &ssmap_core::Roughness::new(8.0, 16.0, 3),
+        ))
+    }
+
+    #[test]
+    fn offset_rings_are_kept_until_the_outline_changes() {
+        let mut scene = MapScene::new(Fonts::bundled());
+        let id = Id::new();
+        let outline = rough_island();
+        let ring = scene.offset_ring(id, &outline, 12.0);
+        assert!(Arc::ptr_eq(&ring, &scene.offset_ring(id, &outline, 12.0)));
+
+        // Another outline of the same shape, not merely moved, gets its rings afresh.
+        let mut reshaped = (*outline).clone();
+        reshaped.0[0].exterior[5][1] -= 40.0;
+        let reshaped = Arc::new(reshaped);
+        let fresh = scene.offset_ring(id, &reshaped, 12.0);
+        assert!(!Arc::ptr_eq(&ring, &fresh));
+        assert_eq!(*fresh, land::offset(&reshaped, 12.0));
+    }
+
+    #[test]
+    fn a_moved_outline_moves_its_kept_rings() {
+        let mut scene = MapScene::new(Fonts::bundled());
+        let id = Id::new();
+        let outline = rough_island();
+        let ring = scene.offset_ring(id, &outline, -6.0);
+        let shift = Affine::translate([30.0, -12.5]);
+        let moved = Arc::new(outline.transformed(&shift));
+        assert_eq!(
+            *scene.offset_ring(id, &moved, -6.0),
+            ring.transformed(&shift)
+        );
+    }
+
+    #[test]
+    fn a_ring_grown_from_a_kept_ring_matches_one_grown_at_once() {
+        let outline = rough_island();
+        let mut scene = MapScene::new(Fonts::bundled());
+        let id = Id::new();
+        scene.offset_ring(id, &outline, 12.0);
+        let chained = scene.offset_ring(id, &outline, 24.0);
+        let direct = land::offset(&outline, 24.0);
+        let (a, b) = (chained.bounds().unwrap(), direct.bounds().unwrap());
+        for (p, q) in [(a.min, b.min), (a.max, b.max)] {
+            assert!((p[0] - q[0]).abs() < 1.0 && (p[1] - q[1]).abs() < 1.0);
+        }
+    }
+
+    #[test]
+    fn rings_no_build_draws_are_dropped() {
+        let mut scene = MapScene::new(Fonts::bundled());
+        let id = Id::new();
+        let outline = rough_island();
+        scene.offset_ring(id, &outline, 12.0);
+        scene.shore_rings.retain(|_, entry| entry.end_build());
+        assert_eq!(scene.shore_rings[&id].rings.len(), 1);
+        // A build that draws nothing of it forgets it.
+        scene.shore_rings.retain(|_, entry| entry.end_build());
+        assert!(scene.shore_rings.is_empty());
     }
 
     #[test]

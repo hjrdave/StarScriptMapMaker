@@ -309,13 +309,26 @@ pub fn difference(outline: &MultiPolygon, region: &MultiPolygon) -> MultiPolygon
     normalised(to_geo(outline).difference(&to_geo(region)))
 }
 
+/// How far [`offset`] may move a ring, as a share of the offset distance.
+const OFFSET_TOLERANCE: f64 = 0.02;
+
+/// The least [`offset`] may move a ring, in Canvas units: well under the width of a shore line.
+const MIN_OFFSET_TOLERANCE: f64 = 0.25;
+
 /// `outline` grown outward by `distance` Canvas units, or shrunk inward if `distance` is
 /// negative: the rings that ripples and shading follow. Parts that shrink to nothing vanish.
+///
+/// Only drawing uses these rings, so they are approximate: `outline` is simplified first, by a
+/// small share of `distance` (but at least [`MIN_OFFSET_TOLERANCE`]). Offsetting already rounds
+/// away detail much finer than `distance`, and a rough coastline has so many vertices that
+/// offsetting it exactly is far too slow to follow a slider.
 pub fn offset(outline: &MultiPolygon, distance: f64) -> MultiPolygon {
     if !distance.is_finite() || distance == 0.0 {
         return outline.clone();
     }
-    normalised(to_geo(outline).buffer_with_style(BufferStyle::new(distance)))
+    let tolerance = (distance.abs() * OFFSET_TOLERANCE).max(MIN_OFFSET_TOLERANCE);
+    let simplified = to_geo(outline).simplify(tolerance);
+    normalised(simplified.buffer_with_style(BufferStyle::new(distance)))
 }
 
 /// Whether the two regions share any point.
