@@ -1,48 +1,27 @@
 //! StarScript Map Maker's editor. The binary in `main.rs` only opens a window around
 //! [`MapMakerApp`], so UI tests can drive the same app headlessly.
 
-mod art_board;
-mod asset_browser;
-mod canvas_controls;
-mod canvas_view;
-pub mod clipboard;
-pub mod credits;
-pub mod dialog;
-pub mod document;
-pub mod editor;
-pub mod export_dialog;
-pub mod export_region;
-pub mod export_run;
-mod file_actions;
-pub mod frame_time;
-pub mod handles;
-pub mod home;
-pub mod icons;
-mod label_styles;
-mod layer_tree;
-pub mod menu;
-pub mod native_dialog;
-pub mod native_menu;
-pub mod new_map;
-pub mod overlay;
-pub mod pack_install;
-mod pack_page;
-pub mod paste_dialog;
-pub mod prop_widgets;
-mod properties;
-mod recent;
-pub mod recovery;
-pub mod shell;
-pub mod tab;
-mod tab_strip;
-mod tessellation;
-pub mod theme;
-pub mod toast;
-mod tool_dock;
-mod tool_section;
-pub mod tools;
-pub mod update;
-pub mod zoom;
+mod canvas;
+mod chrome;
+mod dialogs;
+mod export;
+mod packs;
+mod panels;
+mod workspace;
+
+pub use canvas::{frame_time, handles, overlay, zoom};
+pub use chrome::{icons, menu, native_menu, tab, theme, toast};
+pub use dialogs::{dialog, native_dialog, new_map, paste_dialog, recovery};
+pub use export::{export_dialog, export_region, export_run};
+pub use packs::pack_install;
+pub use panels::prop_widgets;
+pub use workspace::{clipboard, credits, document, editor, home, shell, tools, update};
+
+use canvas::{art_board, canvas_controls, canvas_view, tessellation};
+use chrome::{tab_strip, tool_dock, tool_section};
+use packs::pack_page;
+use panels::{asset_browser, label_styles, layer_tree, properties};
+use workspace::{file_actions, recent};
 
 use eframe::{egui, egui_wgpu};
 use native_dialog::{Pick, Polled};

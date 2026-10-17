@@ -370,7 +370,7 @@ pub fn style_for(theme: Theme) -> Style {
 mod tests {
     use super::*;
 
-    const TOKENS: &str = include_str!("../../../docs/design/ui-handoff/tokens.json");
+    const TOKENS: &str = include_str!("../../../../docs/design/ui-handoff/tokens.json");
 
     fn parse(hex: &str) -> Color32 {
         let n = u32::from_str_radix(hex.trim_start_matches('#'), 16).unwrap();

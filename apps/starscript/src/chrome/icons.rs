@@ -37,7 +37,7 @@ macro_rules! icons {
 
             fn svg(self) -> &'static str {
                 match self {
-                    $(Icon::$variant => include_str!(concat!("../icons/", $file, ".svg")),)*
+                    $(Icon::$variant => include_str!(concat!("../../icons/", $file, ".svg")),)*
                 }
             }
         }
