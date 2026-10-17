@@ -143,8 +143,42 @@ the time between frames while the editor is repainting, so it reads the real fra
 drag, a stroke or a zoom, not while the editor is idle. Release builds without the feature have
 no overlay.
 
+## The regression check (issue #338)
+
+`docs/perf-baseline.json` holds the p50, p95 and p99 frame time of every script, plus the same
+for the `edit`, `scene` and `render` stages, measured with the *reduced* run: the software
+adapter, `--scale 0.01` and 10 frames per script. The check runs that again and compares:
+
+```sh
+cargo run --release -p app -- --check-baseline
+```
+
+It prints every script against its baseline and exits with 3 if any frame percentile regressed,
+0 otherwise (1 for a missing or unreadable baseline, 2 for no adapter). A number regresses only
+when it is both more than 3 times the baseline *and* more than 5 ms above it. The margin is wide
+on purpose: CI runners are noisy and software rendering is slow, so the check catches a script
+getting several times slower, not drift. The stage rows are shown for scripts that regressed, to
+point at the cause. `--baseline-file PATH` reads a different file.
+
+The nightly job runs the check from `docs/perf-nightly.patch`; apply it with
+`git apply docs/perf-nightly.patch` (it edits `.github/workflows/nightly.yml`, which only the
+owner changes).
+
+### Refreshing the baseline
+
+Refresh it when a change is meant to alter the numbers (a fix that makes a script faster, or a
+feature that costs time on purpose), or when the nightly check fails with no code change because
+the runner got slower:
+
+```sh
+cargo run --release -p app -- --write-baseline
+```
+
+This rewrites `docs/perf-baseline.json` from a fresh reduced run. Commit it with the change and
+say why in the PR. Run it on a quiet machine, ideally the same kind as the nightly runner
+(Linux x86_64), since the check compares against these numbers; run it twice and keep the
+slower result if the two differ much.
+
 ## Still to come (issue #245)
 
-A regression check against a checked-in baseline (`docs/perf-baseline.json`) in the nightly job,
-and the fixes the numbers point to. Changes under `.github/` need the owner, so the workflow change will be a patch file
-under `docs/`.
+The fixes the numbers point to (step 4).
