@@ -210,3 +210,133 @@ fn quitting_asks_the_popped_out_windows_first() {
     harness.run();
     assert!(harness.state().is_closing());
 }
+
+/// A point on window `window`'s strip over the left half of Map tab `tab` (so a dropped tab
+/// lands before it), or past the last tab when `tab` is the tab count.
+fn on_strip(harness: &Harness<'_, MapMakerApp>, window: usize, tab: usize) -> egui::Pos2 {
+    let (left, width) = harness.state().tab_layout(window);
+    let strip = harness.state().strip_rect(window);
+    egui::pos2(left + width * tab as f32 + 5.0, strip.center().y)
+}
+
+#[test]
+fn a_tab_dropped_on_another_windows_strip_lands_at_the_drop_position() {
+    let mut harness = app();
+    harness.state_mut().new_map(canvas());
+    harness.run();
+    // Pop out the active (third) tab; the main window keeps two.
+    harness.state_mut().run_command(Command::MoveTabToNewWindow);
+    harness.run();
+    harness.run();
+    let before = popped_layers(&harness);
+    harness
+        .state_mut()
+        .in_popped_window(0, |app| app.run_command(Command::NewLayer));
+    harness.run();
+    assert_eq!(popped_layers(&harness), before + 1);
+
+    // Drop it before the first tab of the main window's strip.
+    let at = on_strip(&harness, 0, 0);
+    harness.state_mut().drop_tab(1, 0, at);
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().window_count(), 1);
+    assert_eq!(harness.state().tabs().len(), 3);
+    assert_eq!(harness.state().active_tab(), 0);
+    // It is the same Map, with its edit and undo history.
+    assert_eq!(
+        harness.state().editor().map.children(None).len(),
+        before + 1
+    );
+    harness.state_mut().run_command(Command::Undo);
+    harness.run();
+    assert_eq!(harness.state().editor().map.children(None).len(), before);
+}
+
+#[test]
+fn a_tab_dropped_in_the_middle_of_a_strip_goes_between_its_neighbours() {
+    let mut harness = app();
+    harness.state_mut().new_map(canvas());
+    harness.run();
+    harness.state_mut().run_command(Command::MoveTabToNewWindow);
+    harness.run();
+    harness.run();
+    harness
+        .state_mut()
+        .in_popped_window(0, |app| app.run_command(Command::NewLayer));
+    harness.run();
+    let marked = popped_layers(&harness);
+
+    let at = on_strip(&harness, 0, 1);
+    harness.state_mut().drop_tab(1, 0, at);
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().tabs().len(), 3);
+    assert_eq!(harness.state().active_tab(), 1);
+    assert_eq!(harness.state().editor().map.children(None).len(), marked);
+}
+
+#[test]
+fn a_tab_dropped_outside_every_window_pops_out() {
+    let mut harness = app();
+    harness.state_mut().run_command(Command::NewLayer);
+    harness.run();
+    let layers = harness.state().editor().map.children(None).len();
+
+    harness
+        .state_mut()
+        .drop_tab(0, 1, egui::pos2(-500.0, -500.0));
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().window_count(), 2);
+    assert_eq!(harness.state().tabs().len(), 1);
+    assert_eq!(harness.state().popped_tabs(0).len(), 1);
+    assert_eq!(popped_layers(&harness), layers);
+}
+
+#[test]
+fn the_only_tab_of_a_popped_out_window_stays_when_dropped_outside() {
+    let mut harness = app();
+    harness.state_mut().run_command(Command::MoveTabToNewWindow);
+    harness.run();
+    harness.run();
+    harness
+        .state_mut()
+        .drop_tab(1, 0, egui::pos2(-500.0, -500.0));
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().window_count(), 2);
+    assert_eq!(harness.state().popped_tabs(0).len(), 1);
+}
+
+#[test]
+fn a_tab_dropped_over_a_window_body_stays_put() {
+    let mut harness = app();
+    harness.state_mut().run_command(Command::NewLayer);
+    harness.run();
+    let strip = harness.state().strip_rect(0);
+    // Well below the strip, over the canvas and panels of the main window.
+    let at = egui::pos2(strip.center().x, strip.max.y + 200.0);
+    harness.state_mut().drop_tab(0, 1, at);
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().window_count(), 1);
+    assert_eq!(harness.state().tabs().len(), 2);
+}
+
+#[test]
+fn a_tab_dropped_on_its_own_strip_reorders() {
+    let mut harness = app();
+    harness.state_mut().run_command(Command::NewLayer);
+    harness.run();
+    let layers = harness.state().editor().map.children(None).len();
+    // The active second tab goes before the first.
+    let at = on_strip(&harness, 0, 0);
+    harness.state_mut().drop_tab(0, 1, at);
+    harness.run();
+    harness.run();
+    assert_eq!(harness.state().window_count(), 1);
+    assert_eq!(harness.state().tabs().len(), 2);
+    assert_eq!(harness.state().active_tab(), 0);
+    assert_eq!(harness.state().editor().map.children(None).len(), layers);
+}

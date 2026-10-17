@@ -144,6 +144,8 @@ struct AppState {
     /// Tabs sent back to the main window from a popped-out one, taken in once that window's
     /// frame is over.
     returning: Vec<MapTab>,
+    /// Tabs dragged and dropped this frame, settled once every window's frame is over.
+    tab_drops: Vec<TabDrop>,
     /// The native menu bar, on macOS; `None` elsewhere and in UI tests, which use the egui bar.
     #[cfg(target_os = "macos")]
     native_menu: Option<native_menu::mac::MacMenu>,
@@ -170,6 +172,12 @@ struct WindowState {
     home_active: bool,
     /// The tab strip's scroll position and the like.
     strip: tab_strip::State,
+    /// Where this window's content starts on the screen, to tell which window a dropped tab
+    /// is over.
+    screen_origin: egui::Pos2,
+    /// The size of this window's content, to tell whether a dropped tab is over the window at
+    /// all.
+    content_size: egui::Vec2,
     /// The Home tab's list, search and thumbnails.
     home: home::Home,
     /// Panel widths and collapse state, the same for every tab in the window.
@@ -225,6 +233,45 @@ pub struct MapMakerApp {
     popped: Vec<WindowState>,
     /// How many windows were popped out so far, for their viewport ids.
     popped_count: u64,
+}
+
+/// A tab let go after a drag: where, on the screen, decides which window's strip it joins.
+struct TabDrop {
+    from: egui::ViewportId,
+    index: usize,
+    at: egui::Pos2,
+}
+
+impl WindowState {
+    /// Takes tab `index` out with its Recovery journal and everything else, and keeps the same
+    /// tab active if it can.
+    fn take_tab(&mut self, index: usize) -> MapTab {
+        let tab = self.tabs.remove(index);
+        if index < self.active || self.active >= self.tabs.len() {
+            self.active = self.active.saturating_sub(1);
+        }
+        tab
+    }
+
+    /// Whether tab `index` can leave: not a start page or a tab being saved.
+    fn can_release(&self, index: usize) -> bool {
+        self.tabs
+            .get(index)
+            .is_some_and(|tab| !tab.is_blank() && tab.pending.is_none())
+    }
+
+    /// The whole window content on the screen.
+    fn content_on_screen(&self) -> egui::Rect {
+        egui::Rect::from_min_size(self.screen_origin, self.content_size)
+    }
+
+    /// The strip on the screen.
+    fn strip_on_screen(&self) -> egui::Rect {
+        self.strip
+            .geometry
+            .strip
+            .translate(self.screen_origin.to_vec2())
+    }
 }
 
 impl MapMakerApp {
@@ -313,12 +360,15 @@ impl MapMakerApp {
             quit_requested: false,
             clipboard: None,
             returning: Vec::new(),
+            tab_drops: Vec::new(),
         };
         let win = WindowState {
             home_active: tabs.is_empty(),
             tabs,
             active: 0,
             strip: tab_strip::State::default(),
+            screen_origin: egui::Pos2::ZERO,
+            content_size: egui::Vec2::ZERO,
             home: home::Home::default(),
             awaiting_save: None,
             delete_prompt: None,
@@ -517,11 +567,113 @@ impl MapMakerApp {
     /// Takes tab `index` out of this window with its Recovery journal and everything else, and
     /// keeps the same tab active if it can.
     fn take_tab(&mut self, index: usize) -> MapTab {
-        let tab = self.win.tabs.remove(index);
-        if index < self.win.active || self.win.active >= self.win.tabs.len() {
-            self.win.active = self.win.active.saturating_sub(1);
+        self.win.take_tab(index)
+    }
+
+    /// Test hook: lets go of tab `index` of window `window` (0 is the main one, then the popped
+    /// out ones) with the pointer at `at` on the screen, as the end of a drag does.
+    pub fn drop_tab(&mut self, window: usize, index: usize, at: egui::Pos2) {
+        let from = if window == 0 {
+            self.win.viewport
+        } else {
+            self.popped[window - 1].viewport
+        };
+        self.app.tab_drops.push(TabDrop { from, index, at });
+        self.app.egui_ctx.request_repaint();
+    }
+
+    /// Test hook: where window `window`'s tab strip is on the screen (0 is the main window).
+    #[doc(hidden)]
+    pub fn strip_rect(&self, window: usize) -> egui::Rect {
+        if window == 0 {
+            self.win.strip_on_screen()
+        } else {
+            self.popped[window - 1].strip_on_screen()
         }
-        tab
+    }
+
+    /// Test hook: where the Map tabs of window `window` start, and how wide each is.
+    #[doc(hidden)]
+    pub fn tab_layout(&self, window: usize) -> (f32, f32) {
+        let state = if window == 0 {
+            &self.win
+        } else {
+            &self.popped[window - 1]
+        };
+        let geometry = state.strip.geometry;
+        (
+            geometry.tabs_left + state.screen_origin.x,
+            geometry.tab_width,
+        )
+    }
+
+    /// Settles the tabs dropped this frame: onto the strip of the window under the pointer, at
+    /// the drop position, or out into a window of their own when no window is under it. Dropped over a
+    /// window but off its strip they stay put. Runs
+    /// once every window has had its frame, so all of them can be reached.
+    fn settle_tab_drops(&mut self) {
+        for drop in std::mem::take(&mut self.app.tab_drops) {
+            let mut windows: Vec<&mut WindowState> = std::iter::once(&mut self.win)
+                .chain(self.popped.iter_mut())
+                .collect();
+            let Some(source) = windows.iter().position(|w| w.viewport == drop.from) else {
+                continue;
+            };
+            if !windows[source].can_release(drop.index) {
+                continue;
+            }
+            let target = windows
+                .iter()
+                .position(|w| w.strip_on_screen().contains(drop.at));
+            let mut popped_out = None;
+            match target {
+                Some(target) if target == source => {
+                    let window = &mut *windows[source];
+                    let local = drop.at.x - window.screen_origin.x;
+                    let mut to = window.strip.geometry.drop_index(local, window.tabs.len());
+                    if to > drop.index {
+                        to -= 1;
+                    }
+                    if to != drop.index {
+                        let tab = window.take_tab(drop.index);
+                        window.tabs.insert(to, tab);
+                        window.active = to;
+                        window.home_active = false;
+                    }
+                }
+                Some(target) => {
+                    let tab = windows[source].take_tab(drop.index);
+                    let window = &mut *windows[target];
+                    let local = drop.at.x - window.screen_origin.x;
+                    let to = window.strip.geometry.drop_index(local, window.tabs.len());
+                    window.tabs.insert(to, tab);
+                    window.active = to;
+                    window.home_active = false;
+                }
+                // Over a window but off its strip: the tab stays where it is.
+                None if windows
+                    .iter()
+                    .any(|w| w.content_on_screen().contains(drop.at)) => {}
+                // The only tab of a popped-out window is already in a window of its own.
+                None if !windows[source].main && windows[source].tabs.len() == 1 => {}
+                None => {
+                    let shell = windows[source].shell.clone();
+                    let tab = windows[source].take_tab(drop.index);
+                    popped_out = Some((tab, shell));
+                }
+            }
+            if let Some((tab, shell)) = popped_out {
+                self.popped_count += 1;
+                let mut win = self.new_window_state(egui::ViewportId::from_hash_of((
+                    "popped window",
+                    self.popped_count,
+                )));
+                win.shell = shell;
+                win.tabs.push(tab);
+                self.popped.push(win);
+            }
+        }
+        self.popped.retain(|window| !window.tabs.is_empty());
     }
 
     /// A window with no tabs and no dialogs open.
@@ -539,6 +691,8 @@ impl MapMakerApp {
             active: 0,
             home_active: false,
             strip: tab_strip::State::default(),
+            screen_origin: egui::Pos2::ZERO,
+            content_size: egui::Vec2::ZERO,
             home: home::Home::default(),
             shell: shell::Shell::default(),
             drop_focus: false,
@@ -551,7 +705,7 @@ impl MapMakerApp {
             pack_install: pack_install::PackInstall::default(),
             delete_prompt: None,
             pack_delete_prompt: None,
-            pack_trash: file_actions::move_to_trash,
+            pack_trash: self.win.pack_trash,
             paste_prompt: None,
             awaiting_save: None,
             close_allowed: false,
@@ -2198,6 +2352,18 @@ impl MapMakerApp {
             .collect();
         let current = self.current_slot();
         let placement = self.placement();
+        // Embedded windows share the screen's coordinates; real ones are placed on it.
+        self.win.screen_origin = if ui.ctx().embed_viewports() {
+            egui::Pos2::ZERO
+        } else {
+            ui.input(|i| i.viewport().inner_rect)
+                .map_or(egui::Pos2::ZERO, |rect| rect.min)
+        };
+        self.win.content_size = ui
+            .input(|i| i.viewport().inner_rect)
+            .map_or_else(|| ui.ctx().content_rect().size(), |rect| rect.size());
+        let origin = self.win.screen_origin;
+        let viewport = self.win.viewport;
         let actions = ui
             .add_enabled_ui(enabled, |ui| {
                 tab_strip::show(
@@ -2215,6 +2381,15 @@ impl MapMakerApp {
             match action {
                 tab_strip::Action::MoveToNewWindow(index) => self.move_tab_to_new_window(index),
                 tab_strip::Action::MoveToMainWindow(index) => self.move_tab_to_main_window(index),
+                tab_strip::Action::Dropped { index, at } => {
+                    let at = at + origin.to_vec2();
+                    self.app.tab_drops.push(TabDrop {
+                        from: viewport,
+                        index,
+                        at,
+                    });
+                    self.app.egui_ctx.request_repaint();
+                }
                 tab_strip::Action::Show(slot) => self.show_slot(slot),
                 tab_strip::Action::Close(index) => self.close_tab(index),
                 tab_strip::Action::NewMap => self.new_blank_tab(),
@@ -2602,6 +2777,7 @@ impl MapMakerApp {
             self.win.active = self.win.tabs.len() - 1;
             self.win.home_active = false;
         }
+        self.settle_tab_drops();
     }
 
     /// One frame of the editor.
