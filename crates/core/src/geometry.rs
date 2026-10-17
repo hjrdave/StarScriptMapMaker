@@ -174,6 +174,29 @@ impl MultiPolygon {
         )
     }
 
+    /// The shift that takes `self` onto `other`, if they have the same shape and differ only by
+    /// it.
+    pub fn translation_to(&self, other: &MultiPolygon) -> Option<[f64; 2]> {
+        let first = |m: &MultiPolygon| m.0.first()?.exterior.first().copied();
+        let (a, b) = (first(self)?, first(other)?);
+        let offset = [b[0] - a[0], b[1] - a[1]];
+        let same = |p: &Point, q: &Point| {
+            (q[0] - p[0] - offset[0]).abs() <= 1e-7 && (q[1] - p[1] - offset[1]).abs() <= 1e-7
+        };
+        let rings_match = |x: &[Point], y: &[Point]| {
+            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| same(p, q))
+        };
+        if self.0.len() != other.0.len() {
+            return None;
+        }
+        let all = self.0.iter().zip(&other.0).all(|(p, q)| {
+            p.holes.len() == q.holes.len()
+                && rings_match(&p.exterior, &q.exterior)
+                && p.holes.iter().zip(&q.holes).all(|(x, y)| rings_match(x, y))
+        });
+        all.then_some(offset)
+    }
+
     /// Why this cannot be a stored outline, if it cannot: every part needs at least one
     /// ring, every ring at least three points, and every coordinate must be finite.
     pub fn problem(&self) -> Option<String> {
@@ -259,6 +282,19 @@ mod tests {
             max: [10.0, 5.0],
         };
         assert!(Affine::rect_to_rect(&flat, &to).is_invertible());
+    }
+
+    #[test]
+    fn translation_finds_a_whole_move_only() {
+        let island = MultiPolygon(vec![Polygon {
+            exterior: square(0.0, 100.0),
+            holes: vec![square(40.0, 60.0)],
+        }]);
+        let moved = island.transformed(&Affine::translate([5.0, 7.0]));
+        assert_eq!(island.translation_to(&moved), Some([5.0, 7.0]));
+        let mut bent = moved.clone();
+        bent.0[0].holes[0][2][0] += 1.0;
+        assert_eq!(island.translation_to(&bent), None);
     }
 
     #[test]

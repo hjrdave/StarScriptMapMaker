@@ -368,6 +368,11 @@ impl MapMakerApp {
                     Recovery::new(recovery_dir.clone()),
                 );
                 tab.editor.set_sprites(sprites.clone());
+                if gpu {
+                    let ctx = cc.egui_ctx.clone();
+                    tab.editor
+                        .compute_shore_rings_in_background(move || ctx.request_repaint());
+                }
                 tab
             })
             .collect();
@@ -823,6 +828,11 @@ impl MapMakerApp {
         let mut tab = MapTab::new(map, self.app.gpu.then(TessellationCache::new), recovery);
         tab.document = document;
         tab.editor.set_sprites(self.app.sprites.clone());
+        if self.app.gpu {
+            let ctx = self.app.egui_ctx.clone();
+            tab.editor
+                .compute_shore_rings_in_background(move || ctx.request_repaint());
+        }
         tab
     }
 

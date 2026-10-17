@@ -298,6 +298,8 @@ fn measure(
     let mut renderer = CanvasRenderer::new(&gpu.device, capabilities);
     renderer.set_sprites(SpriteStore::synchronous(library.clone()));
     let mut scene = MapScene::new(Fonts::bundled());
+    // As in the editor, shore rings are computed off the frame.
+    scene.compute_rings_in_background(|| {});
     let canvas_size = [
         f64::from(world.map.canvas.width),
         f64::from(world.map.canvas.height),

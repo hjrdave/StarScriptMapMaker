@@ -19,6 +19,7 @@ mod present;
 pub mod profile;
 pub mod raster;
 mod scene;
+mod shore_rings;
 pub mod silhouette;
 pub mod sprite;
 mod stamp;
