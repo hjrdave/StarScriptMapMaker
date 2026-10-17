@@ -6,11 +6,14 @@
 //! adapter, backend, OS and driver, and exits. It is run by hand per OS on a real GPU; CI only
 //! checks it works on a software adapter. `docs/design/performance.md` explains how to read it.
 
+mod baseline;
 mod scripts;
 
+use std::collections::BTreeMap;
 use std::f64::consts::TAU;
 use std::ffi::OsString;
 use std::fmt::Write as _;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -27,6 +30,10 @@ use ssmap_render::{
 
 /// The flag that selects this mode.
 pub const FLAG: &str = "--frame-time";
+/// Flags that run the reduced scripts against, or into, the checked-in baseline. They imply
+/// `--frame-time`.
+const CHECK_FLAG: &str = "--check-baseline";
+const WRITE_FLAG: &str = "--write-baseline";
 
 const STAMPS: usize = 100_000;
 const LANDMASSES: usize = 20;
@@ -38,10 +45,22 @@ const PHASE_FRAMES: usize = 60;
 
 /// Exit code when there is no GPU adapter at all.
 pub const NO_ADAPTER: i32 = 2;
+/// Exit code when `--check-baseline` finds a regression.
+pub const REGRESSION: i32 = 3;
+
+/// The reduced run the baseline is measured with: a small Map and a few frames of every script.
+const REDUCED_SCALE: f64 = 0.01;
+const REDUCED_FRAMES: usize = 10;
+
+enum BaselineMode {
+    Check,
+    Write,
+}
 
 /// Whether the command line asks for the measurement.
 pub fn requested(args: &[OsString]) -> bool {
-    args.iter().any(|arg| arg == FLAG)
+    args.iter()
+        .any(|arg| arg == FLAG || arg == CHECK_FLAG || arg == WRITE_FLAG)
 }
 
 struct Options {
@@ -53,6 +72,9 @@ struct Options {
     scripts: Vec<Script>,
     /// Stops each script after this many frames, for tests and quick runs.
     frames: Option<usize>,
+    /// Compare with, or rewrite, the checked-in baseline (issue #338).
+    baseline: Option<BaselineMode>,
+    baseline_path: PathBuf,
 }
 
 fn parse(args: &[OsString]) -> Result<Options, String> {
@@ -61,6 +83,8 @@ fn parse(args: &[OsString]) -> Result<Options, String> {
         scale: 1.0,
         scripts: vec![Script::PanZoom],
         frames: None,
+        baseline: None,
+        baseline_path: PathBuf::from(baseline::DEFAULT_PATH),
     };
     let mut args = args.iter().map(|arg| arg.to_string_lossy());
     while let Some(arg) = args.next() {
@@ -92,8 +116,23 @@ fn parse(args: &[OsString]) -> Result<Options, String> {
                     })?]
                 };
             }
+            CHECK_FLAG => options.baseline = Some(BaselineMode::Check),
+            WRITE_FLAG => options.baseline = Some(BaselineMode::Write),
+            "--baseline-file" => {
+                options.baseline_path = args
+                    .next()
+                    .map(|path| PathBuf::from(&*path))
+                    .ok_or("--baseline-file needs a path")?;
+            }
             other => return Err(format!("unexpected argument {other}")),
         }
+    }
+    if options.baseline.is_some() {
+        // The reduced scripts on the software adapter, whatever else was asked for.
+        options.software = true;
+        options.scale = REDUCED_SCALE;
+        options.frames = Some(REDUCED_FRAMES);
+        options.scripts = Script::ALL.to_vec();
     }
     Ok(options)
 }
@@ -139,6 +178,7 @@ pub fn run(args: &[OsString]) -> i32 {
     let take_stages = || Some(recorder.take());
     #[cfg(not(feature = "profiling"))]
     let take_stages = || None;
+    let mut results = BTreeMap::new();
     for &script in &options.scripts {
         let capabilities = GpuCapabilities::query(&gpu.adapter);
         let measured = measure(
@@ -151,7 +191,83 @@ pub fn run(args: &[OsString]) -> i32 {
             &take_stages,
         );
         print!("{}", report(script, &measured));
+        results.insert(script.name().to_string(), summarise(&measured));
     }
+    match options.baseline {
+        Some(BaselineMode::Check) => check_baseline(&options, &results),
+        Some(BaselineMode::Write) => write_baseline(&options, results),
+        None => 0,
+    }
+}
+
+fn percentiles(frames: &[Duration]) -> baseline::Percentiles {
+    let stats = Stats::new(frames);
+    let ms = |d: Duration| d.as_secs_f64() * 1000.0;
+    baseline::Percentiles {
+        p50: ms(stats.p50),
+        p95: ms(stats.p95),
+        p99: ms(stats.p99),
+    }
+}
+
+/// The numbers the baseline keeps: the frame and the three coarse stages, which exist with or
+/// without the `profiling` feature.
+fn summarise(measured: &Measured) -> baseline::ScriptBaseline {
+    baseline::ScriptBaseline {
+        frame: percentiles(&measured.total),
+        stages: BTreeMap::from([
+            ("edit".to_string(), percentiles(&measured.edit)),
+            ("scene".to_string(), percentiles(&measured.scene)),
+            ("render".to_string(), percentiles(&measured.render)),
+        ]),
+    }
+}
+
+fn check_baseline(options: &Options, results: &BTreeMap<String, baseline::ScriptBaseline>) -> i32 {
+    let path = &options.baseline_path;
+    let expected = std::fs::read_to_string(path)
+        .map_err(|err| err.to_string())
+        .and_then(|text| {
+            serde_json::from_str::<baseline::Baseline>(&text).map_err(|err| err.to_string())
+        });
+    let expected = match expected {
+        Ok(expected) => expected,
+        Err(err) => {
+            eprintln!("error: cannot read the baseline {}: {err}", path.display());
+            return 1;
+        }
+    };
+    let text = baseline::diff(&expected, results);
+    if baseline::compare(&expected, results).is_empty() {
+        print!("\n{text}");
+        0
+    } else {
+        eprint!("\n{text}");
+        REGRESSION
+    }
+}
+
+fn write_baseline(options: &Options, scripts: BTreeMap<String, baseline::ScriptBaseline>) -> i32 {
+    let new = baseline::Baseline {
+        note: format!(
+            "Reduced scripts on the software adapter (--check-baseline). Refresh with \
+             --write-baseline; see docs/design/performance.md. Written on {} {}.",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        ),
+        scale: REDUCED_SCALE,
+        frames: REDUCED_FRAMES,
+        scripts,
+    };
+    let json = serde_json::to_string_pretty(&new).expect("the baseline serialises");
+    if let Err(err) = std::fs::write(&options.baseline_path, json + "\n") {
+        eprintln!(
+            "error: cannot write {}: {err}",
+            options.baseline_path.display()
+        );
+        return 1;
+    }
+    println!("\nwrote {}", options.baseline_path.display());
     0
 }
 

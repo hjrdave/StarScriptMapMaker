@@ -1,0 +1,26 @@
+diff --git a/.github/workflows/nightly.yml b/.github/workflows/nightly.yml
+--- a/.github/workflows/nightly.yml
++++ b/.github/workflows/nightly.yml
+@@ -121,3 +121,22 @@ jobs:
+             target/packages/SHA256SUMS-*.txt
+           if-no-files-found: error
+           retention-days: 14
++
++  # Frame-time regression check (issue #338): the reduced interaction scripts on the software
++  # adapter, against docs/perf-baseline.json with a wide margin. Exits non-zero, with a diff in
++  # the log, when a script is several times slower. Refresh the baseline as
++  # docs/design/performance.md describes.
++  frame-time:
++    name: frame time (Linux x86_64)
++    runs-on: ubuntu-22.04
++    steps:
++      - uses: actions/checkout@v4
++      - name: Install toolchain
++        run: rustup show active-toolchain || rustup toolchain install
++      - uses: Swatinem/rust-cache@v2
++      - name: Install a software Vulkan driver
++        run: |
++          sudo apt-get update
++          sudo apt-get install -y mesa-vulkan-drivers libvulkan1
++      - name: Check frame time against the baseline
++        run: cargo run --release --locked -p app -- --check-baseline
