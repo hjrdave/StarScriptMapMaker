@@ -44,3 +44,16 @@ CI (`.github/workflows/ci.yml`) runs the same checks. Do not edit `.github/`.
 - Avoid `unwrap()` and `expect()` outside tests; return or handle the error.
 - Keep changes focused: no unrelated refactors or dependency changes.
 - Match the surrounding code's style, naming and comment density.
+
+## Conventions
+
+These apply to new and touched code. Do not rewrite existing code only to fit them.
+
+- **Modules:** a module with submodules is `foo/mod.rs`, never `foo.rs` next to `foo/`. A module without submodules is a single `foo.rs`.
+- **Visibility:** private by default, then `pub(crate)`. Use `pub` only when another crate needs it.
+- **Errors:** library crates (`core`, `render`, `fonts`) return `thiserror` error types. No `unwrap()`/`expect()` outside tests unless a comment explains why it can't fail.
+- **Tests:** unit tests go in `#[cfg(test)] mod tests` at the bottom of the file. Tests through the public API go in the crate's `tests/` folder.
+- **Dependency direction:** `apps/starscript` → `render` → `core` (and `fonts`). Never the reverse. `core` never depends on egui or wgpu (ADR 0001).
+- **Naming:** follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/naming.html) (`as_`/`to_`/`into_` conversions, no `get_` prefix on plain getters), and use the domain terms in `CONTEXT.md`.
+
+For anything not covered, see the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) and matklad's [Large Rust Workspaces](https://matklad.github.io/2021/08/22/large-rust-workspaces.html).
