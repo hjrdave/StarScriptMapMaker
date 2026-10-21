@@ -107,8 +107,20 @@ fn max_workers() -> usize {
         .unwrap_or(1)
 }
 
+/// Counts a worker out when it exits, however it exits, so a panicking job can't leave the
+/// pool believing it still has a live worker.
+struct WorkerExit<'a>(&'a Queue);
+
+impl Drop for WorkerExit<'_> {
+    fn drop(&mut self) {
+        let mut state = self.0.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.workers -= 1;
+    }
+}
+
 /// Runs queued jobs until the store is gone.
 fn work(queue: Arc<Queue>, store: Weak<Inner>) {
+    let _exit = WorkerExit(&queue);
     loop {
         let claimed = {
             let Ok(mut state) = queue.state.lock() else {
@@ -119,7 +131,6 @@ fn work(queue: Arc<Queue>, store: Weak<Inner>) {
                     break claimed;
                 }
                 if state.closed {
-                    state.workers -= 1;
                     return;
                 }
                 state = match queue.wake.wait(state) {
