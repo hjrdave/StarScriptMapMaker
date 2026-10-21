@@ -13,7 +13,7 @@ use ssmap_core::{ExportSettings, ExportSize, ExportSizeError, Map, Rect, Roughne
 use thiserror::Error;
 
 use crate::canvas::{CanvasRenderer, CanvasScene, Content};
-use crate::offscreen::render_to_image;
+use crate::offscreen::{ReadbackError, render_to_image};
 use crate::png_writer::{PngMeta, PngWriteError, PngWriter};
 use crate::scene::MapScene;
 use crate::tiled::{ExportStatus, TilePlan, copy_tile};
@@ -25,6 +25,8 @@ pub enum ExportError {
     Size(#[from] ExportSizeError),
     #[error(transparent)]
     Png(#[from] PngWriteError),
+    #[error(transparent)]
+    Readback(#[from] ReadbackError),
 }
 
 /// What one [`ExportJob::step`] did.
@@ -190,7 +192,7 @@ impl ExportJob {
                     zoom: job.zoom,
                     size: job.plan.render_size(),
                 };
-                let image = render_to_image(cx.device, cx.queue, cx.renderer, &job.scene, &view);
+                let image = render_to_image(cx.device, cx.queue, cx.renderer, &job.scene, &view)?;
                 copy_tile(&image, &job.plan, tile, &mut job.band, stride);
                 job.done += 1;
                 job.column += 1;

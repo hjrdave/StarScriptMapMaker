@@ -2,6 +2,21 @@
 
 use crate::canvas::{CanvasRenderer, CanvasScene};
 use crate::view::View;
+use std::sync::mpsc;
+use thiserror::Error;
+
+/// Why the pixels of a render could not be read back from the GPU.
+#[derive(Debug, Error)]
+pub enum ReadbackError {
+    #[error("the readback buffer could not be mapped")]
+    Map(#[source] wgpu::BufferAsyncError),
+    #[error("the GPU did not finish its work")]
+    Poll(#[source] wgpu::PollError),
+    #[error("the readback buffer was never mapped")]
+    NotMapped,
+    #[error("the mapped readback range is not readable")]
+    Range(#[source] wgpu::MapRangeError),
+}
 
 /// Tightly packed 8-bit sRGB RGBA pixels, rows top to bottom.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -18,7 +33,7 @@ pub fn render_to_image(
     renderer: &mut CanvasRenderer,
     scene: &CanvasScene,
     view: &View,
-) -> RgbaImage {
+) -> Result<RgbaImage, ReadbackError> {
     let mut encoder = device.create_command_encoder(&Default::default());
     // An image shows everything that is ready, so it applies all of it, not one frame's share.
     let budget = renderer.set_apply_budget(None);
@@ -34,7 +49,7 @@ pub fn read_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     texture: &wgpu::Texture,
-) -> RgbaImage {
+) -> Result<RgbaImage, ReadbackError> {
     let mut encoder = device.create_command_encoder(&Default::default());
     let readback = Readback::record(device, &mut encoder, texture);
     queue.submit([encoder.finish()]);
@@ -89,17 +104,21 @@ impl Readback {
     }
 
     /// Waits for the submitted copy and unpads the rows.
-    fn finish(self, device: &wgpu::Device) -> RgbaImage {
+    fn finish(self, device: &wgpu::Device) -> Result<RgbaImage, ReadbackError> {
         let slice = self.buffer.slice(..);
-        slice.map_async(wgpu::MapMode::Read, |result| {
-            result.expect("readback buffer maps");
+        let (sender, receiver) = mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            // The receiver lives until `finish` returns, so a failed send can be ignored.
+            let _ = sender.send(result);
         });
         device
             .poll(wgpu::PollType::wait_indefinitely())
-            .expect("the GPU finishes its work");
-        let mapped = slice
-            .get_mapped_range()
-            .expect("the mapped range is readable");
+            .map_err(ReadbackError::Poll)?;
+        receiver
+            .try_recv()
+            .map_err(|_| ReadbackError::NotMapped)?
+            .map_err(ReadbackError::Map)?;
+        let mapped = slice.get_mapped_range().map_err(ReadbackError::Range)?;
         let unpadded = (self.width * 4) as usize;
         let mut pixels = Vec::with_capacity(unpadded * self.height as usize);
         for row in mapped.chunks(self.padded as usize) {
@@ -107,10 +126,26 @@ impl Readback {
         }
         drop(mapped);
         self.buffer.unmap();
-        RgbaImage {
+        Ok(RgbaImage {
             width: self.width,
             height: self.height,
             pixels,
-        }
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::export_job::ExportError;
+
+    #[test]
+    fn a_readback_failure_reaches_an_export_as_an_error() {
+        let error = ExportError::from(ReadbackError::NotMapped);
+        assert!(matches!(
+            error,
+            ExportError::Readback(ReadbackError::NotMapped)
+        ));
+        assert_eq!(error.to_string(), "the readback buffer was never mapped");
     }
 }
