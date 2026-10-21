@@ -50,9 +50,9 @@ impl Raster {
 /// Asset art that could not be loaded.
 #[derive(Debug, thiserror::Error)]
 pub enum ArtError {
-    #[error("is not a valid SVG")]
+    #[error("is not a valid SVG: {0}")]
     Svg(#[from] usvg::Error),
-    #[error("is not a valid PNG")]
+    #[error("is not a valid PNG: {0}")]
     Png(#[from] image::ImageError),
     #[error("{}: cannot be read", path.display())]
     Io {
@@ -251,5 +251,18 @@ mod tests {
         let io = Art::load(Path::new("nowhere/ghost.png")).err().unwrap();
         assert!(matches!(io, ArtError::Io { .. }));
         assert!(io.source().is_some());
+
+        let dir = std::env::temp_dir().join(format!("ssmap-art-error-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bad = dir.join("bad.svg");
+        std::fs::write(&bad, b"<not svg").unwrap();
+        let file = Art::load(&bad).err().unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(matches!(file, ArtError::File { .. }));
+        assert!(file.source().is_some());
+        assert!(file.to_string().starts_with(&*bad.display().to_string()));
+
+        let unknown = Art::load(Path::new("art.xyz")).err().unwrap();
+        assert!(matches!(unknown, ArtError::UnknownFormat { .. }));
     }
 }
