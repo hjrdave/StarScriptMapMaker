@@ -715,7 +715,7 @@ fn land_brush(
     let tolerance = land::simplify_tolerance(radius, 1.0 / view.zoom);
     let finished = |stroke: &Stroke| BrushStroke {
         region: land::brush_region(&stroke.points, radius, tolerance),
-        start: stroke.points[0],
+        start: stroke.points.first().copied().unwrap_or_default(),
         erase: stroke.erase,
     };
     let released = response.drag_stopped() || response.clicked();
@@ -825,9 +825,13 @@ fn lasso_tool(editor: &mut Editor, view: &View, state: &mut ToolState, input: &C
         .interact_pointer_pos()
         .map(|pos| input.canvas_point(view, pos));
     let near_first = |lasso: &Lasso, point: Point| {
-        let first = lasso.points[0];
         let reach = NODE_GRAB * input.pixels_per_point / view.zoom;
-        lasso.points.len() >= 3 && (point[0] - first[0]).hypot(point[1] - first[1]) <= reach
+        match lasso.points.first() {
+            Some(first) if lasso.points.len() >= 3 => {
+                (point[0] - first[0]).hypot(point[1] - first[1]) <= reach
+            }
+            _ => false,
+        }
     };
 
     if response.drag_started_by(egui::PointerButton::Primary)
@@ -889,7 +893,7 @@ fn lasso_tool(editor: &mut Editor, view: &View, state: &mut ToolState, input: &C
         editor.begin_gesture(editor.brush_label(lasso.erase));
         editor.finish_brush_stroke(BrushStroke {
             region,
-            start: lasso.points[0],
+            start: lasso.points.first().copied().unwrap_or_default(),
             erase: lasso.erase,
         });
     }
