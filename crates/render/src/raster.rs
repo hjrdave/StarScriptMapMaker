@@ -63,7 +63,7 @@ pub enum ArtError {
     #[error("{}: is neither an .svg nor a .png file", path.display())]
     UnknownFormat { path: PathBuf },
     /// Art read from a file that then failed to parse.
-    #[error("{}: {source}", path.display())]
+    #[error("{}: cannot be loaded", path.display())]
     File {
         path: PathBuf,
         #[source]
