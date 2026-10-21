@@ -61,6 +61,20 @@ fn pending_is_not_cached_as_missing() {
 }
 
 #[test]
+fn many_assets_prefetched_all_become_ready() {
+    let store = SpriteStore::new(library());
+    let assets: Vec<AssetRef> = (0..300)
+        .map(|i| reference(&format!("absent-{i}")))
+        .collect();
+    store.prefetch(&assets);
+    store.wait_until_ready();
+    assert_eq!(store.pending(), 0);
+    for asset in &assets {
+        assert!(matches!(store.poll(asset), SpriteState::Missing));
+    }
+}
+
+#[test]
 fn an_unknown_asset_ends_up_missing() {
     let store = SpriteStore::new(library());
     let asset = reference("no-such-asset");

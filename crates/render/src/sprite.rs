@@ -9,8 +9,8 @@
 //! and reports one that is not done yet as [`SpriteState::Pending`], which is not the same as
 //! missing and is never cached as such.
 
-use std::collections::HashMap;
-use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Condvar, Mutex, RwLock, Weak};
 
 use ssmap_core::asset::{AssetRef, PackLibrary};
 use ssmap_core::{Embedded, SpriteShape};
@@ -72,6 +72,67 @@ struct Inner {
     finished: Condvar,
     /// Called each time a raster finishes.
     repaint: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    /// The jobs waiting for one of the raster workers.
+    queue: Arc<Queue>,
+}
+
+impl Drop for Inner {
+    fn drop(&mut self) {
+        // Let the workers go: nothing will queue more jobs.
+        if let Ok(mut state) = self.queue.state.lock() {
+            state.closed = true;
+        }
+        self.queue.wake.notify_all();
+    }
+}
+
+/// Jobs for the raster workers, which are started on demand up to [`max_workers`].
+struct Queue {
+    state: Mutex<QueueState>,
+    wake: Condvar,
+}
+
+struct QueueState {
+    jobs: VecDeque<Claimed>,
+    /// Workers started and still running.
+    workers: usize,
+    closed: bool,
+}
+
+/// How many threads rasterise at once: one fewer than the cores, so the UI thread keeps a
+/// core, and never fewer than one.
+fn max_workers() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get().saturating_sub(1).max(1))
+        .unwrap_or(1)
+}
+
+/// Runs queued jobs until the store is gone.
+fn work(queue: Arc<Queue>, store: Weak<Inner>) {
+    loop {
+        let claimed = {
+            let Ok(mut state) = queue.state.lock() else {
+                return;
+            };
+            loop {
+                if let Some(claimed) = state.jobs.pop_front() {
+                    break claimed;
+                }
+                if state.closed {
+                    state.workers -= 1;
+                    return;
+                }
+                state = match queue.wake.wait(state) {
+                    Ok(state) => state,
+                    Err(_) => return,
+                };
+            }
+        };
+        let Some(inner) = store.upgrade() else {
+            return;
+        };
+        claimed.finish(&SpriteStore { inner });
+    }
 }
 
 /// A sprite being built, or built. `Ready(None)` records an Asset that is missing or whose
@@ -151,6 +212,14 @@ impl SpriteStore {
                 }),
                 finished: Condvar::new(),
                 repaint: Mutex::new(None),
+                queue: Arc::new(Queue {
+                    state: Mutex::new(QueueState {
+                        jobs: VecDeque::new(),
+                        workers: 0,
+                        closed: false,
+                    }),
+                    wake: Condvar::new(),
+                }),
             }),
         }
     }
@@ -226,9 +295,12 @@ impl SpriteStore {
         };
         if let Some(claimed) = claimed {
             if self.inner.background {
-                let store = self.clone();
-                std::thread::spawn(move || claimed.finish(&store));
-                return SpriteState::Pending;
+                match self.enqueue(claimed) {
+                    None => return SpriteState::Pending,
+                    // No worker could be started: build it here rather than never.
+                    Some(claimed) => claimed.finish(self),
+                }
+                return self.poll(asset);
             }
             claimed.finish(self);
             return self.poll(asset);
@@ -238,6 +310,30 @@ impl SpriteStore {
             Slot::Ready(Some(sprite)) => SpriteState::Ready(sprite),
             Slot::Ready(None) => SpriteState::Missing,
         }
+    }
+
+    /// Queues `claimed` for a raster worker, starting one if fewer than [`max_workers`] run.
+    /// Gives the job back if no worker exists and none can start.
+    fn enqueue(&self, claimed: Claimed) -> Option<Claimed> {
+        let queue = &self.inner.queue;
+        let Ok(mut state) = queue.state.lock() else {
+            return Some(claimed);
+        };
+        if state.workers < max_workers() {
+            let (queue_arc, weak) = (queue.clone(), Arc::downgrade(&self.inner));
+            let started = std::thread::Builder::new()
+                .name("sprite-raster".into())
+                .spawn(move || work(queue_arc, weak));
+            if started.is_ok() {
+                state.workers += 1;
+            } else if state.workers == 0 {
+                return Some(claimed);
+            }
+        }
+        state.jobs.push_back(claimed);
+        drop(state);
+        queue.wake.notify_one();
+        None
     }
 
     /// Starts building the sprites of `assets` in the background, so they are ready by the
