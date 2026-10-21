@@ -130,15 +130,6 @@ pub(crate) fn overlaps(a: [f32; 4], b: [f32; 4]) -> bool {
     a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3]
 }
 
-/// Draws vector groups into a Canvas render pass whose group 0 is the view uniform and which
-/// has a stencil attachment cleared to 0.
-pub trait VectorRenderer {
-    /// Replaces what is drawn. Groups draw in order, first lowest.
-    fn set_groups(&mut self, device: &wgpu::Device, groups: &[VectorGroup]);
-
-    fn draw(&self, pass: &mut wgpu::RenderPass<'_>);
-}
-
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
@@ -269,7 +260,7 @@ impl LyonRenderer {
 }
 
 impl LyonRenderer {
-    /// Like [`VectorRenderer::set_groups`], but also splits the groups into runs that
+    /// Like [`LyonRenderer::set_groups`], but also splits the groups into runs that
     /// [`LyonRenderer::draw_run`] draws separately, so something else can draw between them.
     /// `cuts` lists, in increasing order, the group counts to split at: run `i` ends before
     /// group `cuts[i]`, and the last run takes the rest. There is one more run than cuts.
@@ -407,12 +398,15 @@ impl LyonRenderer {
     }
 }
 
-impl VectorRenderer for LyonRenderer {
-    fn set_groups(&mut self, device: &wgpu::Device, groups: &[VectorGroup]) {
+impl LyonRenderer {
+    /// Replaces what is drawn. Groups draw in order, first lowest.
+    pub(crate) fn set_groups(&mut self, device: &wgpu::Device, groups: &[VectorGroup]) {
         self.set_runs(device, groups, &[]);
     }
 
-    fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
+    /// Draws everything into a Canvas render pass whose group 0 is the view uniform and which
+    /// has a stencil attachment cleared to 0.
+    pub(crate) fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
         self.draw_run(pass, 0, false, &DrawFilter::everything());
     }
 }
