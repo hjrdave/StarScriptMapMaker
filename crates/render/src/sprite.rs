@@ -277,16 +277,17 @@ impl SpriteStore {
 
     /// The sprite of `asset` as the open Map draws it, waiting for it if it is being built.
     /// `None` if neither a copy nor an installed Asset exists or the art is unreadable.
-    pub fn get(&self, asset: &AssetRef) -> Option<Arc<Sprite>> {
-        self.wait_for(asset, false)
+    pub fn wait_for(&self, asset: &AssetRef) -> Option<Arc<Sprite>> {
+        self.wait_for_origin(asset, false)
     }
 
     /// The sprite of `asset` from the installed packs only, as the Asset browser shows it.
-    pub fn get_installed(&self, asset: &AssetRef) -> Option<Arc<Sprite>> {
-        self.wait_for(asset, true)
+    /// Blocks until it is built.
+    pub fn wait_for_installed(&self, asset: &AssetRef) -> Option<Arc<Sprite>> {
+        self.wait_for_origin(asset, true)
     }
 
-    fn wait_for(&self, asset: &AssetRef, installed_only: bool) -> Option<Arc<Sprite>> {
+    fn wait_for_origin(&self, asset: &AssetRef, installed_only: bool) -> Option<Arc<Sprite>> {
         loop {
             let mut state = self.state();
             let origin = if installed_only {
@@ -344,12 +345,13 @@ impl SpriteStore {
     }
 
     pub fn shape(&self, asset: &AssetRef) -> Option<SpriteShape> {
-        self.get(asset).map(|sprite| sprite.shape)
+        self.wait_for(asset).map(|sprite| sprite.shape)
     }
 
     /// Whether `uv` is inside the Silhouette of `asset`.
     pub fn contains(&self, asset: &AssetRef, uv: [f64; 2]) -> bool {
-        self.get(asset).is_some_and(|sprite| sprite.contains(uv))
+        self.wait_for(asset)
+            .is_some_and(|sprite| sprite.contains(uv))
     }
 }
 

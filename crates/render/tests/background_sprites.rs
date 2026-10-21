@@ -101,6 +101,6 @@ fn get_waits_for_a_pending_sprite() {
     let store = SpriteStore::new(library());
     let asset = reference("mountain-1");
     assert!(matches!(store.poll(&asset), SpriteState::Pending));
-    assert!(store.get(&asset).is_some());
+    assert!(store.wait_for(&asset).is_some());
     assert_eq!(store.completed(), 1);
 }

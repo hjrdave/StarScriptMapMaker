@@ -73,22 +73,13 @@ pub struct Headless {
     pub queue: wgpu::Queue,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum HeadlessError {
-    NoAdapter(wgpu::RequestAdapterError),
-    Device(wgpu::RequestDeviceError),
+    #[error("no GPU adapter: {0}")]
+    NoAdapter(#[source] wgpu::RequestAdapterError),
+    #[error("could not open the GPU device: {0}")]
+    Device(#[source] wgpu::RequestDeviceError),
 }
-
-impl std::fmt::Display for HeadlessError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            HeadlessError::NoAdapter(err) => write!(f, "no GPU adapter: {err}"),
-            HeadlessError::Device(err) => write!(f, "could not open the GPU device: {err}"),
-        }
-    }
-}
-
-impl std::error::Error for HeadlessError {}
 
 impl Headless {
     /// Opens a device. `software` asks for the platform's software adapter (lavapipe on
