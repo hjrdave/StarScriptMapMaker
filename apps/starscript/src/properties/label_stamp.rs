@@ -498,3 +498,105 @@ impl PropertiesPanel {
             });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ssmap_core::{Canvas, DistanceUnit, Map, Scale};
+
+    fn editor_with_layer() -> (Editor, Id) {
+        let mut editor = Editor::new(Map::new(Canvas::new(
+            100,
+            100,
+            Scale::new(1.0, DistanceUnit::Miles),
+        )));
+        let layer = editor.new_layer().expect("a Layer");
+        (editor, layer)
+    }
+
+    fn add_label(editor: &mut Editor, layer: Id, mut label: Label) -> Id {
+        label.text = "Hello".into();
+        let id = Id::new();
+        assert!(editor.run(Command::CreateLabel {
+            id,
+            parent: layer,
+            index: None,
+            label: Box::new(label),
+        }));
+        id
+    }
+
+    #[test]
+    fn provenance_is_overridden_only_where_the_label_sets_the_field() {
+        assert_eq!(provenance(true), Provenance::Overridden);
+        assert_eq!(provenance(false), Provenance::Inherited);
+    }
+
+    #[test]
+    fn a_label_edit_writes_the_resolved_value_as_an_override() {
+        let (mut editor, layer) = editor_with_layer();
+        let id = add_label(&mut editor, layer, Label::default());
+        let styles = editor.map.label_styles().clone();
+        let label = editor.label(id).expect("a Label").clone();
+        let mut next = label.resolve(&styles);
+        next.size += 10.0;
+        let ctx = LabelEdit {
+            id,
+            label: &label,
+            styles: &styles,
+        };
+        let mut panel = PropertiesPanel::default();
+        panel.label_apply(&mut editor, &ctx, Edit::instant(), &next, |l| l.size = None);
+        assert_eq!(editor.label(id).expect("a Label").size, Some(next.size));
+        assert_eq!(editor.undo_label(), Some("Edit Label"));
+    }
+
+    #[test]
+    fn a_label_reset_clears_the_override_in_one_undo_step() {
+        let (mut editor, layer) = editor_with_layer();
+        let label = Label {
+            size: Some(40.0),
+            ..Label::default()
+        };
+        let id = add_label(&mut editor, layer, label);
+        let label = editor.label(id).expect("a Label").clone();
+        let styles = editor.map.label_styles().clone();
+        let next = label.resolve(&styles);
+        let ctx = LabelEdit {
+            id,
+            label: &label,
+            styles: &styles,
+        };
+        let edit = Edit {
+            reset: true,
+            ..Edit::default()
+        };
+        let mut panel = PropertiesPanel::default();
+        panel.label_apply(&mut editor, &ctx, edit, &next, |l| l.size = None);
+        assert_eq!(editor.label(id).expect("a Label").size, None);
+        assert_eq!(editor.undo_label(), Some("Edit Label"));
+        editor.undo();
+        assert_eq!(editor.label(id).expect("a Label").size, Some(40.0));
+    }
+
+    #[test]
+    fn a_stamp_edit_is_one_named_undo_step() {
+        let (mut editor, layer) = editor_with_layer();
+        let id = Id::new();
+        let stamp = Stamp::new("pack/asset".parse().expect("an Asset ref"), [10.0, 10.0]);
+        assert!(editor.run(Command::CreateStamp {
+            id,
+            parent: layer,
+            index: None,
+            stamp: Box::new(stamp.clone()),
+        }));
+        let next = Stamp {
+            scale: 2.0,
+            ..stamp
+        };
+        let mut panel = PropertiesPanel::default();
+        panel.stamp_apply(&mut editor, id, Edit::instant(), &next);
+        assert_eq!(editor.stamp(id).expect("a Stamp").scale, 2.0);
+        assert_eq!(editor.undo_label(), Some("Edit Stamp"));
+    }
+}

@@ -36,7 +36,8 @@ pub struct PropertiesPanel {
 /// comes from, how an edit is written and how it is reset.
 struct Inherit<'a, T> {
     /// The value of each selected item (one for a single item or a Map default). The fields
-    /// show the first; where the others differ they show "Mixed".
+    /// show the first; where the others differ they show "Mixed". Never empty: every
+    /// `Inherit` is built from at least one selected item or a Map default.
     members: &'a [T],
     provenance: Provenance,
     label: &'a str,
