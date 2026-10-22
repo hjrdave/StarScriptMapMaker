@@ -137,7 +137,9 @@ impl MapMakerApp {
     }
 
     pub(super) fn open_export_dialog(&mut self) {
-        let tab = &self.win.tabs[self.win.active];
+        let Some(tab) = self.win.tabs.get(self.win.active) else {
+            return;
+        };
         let directory = tab.document.path().and_then(Path::parent);
         self.win.export_dialog.open_with(
             &tab.editor.map.export_settings,
@@ -153,7 +155,9 @@ impl MapMakerApp {
         } else {
             directory
         };
-        let tab = &mut self.win.tabs[self.win.active];
+        let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
+            return;
+        };
         let settings = &mut tab.editor.map.export_settings;
         if settings.file_name.as_deref().is_none_or(str::is_empty) {
             settings.file_name = Some(format!("{}.png", tab.document.name()));
@@ -163,7 +167,7 @@ impl MapMakerApp {
     }
 
     fn document_directory(&self) -> Option<PathBuf> {
-        self.tab()
+        self.tab()?
             .document
             .path()
             .and_then(Path::parent)
@@ -172,7 +176,7 @@ impl MapMakerApp {
 
     /// Where Re-export would write, from the stored settings; `None` before a first export.
     pub(super) fn re_export_target(&self) -> Option<PathBuf> {
-        let tab = self.tab();
+        let tab = self.tab()?;
         let directory = tab
             .export_directory
             .clone()
@@ -183,13 +187,15 @@ impl MapMakerApp {
     /// Runs an export of the active tab from the stored settings without opening the dialog.
     pub(super) fn re_export(&mut self) {
         if self.re_export_target().is_none() {
-            self.win.tabs[self.win.active]
-                .editor
-                .error("Export the Map once with Export PNG… first");
+            if let Some(tab) = self.tab_mut() {
+                tab.editor
+                    .error("Export the Map once with Export PNG… first");
+            }
             return;
         }
-        if self.tab().export_directory.is_none() {
-            self.win.tabs[self.win.active].export_directory = self.document_directory();
+        let directory = self.document_directory();
+        if let Some(tab) = self.tab_mut().filter(|tab| tab.export_directory.is_none()) {
+            tab.export_directory = directory;
         }
         self.start_export();
     }
@@ -201,18 +207,20 @@ impl MapMakerApp {
             return;
         }
         if self.app.render_state.is_none() {
-            self.win.tabs[self.win.active]
-                .editor
-                .error("Export needs a graphics adapter");
+            if let Some(tab) = self.tab_mut() {
+                tab.editor.error("Export needs a graphics adapter");
+            }
             return;
         }
         let Some(dest) = self.re_export_target() else {
-            self.win.tabs[self.win.active]
-                .editor
-                .error("The export has no file name");
+            if let Some(tab) = self.tab_mut() {
+                tab.editor.error("The export has no file name");
+            }
             return;
         };
-        let tab = &mut self.win.tabs[self.win.active];
+        let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
+            return;
+        };
         let settings = tab.editor.map.export_settings.clone();
         let output = settings.credits.output(&tab.editor.credit_lines());
         let mut meta =
@@ -234,7 +242,9 @@ impl MapMakerApp {
         let Some(render_state) = self.app.render_state.as_ref() else {
             return;
         };
-        let tab = &mut self.win.tabs[self.win.active];
+        let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
+            return;
+        };
         let editor = &mut tab.editor;
         let cache = tab.canvas_view.cache();
         let outcome =

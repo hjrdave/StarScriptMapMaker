@@ -34,17 +34,28 @@ impl MapMakerApp {
     }
 
     /// The tabs of popped-out window `window` (0 is the first one popped out).
+    /// Empty when there is no such window.
     pub fn popped_tabs(&self, window: usize) -> &[MapTab] {
-        &self.popped[window].tabs
+        self.popped
+            .get(window)
+            .map_or(&[], |state| state.tabs.as_slice())
     }
 
     /// Runs `f` with popped-out window `window` standing in for the main one, so it acts on
-    /// that window's tabs as the menus and keys of that window do.
-    pub fn in_popped_window<R>(&mut self, window: usize, f: impl FnOnce(&mut Self) -> R) -> R {
-        std::mem::swap(&mut self.win, &mut self.popped[window]);
+    /// that window's tabs as the menus and keys of that window do. `None`, without running
+    /// `f`, when there is no such window.
+    pub fn in_popped_window<R>(
+        &mut self,
+        window: usize,
+        f: impl FnOnce(&mut Self) -> R,
+    ) -> Option<R> {
+        std::mem::swap(&mut self.win, self.popped.get_mut(window)?);
         let result = f(self);
-        std::mem::swap(&mut self.win, &mut self.popped[window]);
-        result
+        // `f` may close or add windows, so look the window up again before swapping back.
+        if let Some(state) = self.popped.get_mut(window) {
+            std::mem::swap(&mut self.win, state);
+        }
+        Some(result)
     }
 
     /// Pops tab `index` out of this window into a new window of its own. Does nothing for a
@@ -96,6 +107,10 @@ impl MapMakerApp {
 
     /// Test hook: lets go of tab `index` of window `window` (0 is the main one, then the popped
     /// out ones) with the pointer at `at` on the screen, as the end of a drag does.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no window `window`.
     pub fn drop_tab(&mut self, window: usize, index: usize, at: egui::Pos2) {
         let from = if window == 0 {
             self.win.viewport
@@ -107,6 +122,10 @@ impl MapMakerApp {
     }
 
     /// Test hook: where window `window`'s tab strip is on the screen (0 is the main window).
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no window `window`.
     #[doc(hidden)]
     pub fn strip_rect(&self, window: usize) -> egui::Rect {
         if window == 0 {
@@ -117,6 +136,10 @@ impl MapMakerApp {
     }
 
     /// Test hook: where the Map tabs of window `window` start, and how wide each is.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no window `window`.
     #[doc(hidden)]
     pub fn tab_layout(&self, window: usize) -> (f32, f32) {
         let state = if window == 0 {
@@ -240,9 +263,13 @@ impl MapMakerApp {
     /// Adds `tab` after the others and shows it. A blank tab on show takes it instead, so a
     /// Map opened or created from the start page opens in that tab.
     pub(super) fn push_tab(&mut self, tab: MapTab) {
-        if self.start_page_showing() {
-            let mut blank = std::mem::replace(&mut self.win.tabs[self.win.active], tab);
-            blank.recovery.reset();
+        let blank = if self.start_page_showing() {
+            self.tab_mut()
+        } else {
+            None
+        };
+        if let Some(slot) = blank {
+            std::mem::replace(slot, tab).recovery.reset();
         } else {
             self.win.tabs.push(tab);
             self.win.active = self.win.tabs.len() - 1;
