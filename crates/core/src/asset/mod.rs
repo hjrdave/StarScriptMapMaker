@@ -48,9 +48,9 @@ use std::str::FromStr;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub use credits::{AttributedAsset, PackCredit, credit_lines};
-pub use install::{ASSETS_DIR_ENV, PACK_MANIFEST, assets_dir, built_in_packs_dir, user_packs_dir};
+pub use install::{PACK_MANIFEST, assets_dir};
 pub use library::{LoadProblem, PackLibrary, PackRoots};
-pub use manage::{DeleteError, InstallError, InstallProgress};
+pub use manage::{DeleteError, InstallError, InstallProgress, TrashError};
 pub use manifest::{ManifestError, ManifestErrors, parse_manifest, read_pack};
 
 /// One Asset pack, as read from its manifest.
@@ -211,7 +211,7 @@ impl schemars::JsonSchema for AssetRef {
 }
 
 /// Pack and Asset ids: a lowercase letter or digit, then lowercase letters, digits, `-` and `_`.
-pub fn is_valid_id(id: &str) -> bool {
+pub(crate) fn is_valid_id(id: &str) -> bool {
     let mut chars = id.chars();
     chars
         .next()

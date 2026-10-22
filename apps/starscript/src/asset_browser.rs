@@ -327,7 +327,7 @@ pub(crate) fn load_art(
     sprites: &SpriteStore,
     reference: &AssetRef,
 ) -> Option<ThumbArt> {
-    let sprite = sprites.get_installed(reference)?;
+    let sprite = sprites.wait_for_installed(reference)?;
     let art = &sprite.art;
     let pixels = art.unpremultiplied();
     let light = is_light_art(&pixels);

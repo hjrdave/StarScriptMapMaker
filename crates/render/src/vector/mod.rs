@@ -86,7 +86,7 @@ impl VectorGroup {
     }
 
     /// Marks the group as a Shore effect.
-    pub fn into_effect(mut self) -> Self {
+    pub fn with_effect(mut self) -> Self {
         self.effect = true;
         self
     }

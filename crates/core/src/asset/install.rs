@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 pub const PACK_MANIFEST: &str = "pack.toml";
 
 /// Overrides [`assets_dir`] when set and non-empty.
-pub const ASSETS_DIR_ENV: &str = "SSMAP_ASSETS_DIR";
+pub(crate) const ASSETS_DIR_ENV: &str = "SSMAP_ASSETS_DIR";
 
 /// The application name the per-user data folder is derived from.
 const APP_NAME: &str = "StarScript Map Maker";
@@ -32,13 +32,13 @@ pub fn assets_dir() -> PathBuf {
 }
 
 /// The folder holding one folder per built-in pack.
-pub fn built_in_packs_dir() -> PathBuf {
+pub(crate) fn built_in_packs_dir() -> PathBuf {
     assets_dir().join("packs")
 }
 
 /// The per-user packs folder, such as `~/.local/share/starscriptmapmaker/packs` on Linux.
 /// Unsupported in v1, but packs there load. `None` when the platform reports no home folder.
-pub fn user_packs_dir() -> Option<PathBuf> {
+pub(crate) fn user_packs_dir() -> Option<PathBuf> {
     directories::ProjectDirs::from("", "", APP_NAME).map(|dirs| dirs.data_dir().join("packs"))
 }
 

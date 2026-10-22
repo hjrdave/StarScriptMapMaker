@@ -25,7 +25,7 @@ pub struct SpriteShape {
 impl Stamp {
     /// Where `point` falls on the art, as fractions of its width and height from the top-left,
     /// or `None` outside the art's rectangle.
-    pub fn art_coords(&self, shape: &SpriteShape, point: Point) -> Option<[f64; 2]> {
+    pub(crate) fn art_coords(&self, shape: &SpriteShape, point: Point) -> Option<[f64; 2]> {
         let [dx, dy] = [point[0] - self.position[0], point[1] - self.position[1]];
         let (sin, cos) = self.rotation.to_radians().sin_cos();
         // Undo the rotation (clockwise on screen, y down), then the flip, then the scale.

@@ -7,6 +7,7 @@
 //! Asset art is rasterised on the CPU ([`raster`]), given Silhouettes ([`silhouette`]) and
 //! packed into paged textures ([`atlas`]).
 
+// Stays `pub`: the atlas packing test in `tests/golden.rs` is an integration test.
 pub mod atlas;
 mod canvas;
 mod color;
@@ -28,9 +29,7 @@ mod tiled;
 mod vector;
 mod view;
 
-pub use canvas::{
-    Backdrop, CANVAS_FORMAT, CanvasRenderer, CanvasScene, ClipScope, Content, Quality,
-};
+pub use canvas::{Backdrop, CANVAS_FORMAT, CanvasRenderer, CanvasScene, Content, Quality};
 pub use color::Color;
 pub use export_job::{ExportContext, ExportError, ExportJob, ExportStep};
 pub use gpu::{GpuCapabilities, Headless, HeadlessError, Suitability};
@@ -41,11 +40,8 @@ pub use scene::MapScene;
 pub use sprite::{PLACEHOLDER_SIZE, Sprite, SpriteError, SpriteState, SpriteStore, placeholder};
 pub use stamp::{PlacedStamp, StampDraw};
 pub use text::{Fonts, LabelLayout};
-pub use tiled::{ExportStatus, TILE_MARGIN, Tile, TilePlan, TiledExport, TiledExportError};
-pub use vector::{
-    APPLY_BUDGET, FillRule, LyonRenderer, ObjectRef, Paint, TessellationCache, TessellationRebuild,
-    VectorGroup, VectorShape,
-};
+pub use tiled::{ExportStatus, TiledExport, TiledExportError};
+pub use vector::{FillRule, Paint, TessellationCache, TessellationRebuild, VectorGroup};
 pub use view::View;
 
 /// The wgpu version this crate is built against, for callers that share a device with it.

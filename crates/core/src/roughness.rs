@@ -12,7 +12,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -56,7 +56,7 @@ impl Roughness {
     }
 
     /// Whether these settings leave an outline unchanged.
-    pub fn is_smooth(&self) -> bool {
+    pub(crate) fn is_smooth(&self) -> bool {
         !(self.amount > 0.0
             && self.scale > 0.0
             && self.amount.is_finite()
@@ -473,7 +473,11 @@ impl Rebuild {
 impl Drop for Rebuild {
     fn drop(&mut self) {
         {
-            let _guard = self.shared.ended.lock().expect("roughness wait lock");
+            let _guard = self
+                .shared
+                .ended
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
             self.shared.rebuilding.fetch_sub(1, Ordering::SeqCst);
         }
         self.shared.generation.fetch_add(1, Ordering::SeqCst);
