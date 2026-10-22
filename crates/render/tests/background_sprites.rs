@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use ssmap_core::asset::{AssetRef, PackLibrary, PackRoots};
-use ssmap_render::{SpriteState, SpriteStore};
+use ssmap_render::{SpriteError, SpriteState, SpriteStore};
 
 fn library() -> Arc<PackLibrary> {
     let roots = PackRoots {
@@ -103,4 +103,56 @@ fn get_waits_for_a_pending_sprite() {
     assert!(matches!(store.poll(&asset), SpriteState::Pending));
     assert!(store.get(&asset).is_some());
     assert_eq!(store.completed(), 1);
+}
+
+#[test]
+fn a_broken_art_file_keeps_its_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let pack = dir.path().join("broken-pack");
+    std::fs::create_dir_all(pack.join("art")).unwrap();
+    std::fs::write(pack.join("art/bad.svg"), "this is not an svg").unwrap();
+    std::fs::write(
+        pack.join("pack.toml"),
+        "[pack]\n\
+         id = \"broken-pack\"\n\
+         name = \"Broken pack\"\n\
+         licence = \"CC0-1.0\"\n\
+         credits = \"Test.\"\n\
+         author = \"Tests\"\n\
+         modified = \"2026-10-13\"\n\
+         \n\
+         [[asset]]\n\
+         id = \"bad\"\n\
+         name = \"Bad\"\n\
+         category = \"mountains\"\n\
+         file = \"art/bad.svg\"\n\
+         anchor = [0.5, 0.5]\n\
+         width = 64.0\n",
+    )
+    .unwrap();
+    let roots = PackRoots {
+        built_in: dir.path().to_path_buf(),
+        user: None,
+    };
+    let (library, problems) = PackLibrary::load(&roots);
+    assert!(problems.is_empty(), "{problems:?}");
+    let store = SpriteStore::synchronous(Arc::new(library));
+    let asset = AssetRef::new("broken-pack", "bad").unwrap();
+    assert!(matches!(store.poll(&asset), SpriteState::Missing));
+    let error = store.error(&asset).expect("the error is kept");
+    let message = error.to_string();
+    assert!(message.contains("broken-pack/bad"), "{message}");
+    assert!(message.contains("bad.svg"), "{message}");
+    assert!(matches!(*error, SpriteError::Art { .. }));
+}
+
+#[test]
+fn an_unknown_asset_is_unknown_not_a_load_failure() {
+    let store = SpriteStore::synchronous(library());
+    let asset = reference("no-such-asset");
+    store.poll(&asset);
+    assert!(matches!(
+        store.error(&asset).as_deref(),
+        Some(SpriteError::Unknown(_))
+    ));
 }
