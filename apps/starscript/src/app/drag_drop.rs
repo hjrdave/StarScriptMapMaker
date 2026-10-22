@@ -112,7 +112,10 @@ impl MapMakerApp {
         let pointer = ctx.input(|i| i.pointer.latest_pos());
         // The window whose Layers panel is being dragged from is where the drag started.
         let here = (self.win.viewport, self.win.active);
-        if std::mem::take(&mut self.win.tabs[self.win.active].layer_tree.dragging) {
+        let dragging = self
+            .tab_mut()
+            .is_some_and(|tab| std::mem::take(&mut tab.layer_tree.dragging));
+        if dragging {
             self.app.drag_source = Some(here);
         }
         if ctx.input(|i| i.pointer.any_released())
@@ -211,7 +214,9 @@ impl MapMakerApp {
             let on_canvas = window
                 .canvas_on_screen()
                 .is_some_and(|zone| zone.contains(drop.at));
-            let tab = &mut window.tabs[window.active];
+            let Some(tab) = window.tabs.get_mut(window.active) else {
+                continue;
+            };
             let point = tab
                 .canvas_view
                 .canvas_point(drop.at - origin.to_vec2())
@@ -247,6 +252,10 @@ impl MapMakerApp {
     /// Test hook: lets go of the Layer or Object `id` of the active Map of window `window` (0 is
     /// the main one) with the pointer at `at` on the screen, as the end of a drag from that
     /// window's Layers panel does.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no window `window`.
     #[doc(hidden)]
     pub fn drop_layer(&mut self, window: usize, id: ssmap_core::Id, at: egui::Pos2) {
         let state = if window == 0 {
@@ -264,6 +273,10 @@ impl MapMakerApp {
 
     /// Test hook: where window `window`'s Canvas and Layers panel are on the screen (0 is the
     /// main window).
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no window `window`.
     #[doc(hidden)]
     pub fn drop_zones(&self, window: usize) -> (Option<egui::Rect>, Option<egui::Rect>) {
         let state = if window == 0 {

@@ -483,3 +483,11 @@ fn copy_in_one_window_pastes_into_another() {
     assert_eq!(main_layers(&harness), before);
     assert_eq!(popped_layers(&harness), popped);
 }
+
+#[test]
+fn a_window_that_does_not_exist_is_not_entered() {
+    let mut harness = app();
+    let ran = harness.state_mut().in_popped_window(0, |_| ());
+    assert!(ran.is_none());
+    assert!(harness.state().popped_tabs(0).is_empty());
+}

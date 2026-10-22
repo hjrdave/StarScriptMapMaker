@@ -116,7 +116,9 @@ impl MapMakerApp {
             return;
         }
         self.win.home.left();
-        let tab = &mut self.win.tabs[self.win.active];
+        let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
+            return;
+        };
         if self.win.main {
             self.app.credits.show(&ctx, Some(&mut tab.editor));
             self.app.updates.show(&ctx);
@@ -125,7 +127,9 @@ impl MapMakerApp {
         egui::Panel::bottom("status")
             .exact_size(theme::metrics::STATUS_BAR)
             .show(ui, |ui| self.status_bar(ui));
-        let tab = &mut self.win.tabs[self.win.active];
+        let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
+            return;
+        };
         let layout = self.win.shell.current_layout();
         // The window grew: an overlay for a panel that now shows in full has nothing to open.
         if layout.layers != shell::PanelMode::Rail {
