@@ -280,4 +280,28 @@ mod tests {
         assert!(recovery.reset().is_ok());
         assert!(!recovery.has_pending());
     }
+
+    #[test]
+    fn reset_returns_the_delete_error_and_forgets_everything() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut recovery = Recovery::new(Some(dir.path().to_path_buf()));
+        let op = Op::Remove {
+            id: ssmap_core::Id::new(),
+        };
+        recovery.record(vec![op], Instant::now());
+        let map = Map::new(ssmap_core::Canvas::new(
+            100,
+            100,
+            ssmap_core::Scale::new(1.0, ssmap_core::DistanceUnit::Miles),
+        ));
+        recovery.flush(&Document::recovered(), &map).unwrap();
+        let journal = recovery.journal_path().unwrap().to_path_buf();
+        // A directory where the journal was can't be removed as a file.
+        std::fs::remove_file(&journal).unwrap();
+        std::fs::create_dir(&journal).unwrap();
+
+        assert!(recovery.reset().is_err());
+        assert!(recovery.journal_path().is_none());
+        assert!(!recovery.has_pending());
+    }
 }
