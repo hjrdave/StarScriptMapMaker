@@ -25,8 +25,8 @@ fn app() -> (Harness<'static, MapMakerApp>, Id) {
     ));
     harness.run();
     let editor = harness.state_mut().active_editor_mut().unwrap();
-    let id = editor.place_label(LABEL_AT).expect("a Label is placed");
-    editor.end_gesture();
+    let (id, gesture) = editor.place_label(LABEL_AT).expect("a Label is placed");
+    editor.end_gesture_typed(gesture);
     editor.select(Vec::new());
     editor.active_tool = ToolId::ArtBoard;
     harness.run();

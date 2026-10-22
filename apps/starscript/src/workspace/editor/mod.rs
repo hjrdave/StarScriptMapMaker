@@ -735,11 +735,11 @@ impl Editor {
         }
     }
 
-    /// Finishes the land brush stroke whose gesture is open: runs the one Command the brush
+    /// Finishes the land brush stroke whose gesture `id` opened: runs the one Command the brush
     /// rules choose ([`land::brush_command`]) and commits it as the gesture's Undo step. A new
     /// Landmass becomes the Selection, so the next stroke merges into it. A stroke that changes
     /// nothing, or is refused, leaves no Undo step.
-    pub fn finish_brush_stroke(&mut self, stroke: BrushStroke) {
+    pub fn finish_brush_stroke(&mut self, id: GestureId, stroke: BrushStroke) {
         let new_id = Id::new();
         let layer = self.target_layer(Placing::Land);
         let planned = land::brush_command(
@@ -753,18 +753,20 @@ impl Editor {
         match planned {
             Ok(Some(command)) => {
                 let creates = matches!(command, Command::CreateLandmass { .. });
-                if self.gesture(command) {
+                if self.gesture_typed(&id, command) {
                     if creates {
                         self.select(vec![new_id]);
                     }
-                    self.end_gesture();
+                    self.end_gesture_typed(id);
                 } else {
-                    self.cancel_gesture();
+                    self.cancel_gesture_typed(id);
                 }
             }
-            Ok(None) => self.cancel_gesture(),
+            Ok(None) => {
+                self.cancel_gesture_typed(id);
+            }
             Err(err) => {
-                self.cancel_gesture();
+                self.cancel_gesture_typed(id);
                 let text = err.to_string();
                 let mut chars = text.chars();
                 let first = chars.next().map(|c| c.to_uppercase().to_string());
@@ -831,12 +833,12 @@ impl Editor {
         })
     }
 
-    /// Finishes the water brush stroke whose gesture is open, as [`Self::finish_brush_stroke`]
+    /// Finishes the water brush stroke whose gesture `id` opened, as [`Self::finish_brush_stroke`]
     /// does for land: one Command ([`land::water_command`]) as the gesture's Undo step. The
     /// first stroke that needs it also creates the "Water" Layer, in the same Undo step, so
     /// water has its own Layer to rename, lock, hide and reorder. A new Lake becomes the
     /// Selection, so the next stroke extends it.
-    pub fn finish_water_stroke(&mut self, stroke: BrushStroke) {
+    pub fn finish_water_stroke(&mut self, id: GestureId, stroke: BrushStroke) {
         let new_id = Id::new();
         let existing = self.water_layer();
         let mut planned = land::water_command(
@@ -848,22 +850,25 @@ impl Editor {
             new_id,
         );
         if planned == Err(land::BrushError::NoLayer) {
-            let id = Id::new();
-            let created = self.gesture(Command::CreateLayer {
-                id,
-                parent: None,
-                index: None,
-                name: WATER_LAYER.to_owned(),
-            });
+            let layer = Id::new();
+            let created = self.gesture_typed(
+                &id,
+                Command::CreateLayer {
+                    id: layer,
+                    parent: None,
+                    index: None,
+                    name: WATER_LAYER.to_owned(),
+                },
+            );
             if !created {
-                self.cancel_gesture();
+                self.cancel_gesture_typed(id);
                 return;
             }
             planned = land::water_command(
                 &self.map,
                 self.caches.roughness(),
                 &self.selection,
-                Some(id),
+                Some(layer),
                 stroke,
                 new_id,
             );
@@ -871,18 +876,20 @@ impl Editor {
         match planned {
             Ok(Some(command)) => {
                 let creates = matches!(command, Command::CreateLake { .. });
-                if self.gesture(command) {
+                if self.gesture_typed(&id, command) {
                     if creates {
                         self.select(vec![new_id]);
                     }
-                    self.end_gesture();
+                    self.end_gesture_typed(id);
                 } else {
-                    self.cancel_gesture();
+                    self.cancel_gesture_typed(id);
                 }
             }
-            Ok(None) => self.cancel_gesture(),
+            Ok(None) => {
+                self.cancel_gesture_typed(id);
+            }
             Err(err) => {
-                self.cancel_gesture();
+                self.cancel_gesture_typed(id);
                 self.error(err.to_string());
             }
         }
@@ -1662,11 +1669,11 @@ impl Editor {
 
     /// Opens an "Add Label" gesture and places a Label at `position` in the active Layer,
     /// creating a Layer if the Map has none. The gesture stays open for typing the text.
-    pub fn place_label(&mut self, position: [f64; 2]) -> Option<Id> {
-        self.end_gesture();
-        self.begin_gesture("Add Label");
+    pub fn place_label(&mut self, position: [f64; 2]) -> Option<(Id, GestureId)> {
+        self.end_open_gesture();
+        let gesture = self.begin_gesture_typed("Add Label");
         let Some(parent) = self.placement_layer(Placing::Label) else {
-            self.cancel_gesture();
+            self.cancel_gesture_typed(gesture);
             return None;
         };
         let id = Id::new();
@@ -1675,17 +1682,20 @@ impl Editor {
             position,
             ..Label::default()
         };
-        if !self.gesture(Command::CreateLabel {
-            id,
-            parent,
-            index: None,
-            label: Box::new(label),
-        }) {
-            self.cancel_gesture();
+        if !self.gesture_typed(
+            &gesture,
+            Command::CreateLabel {
+                id,
+                parent,
+                index: None,
+                label: Box::new(label),
+            },
+        ) {
+            self.cancel_gesture_typed(gesture);
             return None;
         }
         self.select(vec![id]);
-        Some(id)
+        Some((id, gesture))
     }
 
     /// The credit lines for the attribution-required Assets the Map uses; empty when none, or
@@ -2255,8 +2265,8 @@ mod tests {
             start: [10.0, 10.0],
             erase,
         };
-        editor.begin_gesture(Editor::water_label(false));
-        editor.finish_water_stroke(stroke(false));
+        let gesture = editor.begin_gesture_typed(Editor::water_label(false));
+        editor.finish_water_stroke(gesture, stroke(false));
         assert_eq!(editor.undo_label(), Some("Paint Water"));
         let layer = editor.water_layer().expect("a Water layer");
         let lakes = editor.map.children(Some(layer)).to_vec();
@@ -2264,8 +2274,8 @@ mod tests {
         assert_eq!(editor.selection(), lakes);
 
         // A second stroke extends the Lake and reuses the Layer.
-        editor.begin_gesture(Editor::water_label(false));
-        editor.finish_water_stroke(stroke(false));
+        let gesture = editor.begin_gesture_typed(Editor::water_label(false));
+        editor.finish_water_stroke(gesture, stroke(false));
         assert_eq!(editor.map.children(Some(layer)), lakes);
         assert_eq!(editor.map.children(None), &[layer]);
 
@@ -2333,14 +2343,17 @@ mod tests {
     #[test]
     fn placing_a_label_creates_a_layer_and_is_one_undo_step() {
         let mut editor = editor();
-        let id = editor.place_label([50.0, 50.0]).unwrap();
+        let (id, gesture) = editor.place_label([50.0, 50.0]).unwrap();
         let mut label = editor.label(id).unwrap().clone();
         label.text = "Thule".into();
-        editor.gesture(Command::SetLabel {
-            id,
-            label: Box::new(label),
-        });
-        editor.end_gesture();
+        editor.gesture_typed(
+            &gesture,
+            Command::SetLabel {
+                id,
+                label: Box::new(label),
+            },
+        );
+        editor.end_gesture_typed(gesture);
         assert_eq!(editor.selection(), &[id]);
         assert_eq!(editor.label(id).unwrap().text, "Thule");
         assert_eq!(editor.undo_label(), Some("Add Label"));
@@ -2353,8 +2366,8 @@ mod tests {
     fn cancelling_a_placement_restores_the_selection() {
         let mut editor = editor();
         let layer = editor.new_layer().unwrap();
-        editor.place_label([50.0, 50.0]).unwrap();
-        editor.cancel_gesture();
+        let (_, gesture) = editor.place_label([50.0, 50.0]).unwrap();
+        editor.cancel_gesture_typed(gesture);
         assert_eq!(editor.map.children(Some(layer)).len(), 0);
         assert_eq!(editor.selection(), &[layer]);
     }
@@ -2362,10 +2375,10 @@ mod tests {
     #[test]
     fn picking_finds_the_topmost_unlocked_visible_label() {
         let mut editor = editor();
-        let below = editor.place_label([50.0, 50.0]).unwrap();
-        editor.end_gesture();
-        let above = editor.place_label([52.0, 50.0]).unwrap();
-        editor.end_gesture();
+        let (below, gesture) = editor.place_label([50.0, 50.0]).unwrap();
+        editor.end_gesture_typed(gesture);
+        let (above, gesture) = editor.place_label([52.0, 50.0]).unwrap();
+        editor.end_gesture_typed(gesture);
         assert_eq!(editor.pick([50.0, 50.0]), Some(above));
         assert_eq!(editor.pick([-500.0, 50.0]), None);
         editor.run(Command::SetLocked {
@@ -2626,7 +2639,8 @@ mod tests {
         editor.selected_asset = Some(asset("test-pack/castle"));
         let stamp = editor.place_stamp([40.0, 50.0]).unwrap();
         assert_eq!(editor.map.parent(stamp), layers.assets);
-        let label = editor.place_label([60.0, 50.0]).unwrap();
+        let (label, gesture) = editor.place_label([60.0, 50.0]).unwrap();
+        editor.end_gesture_typed(gesture);
         assert_eq!(editor.map.parent(label), layers.labels);
         assert_eq!(editor.default_layer(Placing::Land), layers.land);
         assert_eq!(editor.map.children(layers.assets), [stamp]);

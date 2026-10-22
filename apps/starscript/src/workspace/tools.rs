@@ -302,6 +302,11 @@ impl ToolState {
         }
     }
 
+    /// Hands over the held gesture's token, for a call that ends it.
+    fn take_held(&mut self) -> Option<GestureId> {
+        self.held.take().map(|(_, id)| id)
+    }
+
     /// Rolls the held gesture back.
     fn cancel_held(&mut self, editor: &mut Editor) {
         if let Some((_, id)) = self.held.take() {
@@ -349,39 +354,20 @@ pub struct TextEditing {
     pub text: String,
     /// Set until the box has taken the keyboard and selected the text.
     pub just_opened: bool,
-    /// The "Edit Label" gesture the text is typed in; `None` when the Editor opened it
-    /// (placing a Label).
-    gesture: Option<GestureId>,
-}
-
-impl Drop for TextEditing {
-    fn drop(&mut self) {
-        // The Editor goes with the tool state, taking the open gesture with it.
-        if let Some(id) = self.gesture.take() {
-            std::mem::forget(id);
-        }
-    }
+    /// The gesture the text is typed in: "Edit Label", or "Add Label" when the Label was just
+    /// placed.
+    gesture: GestureId,
 }
 
 impl TextEditing {
     /// Runs a Command in the gesture the text is typed in.
     pub fn run(&self, editor: &mut Editor, command: Command) -> bool {
-        match &self.gesture {
-            Some(id) => editor.gesture_typed(id, command),
-            None => editor.gesture(command),
-        }
+        editor.gesture_typed(&self.gesture, command)
     }
 
     /// Commits the gesture the text was typed in.
-    pub fn finish(mut self, editor: &mut Editor) {
-        match self.gesture.take() {
-            Some(id) => {
-                editor.end_gesture_typed(id);
-            }
-            None => {
-                editor.end_open_gesture();
-            }
-        }
+    pub fn finish(self, editor: &mut Editor) {
+        editor.end_gesture_typed(self.gesture);
     }
 }
 
@@ -407,18 +393,28 @@ struct Drag {
 }
 
 impl ToolState {
-    /// Opens the text box on a Label, inside a gesture: the caller's, or a new "Edit Label".
+    /// Opens the text box on a Label, inside a new "Edit Label" gesture.
     pub fn edit_text(&mut self, editor: &mut Editor, id: Id) {
+        if editor.label(id).is_none() {
+            return;
+        }
+        let gesture = editor.begin_gesture_typed("Edit Label");
+        self.edit_placed_text(editor, id, gesture);
+    }
+
+    /// Opens the text box on the Label `id` inside `gesture`, which already holds its
+    /// placement ("Add Label").
+    fn edit_placed_text(&mut self, editor: &mut Editor, id: Id, gesture: GestureId) {
         let Some(label) = editor.label(id) else {
+            editor.cancel_gesture_typed(gesture);
             return;
         };
         let text = label.text.clone();
-        let gesture = editor.begin_gesture_typed("Edit Label");
         self.editing = Some(TextEditing {
             id,
             text,
             just_opened: true,
-            gesture: Some(gesture),
+            gesture,
         });
     }
 
@@ -600,15 +596,10 @@ pub fn canvas_input(
         ToolId::Label => {
             if response.clicked()
                 && let Some(pos) = response.interact_pointer_pos()
-                && let Some(id) = editor.place_label(to_canvas(pos))
+                && let Some((id, gesture)) = editor.place_label(to_canvas(pos))
             {
                 // Typing joins the "Add Label" gesture, so placing and naming undo together.
-                state.editing = Some(TextEditing {
-                    id,
-                    text: editor.label(id).map(|l| l.text.clone()).unwrap_or_default(),
-                    just_opened: true,
-                    gesture: None,
-                });
+                state.edit_placed_text(editor, id, gesture);
                 editor.active_tool = ToolId::Select;
             }
         }
@@ -917,13 +908,13 @@ fn land_brush(
     }
     if released && let Some(stroke) = state.stroke.take() {
         let finished = finished(&stroke);
-        if water {
-            editor.finish_water_stroke(finished);
-        } else {
-            editor.finish_brush_stroke(finished);
+        if let Some(id) = state.take_held() {
+            if water {
+                editor.finish_water_stroke(id, finished);
+            } else {
+                editor.finish_brush_stroke(id, finished);
+            }
         }
-        // The Editor ended the gesture; this settles the token.
-        state.end_held(editor);
     }
 }
 
@@ -1077,13 +1068,14 @@ fn lasso_tool(editor: &mut Editor, view: &View, state: &mut ToolState, input: &C
             return;
         }
         let id = editor.begin_gesture_typed(editor.brush_label(lasso.erase));
-        editor.finish_brush_stroke(BrushStroke {
-            region,
-            start: lasso.points.first().copied().unwrap_or_default(),
-            erase: lasso.erase,
-        });
-        // The Editor ended the gesture; this settles the token.
-        editor.end_gesture_typed(id);
+        editor.finish_brush_stroke(
+            id,
+            BrushStroke {
+                region,
+                start: lasso.points.first().copied().unwrap_or_default(),
+                erase: lasso.erase,
+            },
+        );
     }
 }
 
