@@ -271,7 +271,7 @@ fn main() {
         .render(&gpu.device, &gpu.queue, &mut encoder, &scene, &start)
         .clone();
     gpu.queue.submit([encoder.finish()]);
-    read_texture(&gpu.device, &gpu.queue, &texture);
+    read_texture(&gpu.device, &gpu.queue, &texture).expect("the readback succeeds");
     println!("frame with readback: {:?}", started.elapsed());
 
     if scale >= 1.0 {

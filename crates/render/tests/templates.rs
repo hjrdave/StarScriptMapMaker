@@ -44,7 +44,8 @@ fn every_template_renders_and_screen_and_export_match() {
             &mut renderer,
             &scene,
             &view,
-        );
+        )
+        .expect("the readback succeeds");
         assert_eq!([screen.width, screen.height], SIDES);
 
         let settings = ExportSettings {

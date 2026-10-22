@@ -33,7 +33,7 @@ pub use canvas::{Backdrop, CANVAS_FORMAT, CanvasRenderer, CanvasScene, Content, 
 pub use color::Color;
 pub use export_job::{ExportContext, ExportError, ExportJob, ExportStep};
 pub use gpu::{GpuCapabilities, Headless, HeadlessError, Suitability};
-pub use offscreen::{RgbaImage, read_texture, render_to_image};
+pub use offscreen::{ReadbackError, RgbaImage, read_texture, render_to_image};
 pub use png_writer::{PngMeta, PngWriteError, PngWriter};
 pub use present::Presenter;
 pub use scene::MapScene;

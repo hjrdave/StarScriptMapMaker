@@ -75,13 +75,15 @@ pub fn render_whole_canvas(
     // The preview is of the Canvas alone, so pasteboard Objects stay out of it.
     scene.pasteboard_objects = false;
     let view = View::whole_canvas_at(scene.canvas_origin, scene.canvas_size, longest_side);
-    Some(render_to_image(
+    // A failed readback leaves the Map without a preview rather than crashing.
+    render_to_image(
         &render_state.device,
         &render_state.queue,
         &mut resources.renderer,
         &scene,
         &view,
-    ))
+    )
+    .ok()
 }
 
 /// Advances `job` by one step on the same renderer as the screen. `None` without a GPU.

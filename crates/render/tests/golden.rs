@@ -73,6 +73,7 @@ fn render(headless: &Headless, scene: &CanvasScene, view: &View) -> RgbaImage {
         scene,
         view,
     )
+    .expect("the readback succeeds")
 }
 
 fn golden_path(name: &str) -> PathBuf {
@@ -305,6 +306,7 @@ fn redraw_after_a_gesture_is_fully_rendered() {
             scene,
             view,
         )
+        .expect("the readback succeeds")
     };
     let before = draw(&full, &view);
     // Pan and zoom, drawing at gesture quality, then come back to where the view started.
@@ -479,7 +481,8 @@ fn atlas_page() {
     assert!(atlas.page_count() >= 2);
     eprintln!("{} pages", atlas.page_count());
 
-    let page = read_texture(&headless.device, &headless.queue, atlas.page_texture(0));
+    let page = read_texture(&headless.device, &headless.queue, atlas.page_texture(0))
+        .expect("the readback succeeds");
     assert_eq!([page.width, page.height], [MIN_PAGE_SIZE, MIN_PAGE_SIZE]);
     // Uploads are byte copies, so every entry reads back exactly, on any adapter.
     let mut used = 0u64;
@@ -767,6 +770,7 @@ fn render_stamps_sorted(
         &canvas,
         &view,
     )
+    .expect("the readback succeeds")
 }
 
 #[test]
@@ -910,6 +914,7 @@ fn render_clipped(headless: &Headless, clip: bool, stamps: &[ssmap_core::Stamp])
         &canvas,
         &view,
     )
+    .expect("the readback succeeds")
 }
 
 /// Stamps on a clipped Layer are cut at the coast and absent inside a Lake.
@@ -1049,7 +1054,8 @@ fn ten_thousand_stamps() {
             &mut renderer,
             &canvas,
             &view,
-        );
+        )
+        .expect("the readback succeeds");
     }
     let per_frame = started.elapsed() / frames;
     eprintln!("10k Stamps: {per_frame:?} per frame (including readback)");
@@ -1160,6 +1166,7 @@ fn progressive(headless: &Headless, map: &Map) -> Progressive {
     let capabilities = || GpuCapabilities::query(&headless.adapter);
     let draw = |renderer: &mut CanvasRenderer| {
         render_to_image(&headless.device, &headless.queue, renderer, &scene, &view)
+            .expect("the readback succeeds")
     };
 
     let mut renderer = CanvasRenderer::new(&headless.device, capabilities());
