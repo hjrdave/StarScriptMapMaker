@@ -166,3 +166,35 @@ fn history_records_nothing_unless_asked() {
     history.undo(&mut map).unwrap();
     assert!(history.take_applied().is_empty());
 }
+
+#[test]
+fn undo_and_redo_labels_list_the_steps_in_the_order_they_are_taken() {
+    let mut map = empty_map();
+    let mut history = History::default();
+    assert_eq!(history.undo_labels().count(), 0);
+    assert_eq!(history.redo_labels().count(), 0);
+    let layer = Id::new();
+    history
+        .execute_step(&mut map, &create(layer, "Land"), vec![])
+        .unwrap();
+    let rename = Command::RenameLayer {
+        id: layer,
+        name: "Sea".into(),
+    };
+    history.execute_step(&mut map, &rename, vec![]).unwrap();
+    assert_eq!(
+        history.undo_labels().collect::<Vec<_>>(),
+        ["Create Layer", "Rename Layer"]
+    );
+    assert_eq!(history.redo_labels().count(), 0);
+
+    history.undo(&mut map).unwrap();
+    history.undo(&mut map).unwrap();
+    assert_eq!(history.undo_labels().count(), 0);
+    // Redo takes the oldest undone step first.
+    assert_eq!(
+        history.redo_labels().collect::<Vec<_>>(),
+        ["Create Layer", "Rename Layer"]
+    );
+    assert_eq!(history.redo_label(), Some("Create Layer"));
+}

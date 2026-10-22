@@ -240,6 +240,28 @@ fn every_save_stamps_a_new_generation() {
 }
 
 #[test]
+fn saved_revision_tells_whether_the_map_has_unsaved_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = path(&dir, "world.ssmap");
+    let (mut map, layer, _) = sample_map();
+    let (mut file, _) = MapFile::create(&file_path, &map, None).unwrap();
+    assert_eq!(file.saved_revision(), map.revision());
+
+    map.execute(&Command::RenameLayer {
+        id: layer,
+        name: "Renamed".into(),
+    })
+    .unwrap();
+    assert_ne!(file.saved_revision(), map.revision());
+    file.save(&map, None).unwrap();
+    assert_eq!(file.saved_revision(), map.revision());
+
+    drop(file);
+    let (file, reopened) = MapFile::open(&file_path).unwrap();
+    assert_eq!(file.saved_revision(), reopened.revision());
+}
+
+#[test]
 fn the_preview_is_refreshed_on_every_save() {
     let dir = tempfile::tempdir().unwrap();
     let file_path = path(&dir, "world.ssmap");

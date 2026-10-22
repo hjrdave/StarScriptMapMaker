@@ -5,6 +5,8 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use thiserror::Error;
+
 use crate::map::Map;
 use crate::node::{Node, ObjectKind};
 
@@ -63,31 +65,21 @@ pub struct InstallProgress {
 }
 
 /// Why a pack could not be deleted.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Debug, Error)]
 pub enum DeleteError {
     /// No loaded pack has this id.
+    #[error("no pack named `{0}` is installed")]
     NotFound(String),
     /// The pack ships with the app (or lives outside the user packs folder).
+    #[error("`{0}` is built into the app and cannot be deleted")]
     BuiltIn(String),
     /// Moving the pack to the Trash failed.
-    Trash(String),
+    #[error("cannot move the pack to the Trash: {0}")]
+    Trash(TrashError),
 }
 
-impl fmt::Display for DeleteError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DeleteError::NotFound(id) => write!(f, "no pack named `{id}` is installed"),
-            DeleteError::BuiltIn(id) => {
-                write!(f, "`{id}` is built into the app and cannot be deleted")
-            }
-            DeleteError::Trash(message) => {
-                write!(f, "cannot move the pack to the Trash: {message}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for DeleteError {}
+/// What a `trash` closure passed to [`PackLibrary::delete_pack`] returns on failure.
+pub type TrashError = Box<dyn std::error::Error + Send + Sync>;
 
 impl Pack {
     /// Whether the pack ships with the app. Decided by where it was found, never by its manifest.
@@ -198,7 +190,7 @@ impl PackLibrary {
         &mut self,
         id: &str,
         roots: &PackRoots,
-        trash: impl FnOnce(&Path) -> Result<(), String>,
+        trash: impl FnOnce(&Path) -> Result<(), TrashError>,
     ) -> Result<Pack, DeleteError> {
         let pack = self
             .pack(id)

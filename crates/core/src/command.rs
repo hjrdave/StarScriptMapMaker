@@ -479,7 +479,7 @@ impl Command {
     }
 
     /// Checks the Command against `map` and returns the Ops it applies, in order.
-    pub fn compile(&self, map: &Map) -> Result<Vec<Op>, CommandError> {
+    pub(crate) fn compile(&self, map: &Map) -> Result<Vec<Op>, CommandError> {
         match self {
             Command::CreateLayer {
                 id,
@@ -1742,7 +1742,7 @@ fn split_apart(map: &Map, id: Id, new_ids: &[Id]) -> Result<Vec<Op>, CommandErro
         unreachable!("one id in, one id out")
     };
     let Some(Node::Object(object)) = map.node(id) else {
-        unreachable!("checked")
+        unreachable!("outlined verified the id is an Object")
     };
     let ObjectKind::Landmass(landmass) = &object.kind else {
         return Err(CommandError::NotALandmass(id));
@@ -1830,8 +1830,11 @@ fn outlined(map: &Map, ids: &[Id]) -> Result<Vec<Id>, CommandError> {
 /// The outline of an id `outlined` accepted.
 fn outline(map: &Map, id: Id) -> &MultiPolygon {
     match map.node(id) {
-        Some(Node::Object(object)) => object.kind.geometry().expect("checked"),
-        _ => unreachable!("checked"),
+        Some(Node::Object(object)) => object
+            .kind
+            .geometry()
+            .expect("outlined verified the Object has an outline"),
+        _ => unreachable!("outlined verified the id is an Object"),
     }
 }
 

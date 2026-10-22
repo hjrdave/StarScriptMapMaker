@@ -120,7 +120,7 @@ impl MapMakerApp {
         if delete {
             self.win.delete_prompt = None;
             // Trash first: if it fails, the open tab and its unsaved edits stay.
-            let trashed = file_actions::move_to_trash(&path);
+            let trashed = file_actions::move_to_trash(&path).map_err(|err| err.to_string());
             let result = after_trash(trashed, || {
                 if let Some(index) = open_tab {
                     self.remove_tab(index);
