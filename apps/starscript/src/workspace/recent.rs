@@ -31,8 +31,17 @@ impl RecentFiles {
     }
 
     pub fn store(&self, storage: &mut dyn eframe::Storage) {
-        let json = serde_json::to_string(&self.paths).expect("paths serialise");
-        storage.set_string(STORAGE_KEY, json);
+        // Paths that aren't valid UTF-8 can't be serialised, so they aren't remembered.
+        let storable: Vec<&Path> = self
+            .paths
+            .iter()
+            .map(PathBuf::as_path)
+            .filter(|path| path.to_str().is_some())
+            .collect();
+        match serde_json::to_string(&storable) {
+            Ok(json) => storage.set_string(STORAGE_KEY, json),
+            Err(err) => eprintln!("could not store recent files: {err}"),
+        }
     }
 
     pub fn paths(&self) -> &[PathBuf] {
@@ -112,6 +121,38 @@ fn load_thumbnail(ctx: &egui::Context, path: &Path) -> Option<egui::TextureHandl
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Default)]
+    struct MemoryStorage(HashMap<String, String>);
+
+    impl eframe::Storage for MemoryStorage {
+        fn get_string(&self, key: &str) -> Option<String> {
+            self.0.get(key).cloned()
+        }
+        fn set_string(&mut self, key: &str, value: String) {
+            self.0.insert(key.to_owned(), value);
+        }
+        fn remove_string(&mut self, key: &str) {
+            self.0.remove(key);
+        }
+        fn flush(&mut self) {}
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn store_skips_non_utf8_paths_without_panicking() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let mut recent = RecentFiles::default();
+        recent.add(Path::new("/maps/ok.ssmap"));
+        recent.add(Path::new(OsStr::from_bytes(b"/maps/bad\xff.ssmap")));
+        let mut storage = MemoryStorage::default();
+        recent.store(&mut storage);
+
+        let loaded = RecentFiles::load(Some(&storage));
+        assert_eq!(loaded.paths(), [PathBuf::from("/maps/ok.ssmap")]);
+    }
 
     #[test]
     fn newest_first_without_duplicates_and_capped() {

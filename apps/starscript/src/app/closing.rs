@@ -208,9 +208,11 @@ impl MapMakerApp {
         let Some(choice) = choice else {
             return;
         };
-        self.win.tabs[self.win.active].pending = None;
+        if let Some(tab) = self.tab_mut() {
+            tab.pending = None;
+        }
         match choice {
-            UnsavedChoice::Save if self.tab().document.path().is_none() => {
+            UnsavedChoice::Save if self.tab().is_some_and(|tab| tab.document.path().is_none()) => {
                 // A Map never saved is saved through Save As.
                 self.win.awaiting_save = Some((self.win.active, pending));
                 self.show_save_dialog();
@@ -232,7 +234,9 @@ impl MapMakerApp {
         match pending {
             Pending::CloseTab => self.remove_tab(self.win.active),
             Pending::Quit => {
-                self.win.tabs[self.win.active].quit_decided = true;
+                if let Some(tab) = self.tab_mut() {
+                    tab.quit_decided = true;
+                }
                 self.advance_quit(ctx);
             }
         }

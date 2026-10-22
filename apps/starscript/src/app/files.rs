@@ -51,7 +51,9 @@ impl MapMakerApp {
 
     /// Applies a journal's changes to the Map file it was written against.
     pub(super) fn replay_recovery(&mut self, found: Found) {
-        let tab = &mut self.win.tabs[self.win.active];
+        let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
+            return;
+        };
         let ops = found.recovered.ops.clone();
         match found.recovered.clone().replay(&mut tab.editor.map) {
             Ok(()) => {
@@ -80,7 +82,9 @@ impl MapMakerApp {
     /// Saves a journal's changes, applied as far as they go, as a copy beside the active
     /// tab's Map file, which is left as it is.
     pub(super) fn save_recovered_copy(&mut self, found: Found) {
-        let tab = &mut self.win.tabs[self.win.active];
+        let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
+            return;
+        };
         let Some(path) = tab.document.path().map(Path::to_path_buf) else {
             return;
         };
@@ -173,10 +177,15 @@ impl MapMakerApp {
     /// Saves to the open file, or asks where to save a Map that has never been saved.
     pub fn save(&mut self) -> bool {
         // A gesture still open would otherwise reach the journal after the save holding it.
-        self.win.tabs[self.win.active].editor.end_gesture();
-        self.win.tabs[self.win.active].editor.embed_used_assets();
+        let Some(tab) = self.tab_mut() else {
+            return false;
+        };
+        tab.editor.end_gesture();
+        tab.editor.embed_used_assets();
         let preview = self.preview_png();
-        let tab = &mut self.win.tabs[self.win.active];
+        let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
+            return false;
+        };
         match tab.document.save(&tab.editor.map, preview.as_deref()) {
             Some(result) => self.saved(result),
             None => {
@@ -188,11 +197,16 @@ impl MapMakerApp {
 
     /// Saves a copy at `path` that becomes the active tab's file.
     pub fn save_as_path(&mut self, path: &Path) -> bool {
-        self.win.tabs[self.win.active].editor.end_gesture();
-        self.win.tabs[self.win.active].editor.embed_used_assets();
+        let Some(tab) = self.tab_mut() else {
+            return false;
+        };
+        tab.editor.end_gesture();
+        tab.editor.embed_used_assets();
         let preview = self.preview_png();
         let path = document::with_extension(path.to_path_buf());
-        let tab = &mut self.win.tabs[self.win.active];
+        let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
+            return false;
+        };
         let result = tab
             .document
             .save_as(&path, &tab.editor.map, preview.as_deref());
@@ -200,7 +214,9 @@ impl MapMakerApp {
     }
 
     fn saved(&mut self, result: Result<(), ssmap_core::file::FileError>) -> bool {
-        let tab = &mut self.win.tabs[self.win.active];
+        let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
+            return false;
+        };
         match result {
             Ok(()) => {
                 // The save holds every change so far; the journal starts over.
@@ -232,7 +248,9 @@ impl MapMakerApp {
     }
 
     pub(super) fn show_save_dialog(&mut self) {
-        let tab = &self.win.tabs[self.win.active];
+        let Some(tab) = self.win.tabs.get(self.win.active) else {
+            return;
+        };
         let directory = tab.document.path().and_then(Path::parent);
         self.win
             .save_dialog
@@ -242,7 +260,7 @@ impl MapMakerApp {
     /// The preview PNG stored with each save, rendered like the screen.
     fn preview_png(&mut self) -> Option<Vec<u8>> {
         let render_state = self.app.render_state.as_ref()?;
-        let tab = &mut self.win.tabs[self.win.active];
+        let tab = self.win.tabs.get_mut(self.win.active)?;
         let image = canvas_view::render_whole_canvas(
             render_state,
             &mut tab.editor,
@@ -302,10 +320,9 @@ impl MapMakerApp {
         let Some(choice) = recovery_modal(ctx, &text, recover) else {
             return;
         };
-        let prompt = self.win.tabs[self.win.active]
-            .recovery_prompt
-            .take()
-            .expect("shown above");
+        let Some(prompt) = self.tab_mut().and_then(|tab| tab.recovery_prompt.take()) else {
+            return;
+        };
         match (prompt, choice) {
             (_, RecoveryChoice::Later) => {}
             (RecoveryPrompt::Replay(found), RecoveryChoice::Recover) => {

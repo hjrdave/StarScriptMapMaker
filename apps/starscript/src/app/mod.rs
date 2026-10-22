@@ -382,8 +382,13 @@ impl MapMakerApp {
         }
     }
 
+    /// The active tab's Editor.
+    ///
+    /// # Panics
+    ///
+    /// Panics while no Map is open (Home showing with no tabs).
     pub fn editor(&self) -> &Editor {
-        self.tab().editor()
+        self.tab().expect("no Map is open").editor()
     }
 
     /// The panels' widths and collapse state.
@@ -391,8 +396,13 @@ impl MapMakerApp {
         &self.win.shell
     }
 
+    /// The active tab's Document.
+    ///
+    /// # Panics
+    ///
+    /// Panics while no Map is open (Home showing with no tabs).
     pub fn document(&self) -> &Document {
-        self.tab().document()
+        self.tab().expect("no Map is open").document()
     }
 
     /// Whether the system Save As dialog is showing.
@@ -407,22 +417,22 @@ impl MapMakerApp {
 
     /// Whether a Label's text box is open on the Canvas.
     pub fn editing_label_text(&self) -> bool {
-        self.tab().canvas_view.editing_text()
+        self.tab().is_some_and(|tab| tab.canvas_view.editing_text())
     }
 
     /// The screen position of a Canvas point in the Canvas panel, once it has been drawn.
     pub fn canvas_to_screen(&self, point: [f64; 2]) -> Option<egui::Pos2> {
-        self.tab().canvas_view.to_screen(point)
+        self.tab()?.canvas_view.to_screen(point)
     }
 
     /// The Recovery journal being written for the active tab's Map, once there is one.
     pub fn recovery_journal(&self) -> Option<&Path> {
-        self.tab().recovery_journal()
+        self.tab()?.recovery_journal()
     }
 
     /// Whether edits are waiting to be written to the active tab's Recovery journal.
     pub fn has_unjournaled_changes(&self) -> bool {
-        self.tab().recovery.has_pending()
+        self.tab().is_some_and(|tab| tab.recovery.has_pending())
     }
 
     /// The open Maps, in tab order.
@@ -448,10 +458,15 @@ impl MapMakerApp {
         self.win.main && (self.win.home_active || self.win.tabs.is_empty())
     }
 
-    /// The active tab: the one whose Map the window shows and every command acts on. Panics
+    /// The active tab: the one whose Map the window shows and every command acts on. `None`
     /// while no Map is open.
-    fn tab(&self) -> &MapTab {
-        &self.win.tabs[self.win.active]
+    fn tab(&self) -> Option<&MapTab> {
+        self.win.tabs.get(self.win.active)
+    }
+
+    /// The active tab, mutably; `None` while no Map is open.
+    fn tab_mut(&mut self) -> Option<&mut MapTab> {
+        self.win.tabs.get_mut(self.win.active)
     }
 }
 

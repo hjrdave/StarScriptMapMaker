@@ -37,7 +37,10 @@ impl MapMakerApp {
         if !self.map_showing() {
             return state;
         }
-        let editor = &self.tab().editor;
+        let Some(tab) = self.tab() else {
+            return state;
+        };
+        let editor = &tab.editor;
         state.has_map = true;
         state.node_edit = editor.node_edit().is_some();
         state.nodes_selected = editor
@@ -225,7 +228,9 @@ impl MapMakerApp {
             C::ReExport => self.re_export(),
             _ => {}
         }
-        let tab = &mut self.win.tabs[self.win.active];
+        let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
+            return;
+        };
         let editor = &mut tab.editor;
         match command {
             C::LabelStyles => tab.label_styles.open = !tab.label_styles.open,
@@ -424,7 +429,10 @@ impl MapMakerApp {
         for command in commands {
             self.run_command(command);
         }
-        let editor = &mut self.win.tabs[self.win.active].editor;
+        let Some(tab) = self.tab_mut() else {
+            return;
+        };
+        let editor = &mut tab.editor;
         ctx.input_mut(|input| {
             if editor.node_edit().is_some() && consume(input, &off, menu::Command::FinishNodeEdit) {
                 editor.leave_node_edit();
