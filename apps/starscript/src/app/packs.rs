@@ -3,7 +3,19 @@
 use super::*;
 use crate::{dialog, pack_page};
 
+/// What the user is told about a pack that could not be loaded.
+pub(super) fn problem_notice(problem: &ssmap_core::asset::LoadProblem) -> String {
+    format!("Asset pack problem: {problem}")
+}
+
 impl MapMakerApp {
+    /// Tells the user about the packs that could not be loaded.
+    fn notify_pack_problems(&mut self, problems: Vec<ssmap_core::asset::LoadProblem>) {
+        for problem in &problems {
+            self.notify_error(problem_notice(problem));
+        }
+    }
+
     /// Loads the packs under `roots` afresh, for after one is installed or deleted. Every
     /// open Map, the Asset picker and the Canvas see the change on the next frame, without a
     /// restart. Returns what could not be loaded.
@@ -29,9 +41,8 @@ impl MapMakerApp {
     pub(super) fn finish_pack_install(&mut self) {
         if self.win.pack_install.poll().is_some() {
             let roots = self.app.pack_roots.clone();
-            for problem in self.reload_packs(&roots) {
-                eprintln!("Asset pack problem: {problem}");
-            }
+            let problems = self.reload_packs(&roots);
+            self.notify_pack_problems(problems);
         }
     }
 
@@ -125,9 +136,8 @@ impl MapMakerApp {
             let mut library = PackLibrary::clone(&self.app.sprites.library());
             match library.delete_pack(&id, &roots, self.win.pack_trash) {
                 Ok(_) => {
-                    for problem in self.reload_packs(&roots) {
-                        eprintln!("Asset pack problem: {problem}");
-                    }
+                    let problems = self.reload_packs(&roots);
+                    self.notify_pack_problems(problems);
                 }
                 Err(err) => self.notify_error(format!("Couldn’t delete “{name}”: {err}")),
             }

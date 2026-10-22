@@ -94,7 +94,10 @@ impl MapMakerApp {
         let copy_name = copy_path.file_name().unwrap_or_default().to_string_lossy();
         match MapFile::create(&copy_path, &copy, None) {
             Ok(_) => {
-                let _ = remove_journal(&found.path);
+                if let Err(err) = remove_journal(&found.path) {
+                    tab.editor
+                        .error(format!("Couldn’t delete the unsaved changes: {err}"));
+                }
                 self.app.recent.add(&copy_path);
                 self.win.home.forget(&copy_path);
                 let skipped = match skipped {
@@ -221,7 +224,10 @@ impl MapMakerApp {
             Ok(()) => {
                 // The save holds every change so far; the journal starts over.
                 tab.editor.take_applied();
-                tab.recovery.reset();
+                if let Err(err) = tab.recovery.reset() {
+                    tab.editor
+                        .error(format!("Couldn’t delete the unsaved changes: {err}"));
+                }
                 if let Some(path) = tab.document.path() {
                     self.app.recent.add(path);
                     self.win.home.forget(path);

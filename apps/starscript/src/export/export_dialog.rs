@@ -8,7 +8,7 @@ use ssmap_core::{
     Canvas, ExportRegion, ExportSettings, MAX_EXPORT_SIDE, SizeMode, WARN_EXPORT_SIDE,
 };
 
-use crate::native_dialog::{Pick, Polled};
+use crate::native_dialog::{Launch, Pick, Polled};
 use crate::{dialog, prop_widgets, theme};
 
 /// What the dialog tells the user about the chosen size.
@@ -117,7 +117,6 @@ pub enum DialogAction {
     DrawRegion(ExportSettings),
 }
 
-#[derive(Default)]
 pub struct ExportDialog {
     pub open: bool,
     /// The settings being edited; copied from and back to the Map.
@@ -128,7 +127,24 @@ pub struct ExportDialog {
     folder_pick: Pick,
 }
 
+impl Default for ExportDialog {
+    /// A closed dialog whose folder picker opens the system's dialog.
+    fn default() -> Self {
+        Self::new(crate::native_dialog::launch_native)
+    }
+}
+
 impl ExportDialog {
+    /// A closed dialog whose folder picker shows its dialog through `launch`.
+    pub fn new(launch: Launch) -> Self {
+        Self {
+            open: false,
+            draft: ExportSettings::default(),
+            directory: String::new(),
+            folder_pick: Pick::new(launch),
+        }
+    }
+
     /// Opens the dialog showing the Map's stored `settings`. `directory` replaces the folder
     /// when given; otherwise the last one stays.
     pub fn open_with(&mut self, settings: &ExportSettings, directory: Option<PathBuf>) {
@@ -416,7 +432,7 @@ mod tests {
         };
         map.export_settings = stored.clone();
 
-        let mut dialog = ExportDialog::default();
+        let mut dialog = ExportDialog::new(crate::native_dialog::launch_headless);
         dialog.open_with(&map.export_settings, Some(PathBuf::from("/maps")));
         assert!(dialog.open);
         assert_eq!(dialog.draft(), &stored);
@@ -426,7 +442,7 @@ mod tests {
         dialog.draft.credits.png_chunk = false;
         map.export_settings = dialog.draft().clone();
 
-        let mut reopened = ExportDialog::default();
+        let mut reopened = ExportDialog::new(crate::native_dialog::launch_headless);
         reopened.open_with(&map.export_settings, None);
         assert!(!reopened.draft().credits.png_chunk);
         assert_eq!(reopened.draft().file_name.as_deref(), Some("world.png"));

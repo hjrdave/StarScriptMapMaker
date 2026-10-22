@@ -6,9 +6,9 @@ use std::path::PathBuf;
 
 use crate::export_dialog::{DialogAction, ExportDialog};
 use crate::export_run::ExportRun;
+use crate::native_dialog::Launch;
 
 /// The export dialog and the export it started, if still running.
-#[derive(Default)]
 pub(super) struct ExportFlow {
     dialog: ExportDialog,
     /// The PNG export in progress, stepped once per frame behind a modal dialog.
@@ -16,6 +16,14 @@ pub(super) struct ExportFlow {
 }
 
 impl ExportFlow {
+    /// A closed dialog and no run; the dialog's folder picker shows its dialog through `launch`.
+    pub(super) fn new(launch: Launch) -> Self {
+        Self {
+            dialog: ExportDialog::new(launch),
+            run: None,
+        }
+    }
+
     /// Whether the dialog or a run is on screen.
     pub(super) fn is_busy(&self) -> bool {
         self.dialog.open || self.run.is_some()
@@ -67,14 +75,14 @@ mod tests {
 
     #[test]
     fn starts_idle() {
-        let flow = ExportFlow::default();
+        let flow = ExportFlow::new(crate::native_dialog::launch_headless);
         assert!(!flow.is_busy());
         assert!(!flow.is_running());
     }
 
     #[test]
     fn open_dialog_is_busy_but_not_running() {
-        let mut flow = ExportFlow::default();
+        let mut flow = ExportFlow::new(crate::native_dialog::launch_headless);
         flow.open_dialog(&ExportSettings::default(), None);
         assert!(flow.is_busy());
         assert!(!flow.is_running());
@@ -82,12 +90,15 @@ mod tests {
 
     #[test]
     fn typed_directory_is_trimmed() {
-        let mut flow = ExportFlow::default();
+        let mut flow = ExportFlow::new(crate::native_dialog::launch_headless);
         flow.open_dialog(&ExportSettings::default(), Some(PathBuf::from("  /maps ")));
         assert_eq!(flow.typed_directory(), PathBuf::from("/maps"));
         // Opening again without a folder leaves the last one.
         flow.open_dialog(&ExportSettings::default(), None);
         assert_eq!(flow.typed_directory(), PathBuf::from("/maps"));
-        assert_eq!(ExportFlow::default().typed_directory(), PathBuf::new());
+        assert_eq!(
+            ExportFlow::new(crate::native_dialog::launch_headless).typed_directory(),
+            PathBuf::new()
+        );
     }
 }

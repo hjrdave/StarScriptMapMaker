@@ -317,7 +317,7 @@ fn measure(
             gpu.queue.submit([encoder.finish()]);
             gpu.device
                 .poll(ssmap_render::wgpu::PollType::wait_indefinitely())
-                .expect("the GPU finishes its work");
+                .expect("the bench harness panics on purpose if the device is lost mid-frame");
         }
         (built, started.elapsed() - built)
     };
@@ -536,7 +536,7 @@ fn large_map(scale: f64, asset: AssetRef) -> (Map, Id) {
         parent: layer,
         stamps,
     })
-    .unwrap();
+    .expect("the Layer was just inserted into this Map, so placing Stamps on it cannot fail");
     (map, layer)
 }
 
@@ -566,7 +566,7 @@ fn insert(map: &mut Map, parent: Option<Id>, node: Node) -> Id {
             children: Vec::new(),
         },
     })
-    .unwrap();
+    .expect("the index is the current child count, so it is in range");
     id
 }
 

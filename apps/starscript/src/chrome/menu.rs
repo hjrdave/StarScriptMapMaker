@@ -278,23 +278,24 @@ impl Menu {
     }
 }
 
-fn item(command: Command, title: impl Into<String>, enabled: bool) -> Entry {
-    Entry::Item(Item {
+fn menu_item(command: Command, title: impl Into<String>, enabled: bool) -> Item {
+    Item {
         command,
         title: title.into(),
         shortcut: shortcut(command),
         enabled,
         checked: None,
-    })
+    }
+}
+
+fn item(command: Command, title: impl Into<String>, enabled: bool) -> Entry {
+    Entry::Item(menu_item(command, title, enabled))
 }
 
 fn checked(command: Command, title: impl Into<String>, enabled: bool, on: bool) -> Entry {
     Entry::Item(Item {
         checked: Some(on),
-        ..match item(command, title, enabled) {
-            Entry::Item(item) => item,
-            _ => unreachable!(),
-        }
+        ..menu_item(command, title, enabled)
     })
 }
 
