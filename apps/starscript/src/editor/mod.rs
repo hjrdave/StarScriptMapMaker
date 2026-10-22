@@ -1,17 +1,20 @@
 //! Editor state around one Map: history, Selection, the active Layer and tool, and the
 //! message bar. Every change to the Map goes through a Command here.
 
+mod caches;
+mod clipboard;
+mod toasts;
+
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::time::Instant;
 
 use ssmap_core::asset::{AssetRef, credit_lines};
 use ssmap_core::land::{self, BrushStroke};
 use ssmap_core::scatter::{self, ScatterBrush, ScatterStroke, Terrain};
 use ssmap_core::{
     Align, Blob, Command, CommandError, DefaultLayers, EmbedAsset, EmbedFont, ExecuteError,
-    History, Id, Label, Map, MultiPolygon, Node, NodeRef, ObjectKind, Op, PasteGaps, PickIndex,
-    Point, Rect, ResolvedLabel, RoughnessCache, Selection, Stamp, StampIndex, Subtree,
+    History, Id, Label, Map, MultiPolygon, Node, NodeRef, ObjectKind, Op, PasteGaps, Point, Rect,
+    ResolvedLabel, Selection, Stamp, Subtree,
 };
 use ssmap_fonts::FALLBACK_FAMILY;
 use ssmap_render::wgpu;
@@ -23,8 +26,10 @@ use ssmap_render::{
 use crate::clipboard::Clipboard;
 use crate::handles::Bounds;
 use crate::layer_tree::node_name;
-use crate::toast::{Toast, ToastAction, ToastKind, Toasts};
+use crate::toast::Toasts;
 use crate::tools::ToolId;
+use caches::Caches;
+use clipboard::ClipboardSlot;
 
 /// The land brush's starting diameter, in Canvas units.
 pub const DEFAULT_BRUSH_SIZE: f64 = 48.0;
@@ -60,25 +65,14 @@ pub struct Editor {
     gesture_open: bool,
     /// The Selection when the open gesture began, restored if it is cancelled.
     gesture_selection: Selection,
-    /// Rebuilt lazily once the Map has changed.
-    pick_index: Option<PickIndex>,
-    /// Roughened outlines, shared by the screen and picking so they agree.
-    roughness: RoughnessCache,
-    /// The cache's generation when the Canvas content and picking were last built.
-    outlines_seen: u64,
-    /// Stamp art, shared with the Canvas renderer. Absent in headless tests.
-    sprites: Option<SpriteStore>,
-    stamp_index: Option<StampIndex>,
-    /// The store's generation when `stamp_index` was last reset.
-    sprites_generation: u64,
+    /// The pick indexes, Roughness cache and Stamp art.
+    caches: Caches,
     /// The Asset the Stamp tool places, chosen in the Asset browser.
     pub selected_asset: Option<AssetRef>,
     /// The scatter brush's settings. Its radius is half the shared `brush_size`.
     pub scatter: ScatterBrush,
     /// What Copy or Cut last took. Paste reads it back.
-    clipboard: Option<Clipboard>,
-    /// The clipboard as text, until the app mirrors it to the system clipboard.
-    clipboard_text: Option<String>,
+    clipboard: ClipboardSlot,
 }
 
 /// What a new Object is, for choosing the Layer it goes into.
@@ -148,8 +142,7 @@ impl Editor {
             default_layers: DefaultLayers::default(),
             active_tool: ToolId::Select,
             scatter: ScatterBrush::default(),
-            clipboard: None,
-            clipboard_text: None,
+            clipboard: ClipboardSlot::default(),
             brush_size: DEFAULT_BRUSH_SIZE,
             erase_default: false,
             node_edit: None,
@@ -158,20 +151,14 @@ impl Editor {
             toasts: Toasts::default(),
             gesture_open: false,
             gesture_selection: Vec::new(),
-            pick_index: None,
-            roughness: RoughnessCache::new(),
-            outlines_seen: 0,
-            sprites: None,
-            stamp_index: None,
-            sprites_generation: 0,
+            caches: Caches::new(),
             selected_asset: None,
         }
     }
 
     /// Where Stamp art comes from: it sizes Stamps for picking and handles.
     pub fn set_sprites(&mut self, sprites: SpriteStore) {
-        self.sprites = Some(sprites);
-        self.stamp_index = None;
+        self.caches.set_sprites(sprites);
         self.sync_embedded();
         self.prefetch_sprites();
     }
@@ -179,7 +166,7 @@ impl Editor {
     /// Starts rasterising the art of the Map's Stamps in the background, so a Map that has
     /// just opened shows them as they finish rather than waiting on each at first draw.
     fn prefetch_sprites(&self) {
-        let Some(sprites) = &self.sprites else {
+        let Some(sprites) = self.caches.sprites() else {
             return;
         };
         let map = &self.map;
@@ -200,21 +187,13 @@ impl Editor {
     /// Points the sprite store at the Assets the Map embeds, which win over the installed
     /// packs'. Run before anything reads sprites, since an Op, Undo or Redo can change them.
     fn sync_embedded(&mut self) {
-        if let Some(sprites) = &self.sprites {
-            sprites.set_embedded(self.map.embedded());
-            // The library can also change under us, when a pack is installed or deleted.
-            let generation = sprites.generation();
-            if generation != self.sprites_generation {
-                self.sprites_generation = generation;
-                self.stamp_index = None;
-            }
-        }
+        self.caches.sync_embedded(&self.map);
     }
 
     /// The Stamps whose Asset is neither embedded nor installed, with the Asset's name: the
     /// Canvas draws a box for each and the app writes the name on it.
     pub fn missing_stamps(&self) -> Vec<(Point, f64, String)> {
-        let Some(sprites) = &self.sprites else {
+        let Some(sprites) = self.caches.sprites() else {
             return Vec::new();
         };
         let library = sprites.library();
@@ -239,7 +218,7 @@ impl Editor {
     }
 
     pub fn sprites(&self) -> Option<&SpriteStore> {
-        self.sprites.as_ref()
+        self.caches.sprites()
     }
 
     pub fn selection(&self) -> &[Id] {
@@ -377,24 +356,13 @@ impl Editor {
     /// The topmost unlocked Landmass or Lake drawn at `point`, in Canvas units.
     fn pick_outline(&mut self, point: [f64; 2]) -> Option<Id> {
         self.sync_background_outlines();
-        let map = &self.map;
-        let index = match &mut self.pick_index {
-            Some(index) if index.is_current(map) => index,
-            slot => slot.insert(PickIndex::build(map, &mut self.roughness)),
-        };
-        index.pick(point)
+        self.caches.pick_outline(&self.map, point)
     }
 
     /// The topmost unlocked Stamp whose Silhouette is under `point`, in Canvas units.
     fn pick_stamp(&mut self, point: [f64; 2]) -> Option<Id> {
         self.sync_embedded();
-        let sprites = self.sprites.as_ref()?;
-        let map = &self.map;
-        let index = match &mut self.stamp_index {
-            Some(index) if index.is_current(map) => index,
-            slot => slot.insert(StampIndex::build(map, |asset| sprites.shape(asset))),
-        };
-        index.pick(point, |asset, uv| sprites.contains(asset, uv))
+        self.caches.pick_stamp(&self.map, point)
     }
 
     /// The Stamp with id `id`, if it is one.
@@ -411,17 +379,13 @@ impl Editor {
     /// The box around a Stamp's placed art, if its Asset is installed.
     pub fn stamp_bounds(&self, id: Id) -> Option<Rect> {
         let stamp = self.stamp(id)?;
-        Some(stamp.bounds(&self.sprites.as_ref()?.shape(&stamp.asset)?))
+        Some(stamp.bounds(&self.caches.sprites()?.shape(&stamp.asset)?))
     }
 
     /// Computes every roughened outline on a thread of its own, so a Map that has just opened
     /// shows at once with its stored outlines. `repaint` is called as each outline completes.
     pub fn start_background_roughness(&mut self, repaint: impl Fn() + Send + 'static) {
-        let rebuild = self.roughness.rebuild(&self.map);
-        if rebuild.is_empty() {
-            return;
-        }
-        std::thread::spawn(move || rebuild.run(repaint));
+        self.caches.start_background_roughness(&self.map, repaint);
     }
 
     /// Computes the rings shore ripples and shading follow on a thread of their own, so
@@ -436,16 +400,13 @@ impl Editor {
 
     /// Whether roughened outlines are still being computed in the background.
     pub fn outlines_rebuilding(&self) -> bool {
-        self.roughness.is_rebuilding()
+        self.caches.outlines_rebuilding()
     }
 
     /// Drops what was built from placeholder outlines once the background ones have landed.
     fn sync_background_outlines(&mut self) {
-        let generation = self.roughness.generation();
-        if generation != self.outlines_seen {
-            self.outlines_seen = generation;
+        if self.caches.sync_background_outlines() {
             self.scene.invalidate();
-            self.pick_index = None;
         }
     }
 
@@ -454,8 +415,8 @@ impl Editor {
     pub fn scene_content(&mut self) -> Content {
         self.sync_embedded();
         self.sync_background_outlines();
-        self.roughness.retain(&self.map);
-        self.scene.content(&self.map, &mut self.roughness)
+        self.caches.retain(&self.map);
+        self.scene.content(&self.map, self.caches.roughness())
     }
 
     /// Advances an export by one step, drawing from this Editor's Map and caches.
@@ -468,14 +429,14 @@ impl Editor {
     ) -> Result<ExportStep, ExportError> {
         self.sync_embedded();
         self.sync_background_outlines();
-        self.roughness.retain(&self.map);
+        self.caches.retain(&self.map);
         job.step(&mut ExportContext {
             device,
             queue,
             renderer,
             scene: &mut self.scene,
             map: &self.map,
-            roughness: &mut self.roughness,
+            roughness: self.caches.roughness(),
         })
     }
 
@@ -580,7 +541,7 @@ impl Editor {
         let layer = self.target_layer(Placing::Land);
         let planned = land::brush_command(
             &self.map,
-            &mut self.roughness,
+            self.caches.roughness(),
             &self.selection,
             layer,
             stroke,
@@ -620,7 +581,7 @@ impl Editor {
             let layer = self.water_layer();
             land::water_command(
                 &self.map,
-                &mut self.roughness,
+                self.caches.roughness(),
                 &self.selection,
                 layer,
                 stroke,
@@ -630,7 +591,7 @@ impl Editor {
             let layer = self.target_layer(Placing::Land);
             land::brush_command(
                 &self.map,
-                &mut self.roughness,
+                self.caches.roughness(),
                 &self.selection,
                 layer,
                 stroke,
@@ -638,11 +599,11 @@ impl Editor {
             )
         };
         match planned {
-            Ok(Some(command)) => land::preview_area(&self.map, &mut self.roughness, &command),
+            Ok(Some(command)) => land::preview_area(&self.map, self.caches.roughness(), &command),
             // A first water stroke has no Layer yet; it will create one and a Lake in it.
             Err(_) if add => land::preview_area(
                 &self.map,
-                &mut self.roughness,
+                self.caches.roughness(),
                 &Command::CreateLake {
                     id: new_id,
                     parent: new_id,
@@ -677,7 +638,7 @@ impl Editor {
         let existing = self.water_layer();
         let mut planned = land::water_command(
             &self.map,
-            &mut self.roughness,
+            self.caches.roughness(),
             &self.selection,
             existing,
             stroke.clone(),
@@ -697,7 +658,7 @@ impl Editor {
             }
             planned = land::water_command(
                 &self.map,
-                &mut self.roughness,
+                self.caches.roughness(),
                 &self.selection,
                 Some(id),
                 stroke,
@@ -900,8 +861,8 @@ impl Editor {
     pub fn embed_used_assets(&mut self) -> bool {
         let mut assets = Vec::new();
         if let Some(library) = self
-            .sprites
-            .as_ref()
+            .caches
+            .sprites()
             .map(|sprites| sprites.library().clone())
         {
             for reference in self.map.used_assets() {
@@ -947,8 +908,8 @@ impl Editor {
     /// as one Undo step ("Update from pack"). Returns whether anything changed.
     pub fn update_from_packs(&mut self) -> bool {
         let Some(library) = self
-            .sprites
-            .as_ref()
+            .caches
+            .sprites()
             .map(|sprites| sprites.library().clone())
         else {
             return false;
@@ -1167,23 +1128,23 @@ impl Editor {
 
     /// Whether Paste has anything to paste.
     pub fn has_clipboard(&self) -> bool {
-        self.clipboard.is_some()
+        self.clipboard.has_contents()
     }
 
     /// Makes `clipboard` what Paste pastes: a Copy or Cut in another tab or Map.
     pub fn set_clipboard(&mut self, clipboard: Clipboard) {
-        self.clipboard = Some(clipboard);
+        self.clipboard.set(clipboard);
     }
 
     /// What Paste would need that this Map lacks. `None` when nothing is copied.
     pub fn paste_gaps(&mut self) -> Option<PasteGaps> {
         self.sync_embedded();
-        let clipboard = self.clipboard.as_ref()?;
+        let clipboard = self.clipboard.contents()?;
         Some(self.map.paste_gaps(
             &clipboard.subtrees,
             |asset| {
-                self.sprites
-                    .as_ref()
+                self.caches
+                    .sprites()
                     .is_none_or(|sprites| sprites.library().asset(asset).is_some())
             },
             bundled_family,
@@ -1192,7 +1153,7 @@ impl Editor {
 
     /// The text to mirror to the system clipboard after a Copy or Cut, once.
     pub fn take_clipboard_text(&mut self) -> Option<String> {
-        self.clipboard_text.take()
+        self.clipboard.take_text()
     }
 
     /// The selected branches, in stacking order, without any that sit inside another selected
@@ -1257,8 +1218,7 @@ impl Editor {
             return false;
         }
         let clipboard = self.clipboard_of(&roots);
-        self.clipboard_text = Some(clipboard.to_text());
-        self.clipboard = Some(clipboard);
+        self.clipboard.copied(clipboard);
         true
     }
 
@@ -1340,7 +1300,7 @@ impl Editor {
         if self.gesture_open {
             return None;
         }
-        let clipboard = self.clipboard.clone()?;
+        let clipboard = self.clipboard.contents()?.clone();
         self.paste_clipboard(clipboard, at)
     }
 
@@ -1440,51 +1400,6 @@ impl Editor {
         }
     }
 
-    /// The newest toast still showing.
-    pub fn notice(&self) -> Option<&Toast> {
-        self.toasts.items().last()
-    }
-
-    /// This tab's toasts, for drawing and expiring. Actions the history has moved past are
-    /// dropped first.
-    pub fn toasts_mut(&mut self) -> &mut Toasts {
-        let (open, depth) = (self.gesture_open, self.history.undo_len());
-        self.toasts.retain_actions(|action| match action {
-            ToastAction::Undo { steps } => !open && depth == steps,
-        });
-        &mut self.toasts
-    }
-
-    pub fn info(&mut self, text: impl Into<String>) {
-        self.toasts
-            .push(text, ToastKind::Info, None, Instant::now());
-    }
-
-    pub fn error(&mut self, text: impl Into<String>) {
-        self.toasts
-            .push(text, ToastKind::Error, None, Instant::now());
-    }
-
-    /// Tells the user about a Command they might regret, with an Undo on the toast.
-    fn info_with_undo(&mut self, text: impl Into<String>) {
-        let action = ToastAction::Undo {
-            steps: self.history.undo_len(),
-        };
-        self.toasts
-            .push(text, ToastKind::Info, Some(action), Instant::now());
-    }
-
-    /// Runs the action a toast carried, if it still applies.
-    pub fn run_toast_action(&mut self, action: ToastAction) {
-        match action {
-            ToastAction::Undo { steps } => {
-                if self.history.undo_len() == steps {
-                    self.undo();
-                }
-            }
-        }
-    }
-
     /// Shows why a Command was refused, naming Layers and Objects the way the tree does.
     fn refused(&mut self, err: &ExecuteError) {
         let name = |id: Id| format!("“{}”", node_name(&self.map, id));
@@ -1577,7 +1492,7 @@ impl Editor {
     /// The credit lines for the attribution-required Assets the Map uses; empty when none, or
     /// when no packs are loaded.
     pub fn credit_lines(&self) -> Vec<String> {
-        let Some(sprites) = self.sprites.as_ref() else {
+        let Some(sprites) = self.caches.sprites() else {
             return Vec::new();
         };
         let assets = sprites.library().attribution_required_assets(&self.map);
@@ -1675,7 +1590,7 @@ impl Editor {
         } else {
             Vec::new()
         };
-        let terrain = Terrain::of(&self.map, &mut self.roughness);
+        let terrain = Terrain::of(&self.map, self.caches.roughness());
         self.end_gesture();
         self.begin_gesture("Scatter Stamps");
         let Some(parent) = self.placement_layer(Placing::Stamp) else {
@@ -1728,7 +1643,7 @@ impl Editor {
     /// Shuffle variant: each selected Stamp takes a random Asset from its own Variant group,
     /// all as one Undo step.
     pub fn shuffle_variants(&mut self) -> bool {
-        let Some(library) = self.sprites.as_ref().map(SpriteStore::library) else {
+        let Some(library) = self.caches.sprites().map(SpriteStore::library) else {
             return false;
         };
         let commands = scatter::shuffle_commands(
@@ -1756,7 +1671,7 @@ impl Editor {
     /// "Pine cluster · v2": the Asset's name, and its place in its Variant group when it has
     /// one. Falls back to the reference when the Asset is not in the library.
     pub fn asset_caption(&self, asset: &AssetRef) -> String {
-        let library = self.sprites.as_ref().map(SpriteStore::library);
+        let library = self.caches.sprites().map(SpriteStore::library);
         let Some((_, found)) = library.as_ref().and_then(|library| library.asset(asset)) else {
             return asset.to_string();
         };
@@ -1769,8 +1684,8 @@ impl Editor {
 
     /// The Assets in the Variant group `asset` belongs to; empty when it has none.
     fn variant_group(&self, asset: &AssetRef) -> Vec<AssetRef> {
-        self.sprites
-            .as_ref()
+        self.caches
+            .sprites()
             .map(|sprites| group_of(&sprites.library(), asset))
             .unwrap_or_default()
     }
@@ -1779,7 +1694,7 @@ impl Editor {
     /// Variant group.
     fn placement_asset(&self) -> Option<AssetRef> {
         let selected = self.selected_asset.as_ref()?;
-        let library = self.sprites.as_ref()?.library();
+        let library = self.caches.sprites()?.library();
         let (pack, asset) = library.asset(selected)?;
         let Some(group) = &asset.variant_group else {
             return Some(selected.clone());
@@ -2346,7 +2261,8 @@ mod tests {
         let toast = editor.notice().expect("a toast").clone();
         assert!(!toast.is_error());
         let action = toast.action.expect("an Undo action");
-        let live = editor.toasts_mut().items()[0].action;
+        editor.drop_stale_toast_actions();
+        let live = editor.toasts.items()[0].action;
         assert_eq!(live, Some(action));
         editor.run_toast_action(action);
         assert_eq!(editor.map.view(), before);
@@ -2359,7 +2275,8 @@ mod tests {
         editor.delete_selection();
         let action = editor.notice().unwrap().action.unwrap();
         editor.new_layer();
-        assert!(editor.toasts_mut().items()[0].action.is_none());
+        editor.drop_stale_toast_actions();
+        assert!(editor.toasts.items()[0].action.is_none());
         let after = editor.map.view();
         editor.run_toast_action(action);
         assert_eq!(editor.map.view(), after);
