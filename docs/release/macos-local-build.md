@@ -33,7 +33,7 @@ The build is unsigned (ADR 0008), so macOS blocks it the first time.
 ## Native menu bar check (#199)
 
 On macOS the menus are the native menu bar, built with `muda` from the same menu model as the
-egui bar (`apps/starscript/src/menu.rs`, `native_menu.rs`). CI cannot build or run that code, so
+egui bar (`apps/starscript/src/chrome/menu.rs`, `native_menu/`). CI cannot build or run that code, so
 nobody has seen it yet. Check it by hand:
 
 - [ ] There is no egui menu bar under the tab strip. The menu bar at the top of the screen

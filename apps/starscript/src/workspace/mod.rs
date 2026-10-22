@@ -1,0 +1,10 @@
+pub mod clipboard;
+pub mod credits;
+pub mod document;
+pub mod editor;
+pub(crate) mod file_actions;
+pub mod home;
+pub(crate) mod recent;
+pub mod shell;
+pub mod tools;
+pub mod update;
