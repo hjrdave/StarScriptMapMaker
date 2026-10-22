@@ -137,7 +137,7 @@ impl MapMakerApp {
     }
 
     /// Sets what moves a pack to the Trash, for tests.
-    pub fn set_pack_trash(&mut self, trash: fn(&Path) -> Result<(), String>) {
+    pub fn set_pack_trash(&mut self, trash: fn(&Path) -> Result<(), TrashError>) {
         self.win.pack_trash = trash;
     }
 

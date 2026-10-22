@@ -146,7 +146,7 @@ pub enum ExportSizeError {
 
 impl ExportSettings {
     /// These are the settings of a Map nobody has exported yet.
-    pub fn is_default(&self) -> bool {
+    pub(crate) fn is_default(&self) -> bool {
         *self == Self::default()
     }
 

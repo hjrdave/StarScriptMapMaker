@@ -18,7 +18,7 @@ use crate::id::Id;
 use crate::map::{Canvas, InvariantError, Map, MapDefaults, MapView};
 
 /// The starter template's file, inside the assets folder.
-pub const STARTER_TEMPLATE: &str = "templates/starter.json";
+pub(crate) const STARTER_TEMPLATE: &str = "templates/starter.json";
 
 /// The folder of templates, inside the assets folder.
 const TEMPLATES_DIR: &str = "templates";

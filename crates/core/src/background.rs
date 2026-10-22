@@ -59,7 +59,7 @@ impl Default for BackgroundTexture {
 
 impl Background {
     /// Whether this is the default look, which files leave out.
-    pub fn is_default(&self) -> bool {
+    pub(crate) fn is_default(&self) -> bool {
         *self == Self::default()
     }
 }
