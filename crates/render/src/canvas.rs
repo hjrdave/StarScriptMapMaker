@@ -17,7 +17,7 @@ use crate::sprite::SpriteStore;
 use crate::stamp::{PlacedStamp, StampRenderer};
 use crate::vector::{
     APPLY_BUDGET, DrawFilter, FillRule, LyonRenderer, TessellationCache, TessellationRebuild,
-    VectorGroup, VectorRenderer,
+    VectorGroup,
 };
 use crate::view::View;
 

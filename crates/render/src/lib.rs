@@ -41,9 +41,7 @@ pub use sprite::{PLACEHOLDER_SIZE, Sprite, SpriteError, SpriteState, SpriteStore
 pub use stamp::{PlacedStamp, StampDraw};
 pub use text::{Fonts, LabelLayout};
 pub use tiled::{ExportStatus, TiledExport, TiledExportError};
-pub use vector::{
-    FillRule, Paint, TessellationCache, TessellationRebuild, VectorGroup, VectorRenderer,
-};
+pub use vector::{FillRule, Paint, TessellationCache, TessellationRebuild, VectorGroup};
 pub use view::View;
 
 /// The wgpu version this crate is built against, for callers that share a device with it.

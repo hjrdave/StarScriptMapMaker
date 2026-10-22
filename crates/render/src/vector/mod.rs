@@ -124,12 +124,3 @@ impl DrawFilter {
 pub(crate) fn overlaps(a: [f32; 4], b: [f32; 4]) -> bool {
     a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3]
 }
-
-/// Draws vector groups into a Canvas render pass whose group 0 is the view uniform and which
-/// has a stencil attachment cleared to 0.
-pub trait VectorRenderer {
-    /// Replaces what is drawn. Groups draw in order, first lowest.
-    fn set_groups(&mut self, device: &wgpu::Device, groups: &[VectorGroup]);
-
-    fn draw(&self, pass: &mut wgpu::RenderPass<'_>);
-}

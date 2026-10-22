@@ -7,7 +7,7 @@ use wgpu::util::DeviceExt;
 
 use super::cache::TessellationCache;
 use super::chunk::{Built, Chunked, Draw, EMPTY_BOUNDS, Vertex, build, union};
-use super::{DrawFilter, VectorGroup, VectorRenderer, overlaps};
+use super::{DrawFilter, VectorGroup, overlaps};
 use crate::canvas::{CLIP_INSIDE, StencilUse};
 
 /// lyon tessellation drawn as plain triangles; antialiasing comes from the target's MSAA.
@@ -99,7 +99,7 @@ impl LyonRenderer {
 }
 
 impl LyonRenderer {
-    /// Like [`VectorRenderer::set_groups`], but also splits the groups into runs that
+    /// Like [`LyonRenderer::set_groups`], but also splits the groups into runs that
     /// [`LyonRenderer::draw_run`] draws separately, so something else can draw between them.
     /// `cuts` lists, in increasing order, the group counts to split at: run `i` ends before
     /// group `cuts[i]`, and the last run takes the rest. There is one more run than cuts.
@@ -237,12 +237,15 @@ impl LyonRenderer {
     }
 }
 
-impl VectorRenderer for LyonRenderer {
-    fn set_groups(&mut self, device: &wgpu::Device, groups: &[VectorGroup]) {
+impl LyonRenderer {
+    /// Replaces what is drawn. Groups draw in order, first lowest.
+    pub(crate) fn set_groups(&mut self, device: &wgpu::Device, groups: &[VectorGroup]) {
         self.set_runs(device, groups, &[]);
     }
 
-    fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
+    /// Draws everything into a Canvas render pass whose group 0 is the view uniform and which
+    /// has a stencil attachment cleared to 0.
+    pub(crate) fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
         self.draw_run(pass, 0, false, &DrawFilter::everything());
     }
 }
