@@ -16,7 +16,7 @@ use ssmap_core::{
 use ssmap_render::View;
 
 use crate::art_board::{self, BoardDrag};
-use crate::editor::Editor;
+use crate::editor::{Editor, GestureId};
 use crate::export_region::{self, RegionDrag};
 use crate::handles::{self, Bounds, Grip};
 
@@ -204,6 +204,18 @@ pub struct ToolState {
     select_box: Option<SelectBox>,
     /// The Label whose text is being typed in the overlay box.
     pub editing: Option<TextEditing>,
+    /// The gesture a `drag`, `stroke`, `node_drag` or `board_drag` holds open, and the tool
+    /// that opened it.
+    held: Option<(ToolId, GestureId)>,
+}
+
+impl Drop for ToolState {
+    fn drop(&mut self) {
+        // The Editor goes with the tool state, taking the open gesture with it.
+        if let Some((_, id)) = self.held.take() {
+            std::mem::forget(id);
+        }
+    }
 }
 
 /// A box-select in progress, in Canvas units. Shift keeps what was selected when it began.
@@ -236,11 +248,80 @@ const DASH: f32 = 6.0;
 const GAP: f32 = 4.0;
 
 impl ToolState {
-    /// Drops a node drag or box-select in progress, as when node editing ends.
-    pub fn clear_node_gestures(&mut self) {
-        self.node_drag = None;
+    /// Drops a node drag or box-select in progress, as when node editing ends. The gesture a
+    /// node drag held is rolled back.
+    pub fn clear_node_gestures(&mut self, editor: &mut Editor) {
+        if self.node_drag.take().is_some() {
+            self.cancel_held(editor);
+        }
         self.marquee = None;
         self.select_box = None;
+    }
+
+    /// Opens a gesture for `tool` to hold until [`Self::end_held`] or [`Self::cancel_held`].
+    /// `false` if it could not be opened (the status bar says why).
+    fn begin_held(&mut self, editor: &mut Editor, tool: ToolId, label: &str) -> bool {
+        let id = editor.begin_gesture_typed(label);
+        if editor.is_open(&id) {
+            self.held = Some((tool, id));
+            true
+        } else {
+            editor.cancel_gesture_typed(id);
+            false
+        }
+    }
+
+    /// Whether the held gesture is still open. Escape or undo can close it under a drag; a
+    /// stale token is dropped.
+    fn holds_open(&mut self, editor: &mut Editor) -> bool {
+        let live = self.held.as_ref().is_some_and(|(_, id)| editor.is_open(id));
+        if !live {
+            self.cancel_held(editor);
+        }
+        live
+    }
+
+    /// Runs a Command in the held gesture.
+    fn run_held(&self, editor: &mut Editor, command: Command) -> bool {
+        self.held
+            .as_ref()
+            .is_some_and(|(_, id)| editor.gesture_typed(id, command))
+    }
+
+    /// Replaces what the held gesture has done so far with `command`.
+    fn replace_held(&self, editor: &mut Editor, command: Command) -> bool {
+        self.held
+            .as_ref()
+            .is_some_and(|(_, id)| editor.gesture_replace_typed(id, command))
+    }
+
+    /// Commits the held gesture as one Undo step.
+    fn end_held(&mut self, editor: &mut Editor) {
+        if let Some((_, id)) = self.held.take() {
+            editor.end_gesture_typed(id);
+        }
+    }
+
+    /// Rolls the held gesture back.
+    fn cancel_held(&mut self, editor: &mut Editor) {
+        if let Some((_, id)) = self.held.take() {
+            editor.cancel_gesture_typed(id);
+        }
+    }
+
+    /// Rolls back a gesture held for a tool that is no longer active, and drops its drag.
+    fn drop_held_for_other_tool(&mut self, editor: &mut Editor) {
+        if self
+            .held
+            .as_ref()
+            .is_some_and(|(tool, _)| *tool != editor.active_tool)
+        {
+            self.cancel_held(editor);
+            self.drag = None;
+            self.stroke = None;
+            self.node_drag = None;
+            self.board_drag = None;
+        }
     }
 }
 
@@ -268,6 +349,40 @@ pub struct TextEditing {
     pub text: String,
     /// Set until the box has taken the keyboard and selected the text.
     pub just_opened: bool,
+    /// The "Edit Label" gesture the text is typed in; `None` when the Editor opened it
+    /// (placing a Label).
+    gesture: Option<GestureId>,
+}
+
+impl Drop for TextEditing {
+    fn drop(&mut self) {
+        // The Editor goes with the tool state, taking the open gesture with it.
+        if let Some(id) = self.gesture.take() {
+            std::mem::forget(id);
+        }
+    }
+}
+
+impl TextEditing {
+    /// Runs a Command in the gesture the text is typed in.
+    pub fn run(&self, editor: &mut Editor, command: Command) -> bool {
+        match &self.gesture {
+            Some(id) => editor.gesture_typed(id, command),
+            None => editor.gesture(command),
+        }
+    }
+
+    /// Commits the gesture the text was typed in.
+    pub fn finish(mut self, editor: &mut Editor) {
+        match self.gesture.take() {
+            Some(id) => {
+                editor.end_gesture_typed(id);
+            }
+            None => {
+                editor.end_open_gesture();
+            }
+        }
+    }
 }
 
 /// A Select-tool drag on the selection. Each frame re-issues the whole move, scale or
@@ -298,11 +413,12 @@ impl ToolState {
             return;
         };
         let text = label.text.clone();
-        editor.begin_gesture("Edit Label");
+        let gesture = editor.begin_gesture_typed("Edit Label");
         self.editing = Some(TextEditing {
             id,
             text,
             just_opened: true,
+            gesture: Some(gesture),
         });
     }
 
@@ -332,10 +448,8 @@ pub fn canvas_input(
     if editor.active_tool != ToolId::Select {
         editor.leave_node_edit();
     }
+    state.drop_held_for_other_tool(editor);
     if editor.active_tool != ToolId::ArtBoard {
-        if state.board_drag.take().is_some() {
-            editor.end_gesture();
-        }
         state.board_label = None;
         editor.select_board(false);
     }
@@ -428,28 +542,28 @@ pub fn canvas_input(
             {
                 response.ctx.set_cursor_icon(egui::CursorIcon::Copy);
             }
-            if let Some(drag) = &state.drag {
-                // Escape or undo ended the gesture under the drag.
-                if !editor.gesture_open() {
-                    state.drag = None;
-                } else if response.dragged_by(egui::PointerButton::Primary)
-                    && let Some(pos) = response.interact_pointer_pos()
-                    && let Some(commands) = drag_commands(drag, to_canvas(pos), shift)
-                {
-                    let mut commands = commands.into_iter();
-                    if let Some(first) = commands.next() {
-                        editor.gesture_replace(first);
-                    }
-                    for command in commands {
-                        editor.gesture(command);
-                    }
-                    if let Some(command) = membership_command(editor, drag, to_canvas(pos)) {
-                        editor.gesture(command);
-                    }
+            // Escape or undo ended the gesture under the drag.
+            if state.drag.is_some() && !state.holds_open(editor) {
+                state.drag = None;
+            }
+            if let Some(drag) = &state.drag
+                && response.dragged_by(egui::PointerButton::Primary)
+                && let Some(pos) = response.interact_pointer_pos()
+                && let Some(commands) = drag_commands(drag, to_canvas(pos), shift)
+            {
+                let mut commands = commands.into_iter();
+                if let Some(first) = commands.next() {
+                    state.replace_held(editor, first);
+                }
+                for command in commands {
+                    state.run_held(editor, command);
+                }
+                if let Some(command) = membership_command(editor, drag, to_canvas(pos)) {
+                    state.run_held(editor, command);
                 }
             }
             if response.drag_stopped() && state.drag.take().is_some() {
-                editor.end_gesture();
+                state.end_held(editor);
             }
             if let Some(pos) = response.interact_pointer_pos() {
                 let point = to_canvas(pos);
@@ -493,6 +607,7 @@ pub fn canvas_input(
                     id,
                     text: editor.label(id).map(|l| l.text.clone()).unwrap_or_default(),
                     just_opened: true,
+                    gesture: None,
                 });
                 editor.active_tool = ToolId::Select;
             }
@@ -549,7 +664,8 @@ fn art_board_tool(
         screen.expand(EDGE_GRAB as f32).contains(pos)
             && !screen.shrink(EDGE_GRAB as f32).contains(pos)
     };
-    let on_label = |pos: egui::Pos2| state.board_label.is_some_and(|label| label.contains(pos));
+    let board_label = state.board_label;
+    let on_label = |pos: egui::Pos2| board_label.is_some_and(|label| label.contains(pos));
     let mut cursor = None;
     if state.board_drag.is_none()
         && let Some(pos) = input.hover_pos
@@ -564,8 +680,8 @@ fn art_board_tool(
         && !editor.gesture_open()
         && let Some(pos) = input.press_origin
         && let Some(handle) = grip_at(pos)
+        && state.begin_held(editor, ToolId::ArtBoard, "Resize Canvas")
     {
-        editor.begin_gesture("Resize Canvas");
         state.board_drag = Some(BoardDrag {
             handle,
             start: input.canvas_point(view, pos),
@@ -575,22 +691,25 @@ fn art_board_tool(
     }
     if let Some(drag) = state.board_drag {
         // Escape or undo ended the gesture under the drag.
-        if !editor.gesture_open() {
+        if !state.holds_open(editor) {
             state.board_drag = None;
         } else if input.dragging
             && let Some(pos) = input.pointer_pos
         {
             let (origin, width, height) =
                 drag.resized(input.canvas_point(view, pos), input.shift, input.alt);
-            editor.gesture_replace(Command::ResizeCanvas {
-                origin,
-                width,
-                height,
-            });
+            state.replace_held(
+                editor,
+                Command::ResizeCanvas {
+                    origin,
+                    width,
+                    height,
+                },
+            );
         }
     }
     if input.drag_stopped && state.board_drag.take().is_some() {
-        editor.end_gesture();
+        state.end_held(editor);
     }
     if input.clicked
         && let Some(pos) = input.pointer_pos
@@ -749,23 +868,24 @@ fn land_brush(
             } else {
                 editor.brush_label(erase_held)
             };
-            editor.begin_gesture(label);
-            state.stroke = Some(Stroke {
-                points: vec![input.canvas_point(view, origin)],
-                erase: erase_held,
-                preview: None,
-            });
+            let tool = editor.active_tool;
+            if state.begin_held(editor, tool, label) {
+                state.stroke = Some(Stroke {
+                    points: vec![input.canvas_point(view, origin)],
+                    erase: erase_held,
+                    preview: None,
+                });
+            }
         }
     }
 
+    // Escape rolled the gesture back: drop the stroke.
+    if state.stroke.is_some() && !state.holds_open(editor) {
+        state.stroke = None;
+    }
     let Some(stroke) = &mut state.stroke else {
         return;
     };
-    // Escape rolled the gesture back: drop the stroke.
-    if !editor.gesture_open() {
-        state.stroke = None;
-        return;
-    }
     if let Some(pos) = response.interact_pointer_pos() {
         let point = input.canvas_point(view, pos);
         // A tenth of the radius, but at least a screen pixel, keeps the path light.
@@ -802,6 +922,8 @@ fn land_brush(
         } else {
             editor.finish_brush_stroke(finished);
         }
+        // The Editor ended the gesture; this settles the token.
+        state.end_held(editor);
     }
 }
 
@@ -954,12 +1076,14 @@ fn lasso_tool(editor: &mut Editor, view: &View, state: &mut ToolState, input: &C
             editor.info("The loop doesn't enclose any area");
             return;
         }
-        editor.begin_gesture(editor.brush_label(lasso.erase));
+        let id = editor.begin_gesture_typed(editor.brush_label(lasso.erase));
         editor.finish_brush_stroke(BrushStroke {
             region,
             start: lasso.points.first().copied().unwrap_or_default(),
             erase: lasso.erase,
         });
+        // The Editor ended the gesture; this settles the token.
+        editor.end_gesture_typed(id);
     }
 }
 
@@ -1110,11 +1234,10 @@ fn node_edit_tool(
                         }
                         editor.select_nodes(nodes);
                     }
-                    state.node_drag = Some(NodeDrag {
-                        start,
-                        shape: editor.edited_shape(),
-                    });
-                    editor.begin_gesture("Move Nodes");
+                    let shape = editor.edited_shape();
+                    if state.begin_held(editor, ToolId::Select, "Move Nodes") {
+                        state.node_drag = Some(NodeDrag { start, shape });
+                    }
                 }
                 _ => state.marquee = Some((start, start)),
             }
@@ -1125,17 +1248,21 @@ fn node_edit_tool(
         && let Some(pos) = response.interact_pointer_pos()
     {
         let point = input.canvas_point(view, pos);
+        // Escape rolled the gesture back.
+        if state.node_drag.is_some() && !state.holds_open(editor) {
+            state.node_drag = None;
+        }
         if let Some(drag) = &state.node_drag {
-            if !editor.gesture_open() {
-                // Escape rolled the gesture back.
-                state.node_drag = None;
-            } else if let Some(edit) = editor.node_edit().cloned() {
+            if let Some(edit) = editor.node_edit().cloned() {
                 let offset = [point[0] - drag.start[0], point[1] - drag.start[1]];
-                editor.gesture_replace(Command::MoveNodes {
-                    id: edit.id,
-                    nodes: edit.nodes,
-                    offset,
-                });
+                state.replace_held(
+                    editor,
+                    Command::MoveNodes {
+                        id: edit.id,
+                        nodes: edit.nodes,
+                        offset,
+                    },
+                );
             }
         } else if let Some((_, end)) = &mut state.marquee {
             *end = point;
@@ -1144,7 +1271,7 @@ fn node_edit_tool(
 
     if response.drag_stopped() {
         if let Some(drag) = state.node_drag.take() {
-            editor.end_gesture();
+            state.end_held(editor);
             editor.keep_nodes_if_shape(&drag.shape);
         } else if let Some((a, b)) = state.marquee.take() {
             let (min, max) = (
@@ -1623,20 +1750,25 @@ fn start_drag(
         if sources.is_empty() {
             return;
         }
-        editor.begin_gesture("Duplicate Objects");
+        if !state.begin_held(editor, ToolId::Select, "Duplicate Objects") {
+            return;
+        }
         let (command, new_ids) = editor.duplicate_command(&sources, [0.0, 0.0]);
-        if !editor.gesture(command) {
-            editor.cancel_gesture();
+        if !state.run_held(editor, command) {
+            state.cancel_held(editor);
             return;
         }
         editor.select(new_ids.clone());
         copies = Some((sources, new_ids));
     } else {
-        editor.begin_gesture(match grip {
+        let label = match grip {
             None => "Move",
             Some(Grip::Resize(_)) => "Resize",
             Some(Grip::Rotate) => "Rotate",
-        });
+        };
+        if !state.begin_held(editor, ToolId::Select, label) {
+            return;
+        }
     }
     state.drag = Some(Drag {
         grip,
@@ -1968,10 +2100,10 @@ mod link_tests {
         assert_eq!(drag.outlines, vec![a, b]);
         assert_eq!(drag.stamps.len(), 1);
         for command in drag_commands(drag, [25.0, 5.0], false).unwrap() {
-            assert!(editor.gesture(command));
+            assert!(state.run_held(&mut editor, command));
         }
         state.drag = None;
-        editor.end_gesture();
+        state.end_held(&mut editor);
         assert_eq!(left(&editor, a), 20.0);
         assert_eq!(left(&editor, b), 120.0);
         assert_eq!(editor.stamp(s).unwrap().position, [220.0, 5.0]);
@@ -2021,7 +2153,7 @@ mod link_tests {
             Some(vec![a])
         );
         state.drag = None;
-        editor.end_gesture();
+        state.end_held(&mut editor);
         assert_eq!(left(&editor, b), 100.0);
         let copy = editor.selection()[0];
         assert_ne!(copy, a);
@@ -2205,6 +2337,42 @@ mod pointer_tests {
         art_board_tool(&mut editor, &view, &mut state, &release(600.0, 560.0));
         assert!(state.board_drag.is_none());
         assert!(!editor.gesture_open());
+    }
+
+    #[test]
+    fn escape_mid_drag_rolls_the_art_board_resize_back() {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        editor.select_board(true);
+        art_board_tool(&mut editor, &view, &mut state, &press(500.0, 500.0));
+        art_board_tool(&mut editor, &view, &mut state, &drag_to(600.0, 560.0));
+        assert_eq!(editor.map.canvas.width, 600);
+        assert!(editor.cancel_open_gesture());
+        art_board_tool(&mut editor, &view, &mut state, &drag_to(620.0, 580.0));
+        assert!(state.board_drag.is_none() && state.held.is_none());
+        assert_eq!(
+            (editor.map.canvas.width, editor.map.canvas.height),
+            (500, 500)
+        );
+        assert!(!editor.gesture_open());
+    }
+
+    #[test]
+    fn switching_tools_mid_drag_rolls_the_gesture_back() {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        editor.select_board(true);
+        editor.active_tool = ToolId::ArtBoard;
+        art_board_tool(&mut editor, &view, &mut state, &press(500.0, 500.0));
+        art_board_tool(&mut editor, &view, &mut state, &drag_to(600.0, 560.0));
+        assert_eq!(editor.map.canvas.width, 600);
+        editor.active_tool = ToolId::Select;
+        state.drop_held_for_other_tool(&mut editor);
+        assert!(state.board_drag.is_none() && state.held.is_none());
+        assert!(!editor.gesture_open());
+        assert_eq!(
+            (editor.map.canvas.width, editor.map.canvas.height),
+            (500, 500)
+        );
+        assert_eq!(editor.undo_label(), None);
     }
 
     #[test]

@@ -171,8 +171,7 @@ impl MapMakerApp {
             shell: shell::Shell::default(),
             drop_focus: false,
             new_map_dialog: NewMapDialog::default(),
-            export_dialog: ExportDialog::new(self.app.launch_dialog),
-            export_run: None,
+            export: ExportFlow::new(self.app.launch_dialog),
             open_dialog: pick(),
             save_dialog: pick(),
             pack_dialog: pick(),
@@ -181,21 +180,17 @@ impl MapMakerApp {
             pack_delete_prompt: None,
             pack_trash: self.win.pack_trash,
             paste_prompt: None,
-            awaiting_save: None,
-            close_allowed: false,
-            leaving: Leaving::Window,
+            close: CloseFlow::new(Leaving::Window),
             window_hidden: false,
             title: String::new(),
             main: false,
             viewport,
-            quit_asked: false,
-            close_requested: false,
         }
     }
 
     /// Asks to close this window, as its close button does: unsaved Maps are asked about first.
     pub fn request_window_close(&mut self) {
-        self.win.close_requested = true;
+        self.win.close.request();
     }
 
     /// Shows the tab ⌘`n` reaches (1 is Home, 9 the last tab); `n` out of range does nothing.
