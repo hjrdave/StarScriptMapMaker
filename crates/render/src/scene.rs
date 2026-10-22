@@ -392,7 +392,7 @@ fn ripple_groups(
                 ripples.width as f32,
                 opacity,
             )
-            .into_effect(),
+            .with_effect(),
         );
     }
 }
@@ -421,7 +421,7 @@ fn shading_groups(
                 band as f32,
                 opacity,
             )
-            .into_effect(),
+            .with_effect(),
         );
     }
 }

@@ -1,6 +1,7 @@
 use ssmap_core::file::MapFile;
 use ssmap_core::{
-    Canvas, Color, Command, DistanceUnit, History, Id, Label, LabelStyle, LabelStyles, Map, Scale,
+    Canvas, Color, Command, DistanceUnit, FontFace, History, Id, Label, LabelStyle, LabelStyles,
+    Map, Scale,
 };
 
 fn map_with_layer() -> (Map, Id) {
@@ -342,4 +343,50 @@ fn arch_overrides_its_style_round_trips_and_is_range_checked() {
     assert_eq!(label.problem(), None);
     label.arch = Some(1.5);
     assert!(label.problem().is_some());
+}
+
+#[test]
+fn display_text_is_uppercase_only_with_all_caps() {
+    let map = Map::new(Canvas::new(10, 10, Scale::new(1.0, DistanceUnit::Miles)));
+    let resolve = |all_caps| {
+        Label {
+            text: "Port Ævar\nnorth".into(),
+            all_caps: Some(all_caps),
+            ..Label::default()
+        }
+        .resolve(map.label_styles())
+    };
+    assert_eq!(resolve(true).display_text(), "PORT ÆVAR\nNORTH");
+    assert_eq!(resolve(false).display_text(), "Port Ævar\nnorth");
+    assert_eq!(
+        resolve(true).text,
+        "Port Ævar\nnorth",
+        "the stored text is unchanged"
+    );
+}
+
+#[test]
+fn used_font_families_lists_each_family_once() {
+    let (mut map, layer) = map_with_layer();
+    assert!(map.used_font_families().is_empty());
+    for family in ["Test Serif", "Test Serif", "Test Sans"] {
+        let font = FontFace {
+            family: family.into(),
+            ..FontFace::default()
+        };
+        place(
+            &mut map,
+            layer,
+            Label {
+                font: Some(font),
+                ..Label::default()
+            },
+        );
+    }
+    let default_family = Label::default().resolve(map.label_styles()).font.family;
+    place(&mut map, layer, Label::default());
+    let used = map.used_font_families();
+    assert_eq!(used.len(), 3);
+    assert!(used.contains("Test Serif") && used.contains("Test Sans"));
+    assert!(used.contains(&default_family));
 }

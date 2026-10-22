@@ -36,10 +36,8 @@ mod embed;
 mod journal;
 mod migrate;
 
-pub use journal::{
-    JOURNAL_VERSION, Journal, JournalBase, JournalError, Recovered, recovery_path, remove_journal,
-};
-
+pub use blob::BlobError;
+pub use journal::{Journal, JournalBase, JournalError, Recovered, recovery_path, remove_journal};
 use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -117,7 +115,7 @@ impl FromStr for FormatVersion {
 
 #[derive(Debug, Error)]
 pub enum FileError {
-    #[error("{0}")]
+    #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("this is not a StarScript Map file")]
     NotAMapFile,
@@ -131,16 +129,18 @@ pub enum FileError {
     NoMigration { found: FormatVersion },
     #[error("the Map file is damaged: {0}")]
     Damaged(String),
+    #[error("the Map file is damaged: the outline of {id} is unreadable")]
+    Outline {
+        id: Id,
+        #[source]
+        source: BlobError,
+    },
+    #[error("the Map file is damaged: a column holds the wrong type")]
+    WrongColumnType(#[from] rusqlite::types::FromSqlError),
     #[error("the file path must be valid Unicode: {0}")]
     PathNotUnicode(PathBuf),
-    #[error("database error: {0}")]
+    #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
-}
-
-impl From<rusqlite::types::FromSqlError> for FileError {
-    fn from(err: rusqlite::types::FromSqlError) -> Self {
-        FileError::Damaged(format!("a column holds the wrong type: {err}"))
-    }
 }
 
 /// What a save wrote, which shows that saves are incremental.
@@ -708,7 +708,9 @@ fn decode_node(
         Node::Layer(_) => None,
     };
     match (slot, geometry) {
-        (Some(slot), Some(bytes)) => *slot = blob::decode(bytes).map_err(damaged)?,
+        (Some(slot), Some(bytes)) => {
+            *slot = blob::decode(bytes).map_err(|source| FileError::Outline { id, source })?;
+        }
         (Some(_), None) => return Err(damaged("the outline is missing".into())),
         (None, Some(_)) => return Err(damaged(format!("a {kind} has no outline"))),
         (None, None) => {}
