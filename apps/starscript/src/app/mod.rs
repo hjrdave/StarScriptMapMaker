@@ -4,12 +4,14 @@
 mod closing;
 mod dialogs;
 mod drag_drop;
+mod export_flow;
 mod files;
 mod frame;
 mod menus;
 mod packs;
 mod panels;
 mod tabs;
+mod unsaved_offer;
 
 use eframe::{egui, egui_wgpu};
 use native_dialog::{Pick, Polled};
@@ -25,7 +27,7 @@ use std::time::{Duration, Instant};
 use crate::credits::Credits;
 use crate::document::Document;
 use crate::editor::Editor;
-use crate::export_dialog::{DialogAction, ExportDialog};
+use crate::export_dialog::DialogAction;
 use crate::export_run::{ExportRun, Outcome};
 use crate::new_map::NewMapDialog;
 use crate::recent::RecentFiles;
@@ -43,8 +45,10 @@ pub(crate) use self::files::RecoveryPrompt;
 
 use self::closing::Leaving;
 use self::drag_drop::{PayloadDrop, TabDrop};
+use self::export_flow::ExportFlow;
 use self::files::after_trash;
 use self::panels::layers_panel;
+use self::unsaved_offer::UnsavedOffer;
 
 /// What every window shares: settings, recent Maps, the installed Asset packs, crash recovery
 /// and the native menu. Not tied to one window's Maps.
@@ -60,10 +64,8 @@ struct AppState {
     pack_roots: PackRoots,
     recent: RecentFiles,
     updates: UpdateCheck,
-    /// Journals of Maps never saved left by a crash, oldest first, offered one at a time.
-    unsaved_found: Vec<Found>,
-    /// The journal of a Map never saved being offered now; recovering it opens a new tab.
-    unsaved_prompt: Option<Found>,
+    /// Journals of Maps never saved left by a crash, offered one at a time.
+    unsaved: UnsavedOffer,
     /// `None` without a GPU, as in UI tests; saves then store no preview.
     render_state: Option<egui_wgpu::RenderState>,
     /// Asked for a repaint as background work finishes.
@@ -140,9 +142,7 @@ struct WindowState {
     /// ⇥ just toggled the panels: clear keyboard focus at the next frame.
     drop_focus: bool,
     new_map_dialog: NewMapDialog,
-    export_dialog: ExportDialog,
-    /// The PNG export in progress, stepped once per frame behind a modal dialog.
-    export_run: Option<ExportRun>,
+    export: ExportFlow,
     open_dialog: Pick,
     save_dialog: Pick,
     /// The folder dialog of Add pack….
@@ -275,8 +275,7 @@ impl MapMakerApp {
             Some(render_state) => canvas_view::install(render_state, sprites.clone()),
             None => false,
         };
-        let mut unsaved_found = Recovery::new(recovery_dir.clone()).find_unsaved();
-        unsaved_found.reverse();
+        let unsaved = UnsavedOffer::new(Recovery::new(recovery_dir.clone()).find_unsaved());
         let tabs: Vec<MapTab> = map
             .into_iter()
             .map(|map| {
@@ -303,7 +302,6 @@ impl MapMakerApp {
         let app = AppState {
             recovery_dir,
             gpu,
-            unsaved_prompt: None,
             sprites,
             credits,
             pack_roots: PackRoots::installed(),
@@ -317,7 +315,7 @@ impl MapMakerApp {
             #[cfg(target_os = "macos")]
             native_menu,
             updates: UpdateCheck::load(cc.storage),
-            unsaved_found,
+            unsaved,
             render_state: cc.wgpu_render_state.clone(),
             egui_ctx: cc.egui_ctx.clone(),
             close_hides_window: cfg!(target_os = "macos"),
@@ -350,8 +348,7 @@ impl MapMakerApp {
             shell: shell::Shell::load(cc.storage),
             drop_focus: false,
             new_map_dialog: NewMapDialog::default(),
-            export_dialog: ExportDialog::default(),
-            export_run: None,
+            export: ExportFlow::default(),
             open_dialog: if gpu {
                 Pick::default()
             } else {
