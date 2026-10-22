@@ -16,7 +16,7 @@ impl MapMakerApp {
         match self.win.save_dialog.poll() {
             Polled::Chosen(path) => {
                 let saved = self.save_as_path(&path);
-                match self.win.awaiting_save.take() {
+                match self.win.close.take_awaiting_save() {
                     Some((index, pending)) if saved && index == self.win.active => {
                         self.finish(pending, ctx);
                     }
@@ -24,9 +24,9 @@ impl MapMakerApp {
                     None => {}
                 }
             }
-            Polled::Cancelled if self.win.awaiting_save.is_some() => {
+            Polled::Cancelled if self.win.close.is_awaiting_save() => {
                 // The Save As dialog was closed without saving: the question is cancelled.
-                self.win.awaiting_save = None;
+                self.win.close.take_awaiting_save();
                 self.cancel_quit();
             }
             _ => {}
