@@ -67,8 +67,6 @@ impl Rect {
 pub struct Affine(pub [f64; 6]);
 
 impl Affine {
-    pub const IDENTITY: Affine = Affine([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
-
     pub fn translate(offset: [f64; 2]) -> Affine {
         Affine([1.0, 0.0, 0.0, 1.0, offset[0], offset[1]])
     }
@@ -94,7 +92,7 @@ impl Affine {
         [a * x + c * y + e, b * x + d * y + f]
     }
 
-    pub fn determinant(&self) -> f64 {
+    pub(crate) fn determinant(&self) -> f64 {
         self.0[0] * self.0[3] - self.0[1] * self.0[2]
     }
 

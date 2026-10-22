@@ -61,18 +61,21 @@ fn embedded_art_renders_without_the_pack() {
     let installed = tempfile::tempdir().unwrap();
     copy_dir(&pack_source(), &installed.path().join("test-pack"));
     let with_pack = SpriteStore::new(library(installed.path()));
-    let expected = with_pack.get(&reference("mountain-1")).unwrap();
+    let expected = with_pack.wait_for(&reference("mountain-1")).unwrap();
 
     let empty = tempfile::tempdir().unwrap();
     let without_pack = SpriteStore::new(library(empty.path()));
-    assert!(without_pack.get(&reference("mountain-1")).is_none());
+    assert!(without_pack.wait_for(&reference("mountain-1")).is_none());
 
     let map = map_embedding(&["mountain-1", "well"], vec![]);
     assert!(without_pack.set_embedded(map.embedded()));
     for asset in ["mountain-1", "well"] {
-        assert!(without_pack.get(&reference(asset)).is_some(), "{asset}");
+        assert!(
+            without_pack.wait_for(&reference(asset)).is_some(),
+            "{asset}"
+        );
     }
-    let sprite = without_pack.get(&reference("mountain-1")).unwrap();
+    let sprite = without_pack.wait_for(&reference("mountain-1")).unwrap();
     assert_eq!(sprite.art, expected.art);
     assert_eq!(sprite.silhouette, expected.silhouette);
     assert_eq!(sprite.shape, expected.shape);
@@ -86,7 +89,7 @@ fn the_embedded_copy_wins_over_an_updated_pack() {
     let store = SpriteStore::new(library(installed.path()));
     let map = map_embedding(&["mountain-1"], vec![]);
     store.set_embedded(map.embedded());
-    let embedded = store.get(&reference("mountain-1")).unwrap();
+    let embedded = store.wait_for(&reference("mountain-1")).unwrap();
 
     // The pack now ships different art under the same name.
     std::fs::copy(
@@ -96,17 +99,20 @@ fn the_embedded_copy_wins_over_an_updated_pack() {
     .unwrap();
     let updated = SpriteStore::new(library(installed.path()));
     assert_ne!(
-        updated.get(&reference("mountain-1")).unwrap().art,
+        updated.wait_for(&reference("mountain-1")).unwrap().art,
         embedded.art
     );
     updated.set_embedded(map.embedded());
     assert_eq!(
-        updated.get(&reference("mountain-1")).unwrap().art,
+        updated.wait_for(&reference("mountain-1")).unwrap().art,
         embedded.art
     );
     // The Asset browser still shows what is installed.
     assert_ne!(
-        updated.get_installed(&reference("mountain-1")).unwrap().art,
+        updated
+            .wait_for_installed(&reference("mountain-1"))
+            .unwrap()
+            .art,
         embedded.art
     );
 }
@@ -117,7 +123,7 @@ fn assets_the_map_does_not_embed_come_from_the_packs() {
     copy_dir(&pack_source(), &installed.path().join("test-pack"));
     let store = SpriteStore::new(library(installed.path()));
     store.set_embedded(map_embedding(&["mountain-1"], vec![]).embedded());
-    assert!(store.get(&reference("tree")).is_some());
+    assert!(store.wait_for(&reference("tree")).is_some());
 }
 
 #[test]
@@ -131,7 +137,7 @@ fn the_generation_moves_only_when_the_embedded_assets_change() {
     assert!(!store.set_embedded(map.embedded()));
     assert_eq!(store.generation(), start + 1);
     assert!(store.set_embedded(&Default::default()));
-    assert!(store.get(&reference("tree")).is_none());
+    assert!(store.wait_for(&reference("tree")).is_none());
 }
 
 fn width(fonts: &mut Fonts, family: &str) -> f64 {

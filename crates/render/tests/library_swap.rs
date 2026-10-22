@@ -25,7 +25,7 @@ fn mountain() -> AssetRef {
 fn a_swapped_in_library_makes_new_assets_appear_without_a_new_store() {
     let store = SpriteStore::synchronous(Arc::new(PackLibrary::default()));
     let clone = store.clone();
-    assert!(store.get_installed(&mountain()).is_none());
+    assert!(store.wait_for_installed(&mountain()).is_none());
     assert!(matches!(store.poll(&mountain()), SpriteState::Missing));
     let before = store.generation();
 
@@ -36,7 +36,7 @@ fn a_swapped_in_library_makes_new_assets_appear_without_a_new_store() {
         clone.library().pack("test-pack").is_some(),
         "clones share it"
     );
-    assert!(store.get_installed(&mountain()).is_some());
+    assert!(store.wait_for_installed(&mountain()).is_some());
     assert!(matches!(clone.poll(&mountain()), SpriteState::Ready(_)));
 }
 
@@ -48,7 +48,7 @@ fn a_swapped_out_library_makes_its_assets_missing_again() {
     store.set_library(Arc::new(PackLibrary::default()));
 
     assert!(matches!(store.poll(&mountain()), SpriteState::Missing));
-    assert!(store.get(&mountain()).is_none());
+    assert!(store.wait_for(&mountain()).is_none());
 }
 
 #[test]
