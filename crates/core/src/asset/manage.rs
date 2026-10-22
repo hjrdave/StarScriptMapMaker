@@ -2,7 +2,6 @@
 //! many Stamps in a Map use a pack. Built-in packs are protected here, not only in the UI.
 
 use std::collections::BTreeSet;
-use std::fmt;
 use std::path::{Path, PathBuf};
 
 use thiserror::Error;
@@ -16,46 +15,27 @@ use super::manifest::{ManifestErrors, read_pack};
 use super::{AssetRef, Pack, PackSource};
 
 /// Why a pack could not be installed.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Debug, Error)]
 pub enum InstallError {
     /// The platform reports no per-user packs folder.
+    #[error("this system has no folder for user packs")]
     NoUserFolder,
     /// The chosen path is not a folder (for example a zip file, which is not supported yet).
+    #[error("{} is not a pack folder; only folders can be added for now", .0.display())]
     UnsupportedFormat(PathBuf),
     /// The folder has no `pack.toml`.
+    #[error("{} has no {PACK_MANIFEST}", .0.display())]
     MissingManifest(PathBuf),
     /// The manifest is invalid, or names files that are missing.
+    #[error("invalid pack: {0}")]
     InvalidManifest(ManifestErrors),
     /// A loaded pack already uses this id.
+    #[error("a pack named `{id}` is already installed ({})", existing.display())]
     DuplicateId { id: String, existing: PathBuf },
     /// Copying failed. Nothing is left half-installed.
-    Io(String),
+    #[error("cannot install the pack: {0}")]
+    Io(#[from] std::io::Error),
 }
-
-impl fmt::Display for InstallError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            InstallError::NoUserFolder => write!(f, "this system has no folder for user packs"),
-            InstallError::UnsupportedFormat(path) => write!(
-                f,
-                "{} is not a pack folder; only folders can be added for now",
-                path.display()
-            ),
-            InstallError::MissingManifest(path) => {
-                write!(f, "{} has no {PACK_MANIFEST}", path.display())
-            }
-            InstallError::InvalidManifest(errors) => write!(f, "invalid pack: {errors}"),
-            InstallError::DuplicateId { id, existing } => write!(
-                f,
-                "a pack named `{id}` is already installed ({})",
-                existing.display()
-            ),
-            InstallError::Io(message) => write!(f, "cannot install the pack: {message}"),
-        }
-    }
-}
-
-impl std::error::Error for InstallError {}
 
 /// Progress of an install, in bytes of pack files copied.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -141,7 +121,6 @@ impl PackLibrary {
                 existing: existing.dir.clone(),
             });
         }
-        let io = |err: std::io::Error| InstallError::Io(err.to_string());
         let target = user_root.join(&candidate.id);
         if target.exists() {
             return Err(InstallError::DuplicateId {
@@ -150,7 +129,7 @@ impl PackLibrary {
             });
         }
         let mut files = Vec::new();
-        collect_files(source, Path::new(""), &mut files).map_err(io)?;
+        collect_files(source, Path::new(""), &mut files)?;
         let total = files.iter().map(|(_, size)| size).sum();
         let mut state = InstallProgress { copied: 0, total };
         progress(state);
@@ -173,7 +152,7 @@ impl PackLibrary {
         })();
         if let Err(err) = copied {
             let _ = std::fs::remove_dir_all(&staging);
-            return Err(io(err));
+            return Err(err.into());
         }
         let installed = read_pack(&target, PackSource::User).map_err(|errors| {
             let _ = std::fs::remove_dir_all(&target);
@@ -254,4 +233,25 @@ fn collect_files(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+    use std::io::ErrorKind;
+
+    use super::*;
+
+    #[test]
+    fn io_error_is_the_source_of_install_error() {
+        let err = InstallError::from(std::io::Error::from(ErrorKind::PermissionDenied));
+        let source = err
+            .source()
+            .and_then(|source| source.downcast_ref::<std::io::Error>());
+        assert_eq!(
+            source.map(std::io::Error::kind),
+            Some(ErrorKind::PermissionDenied)
+        );
+        assert!(err.to_string().starts_with("cannot install the pack: "));
+    }
 }
