@@ -59,9 +59,20 @@ impl MapMakerApp {
         } else if quit || self.win.leaving == Leaving::Window {
             self.close(ctx);
         } else {
-            for tab in &mut self.win.tabs {
-                tab.recovery.reset();
-            }
+            self.reset_recoveries();
+        }
+    }
+
+    /// Deletes every tab's Recovery journal, telling the user about any that stays behind.
+    fn reset_recoveries(&mut self) {
+        let failed: Vec<_> = self
+            .win
+            .tabs
+            .iter_mut()
+            .map(|tab| tab.recovery.reset())
+            .collect();
+        for deleted in failed {
+            self.notify_journal_delete(deleted);
         }
     }
 
@@ -121,9 +132,7 @@ impl MapMakerApp {
     /// Leaves, discarding unsaved changes and their Recovery journals: quits the app, or closes
     /// the window and its tabs and leaves the app running.
     pub(super) fn close(&mut self, ctx: &egui::Context) {
-        for tab in &mut self.win.tabs {
-            tab.recovery.reset();
-        }
+        self.reset_recoveries();
         match self.win.leaving {
             Leaving::Quit => {
                 self.win.close_allowed = true;

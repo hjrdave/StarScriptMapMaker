@@ -34,7 +34,9 @@ pub fn install(ctx: &egui::Context) {
     };
     let app = NSApplication::sharedApplication(mtm);
     let Some(delegate) = app.delegate() else {
-        eprintln!("no app delegate: the Dock icon will not reopen the window");
+        // macOS only, where stderr is kept (a terminal, or the system log for a bundle), and
+        // nothing the user can act on: the Dock icon just does not reopen the window.
+        eprintln!("no app delegate:the Dock icon will not reopen the window");
         return;
     };
     let object: *const AnyObject = Retained::as_ptr(&delegate).cast();
@@ -55,6 +57,7 @@ pub fn install(ctx: &egui::Context) {
         )
     };
     if !added.as_bool() {
+        // As above: macOS keeps stderr, and there is nothing for the user to act on.
         eprintln!("could not hook the Dock icon: the app delegate already handles reopen");
         return;
     }

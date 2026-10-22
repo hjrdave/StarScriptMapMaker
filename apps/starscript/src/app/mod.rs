@@ -53,6 +53,8 @@ struct AppState {
     recovery_dir: Option<PathBuf>,
     /// Whether the Canvas renderer is installed, so new tabs get a tessellation cache.
     gpu: bool,
+    /// Shows the Open, Save and folder dialogs; tests swap it for one that shows nothing.
+    launch_dialog: native_dialog::Launch,
     /// The installed Asset packs' art, shared with the Canvas renderer and picking.
     sprites: SpriteStore,
     credits: Credits,
@@ -117,6 +119,9 @@ struct WindowState {
     /// The index of the active tab: the one whose Map the window shows and every command acts
     /// on, reached through [`MapMakerApp::tab`]. Meaningless while `tabs` is empty.
     active: usize,
+    /// Problems to tell the user about while no Map is open to show them on; Home lists them
+    /// until dismissed.
+    notices: Vec<String>,
     /// Whether the Home tab shows instead of the active tab's Map. Always the case while no
     /// Map is open.
     home_active: bool,
@@ -236,37 +241,43 @@ impl WindowState {
 
 impl MapMakerApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        Self::with_recovery_dir(cc, Recovery::default_unsaved_dir())
+        Self::build(
+            cc,
+            None,
+            Recovery::default_unsaved_dir(),
+            native_dialog::launch_native,
+        )
     }
 
     /// Starts on the Home tab with no Map open, keeping journals of Maps never saved in
-    /// `recovery_dir` (`None` turns them off) and offering any a crash left there.
+    /// `recovery_dir` (`None` turns them off) and offering any a crash left there. File
+    /// dialogs count as open but never show, for tests without a window.
     pub fn with_recovery_dir(
         cc: &eframe::CreationContext<'_>,
         recovery_dir: Option<PathBuf>,
     ) -> Self {
-        Self::build(cc, None, recovery_dir)
+        Self::build(cc, None, recovery_dir, native_dialog::launch_headless)
     }
 
-    /// Starts with `map` open in a tab.
+    /// Starts with `map` open in a tab. File dialogs count as open but never show, for tests
+    /// without a window.
     pub fn with_map(
         cc: &eframe::CreationContext<'_>,
         map: Map,
         recovery_dir: Option<PathBuf>,
     ) -> Self {
-        Self::build(cc, Some(map), recovery_dir)
+        Self::build(cc, Some(map), recovery_dir, native_dialog::launch_headless)
     }
 
     fn build(
         cc: &eframe::CreationContext<'_>,
         map: Option<Map>,
         recovery_dir: Option<PathBuf>,
+        launch_dialog: native_dialog::Launch,
     ) -> Self {
         theme::install(&cc.egui_ctx);
         let (library, problems) = PackLibrary::load(&PackRoots::installed());
-        for problem in &problems {
-            eprintln!("Asset pack problem: {problem}");
-        }
+        let notices: Vec<String> = problems.iter().map(packs::problem_notice).collect();
         let credits = Credits::new(&library);
         let sprites = SpriteStore::new(Arc::new(library));
         let ctx = cc.egui_ctx.clone();
@@ -303,6 +314,7 @@ impl MapMakerApp {
         let app = AppState {
             recovery_dir,
             gpu,
+            launch_dialog,
             unsaved_prompt: None,
             sprites,
             credits,
@@ -336,6 +348,7 @@ impl MapMakerApp {
             home_active: tabs.is_empty(),
             tabs,
             active: 0,
+            notices,
             strip: tab_strip::State::default(),
             screen_origin: egui::Pos2::ZERO,
             content_size: egui::Vec2::ZERO,
@@ -350,23 +363,11 @@ impl MapMakerApp {
             shell: shell::Shell::load(cc.storage),
             drop_focus: false,
             new_map_dialog: NewMapDialog::default(),
-            export_dialog: ExportDialog::default(),
+            export_dialog: ExportDialog::new(launch_dialog),
             export_run: None,
-            open_dialog: if gpu {
-                Pick::default()
-            } else {
-                Pick::headless()
-            },
-            save_dialog: if gpu {
-                Pick::default()
-            } else {
-                Pick::headless()
-            },
-            pack_dialog: if gpu {
-                Pick::default()
-            } else {
-                Pick::headless()
-            },
+            open_dialog: Pick::new(launch_dialog),
+            save_dialog: Pick::new(launch_dialog),
+            pack_dialog: Pick::new(launch_dialog),
             pack_install: pack_install::PackInstall::default(),
             close_allowed: false,
             leaving: Leaving::Quit,

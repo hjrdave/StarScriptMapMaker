@@ -4,8 +4,9 @@
 //! The result comes back through a channel that the app polls once a frame; `None` means the
 //! user cancelled.
 
+use std::any::Any;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 
 use eframe::egui;
@@ -13,14 +14,19 @@ use rfd::FileDialog;
 
 use crate::document;
 
+/// What a dialog shows, run on a thread of its own.
+type Show = Box<dyn FnOnce() -> Option<PathBuf> + Send>;
+
+/// Puts a dialog on the screen and sends its answer. What it returns is kept until the dialog
+/// is answered; `None` means the dialog could not open.
+pub type Launch = fn(&egui::Context, Sender<Option<PathBuf>>, Show) -> Option<Box<dyn Any>>;
+
 /// A native dialog that is open, or has just been answered.
-#[derive(Default)]
 pub struct Pick {
     answer: Option<Receiver<Option<PathBuf>>>,
-    /// UI tests have no window to put a system dialog on: the dialog counts as open and
-    /// never answers, and the sender is kept here so it doesn't read as cancelled.
-    headless: Option<mpsc::Sender<Option<PathBuf>>>,
-    is_headless: bool,
+    /// Whatever the launcher needs kept alive while the dialog is open.
+    keep: Option<Box<dyn Any>>,
+    launch: Launch,
 }
 
 /// What a poll of a [`Pick`] found.
@@ -36,22 +42,51 @@ pub enum Polled {
     Chosen(PathBuf),
 }
 
+/// The launcher for the real thing: the system's dialog, on a thread of its own. The window
+/// repaints when it answers.
+pub fn launch_native(
+    ctx: &egui::Context,
+    sender: Sender<Option<PathBuf>>,
+    show: Show,
+) -> Option<Box<dyn Any>> {
+    let ctx = ctx.clone();
+    thread::Builder::new()
+        .name("native-dialog".into())
+        .spawn(move || {
+            // The receiver is gone only when the app is, with nobody left to answer.
+            let _ = sender.send(show());
+            ctx.request_repaint();
+        })
+        .ok()?;
+    Some(Box::new(()))
+}
+
+/// A launcher for tests without a window to put a system dialog on: the dialog counts as open
+/// and never answers. The sender is kept so it doesn't read as cancelled.
+pub fn launch_headless(
+    _ctx: &egui::Context,
+    sender: Sender<Option<PathBuf>>,
+    _show: Show,
+) -> Option<Box<dyn Any>> {
+    Some(Box::new(sender))
+}
+
 impl Pick {
+    /// A picker that shows its dialogs through `launch`.
+    pub fn new(launch: Launch) -> Self {
+        Self {
+            answer: None,
+            keep: None,
+            launch,
+        }
+    }
+
     /// Whether a dialog is showing.
     pub fn is_open(&self) -> bool {
         self.answer.is_some()
     }
 
-    /// A picker that never shows a system dialog, for tests without a window.
-    pub fn headless() -> Self {
-        Self {
-            is_headless: true,
-            ..Self::default()
-        }
-    }
-
-    /// Runs `show` on a new thread unless a dialog is already open. The window repaints when
-    /// it answers.
+    /// Runs `show` through the launcher unless a dialog is already open.
     fn start(
         &mut self,
         ctx: &egui::Context,
@@ -61,19 +96,8 @@ impl Pick {
             return;
         }
         let (sender, receiver) = mpsc::channel();
-        if self.is_headless {
-            self.headless = Some(sender);
-            self.answer = Some(receiver);
-            return;
-        }
-        let ctx = ctx.clone();
-        let spawned = thread::Builder::new()
-            .name("native-dialog".into())
-            .spawn(move || {
-                let _ = sender.send(show());
-                ctx.request_repaint();
-            });
-        if spawned.is_ok() {
+        if let Some(keep) = (self.launch)(ctx, sender, Box::new(show)) {
+            self.keep = Some(keep);
             self.answer = Some(receiver);
         }
     }
@@ -108,10 +132,12 @@ impl Pick {
         match answer.try_recv() {
             Ok(Some(path)) => {
                 self.answer = None;
+                self.keep = None;
                 Polled::Chosen(path)
             }
             Ok(None) | Err(TryRecvError::Disconnected) => {
                 self.answer = None;
+                self.keep = None;
                 Polled::Cancelled
             }
             Err(TryRecvError::Empty) => Polled::Open,
@@ -122,7 +148,7 @@ impl Pick {
     fn with_answer(answer: Receiver<Option<PathBuf>>) -> Self {
         Self {
             answer: Some(answer),
-            ..Self::default()
+            ..Self::new(launch_headless)
         }
     }
 }
@@ -142,8 +168,23 @@ mod tests {
 
     #[test]
     fn idle_without_a_dialog() {
-        assert_eq!(Pick::default().poll(), Polled::Idle);
-        assert!(!Pick::default().is_open());
+        assert_eq!(Pick::new(launch_headless).poll(), Polled::Idle);
+        assert!(!Pick::new(launch_headless).is_open());
+    }
+
+    #[test]
+    fn a_headless_dialog_counts_as_open_and_never_answers() {
+        let mut pick = Pick::new(launch_headless);
+        pick.folder(&egui::Context::default(), "Choose", None);
+        assert!(pick.is_open());
+        assert_eq!(pick.poll(), Polled::Open);
+    }
+
+    #[test]
+    fn a_launcher_that_fails_leaves_no_dialog_open() {
+        let mut pick = Pick::new(|_, _, _| None);
+        pick.folder(&egui::Context::default(), "Choose", None);
+        assert!(!pick.is_open());
     }
 
     #[test]

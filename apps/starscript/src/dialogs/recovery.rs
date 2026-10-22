@@ -141,24 +141,28 @@ impl Recovery {
         found: &Path,
         ops: &[Op],
     ) -> Result<(), JournalError> {
-        self.reset();
+        let deleted = self.reset();
         if document.path().is_none() {
             self.unsaved_path = Some(found.to_path_buf());
         }
         let started = self.start(document, map, ops);
         self.failed = started.is_err();
-        started
+        started.and(deleted.map_err(JournalError::from))
     }
 
     /// Forgets queued Ops and deletes the journal, as on Save, open, or discarding changes.
-    pub fn reset(&mut self) {
+    /// Everything is forgotten even when the delete fails; the journal left behind is offered
+    /// again on the next launch, so the caller should say so.
+    pub fn reset(&mut self) -> std::io::Result<()> {
         self.pending.clear();
         self.since = None;
         self.failed = false;
-        if let Some(journal) = self.journal.take() {
-            let _ = journal.delete();
-        }
+        let deleted = match self.journal.take() {
+            Some(journal) => journal.delete(),
+            None => Ok(()),
+        };
         self.unsaved_path = None;
+        deleted
     }
 
     pub fn journal_path(&self) -> Option<&Path> {
@@ -273,7 +277,7 @@ mod tests {
             recovery.due_in(start + FLUSH_DELAY * 2),
             Some(Duration::ZERO)
         );
-        recovery.reset();
+        assert!(recovery.reset().is_ok());
         assert!(!recovery.has_pending());
     }
 }

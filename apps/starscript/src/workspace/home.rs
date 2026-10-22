@@ -297,6 +297,8 @@ pub enum Action {
     DeletePack(String),
     /// Close the message about the last Add pack.
     DismissPackStatus,
+    /// Close the messages about problems.
+    DismissNotices,
 }
 
 /// What the screen draws besides its own state.
@@ -309,6 +311,8 @@ pub struct Data<'a> {
     pub sprites: Option<&'a ssmap_render::SpriteStore>,
     /// The last Add pack: its progress or result.
     pub pack_status: Option<&'a crate::pack_install::Status>,
+    /// Problems to tell the user about, such as an Asset pack that did not load.
+    pub notices: &'a [String],
 }
 
 struct Loaded {
@@ -467,6 +471,23 @@ impl Home {
                         .inner_margin(egui::Margin::symmetric(32, 20)),
                 )
                 .show(ui, |ui| updates.banner(ui));
+        }
+
+        if !data.notices.is_empty() {
+            egui::Panel::top("home_notices")
+                .frame(
+                    egui::Frame::NONE
+                        .fill(p.bg_window)
+                        .inner_margin(egui::Margin::symmetric(32, 12)),
+                )
+                .show(ui, |ui| {
+                    for notice in data.notices {
+                        ui.label(egui::RichText::new(notice).color(p.text_primary));
+                    }
+                    if ui.button("Dismiss").clicked() {
+                        actions.push(Action::DismissNotices);
+                    }
+                });
         }
 
         egui::CentralPanel::default()

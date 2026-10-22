@@ -156,17 +156,11 @@ impl MapMakerApp {
 
     /// A window with no tabs and no dialogs open.
     pub(super) fn new_window_state(&self, viewport: egui::ViewportId) -> WindowState {
-        let headless = !self.app.gpu;
-        let pick = || {
-            if headless {
-                Pick::headless()
-            } else {
-                Pick::default()
-            }
-        };
+        let pick = || Pick::new(self.app.launch_dialog);
         WindowState {
             tabs: Vec::new(),
             active: 0,
+            notices: Vec::new(),
             home_active: false,
             strip: tab_strip::State::default(),
             screen_origin: egui::Pos2::ZERO,
@@ -177,7 +171,7 @@ impl MapMakerApp {
             shell: shell::Shell::default(),
             drop_focus: false,
             new_map_dialog: NewMapDialog::default(),
-            export_dialog: ExportDialog::default(),
+            export_dialog: ExportDialog::new(self.app.launch_dialog),
             export_run: None,
             open_dialog: pick(),
             save_dialog: pick(),
@@ -229,10 +223,11 @@ impl MapMakerApp {
     /// Drops tab `index` and its Recovery journal, keeping the same Map active if it can.
     pub(super) fn remove_tab(&mut self, index: usize) {
         let mut tab = self.win.tabs.remove(index);
-        tab.recovery.reset();
+        let deleted = tab.recovery.reset();
         if index < self.win.active || self.win.active >= self.win.tabs.len() {
             self.win.active = self.win.active.saturating_sub(1);
         }
+        self.notify_journal_delete(deleted);
     }
 
     /// The index of the tab showing the Map file at `path`, comparing canonical paths.
@@ -269,7 +264,8 @@ impl MapMakerApp {
             None
         };
         if let Some(slot) = blank {
-            std::mem::replace(slot, tab).recovery.reset();
+            let deleted = std::mem::replace(slot, tab).recovery.reset();
+            self.notify_journal_delete(deleted);
         } else {
             self.win.tabs.push(tab);
             self.win.active = self.win.tabs.len() - 1;
@@ -307,12 +303,25 @@ impl MapMakerApp {
         !self.win.tabs.is_empty() && !self.home_active() && !self.start_page_showing()
     }
 
-    /// Shows a message on the active tab's status bar, or on stderr when no Map is open.
+    /// Shows a message on the active tab's status bar, or on Home when no Map is open.
     pub(super) fn notify_error(&mut self, message: String) {
         match self.win.tabs.get_mut(self.win.active) {
             Some(tab) => tab.editor.error(message),
-            None => eprintln!("{message}"),
+            None => self.win.notices.push(message),
         }
+    }
+
+    /// Tells the user when a Recovery journal could not be deleted: it is offered again on the
+    /// next launch.
+    pub(super) fn notify_journal_delete(&mut self, deleted: std::io::Result<()>) {
+        if let Err(err) = deleted {
+            self.notify_error(format!("Couldn’t delete the unsaved changes: {err}"));
+        }
+    }
+
+    /// The messages Home lists while no Map is open, for tests.
+    pub fn home_notices(&self) -> &[String] {
+        &self.win.notices
     }
 
     /// The window title, as last sent to the window.
