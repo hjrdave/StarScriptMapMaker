@@ -129,6 +129,62 @@ impl CanvasInput<'_> {
     }
 }
 
+/// One frame of primary-button pointer input as plain data, so a tool can be a function from
+/// this to `Command`s and be tested without a running `egui::Context`. Positions are egui
+/// points on the screen; `rect_min` is the top-left of the Canvas widget.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct PointerInput {
+    pub rect_min: egui::Pos2,
+    /// Physical pixels per egui point.
+    pub pixels_per_point: f64,
+    /// The pointer is over the Canvas widget.
+    pub hovered: bool,
+    pub hover_pos: Option<egui::Pos2>,
+    /// Where the button went down.
+    pub press_origin: Option<egui::Pos2>,
+    /// The pointer position while the button is held, or on release.
+    pub pointer_pos: Option<egui::Pos2>,
+    pub drag_started: bool,
+    pub dragging: bool,
+    /// A drag ended (any button).
+    pub drag_stopped: bool,
+    pub clicked: bool,
+    pub shift: bool,
+    pub alt: bool,
+}
+
+impl PointerInput {
+    fn from_response(response: &egui::Response, pixels_per_point: f64) -> Self {
+        let primary = egui::PointerButton::Primary;
+        let (press_origin, shift, alt) = response
+            .ctx
+            .input(|i| (i.pointer.press_origin(), i.modifiers.shift, i.modifiers.alt));
+        Self {
+            rect_min: response.rect.min,
+            pixels_per_point,
+            hovered: response.hovered(),
+            hover_pos: response.hover_pos(),
+            press_origin,
+            pointer_pos: response.interact_pointer_pos(),
+            drag_started: response.drag_started_by(primary),
+            dragging: response.dragged_by(primary),
+            drag_stopped: response.drag_stopped(),
+            clicked: response.clicked(),
+            shift,
+            alt,
+        }
+    }
+
+    /// The Canvas point under a screen position.
+    fn canvas_point(&self, view: &View, pos: egui::Pos2) -> [f64; 2] {
+        let local = pos - self.rect_min;
+        view.to_canvas([
+            f64::from(local.x) * self.pixels_per_point,
+            f64::from(local.y) * self.pixels_per_point,
+        ])
+    }
+}
+
 /// Tool state that lasts across frames.
 #[derive(Default)]
 pub struct ToolState {
@@ -414,8 +470,18 @@ pub fn canvas_input(
         }
         ToolId::Pan => {}
         ToolId::Stamp => scatter_tool(editor, view, state, input, false),
-        ToolId::ExportRegion => export_region_tool(editor, view, state, input),
-        ToolId::ArtBoard => art_board_tool(editor, view, state, input),
+        ToolId::ExportRegion => {
+            let pointer = PointerInput::from_response(response, ppp);
+            if let Some(icon) = export_region_tool(editor, view, state, &pointer) {
+                response.ctx.set_cursor_icon(icon);
+            }
+        }
+        ToolId::ArtBoard => {
+            let pointer = PointerInput::from_response(response, ppp);
+            if let Some(icon) = art_board_tool(editor, view, state, &pointer) {
+                response.ctx.set_cursor_icon(icon);
+            }
+        }
         ToolId::StampEraser => scatter_tool(editor, view, state, input, true),
         ToolId::Label => {
             if response.clicked()
@@ -464,9 +530,8 @@ fn art_board_tool(
     editor: &mut Editor,
     view: &View,
     state: &mut ToolState,
-    input: &CanvasInput<'_>,
-) {
-    let response = input.response;
+    input: &PointerInput,
+) -> Option<egui::CursorIcon> {
     let ppp = input.pixels_per_point;
     let canvas = editor.map.canvas.clone();
     let bounds = Bounds {
@@ -475,28 +540,29 @@ fn art_board_tool(
     };
     let selected = editor.board_selected();
     let grip_at =
-        |pos: egui::Pos2| match handles::hit(&bounds, view, response.rect.min, ppp, pos, false) {
+        |pos: egui::Pos2| match handles::hit(&bounds, view, input.rect_min, ppp, pos, false) {
             Some(Grip::Resize(handle)) if selected => Some(handle),
             _ => None,
         };
-    let screen = board_screen_rect(editor, view, response.rect.min, ppp);
+    let screen = board_screen_rect(editor, view, input.rect_min, ppp);
     let on_edge = |pos: egui::Pos2| {
         screen.expand(EDGE_GRAB as f32).contains(pos)
             && !screen.shrink(EDGE_GRAB as f32).contains(pos)
     };
     let on_label = |pos: egui::Pos2| state.board_label.is_some_and(|label| label.contains(pos));
+    let mut cursor = None;
     if state.board_drag.is_none()
-        && let Some(pos) = response.hover_pos()
+        && let Some(pos) = input.hover_pos
     {
         if let Some(handle) = grip_at(pos) {
-            response.ctx.set_cursor_icon(handle.cursor());
+            cursor = Some(handle.cursor());
         } else if on_edge(pos) || on_label(pos) {
-            response.ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+            cursor = Some(egui::CursorIcon::PointingHand);
         }
     }
-    if response.drag_started_by(egui::PointerButton::Primary)
+    if input.drag_started
         && !editor.gesture_open()
-        && let Some(pos) = response.ctx.input(|i| i.pointer.press_origin())
+        && let Some(pos) = input.press_origin
         && let Some(handle) = grip_at(pos)
     {
         editor.begin_gesture("Resize Canvas");
@@ -511,11 +577,11 @@ fn art_board_tool(
         // Escape or undo ended the gesture under the drag.
         if !editor.gesture_open() {
             state.board_drag = None;
-        } else if response.dragged_by(egui::PointerButton::Primary)
-            && let Some(pos) = response.interact_pointer_pos()
+        } else if input.dragging
+            && let Some(pos) = input.pointer_pos
         {
-            let (shift, alt) = response.ctx.input(|i| (i.modifiers.shift, i.modifiers.alt));
-            let (origin, width, height) = drag.resized(input.canvas_point(view, pos), shift, alt);
+            let (origin, width, height) =
+                drag.resized(input.canvas_point(view, pos), input.shift, input.alt);
             editor.gesture_replace(Command::ResizeCanvas {
                 origin,
                 width,
@@ -523,15 +589,16 @@ fn art_board_tool(
             });
         }
     }
-    if response.drag_stopped() && state.board_drag.take().is_some() {
+    if input.drag_stopped && state.board_drag.take().is_some() {
         editor.end_gesture();
     }
-    if response.clicked()
-        && let Some(pos) = response.interact_pointer_pos()
+    if input.clicked
+        && let Some(pos) = input.pointer_pos
         && grip_at(pos).is_none()
     {
         editor.select_board(on_edge(pos) || on_label(pos));
     }
+    cursor
 }
 
 /// Draws the board's label above its top-left corner, and its handles when it is selected.
@@ -586,9 +653,8 @@ fn export_region_tool(
     editor: &mut Editor,
     view: &View,
     state: &mut ToolState,
-    input: &CanvasInput<'_>,
-) {
-    let response = input.response;
+    input: &PointerInput,
+) -> Option<egui::CursorIcon> {
     let ppp = input.pixels_per_point;
     let canvas = [
         f64::from(editor.map.canvas.width),
@@ -598,29 +664,26 @@ fn export_region_tool(
         && let Some((_, before)) = state.region_drag.take()
     {
         editor.map.export_settings.region = before;
-        return;
+        return None;
     }
     let existing = custom_region(editor);
     let grip_at = |pos: egui::Pos2| {
         let bounds = existing?;
-        handles::hit(&bounds, view, response.rect.min, ppp, pos, false)
+        handles::hit(&bounds, view, input.rect_min, ppp, pos, false)
     };
-    if response.hovered() {
-        let icon = match response.hover_pos() {
-            Some(pos) if state.region_drag.is_none() => match grip_at(pos) {
-                Some(grip) => grip.cursor(),
-                None if existing.is_some_and(|b| b.contains(input.canvas_point(view, pos))) => {
-                    egui::CursorIcon::Move
-                }
-                None => egui::CursorIcon::Crosshair,
-            },
-            _ => egui::CursorIcon::Crosshair,
-        };
-        response.ctx.set_cursor_icon(icon);
-    }
-    if response.drag_started_by(egui::PointerButton::Primary)
+    let cursor = input.hovered.then(|| match input.hover_pos {
+        Some(pos) if state.region_drag.is_none() => match grip_at(pos) {
+            Some(grip) => grip.cursor(),
+            None if existing.is_some_and(|b| b.contains(input.canvas_point(view, pos))) => {
+                egui::CursorIcon::Move
+            }
+            None => egui::CursorIcon::Crosshair,
+        },
+        _ => egui::CursorIcon::Crosshair,
+    });
+    if input.drag_started
         && state.region_drag.is_none()
-        && let Some(pos) = response.ctx.input(|i| i.pointer.press_origin())
+        && let Some(pos) = input.press_origin
     {
         let start = input.canvas_point(view, pos);
         let drag = match (existing, grip_at(pos)) {
@@ -638,15 +701,15 @@ fn export_region_tool(
         state.region_drag = Some((drag, editor.map.export_settings.region.clone()));
     }
     let Some((drag, before)) = state.region_drag.clone() else {
-        return;
+        return cursor;
     };
-    if response.dragged_by(egui::PointerButton::Primary)
-        && let Some(pos) = response.interact_pointer_pos()
+    if input.dragging
+        && let Some(pos) = input.pointer_pos
     {
         let rect = drag.rect(input.canvas_point(view, pos), canvas);
         editor.map.export_settings.region = ExportRegion::Custom { rect };
     }
-    if response.drag_stopped() {
+    if input.drag_stopped {
         state.region_drag = None;
         if let ExportRegion::Custom { rect } = &editor.map.export_settings.region
             && !export_region::is_usable(rect)
@@ -654,6 +717,7 @@ fn export_region_tool(
             editor.map.export_settings.region = before;
         }
     }
+    cursor
 }
 
 /// Paint land by dragging, or erase with the erase modifier held. Each stroke is one Undo
@@ -1962,5 +2026,266 @@ mod link_tests {
         let copy = editor.selection()[0];
         assert_ne!(copy, a);
         assert!(!editor.map.is_linked(copy));
+    }
+}
+
+#[cfg(test)]
+mod pointer_tests {
+    use super::*;
+    use ssmap_core::{Canvas, DistanceUnit, Map, Polygon, Scale};
+
+    fn editor() -> Editor {
+        Editor::new(Map::new(Canvas::new(
+            500,
+            500,
+            Scale::new(1.0, DistanceUnit::Miles),
+        )))
+    }
+
+    /// One pixel per Canvas unit, and the widget at the screen origin.
+    fn view() -> View {
+        View::fit([500.0, 500.0], [500, 500], 0.0)
+    }
+
+    fn at(x: f32, y: f32) -> egui::Pos2 {
+        egui::pos2(x, y)
+    }
+
+    fn input() -> PointerInput {
+        PointerInput {
+            pixels_per_point: 1.0,
+            ..PointerInput::default()
+        }
+    }
+
+    fn press(x: f32, y: f32) -> PointerInput {
+        PointerInput {
+            drag_started: true,
+            press_origin: Some(at(x, y)),
+            pointer_pos: Some(at(x, y)),
+            ..input()
+        }
+    }
+
+    fn drag_to(x: f32, y: f32) -> PointerInput {
+        PointerInput {
+            dragging: true,
+            pointer_pos: Some(at(x, y)),
+            ..input()
+        }
+    }
+
+    fn release(x: f32, y: f32) -> PointerInput {
+        PointerInput {
+            drag_stopped: true,
+            pointer_pos: Some(at(x, y)),
+            ..input()
+        }
+    }
+
+    fn bounds(min: [f64; 2], max: [f64; 2]) -> Option<Bounds> {
+        Some(Bounds { min, max })
+    }
+
+    /// Draws a region from (100, 100) to (300, 300) and lets go.
+    fn with_region() -> (Editor, View, ToolState) {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        export_region_tool(&mut editor, &view, &mut state, &press(100.0, 100.0));
+        export_region_tool(&mut editor, &view, &mut state, &drag_to(300.0, 300.0));
+        export_region_tool(&mut editor, &view, &mut state, &release(300.0, 300.0));
+        (editor, view, state)
+    }
+
+    #[test]
+    fn dragging_on_empty_canvas_draws_the_export_region() {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        export_region_tool(&mut editor, &view, &mut state, &press(100.0, 100.0));
+        export_region_tool(&mut editor, &view, &mut state, &drag_to(300.0, 250.0));
+        assert_eq!(
+            custom_region(&editor),
+            bounds([100.0, 100.0], [300.0, 250.0])
+        );
+        export_region_tool(&mut editor, &view, &mut state, &release(300.0, 250.0));
+        assert!(state.region_drag.is_none());
+        assert!(custom_region(&editor).is_some());
+    }
+
+    #[test]
+    fn a_region_drag_is_kept_inside_the_canvas() {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        export_region_tool(&mut editor, &view, &mut state, &press(100.0, 100.0));
+        export_region_tool(&mut editor, &view, &mut state, &drag_to(900.0, -50.0));
+        assert_eq!(custom_region(&editor), bounds([100.0, 0.0], [500.0, 100.0]));
+    }
+
+    #[test]
+    fn a_click_without_a_drag_leaves_no_region() {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        export_region_tool(&mut editor, &view, &mut state, &press(100.0, 100.0));
+        export_region_tool(&mut editor, &view, &mut state, &release(100.0, 100.0));
+        assert_eq!(custom_region(&editor), None);
+        assert!(state.region_drag.is_none());
+    }
+
+    #[test]
+    fn dragging_inside_an_existing_region_moves_it() {
+        let (mut editor, view, mut state) = with_region();
+        export_region_tool(&mut editor, &view, &mut state, &press(200.0, 200.0));
+        export_region_tool(&mut editor, &view, &mut state, &drag_to(230.0, 220.0));
+        assert_eq!(
+            custom_region(&editor),
+            bounds([130.0, 120.0], [330.0, 320.0])
+        );
+    }
+
+    #[test]
+    fn dragging_a_handle_resizes_the_region() {
+        let (mut editor, view, mut state) = with_region();
+        // The bottom-right handle.
+        export_region_tool(&mut editor, &view, &mut state, &press(300.0, 300.0));
+        export_region_tool(&mut editor, &view, &mut state, &drag_to(350.0, 340.0));
+        assert_eq!(
+            custom_region(&editor),
+            bounds([100.0, 100.0], [350.0, 340.0])
+        );
+    }
+
+    #[test]
+    fn escape_puts_the_previous_region_back() {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        export_region_tool(&mut editor, &view, &mut state, &press(100.0, 100.0));
+        export_region_tool(&mut editor, &view, &mut state, &drag_to(300.0, 300.0));
+        editor.cancel_tool = true;
+        export_region_tool(&mut editor, &view, &mut state, &input());
+        assert_eq!(custom_region(&editor), None);
+        assert!(state.region_drag.is_none());
+    }
+
+    #[test]
+    fn the_export_region_cursor_follows_the_pointer() {
+        let (mut editor, view, mut state) = with_region();
+        let hover = |x, y| PointerInput {
+            hovered: true,
+            hover_pos: Some(at(x, y)),
+            ..input()
+        };
+        let mut cursor = |input| export_region_tool(&mut editor, &view, &mut state, &input);
+        assert_eq!(cursor(input()), None);
+        assert_eq!(cursor(hover(10.0, 10.0)), Some(egui::CursorIcon::Crosshair));
+        assert_eq!(cursor(hover(200.0, 200.0)), Some(egui::CursorIcon::Move));
+    }
+
+    #[test]
+    fn clicking_the_canvas_edge_selects_the_art_board_but_its_inside_does_not() {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        let click = |x, y| PointerInput {
+            clicked: true,
+            pointer_pos: Some(at(x, y)),
+            ..input()
+        };
+        art_board_tool(&mut editor, &view, &mut state, &click(250.0, 250.0));
+        assert!(!editor.board_selected());
+        art_board_tool(&mut editor, &view, &mut state, &click(2.0, 250.0));
+        assert!(editor.board_selected());
+        art_board_tool(&mut editor, &view, &mut state, &click(250.0, 250.0));
+        assert!(!editor.board_selected());
+    }
+
+    #[test]
+    fn dragging_a_handle_of_the_selected_art_board_resizes_the_canvas() {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        editor.select_board(true);
+        art_board_tool(&mut editor, &view, &mut state, &press(500.0, 500.0));
+        assert!(state.board_drag.is_some());
+        art_board_tool(&mut editor, &view, &mut state, &drag_to(600.0, 560.0));
+        assert_eq!(
+            (editor.map.canvas.width, editor.map.canvas.height),
+            (600, 560)
+        );
+        art_board_tool(&mut editor, &view, &mut state, &release(600.0, 560.0));
+        assert!(state.board_drag.is_none());
+        assert!(!editor.gesture_open());
+    }
+
+    #[test]
+    fn a_handle_of_an_unselected_art_board_is_not_grabbed() {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        art_board_tool(&mut editor, &view, &mut state, &press(500.0, 500.0));
+        assert!(state.board_drag.is_none());
+    }
+
+    fn outline() -> MultiPolygon {
+        MultiPolygon(vec![Polygon {
+            exterior: vec![[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]],
+            holes: Vec::new(),
+        }])
+    }
+
+    #[test]
+    fn hit_outline_finds_a_node_within_reach() {
+        let hit = hit_outline(&outline(), [103.0, 2.0], 5.0, 5.0);
+        let node = NodeRef {
+            part: 0,
+            ring: 0,
+            index: 1,
+        };
+        assert!(matches!(hit, NodeHit::Node(found) if found == node));
+    }
+
+    #[test]
+    fn hit_outline_prefers_a_node_over_an_edge() {
+        // Within reach of both the corner and the two edges meeting there.
+        let hit = hit_outline(&outline(), [1.0, 1.0], 5.0, 5.0);
+        assert!(matches!(hit, NodeHit::Node(NodeRef { index: 0, .. })));
+    }
+
+    #[test]
+    fn hit_outline_finds_the_nearest_point_on_an_edge() {
+        match hit_outline(&outline(), [50.0, 3.0], 5.0, 5.0) {
+            NodeHit::Edge(edge, nearest) => {
+                assert_eq!(edge.index, 0);
+                assert_eq!(nearest, [50.0, 0.0]);
+            }
+            _ => panic!("expected an edge hit"),
+        }
+    }
+
+    #[test]
+    fn hit_outline_checks_the_closing_edge() {
+        match hit_outline(&outline(), [2.0, 50.0], 5.0, 5.0) {
+            NodeHit::Edge(edge, nearest) => {
+                assert_eq!(edge.index, 3);
+                assert_eq!(nearest, [0.0, 50.0]);
+            }
+            _ => panic!("expected an edge hit"),
+        }
+    }
+
+    #[test]
+    fn hit_outline_tells_inside_from_outside() {
+        let inside = hit_outline(&outline(), [50.0, 50.0], 5.0, 5.0);
+        assert!(matches!(inside, NodeHit::Inside));
+        let outside = hit_outline(&outline(), [150.0, 50.0], 5.0, 5.0);
+        assert!(matches!(outside, NodeHit::Outside));
+    }
+
+    #[test]
+    fn nearest_on_segment_projects_onto_the_segment() {
+        let (d, nearest) = nearest_on_segment([0.0, 0.0], [10.0, 0.0], [4.0, 3.0]);
+        assert_eq!((d, nearest), (3.0, [4.0, 0.0]));
+    }
+
+    #[test]
+    fn nearest_on_segment_clamps_to_the_ends() {
+        let (d, nearest) = nearest_on_segment([0.0, 0.0], [10.0, 0.0], [-3.0, 4.0]);
+        assert_eq!((d, nearest), (5.0, [0.0, 0.0]));
+        let (d, nearest) = nearest_on_segment([0.0, 0.0], [10.0, 0.0], [13.0, 4.0]);
+        assert_eq!((d, nearest), (5.0, [10.0, 0.0]));
+    }
+
+    #[test]
+    fn nearest_on_segment_handles_a_zero_length_segment() {
+        let (d, nearest) = nearest_on_segment([2.0, 2.0], [2.0, 2.0], [5.0, 6.0]);
+        assert_eq!((d, nearest), (5.0, [2.0, 2.0]));
     }
 }
