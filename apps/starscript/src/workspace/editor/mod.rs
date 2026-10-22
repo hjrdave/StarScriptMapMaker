@@ -98,6 +98,17 @@ impl Gesture<'_> {
     pub fn replace(&mut self, command: Command) -> bool {
         self.editor.gesture_replace_typed(self.id, command)
     }
+
+    /// The Layer a new Object goes into, creating one inside the gesture if the Map has none.
+    fn placement_layer(&mut self, placing: Placing) -> Option<Id> {
+        match self.editor.placement_layer_or_new(placing) {
+            Ok(layer) => Some(layer),
+            Err(create) => {
+                let (id, command) = *create;
+                self.run(command).then_some(id)
+            }
+        }
+    }
 }
 
 pub struct Editor {
@@ -939,18 +950,23 @@ impl Editor {
             return;
         }
         let mut selection = Vec::new();
-        self.begin_gesture("Split Apart");
+        let mut commands = Vec::new();
         for id in targets {
             let new_ids: Vec<Id> = (1..self.part_count(id)).map(|_| Id::new()).collect();
             selection.push(id);
             selection.extend(&new_ids);
-            if !self.gesture(Command::SplitApart { id, new_ids }) {
-                self.cancel_gesture();
-                return;
-            }
+            commands.push(Command::SplitApart { id, new_ids });
         }
-        self.select(selection);
-        self.end_gesture();
+        self.end_open_gesture();
+        self.in_gesture("Split Apart", |g| {
+            for command in commands {
+                if !g.run(command) {
+                    return Err(());
+                }
+            }
+            g.editor.select(selection);
+            Ok(())
+        });
     }
 
     /// Escape: undoes everything the open gesture did, Selection included.
@@ -1004,7 +1020,7 @@ impl Editor {
     /// Moves the Map to the point where `applied` steps are applied, by undoing or redoing
     /// the steps between. Later steps stay available to redo.
     pub fn jump_to_history(&mut self, applied: usize) {
-        self.end_gesture();
+        self.end_open_gesture();
         let total = self.history.undo_len() + self.history.redo_len();
         let applied = applied.min(total);
         // Each pass must move the history, or something is wrong and the jump stops.
@@ -1025,14 +1041,14 @@ impl Editor {
     }
 
     pub fn undo(&mut self) {
-        self.end_gesture();
+        self.end_open_gesture();
         if let Ok(Some(selection)) = self.history.undo(&mut self.map) {
             self.restore(selection);
         }
     }
 
     pub fn redo(&mut self) {
-        self.end_gesture();
+        self.end_open_gesture();
         if let Ok(Some(selection)) = self.history.redo(&mut self.map) {
             self.restore(selection);
         }
@@ -1690,12 +1706,6 @@ impl Editor {
         if lines.is_empty() {
             return None;
         }
-        self.end_gesture();
-        self.begin_gesture("Add Credits Label");
-        let Some(parent) = self.placement_layer(Placing::Label) else {
-            self.cancel_gesture();
-            return None;
-        };
         let (width, height) = (
             f64::from(self.map.canvas.width),
             f64::from(self.map.canvas.height),
@@ -1704,7 +1714,6 @@ impl Editor {
         let line_height = 1.3;
         let margin = size * 2.0;
         let block = size * line_height * lines.len() as f64;
-        let id = Id::new();
         let label = Label {
             text: lines.join("\n"),
             position: [margin, (height - margin - block / 2.0).max(block / 2.0)],
@@ -1713,17 +1722,23 @@ impl Editor {
             line_height: Some(line_height),
             ..Label::default()
         };
-        if !self.gesture(Command::CreateLabel {
-            id,
-            parent,
-            index: None,
-            label: Box::new(label),
-        }) {
-            self.cancel_gesture();
-            return None;
-        }
-        self.select(vec![id]);
-        self.end_gesture();
+        let id = Id::new();
+        self.end_open_gesture();
+        self.in_gesture("Add Credits Label", |g| {
+            let parent = g.placement_layer(Placing::Label).ok_or(())?;
+            let created = g.run(Command::CreateLabel {
+                id,
+                parent,
+                index: None,
+                label: Box::new(label),
+            });
+            if !created {
+                return Err(());
+            }
+            g.editor.select(vec![id]);
+            Ok(())
+        })?
+        .ok()?;
         Some(id)
     }
 
@@ -1732,24 +1747,23 @@ impl Editor {
     /// Asset is selected.
     pub fn place_stamp(&mut self, position: [f64; 2]) -> Option<Id> {
         let asset = self.placement_asset()?;
-        self.end_gesture();
-        self.begin_gesture("Add Stamp");
-        let Some(parent) = self.placement_layer(Placing::Stamp) else {
-            self.cancel_gesture();
-            return None;
-        };
         let id = Id::new();
-        if !self.gesture(Command::CreateStamp {
-            id,
-            parent,
-            index: None,
-            stamp: Box::new(Stamp::new(asset, position)),
-        }) {
-            self.cancel_gesture();
-            return None;
-        }
-        self.select(vec![id]);
-        self.end_gesture();
+        self.end_open_gesture();
+        self.in_gesture("Add Stamp", |g| {
+            let parent = g.placement_layer(Placing::Stamp).ok_or(())?;
+            let created = g.run(Command::CreateStamp {
+                id,
+                parent,
+                index: None,
+                stamp: Box::new(Stamp::new(asset, position)),
+            });
+            if !created {
+                return Err(());
+            }
+            g.editor.select(vec![id]);
+            Ok(())
+        })?
+        .ok()?;
         Some(id)
     }
 
@@ -1774,35 +1788,29 @@ impl Editor {
             Vec::new()
         };
         let terrain = Terrain::of(&self.map, self.caches.roughness());
-        self.end_gesture();
-        self.begin_gesture("Scatter Stamps");
-        let Some(parent) = self.placement_layer(Placing::Stamp) else {
-            self.cancel_gesture();
-            return false;
-        };
-        let base = Stamp::new(selected, [0.0, 0.0]);
-        let command = scatter::scatter_command(
-            &self.scatter,
-            ScatterStroke {
-                points,
-                radius: self.brush_size / 2.0,
-                parent,
-                base: &base,
-                variants: &variants,
-            },
-            &terrain,
-            random_seed(),
-            Id::new,
-        );
-        if let Some(command) = command
-            && self.gesture(command)
-        {
-            self.end_gesture();
-            true
-        } else {
-            self.cancel_gesture();
-            false
-        }
+        self.end_open_gesture();
+        let brush = self.scatter.clone();
+        let radius = self.brush_size / 2.0;
+        let placed = self.in_gesture("Scatter Stamps", |g| {
+            let parent = g.placement_layer(Placing::Stamp).ok_or(())?;
+            let base = Stamp::new(selected, [0.0, 0.0]);
+            let command = scatter::scatter_command(
+                &brush,
+                ScatterStroke {
+                    points,
+                    radius,
+                    parent,
+                    base: &base,
+                    variants: &variants,
+                },
+                &terrain,
+                random_seed(),
+                Id::new,
+            );
+            let command = command.ok_or(())?;
+            if g.run(command) { Ok(()) } else { Err(()) }
+        });
+        matches!(placed, Some(Ok(())))
     }
 
     /// Finishes a Stamp eraser stroke: removes the Stamps in the active Layer whose Anchor is
@@ -1839,16 +1847,16 @@ impl Editor {
             self.info("No selected Stamp has another variant to take");
             return false;
         }
-        self.end_gesture();
-        self.begin_gesture("Shuffle Variant");
-        for command in commands {
-            if !self.gesture(command) {
-                self.cancel_gesture();
-                return false;
+        self.end_open_gesture();
+        let shuffled = self.in_gesture("Shuffle Variant", |g| {
+            for command in commands {
+                if !g.run(command) {
+                    return Err(());
+                }
             }
-        }
-        self.end_gesture();
-        true
+            Ok(())
+        });
+        matches!(shuffled, Some(Ok(())))
     }
 
     /// "Pine cluster · v2": the Asset's name, and its place in its Variant group when it has
@@ -1924,23 +1932,33 @@ impl Editor {
     /// The Layer new Objects go into: see [`Self::target_layer`], else the top Layer, creating
     /// a Layer if the Map has none. Runs inside the open gesture.
     fn placement_layer(&mut self, placing: Placing) -> Option<Id> {
-        match self.target_layer(placing) {
-            Some(layer) => Some(layer),
-            None => match self.map.children(None).last() {
-                Some(&top) => Some(top),
-                None => {
-                    let id = Id::new();
-                    let name = format!("Layer {}", self.layer_count() + 1);
-                    let command = Command::CreateLayer {
-                        id,
-                        parent: None,
-                        index: None,
-                        name,
-                    };
-                    self.gesture(command).then_some(id)
-                }
-            },
+        match self.placement_layer_or_new(placing) {
+            Ok(layer) => Some(layer),
+            Err(create) => {
+                let (id, command) = *create;
+                self.gesture(command).then_some(id)
+            }
         }
+    }
+
+    /// The Layer a new Object goes into, or, when the Map has none, the Id and Command of a
+    /// Layer to create first.
+    fn placement_layer_or_new(&self, placing: Placing) -> Result<Id, Box<(Id, Command)>> {
+        if let Some(layer) = self.target_layer(placing) {
+            return Ok(layer);
+        }
+        if let Some(&top) = self.map.children(None).last() {
+            return Ok(top);
+        }
+        let id = Id::new();
+        let name = format!("Layer {}", self.layer_count() + 1);
+        let command = Command::CreateLayer {
+            id,
+            parent: None,
+            index: None,
+            name,
+        };
+        Err(Box::new((id, command)))
     }
 
     fn layer_count(&self) -> usize {
