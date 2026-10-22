@@ -15,6 +15,24 @@ Native desktop app for drawing fantasy maps, written in Rust. Start with `CONTEX
 - `apps/cli` and `apps/website` are placeholders (README only), not workspace members.
 - Built-in Asset packs live in `assets/`. Packaging notes are in `docs/packaging.md`.
 
+### Inside `apps/starscript/src`
+
+Modules are grouped by feature. `lib.rs` declares the groups and re-exports each module at the
+crate root (`pub use chrome::theme;`), so `crate::theme` and `ssmap_app::theme` stay the same
+wherever the file lives. A new module goes in its group's `mod.rs` and gets a re-export in `lib.rs`.
+
+- `app/`: `MapMakerApp`, the eframe app that ties the groups together
+- `workspace/`: Map documents and app state: `document`, `editor`, `shell`, `home`, `tools`,
+  `clipboard`, `credits`, `recent`, `file_actions`, `update`
+- `canvas/`: the Map view: `canvas_view`, `canvas_controls`, `art_board`, `overlay`, `handles`,
+  `zoom`, `tessellation`, `frame_time`
+- `panels/`: side panels: `layer_tree`, `properties`, `prop_widgets`, `asset_browser`, `label_styles`
+- `chrome/`: window chrome: `menu`, `native_menu`, `tab`, `tab_strip`, `tool_dock`,
+  `tool_section`, `toast`, `theme`, `icons`
+- `dialogs/`: `dialog`, `native_dialog`, `paste_dialog`, `new_map`, `recovery`
+- `export/`: `export_dialog`, `export_region`, `export_run`
+- `packs/`: `pack_install`, `pack_page`
+
 ## Before you call work done
 
 Run, in this order:
