@@ -37,7 +37,7 @@ pub use offscreen::{RgbaImage, read_texture, render_to_image};
 pub use png_writer::{PngMeta, PngWriteError, PngWriter};
 pub use present::Presenter;
 pub use scene::MapScene;
-pub use sprite::{PLACEHOLDER_SIZE, Sprite, SpriteState, SpriteStore, placeholder};
+pub use sprite::{PLACEHOLDER_SIZE, Sprite, SpriteError, SpriteState, SpriteStore, placeholder};
 pub use stamp::{PlacedStamp, StampDraw};
 pub use text::{Fonts, LabelLayout};
 pub use tiled::{ExportStatus, TiledExport, TiledExportError};

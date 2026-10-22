@@ -1,0 +1,101 @@
+//! Creating, deleting and transforming Objects and the Layers that hold them.
+
+use std::collections::HashSet;
+
+use crate::geometry::Affine;
+use crate::id::Id;
+use crate::map::{Map, Subtree};
+use crate::node::{Node, Object, ObjectKind};
+use crate::op::{Op, Property};
+
+use super::CommandError;
+use super::check::{collect_branch, layer, set, unlocked, unlocked_branch};
+use super::land::{outline, outlined};
+
+pub(super) fn delete(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
+    for &id in ids {
+        unlocked_branch(map, id)?;
+    }
+    // Deleting a Layer deletes what it holds, so drop ids already inside another one.
+    let requested: HashSet<Id> = ids.iter().copied().collect();
+    let mut roots: Vec<Id> = Vec::new();
+    for &id in ids {
+        let inside_another = std::iter::successors(map.parent(id), |&p| map.parent(p))
+            .any(|ancestor| requested.contains(&ancestor));
+        if !inside_another && !roots.contains(&id) {
+            roots.push(id);
+        }
+    }
+    let mut removed = HashSet::new();
+    for &root in &roots {
+        collect_branch(map, root, &mut removed);
+    }
+
+    // Clips pointing into the deleted branches are cleared in the same Undo step.
+    let mut ops = Vec::new();
+    let mut clipped: Vec<Id> = map
+        .ids()
+        .filter(|id| !removed.contains(id))
+        .filter(|&id| matches!(map.node(id), Some(Node::Layer(l)) if l.clip.is_some_and(|c| removed.contains(&c))))
+        .collect();
+    clipped.sort();
+    for id in clipped {
+        unlocked(map, id)?;
+        ops.push(set(id, Property::Clip(None)));
+    }
+    ops.extend(roots.into_iter().map(|id| Op::Remove { id }));
+    Ok(ops)
+}
+
+pub(super) fn create_object(
+    map: &Map,
+    id: Id,
+    parent: Id,
+    index: Option<usize>,
+    kind: ObjectKind,
+) -> Result<Vec<Op>, CommandError> {
+    if map.contains(id) {
+        return Err(CommandError::IdInUse(id));
+    }
+    layer(map, parent)?;
+    unlocked(map, parent)?;
+    let geometry = kind.geometry().expect("Landmasses and Lakes have outlines");
+    if let Some(problem) = geometry.problem() {
+        return Err(CommandError::InvalidGeometry { id, problem });
+    }
+    Ok(vec![Op::Insert {
+        parent: Some(parent),
+        index: index.unwrap_or(map.children(Some(parent)).len()),
+        subtree: Subtree {
+            id,
+            node: Node::Object(Object::new(kind)),
+            children: Vec::new(),
+        },
+    }])
+}
+
+pub(super) fn transform(
+    map: &Map,
+    ids: &[Id],
+    transform: &Affine,
+) -> Result<Vec<Op>, CommandError> {
+    if !transform.is_invertible() {
+        return Err(CommandError::InvalidTransform(transform.0));
+    }
+    let mut ids = outlined(map, ids)?;
+    // Linked nodes take the same transform; a locked one blocks it for them all.
+    let along = map.linked_movers(&ids)?;
+    ids.extend(along.into_iter().filter(
+        |&id| matches!(map.node(id), Some(Node::Object(o)) if o.kind.geometry().is_some()),
+    ));
+    let mut ops = Vec::with_capacity(ids.len());
+    for id in ids {
+        let geometry = outline(map, id).transformed(transform);
+        // Huge factors can overflow to infinity even when the transform itself is finite.
+        if let Some(problem) = geometry.problem() {
+            return Err(CommandError::InvalidGeometry { id, problem });
+        }
+        ops.push(Op::ReplaceGeometry { id, geometry });
+    }
+    Ok(ops)
+}
