@@ -451,16 +451,14 @@ impl CanvasView {
         let total = editor.edited_shape().iter().sum();
         match canvas_controls::node_banner(ui.ctx(), rect, selected, total) {
             Some(BannerAction::Cancel) => {
-                if editor.gesture_open() {
-                    editor.cancel_gesture();
-                } else {
+                if !editor.cancel_open_gesture() {
                     editor.leave_node_edit();
                 }
-                self.tools.clear_node_gestures();
+                self.tools.clear_node_gestures(editor);
             }
             Some(BannerAction::Done) => {
                 editor.leave_node_edit();
-                self.tools.clear_node_gestures();
+                self.tools.clear_node_gestures(editor);
             }
             None => {}
         }
@@ -484,8 +482,9 @@ impl CanvasView {
             (editor.label_layout(id), editor.label(id).cloned())
         else {
             // Undone or deleted meanwhile.
-            self.tools.editing = None;
-            editor.end_gesture();
+            if let Some(editing) = self.tools.editing.take() {
+                editing.finish(editor);
+            }
             return;
         };
         let bounds = Bounds::around(&layout.corners(&shown)).expect("four corners");
@@ -527,18 +526,22 @@ impl CanvasView {
         }
         if response.changed() && !editing.text.is_empty() && editing.text != label.text {
             let text = editing.text.clone();
-            editor.gesture(Command::SetLabel {
-                id,
-                label: Box::new(ssmap_core::Label { text, ..label }),
-            });
+            editing.run(
+                editor,
+                Command::SetLabel {
+                    id,
+                    label: Box::new(ssmap_core::Label { text, ..label }),
+                },
+            );
         }
         if response.lost_focus() {
             if editing.text.is_empty() {
-                editor.gesture(Command::Delete { ids: vec![id] });
+                editing.run(editor, Command::Delete { ids: vec![id] });
                 editor.select(Vec::new());
             }
-            self.tools.editing = None;
-            editor.end_gesture();
+            if let Some(editing) = self.tools.editing.take() {
+                editing.finish(editor);
+            }
         }
     }
 }

@@ -264,20 +264,22 @@ impl MapMakerApp {
             C::Deselect => editor.deselect(),
             C::DeleteNodes => editor.delete_selected_nodes(),
             C::FinishNodeEdit => editor.leave_node_edit(),
-            C::CancelGesture => editor.cancel_gesture(),
+            C::CancelGesture => {
+                editor.cancel_open_gesture();
+            }
             C::ZoomIn => tab.canvas_view.request_zoom(zoom::Zoom::In),
             C::ZoomOut => tab.canvas_view.request_zoom(zoom::Zoom::Out),
             C::ZoomFit => tab.canvas_view.request_zoom(zoom::Zoom::Fit),
             C::ZoomSelection => tab.canvas_view.request_zoom(zoom::Zoom::Selection),
             C::ActualSize => tab.canvas_view.request_zoom(zoom::Zoom::Percent(1.0)),
             C::EmbedAssets => {
-                editor.end_gesture();
+                editor.end_open_gesture();
                 if !editor.embed_used_assets() {
                     editor.info("Nothing was embedded");
                 }
             }
             C::UpdateFromPacks => {
-                editor.end_gesture();
+                editor.end_open_gesture();
                 if !editor.update_from_packs() {
                     editor.info("Nothing was updated: no installed pack has newer art");
                 }
@@ -465,10 +467,8 @@ impl MapMakerApp {
                     editor.delete_selection();
                 }
             }
-            if consume(input, &off, menu::Command::CancelGesture) {
-                if editor.gesture_open() {
-                    editor.cancel_gesture();
-                } else if editor.node_edit().is_some() {
+            if consume(input, &off, menu::Command::CancelGesture) && !editor.cancel_open_gesture() {
+                if editor.node_edit().is_some() {
                     editor.leave_node_edit();
                 } else if editor.tool_busy {
                     editor.cancel_tool = true;
