@@ -7,6 +7,7 @@ mod toasts;
 
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use ssmap_core::asset::{AssetRef, credit_lines};
 use ssmap_core::land::{self, BrushStroke};
@@ -36,6 +37,10 @@ pub const DEFAULT_BRUSH_SIZE: f64 = 48.0;
 
 /// The name of the Layer the water brush paints into.
 pub const WATER_LAYER: &str = "Water";
+
+/// The next [`GestureId`] generation. Shared by all Editors so no two tokens ever match; 0 means
+/// "never opened".
+static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
 
 /// Proof that a gesture is open, handed out by [`Editor::begin_gesture_typed`]. It has to be
 /// given back to [`Editor::end_gesture_typed`] or [`Editor::cancel_gesture_typed`]. A token
@@ -122,8 +127,6 @@ pub struct Editor {
     /// The open gesture. Set and cleared only with History's open transaction, in
     /// `open_gesture` and `close_gesture`.
     gesture: Option<OpenGesture>,
-    /// The generation the last [`GestureId`] was issued with.
-    last_generation: u64,
     /// The pick indexes, Roughness cache and Stamp art.
     caches: Caches,
     /// The Asset the Stamp tool places, chosen in the Asset browser.
@@ -209,7 +212,6 @@ impl Editor {
             cancel_tool: false,
             toasts: Toasts::default(),
             gesture: None,
-            last_generation: 0,
             caches: Caches::new(),
             selected_asset: None,
         }
@@ -653,12 +655,12 @@ impl Editor {
             self.error(err.to_string());
             return None;
         }
-        self.last_generation += 1;
+        let generation = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
         self.gesture = Some(OpenGesture {
-            id: self.last_generation,
+            id: generation,
             selection: self.selection.clone(),
         });
-        Some(self.last_generation)
+        Some(generation)
     }
 
     /// Closes History's transaction and the gesture together, committing or rolling back. A
@@ -2864,8 +2866,13 @@ mod tests {
         assert!(editor.gesture_open());
         assert!(editor.end_gesture_typed(current));
         // Stale again once its own gesture is over, and so is a foreign Editor's token.
+        // Both Editors issue the same number of tokens, so per-Editor counters would collide.
         let mut other = self::tests::editor();
-        let foreign = other.begin_gesture_typed("Other");
+        for label in ["One", "Two"] {
+            let token = other.begin_gesture_typed(label);
+            assert!(other.end_gesture_typed(token));
+        }
+        let foreign = other.begin_gesture_typed("Three");
         let own = editor.begin_gesture_typed("Third");
         assert!(!editor.cancel_gesture_typed(foreign));
         assert!(editor.gesture_open());
