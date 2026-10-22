@@ -49,12 +49,15 @@ struct Inherit<'a, T> {
 
 impl<T: Clone> Inherit<'_, T> {
     fn current(&self) -> &T {
+        // Never empty, see `members`.
         &self.members[0]
     }
 
     /// Whether the setting `field` reads differs between the members.
     fn mixed(&self, field: impl Fn(&T) -> f64) -> bool {
-        let first = field(&self.members[0]);
+        let Some(first) = self.members.first().map(&field) else {
+            return false;
+        };
         self.members.iter().any(|m| field(m) != first)
     }
 
