@@ -180,7 +180,7 @@ impl MapMakerApp {
         let Some(tab) = self.tab_mut() else {
             return false;
         };
-        tab.editor.end_gesture();
+        tab.editor.end_open_gesture();
         tab.editor.embed_used_assets();
         let preview = self.preview_png();
         let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
@@ -200,7 +200,7 @@ impl MapMakerApp {
         let Some(tab) = self.tab_mut() else {
             return false;
         };
-        tab.editor.end_gesture();
+        tab.editor.end_open_gesture();
         tab.editor.embed_used_assets();
         let preview = self.preview_png();
         let path = document::with_extension(path.to_path_buf());

@@ -618,6 +618,14 @@ impl Editor {
         open
     }
 
+    /// Commits whatever gesture is open, whoever opened it, as one Undo step. Its token goes
+    /// stale. Returns whether one was open.
+    pub fn end_open_gesture(&mut self) -> bool {
+        let open = self.gesture.is_some();
+        self.close_gesture(true);
+        open
+    }
+
     /// Runs `f` inside a gesture labelled `label`: commits it if `f` returns `Ok`, and rolls
     /// it back if `f` returns `Err`. `None` means the gesture could not be opened. A panic in
     /// `f` is not caught.
@@ -643,7 +651,8 @@ impl Editor {
         Some(result)
     }
 
-    fn is_open(&self, id: &GestureId) -> bool {
+    /// Whether `id`'s gesture is still the one open.
+    pub(crate) fn is_open(&self, id: &GestureId) -> bool {
         self.gesture
             .as_ref()
             .is_some_and(|open| open.id == id.generation)
