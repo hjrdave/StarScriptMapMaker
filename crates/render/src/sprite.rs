@@ -10,7 +10,6 @@
 //! missing and is never cached as such.
 
 use std::collections::{HashMap, VecDeque};
-use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex, RwLock, Weak};
 
 use ssmap_core::asset::{AssetRef, PackLibrary};
@@ -595,12 +594,9 @@ fn embedded_job(embedded: &Embedded, asset: &AssetRef) -> Job {
         let record = record.ok_or_else(unknown)?;
         let art = art.ok_or_else(unknown)?;
         // Embedded art has no file; the error names the Asset instead.
-        let failed = |message| SpriteError::Art {
+        let failed = |source| SpriteError::Art {
             asset: asset.clone(),
-            source: ArtError {
-                path: PathBuf::from("<embedded>"),
-                message,
-            },
+            source,
         };
         let art = Art::from_bytes(&art).map_err(failed)?;
         let outline = match &silhouette {
