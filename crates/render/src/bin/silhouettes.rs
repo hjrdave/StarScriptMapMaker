@@ -89,7 +89,15 @@ fn run(args: &Args) -> Result<(), String> {
             }
             _ => {}
         }
-        let art = Art::load(&pack.path(&asset.file)).map_err(|err| err.to_string())?;
+        let art = Art::load(&pack.path(&asset.file)).map_err(|err| {
+            let mut message = err.to_string();
+            let mut cause = std::error::Error::source(&err);
+            while let Some(inner) = cause {
+                message.push_str(&format!(": {inner}"));
+                cause = inner.source();
+            }
+            message
+        })?;
         let raster = art.rasterise_fit(args.size);
         let mask = silhouette::generate(&raster, args.gap);
         write_png(&args.pack.join(&generated), &mask)?;
