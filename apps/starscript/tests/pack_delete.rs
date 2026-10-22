@@ -8,7 +8,7 @@ use eframe::egui;
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT, Queryable};
 use ssmap_app::MapMakerApp;
-use ssmap_core::asset::PackRoots;
+use ssmap_core::asset::{PackRoots, TrashError};
 use ssmap_core::{Canvas, DistanceUnit, Scale};
 use tempfile::TempDir;
 
@@ -26,8 +26,8 @@ fn copy_dir(from: &Path, to: &Path) {
 }
 
 /// Stands in for the system Trash: the folder is gone from the packs folder.
-fn fake_trash(dir: &Path) -> Result<(), String> {
-    fs::remove_dir_all(dir).map_err(|err| err.to_string())
+fn fake_trash(dir: &Path) -> Result<(), TrashError> {
+    fs::remove_dir_all(dir).map_err(|err| err.into())
 }
 
 struct Fixture {

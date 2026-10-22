@@ -158,7 +158,11 @@ impl Map {
             }
             Op::SetProperty { id, property } => {
                 let old = set_property(
-                    &mut self.entries.get_mut(&id).expect("checked").node,
+                    &mut self
+                        .entries
+                        .get_mut(&id)
+                        .expect("Map::check verified the id exists")
+                        .node,
                     property,
                 );
                 if let Property::Link(was) = &old {
@@ -169,11 +173,18 @@ impl Map {
                 Op::SetProperty { id, property: old }
             }
             Op::ReplaceGeometry { id, geometry } => {
-                let Node::Object(object) = &mut self.entries.get_mut(&id).expect("checked").node
+                let Node::Object(object) = &mut self
+                    .entries
+                    .get_mut(&id)
+                    .expect("Map::check verified the id exists")
+                    .node
                 else {
-                    unreachable!("checked")
+                    unreachable!("Map::check verified the id is an Object")
                 };
-                let slot = object.kind.geometry_mut().expect("checked");
+                let slot = object
+                    .kind
+                    .geometry_mut()
+                    .expect("Map::check verified the Object has geometry");
                 let old = std::mem::replace(slot, geometry);
                 self.touch(Some(id));
                 Op::ReplaceGeometry { id, geometry: old }
@@ -184,7 +195,10 @@ impl Map {
                 let old_index = position(siblings, id);
                 siblings.remove(old_index);
                 self.children_mut(parent).insert(index, id);
-                self.entries.get_mut(&id).expect("checked").parent = parent;
+                self.entries
+                    .get_mut(&id)
+                    .expect("Map::check verified the id exists")
+                    .parent = parent;
                 self.touch(Some(id));
                 self.touch(old_parent);
                 self.touch(parent);
@@ -404,15 +418,24 @@ fn set_property(node: &mut Node, property: Property) -> Property {
             Property::Membership(std::mem::replace(&mut object.membership, membership))
         }
         (Node::Object(object), Property::Fill(fill)) => {
-            let slot = object.kind.fill_mut().expect("checked");
+            let slot = object
+                .kind
+                .fill_mut()
+                .expect("Map::check verified the Object has a fill");
             Property::Fill(std::mem::replace(slot, fill))
         }
         (Node::Object(object), Property::Roughness(roughness)) => {
-            let slot = object.kind.roughness_mut().expect("checked");
+            let slot = object
+                .kind
+                .roughness_mut()
+                .expect("Map::check verified the Object has roughness");
             Property::Roughness(std::mem::replace(slot, roughness))
         }
         (Node::Object(object), Property::Shore(shore)) => {
-            let slot = object.kind.shore_mut().expect("checked");
+            let slot = object
+                .kind
+                .shore_mut()
+                .expect("Map::check verified the Object has a shore");
             Property::Shore(std::mem::replace(slot, shore))
         }
         (Node::Object(object), Property::Label(label)) => match &mut object.kind {

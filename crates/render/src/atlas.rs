@@ -62,32 +62,16 @@ impl AtlasRect {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum AtlasError {
     /// The raster, with its gutter, is larger than a page.
+    #[error("a {width}x{height} raster does not fit on a {page_size}x{page_size} atlas page")]
     TooLarge {
         width: u32,
         height: u32,
         page_size: u32,
     },
 }
-
-impl std::fmt::Display for AtlasError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AtlasError::TooLarge {
-                width,
-                height,
-                page_size,
-            } => write!(
-                f,
-                "a {width}x{height} raster does not fit on a {page_size}x{page_size} atlas page"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for AtlasError {}
 
 /// The page size for a device: its largest 2D texture, between [`MIN_PAGE_SIZE`] and
 /// [`MAX_PAGE_SIZE`].
