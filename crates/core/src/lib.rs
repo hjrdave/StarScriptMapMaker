@@ -31,7 +31,7 @@ pub use background::{Background, BackgroundTexture};
 pub use color::{Color, ParseColorError};
 pub use command::{Command, CommandError, PlacedStamp};
 pub use embedded::{
-    Blob, ContentHash, EmbedAsset, EmbedFont, Embedded, EmbeddedAsset, EmbeddedFont,
+    Blob, ContentHash, EmbedAsset, EmbedFont, Embedded, EmbeddedAsset, EmbeddedFont, ParseHexError,
 };
 pub use export::{
     CREDITS_CHUNK_KEYWORD, CreditsOptions, CreditsOutput, ExportRegion, ExportSettings, ExportSize,
@@ -52,4 +52,4 @@ pub use pick::PickIndex;
 pub use roughness::{Rebuild, Roughness, RoughnessCache, roughen};
 pub use shore::{MAX_RIPPLES, ShoreKind, ShoreOutline, ShoreRipples, ShoreShading, ShoreStyle};
 pub use stamp_pick::{SpriteShape, StampIndex};
-pub use template::{DefaultLayers, MapTemplate, STARTER_TEMPLATE, TemplateError};
+pub use template::{DefaultLayers, MapTemplate, TemplateError};

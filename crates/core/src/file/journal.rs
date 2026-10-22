@@ -23,7 +23,7 @@ use crate::op::{Op, OpError};
 /// The `journal` field of every header, to tell a Recovery journal from any other file.
 const MAGIC: &str = "ssmap-recovery";
 /// The journal format this version writes and reads.
-pub const JOURNAL_VERSION: u32 = 1;
+const JOURNAL_VERSION: u32 = 1;
 
 /// What a journal's Ops apply to.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
@@ -45,7 +45,7 @@ struct Header {
 
 #[derive(Debug, Error)]
 pub enum JournalError {
-    #[error("{0}")]
+    #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("the Recovery journal is in use by another window")]
     InUse,

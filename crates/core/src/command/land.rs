@@ -139,7 +139,7 @@ pub(super) fn split_apart(map: &Map, id: Id, new_ids: &[Id]) -> Result<Vec<Op>, 
         unreachable!("one id in, one id out")
     };
     let Some(Node::Object(object)) = map.node(id) else {
-        unreachable!("checked")
+        unreachable!("outlined verified the id is an Object")
     };
     let ObjectKind::Landmass(landmass) = &object.kind else {
         return Err(CommandError::NotALandmass(id));
@@ -227,8 +227,11 @@ pub(super) fn outlined(map: &Map, ids: &[Id]) -> Result<Vec<Id>, CommandError> {
 /// The outline of an id `outlined` accepted.
 pub(super) fn outline(map: &Map, id: Id) -> &MultiPolygon {
     match map.node(id) {
-        Some(Node::Object(object)) => object.kind.geometry().expect("checked"),
-        _ => unreachable!("checked"),
+        Some(Node::Object(object)) => object
+            .kind
+            .geometry()
+            .expect("outlined verified the Object has an outline"),
+        _ => unreachable!("outlined verified the id is an Object"),
     }
 }
 
