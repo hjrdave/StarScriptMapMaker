@@ -13,7 +13,7 @@ mod tabs;
 
 use eframe::{egui, egui_wgpu};
 use native_dialog::{Pick, Polled};
-use ssmap_core::asset::{PackLibrary, PackRoots};
+use ssmap_core::asset::{PackLibrary, PackRoots, TrashError};
 use ssmap_core::file::{JournalBase, MapFile, PREVIEW_SIZE, remove_journal};
 use ssmap_core::{CREDITS_CHUNK_KEYWORD, Canvas, Map, MapTemplate, TemplateError};
 use ssmap_render::{ExportJob, PngMeta, SpriteStore, TessellationCache};
@@ -154,7 +154,7 @@ struct WindowState {
     /// The id of the Asset pack a card's Delete asked about; the dialog confirms first.
     pack_delete_prompt: Option<String>,
     /// Moves a pack folder to the Trash; tests swap it for one that touches nothing.
-    pack_trash: fn(&Path) -> Result<(), String>,
+    pack_trash: fn(&Path) -> Result<(), TrashError>,
     /// A Paste into a Map that lacks something the copied layers need: the popup asks first.
     paste_prompt: Option<PastePrompt>,
     /// A tab's unsaved-changes question was answered Save for a Map never saved: what to do

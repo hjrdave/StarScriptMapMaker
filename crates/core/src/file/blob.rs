@@ -4,7 +4,20 @@
 //! `u32` ring count (the exterior first, then its holes), then for each ring a `u32` point
 //! count followed by that many `f64` `x, y` pairs.
 
+use thiserror::Error;
+
 use crate::geometry::{MultiPolygon, Point, Polygon};
+
+/// Why an outline blob could not be decoded.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum BlobError {
+    #[error("the blob ends early")]
+    EndsEarly,
+    #[error("a polygon has no exterior ring")]
+    NoExteriorRing,
+    #[error("{0} bytes left over")]
+    LeftOver(usize),
+}
 
 pub(super) fn encode(geometry: &MultiPolygon) -> Vec<u8> {
     let points: usize = geometry
@@ -27,14 +40,14 @@ pub(super) fn encode(geometry: &MultiPolygon) -> Vec<u8> {
     out
 }
 
-pub(super) fn decode(bytes: &[u8]) -> Result<MultiPolygon, String> {
+pub(super) fn decode(bytes: &[u8]) -> Result<MultiPolygon, BlobError> {
     let mut reader = Reader { bytes };
     let polygons = reader.len(4)?;
     let mut geometry = Vec::with_capacity(polygons);
     for _ in 0..polygons {
         let rings = reader.len(4)?;
         if rings == 0 {
-            return Err("a polygon has no exterior ring".into());
+            return Err(BlobError::NoExteriorRing);
         }
         let mut rings = (0..rings).map(|_| reader.ring());
         let exterior = rings.next().expect("at least one ring")?;
@@ -42,7 +55,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<MultiPolygon, String> {
         geometry.push(Polygon { exterior, holes });
     }
     if !reader.bytes.is_empty() {
-        return Err(format!("{} bytes left over", reader.bytes.len()));
+        return Err(BlobError::LeftOver(reader.bytes.len()));
     }
     Ok(MultiPolygon(geometry))
 }
@@ -57,9 +70,9 @@ struct Reader<'a> {
 }
 
 impl Reader<'_> {
-    fn take<const N: usize>(&mut self) -> Result<[u8; N], String> {
+    fn take<const N: usize>(&mut self) -> Result<[u8; N], BlobError> {
         let Some((head, rest)) = self.bytes.split_first_chunk::<N>() else {
-            return Err("the blob ends early".into());
+            return Err(BlobError::EndsEarly);
         };
         self.bytes = rest;
         Ok(*head)
@@ -67,15 +80,15 @@ impl Reader<'_> {
 
     /// Reads a count and checks that the blob could hold that many items of at least
     /// `item_bytes` each, so a damaged count can't ask for a huge allocation.
-    fn len(&mut self, item_bytes: usize) -> Result<usize, String> {
+    fn len(&mut self, item_bytes: usize) -> Result<usize, BlobError> {
         let len = u32::from_le_bytes(self.take()?) as usize;
         if len.saturating_mul(item_bytes) > self.bytes.len() {
-            return Err("the blob ends early".into());
+            return Err(BlobError::EndsEarly);
         }
         Ok(len)
     }
 
-    fn ring(&mut self) -> Result<Vec<Point>, String> {
+    fn ring(&mut self) -> Result<Vec<Point>, BlobError> {
         let points = self.len(16)?;
         (0..points)
             .map(|_| {

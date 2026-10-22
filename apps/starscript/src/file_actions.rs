@@ -4,6 +4,8 @@
 use std::path::Path;
 use std::process::Command;
 
+use ssmap_core::asset::TrashError;
+
 /// The menu item that shows a file in the system file manager, named as the platform does.
 pub const REVEAL_LABEL: &str = if cfg!(target_os = "macos") {
     "Show in Finder"
@@ -48,8 +50,8 @@ fn reveal_command(path: &Path) -> Command {
 }
 
 /// Moves the file at `path` to the system Trash, so it can be put back from there.
-pub fn move_to_trash(path: &Path) -> Result<(), String> {
-    trash::delete(path).map_err(|err| err.to_string())
+pub fn move_to_trash(path: &Path) -> Result<(), TrashError> {
+    trash::delete(path).map_err(|err| err.into())
 }
 
 #[cfg(test)]
