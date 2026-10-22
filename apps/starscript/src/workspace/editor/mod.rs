@@ -7,6 +7,7 @@ mod toasts;
 
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use ssmap_core::asset::{AssetRef, credit_lines};
 use ssmap_core::land::{self, BrushStroke};
@@ -37,6 +38,68 @@ pub const DEFAULT_BRUSH_SIZE: f64 = 48.0;
 /// The name of the Layer the water brush paints into.
 pub const WATER_LAYER: &str = "Water";
 
+/// The next [`GestureId`] generation. Shared by all Editors so no two tokens ever match; 0 means
+/// "never opened".
+static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
+
+/// Proof that a gesture is open, handed out by [`Editor::begin_gesture_typed`]. It has to be
+/// given back to [`Editor::end_gesture_typed`] or [`Editor::cancel_gesture_typed`]. A token
+/// whose gesture is over, or that another Editor issued, is stale: calls with it do nothing.
+#[must_use = "a gesture has to be ended or cancelled with its GestureId"]
+#[derive(Debug)]
+pub struct GestureId {
+    generation: u64,
+    consumed: bool,
+}
+
+impl GestureId {
+    fn new(generation: u64) -> Self {
+        Self {
+            generation,
+            consumed: false,
+        }
+    }
+
+    fn consume(mut self) -> u64 {
+        self.consumed = true;
+        self.generation
+    }
+}
+
+impl Drop for GestureId {
+    fn drop(&mut self) {
+        debug_assert!(
+            self.consumed || std::thread::panicking(),
+            "a GestureId was dropped without ending or cancelling its gesture"
+        );
+    }
+}
+
+/// A gesture whose History transaction is open.
+struct OpenGesture {
+    id: u64,
+    /// The Selection when the gesture began, restored if it is cancelled.
+    selection: Selection,
+}
+
+/// What [`Editor::in_gesture`] hands its closure: the Editor and the gesture's token.
+pub struct Gesture<'a> {
+    editor: &'a mut Editor,
+    id: &'a GestureId,
+}
+
+impl Gesture<'_> {
+    /// Runs a Command inside the gesture.
+    pub fn run(&mut self, command: Command) -> bool {
+        self.editor.gesture_typed(self.id, command)
+    }
+
+    /// Replaces everything the gesture has done so far with `command`.
+    pub fn replace(&mut self, command: Command) -> bool {
+        self.editor.gesture_replace_typed(self.id, command)
+    }
+}
+
 pub struct Editor {
     pub map: Map,
     /// What the Canvas draws, derived from the Map, and the Label layouts that picking and
@@ -61,10 +124,9 @@ pub struct Editor {
     /// Set by Escape for the busy tool to act on.
     pub cancel_tool: bool,
     toasts: Toasts,
-    /// Set while a gesture's transaction is open.
-    gesture_open: bool,
-    /// The Selection when the open gesture began, restored if it is cancelled.
-    gesture_selection: Selection,
+    /// The open gesture. Set and cleared only with History's open transaction, in
+    /// `open_gesture` and `close_gesture`.
+    gesture: Option<OpenGesture>,
     /// The pick indexes, Roughness cache and Stamp art.
     caches: Caches,
     /// The Asset the Stamp tool places, chosen in the Asset browser.
@@ -149,8 +211,7 @@ impl Editor {
             tool_busy: false,
             cancel_tool: false,
             toasts: Toasts::default(),
-            gesture_open: false,
-            gesture_selection: Vec::new(),
+            gesture: None,
             caches: Caches::new(),
             selected_asset: None,
         }
@@ -463,11 +524,13 @@ impl Editor {
 
     /// Runs one Command as its own Undo step and selects `selection` afterwards.
     pub fn run_selecting(&mut self, command: Command, selection: Selection) -> bool {
-        if self.gesture_open {
+        if self.gesture.is_some() {
             return self.gesture(command);
         }
-        let begun = self.history.begin(command.label(), self.selection.clone());
-        debug_assert!(begun.is_ok(), "no transaction is open outside gestures");
+        if let Err(err) = self.history.begin(command.label(), self.selection.clone()) {
+            self.error(err.to_string());
+            return false;
+        }
         match self.history.execute(&mut self.map, &command) {
             Ok(()) => {
                 self.history
@@ -486,22 +549,140 @@ impl Editor {
 
     /// Opens a gesture: Commands until `end_gesture` make one Undo step, applied live.
     pub fn begin_gesture(&mut self, label: &str) {
-        if self.gesture_open {
-            return;
+        if self.gesture.is_none() {
+            // A refusal shows in the status bar.
+            let _ = self.open_gesture(label);
         }
-        self.history
-            .begin(label, self.selection.clone())
-            .expect("no other transaction is open");
-        self.gesture_open = true;
-        self.gesture_selection = self.selection.clone();
     }
 
     /// Runs a Command inside the open gesture, or as its own step if none is open.
     pub fn gesture(&mut self, command: Command) -> bool {
-        if !self.gesture_open {
+        if self.gesture.is_none() {
             return self.run(command);
         }
-        match self.history.execute(&mut self.map, &command) {
+        self.execute_in_gesture(&command)
+    }
+
+    pub fn end_gesture(&mut self) {
+        self.close_gesture(true);
+    }
+
+    /// Opens a gesture and returns its token. If a gesture is already open, or History
+    /// refuses, the status bar says so and the token is stale.
+    pub fn begin_gesture_typed(&mut self, label: &str) -> GestureId {
+        if self.gesture.is_some() {
+            self.error("Another edit is still in progress");
+            return GestureId::new(0);
+        }
+        GestureId::new(self.open_gesture(label).unwrap_or(0))
+    }
+
+    /// Runs a Command inside the gesture `id` opened. A stale `id` does nothing and returns
+    /// `false`.
+    pub fn gesture_typed(&mut self, id: &GestureId, command: Command) -> bool {
+        self.is_open(id) && self.execute_in_gesture(&command)
+    }
+
+    /// Replaces everything the gesture `id` opened has done so far with `command`. A stale
+    /// `id` does nothing and returns `false`.
+    pub fn gesture_replace_typed(&mut self, id: &GestureId, command: Command) -> bool {
+        self.is_open(id) && self.rewind_gesture() && self.execute_in_gesture(&command)
+    }
+
+    /// Commits the gesture `id` opened as one Undo step. Returns `false`, and changes
+    /// nothing, if `id` is stale.
+    pub fn end_gesture_typed(&mut self, id: GestureId) -> bool {
+        let live = self.is_open(&id);
+        id.consume();
+        if live {
+            self.close_gesture(true);
+        }
+        live
+    }
+
+    /// Rolls the gesture `id` opened back, Selection included. Returns `false`, and changes
+    /// nothing, if `id` is stale.
+    pub fn cancel_gesture_typed(&mut self, id: GestureId) -> bool {
+        let live = self.is_open(&id);
+        id.consume();
+        if live {
+            self.close_gesture(false);
+        }
+        live
+    }
+
+    /// Escape: rolls back whatever gesture is open, whoever opened it. Its token goes stale.
+    pub fn cancel_open_gesture(&mut self) -> bool {
+        let open = self.gesture.is_some();
+        self.close_gesture(false);
+        open
+    }
+
+    /// Runs `f` inside a gesture labelled `label`: commits it if `f` returns `Ok`, and rolls
+    /// it back if `f` returns `Err`. `None` means the gesture could not be opened. A panic in
+    /// `f` is not caught.
+    pub fn in_gesture<T, E>(
+        &mut self,
+        label: &str,
+        f: impl FnOnce(&mut Gesture<'_>) -> Result<T, E>,
+    ) -> Option<Result<T, E>> {
+        let id = self.begin_gesture_typed(label);
+        if !self.is_open(&id) {
+            id.consume();
+            return None;
+        }
+        let result = f(&mut Gesture {
+            editor: self,
+            id: &id,
+        });
+        if result.is_ok() {
+            self.end_gesture_typed(id);
+        } else {
+            self.cancel_gesture_typed(id);
+        }
+        Some(result)
+    }
+
+    fn is_open(&self, id: &GestureId) -> bool {
+        self.gesture
+            .as_ref()
+            .is_some_and(|open| open.id == id.generation)
+    }
+
+    /// Opens History's transaction and the gesture together. Returns the new generation.
+    fn open_gesture(&mut self, label: &str) -> Option<u64> {
+        if let Err(err) = self.history.begin(label, self.selection.clone()) {
+            self.error(err.to_string());
+            return None;
+        }
+        let generation = NEXT_GENERATION.fetch_add(1, Ordering::Relaxed);
+        self.gesture = Some(OpenGesture {
+            id: generation,
+            selection: self.selection.clone(),
+        });
+        Some(generation)
+    }
+
+    /// Closes History's transaction and the gesture together, committing or rolling back. A
+    /// rollback restores the Selection the gesture began with.
+    fn close_gesture(&mut self, commit: bool) {
+        let Some(open) = self.gesture.take() else {
+            return;
+        };
+        let closed = if commit {
+            self.history.commit(self.selection.clone())
+        } else {
+            self.history.rollback(&mut self.map)
+        };
+        match closed {
+            Ok(()) if !commit => self.restore(open.selection),
+            Ok(()) => {}
+            Err(err) => self.error(err.to_string()),
+        }
+    }
+
+    fn execute_in_gesture(&mut self, command: &Command) -> bool {
+        match self.history.execute(&mut self.map, command) {
             Ok(()) => true,
             Err(err) => {
                 self.refused(&err);
@@ -510,11 +691,13 @@ impl Editor {
         }
     }
 
-    pub fn end_gesture(&mut self) {
-        if std::mem::take(&mut self.gesture_open) {
-            self.history
-                .commit(self.selection.clone())
-                .expect("the gesture's transaction is open");
+    fn rewind_gesture(&mut self) -> bool {
+        match self.history.rewind(&mut self.map) {
+            Ok(()) => true,
+            Err(err) => {
+                self.error(err.to_string());
+                false
+            }
         }
     }
 
@@ -763,38 +946,29 @@ impl Editor {
 
     /// Escape: undoes everything the open gesture did, Selection included.
     pub fn cancel_gesture(&mut self) {
-        if std::mem::take(&mut self.gesture_open) {
-            self.history
-                .rollback(&mut self.map)
-                .expect("the gesture's transaction is open");
-            let selection = std::mem::take(&mut self.gesture_selection);
-            self.restore(selection);
-        }
+        self.close_gesture(false);
     }
 
     /// Replaces everything the open gesture has done so far with `command`. Drags use it to
     /// re-issue their whole effect each frame, so the Undo step holds one Command and nothing
     /// drifts. Without an open gesture it runs `command` as its own step.
     pub fn gesture_replace(&mut self, command: Command) -> bool {
-        if !self.gesture_open {
+        if self.gesture.is_none() {
             return self.run(command);
         }
-        self.history
-            .rewind(&mut self.map)
-            .expect("the gesture's transaction is open");
-        self.gesture(command)
+        self.rewind_gesture() && self.execute_in_gesture(&command)
     }
 
     pub fn gesture_open(&self) -> bool {
-        self.gesture_open
+        self.gesture.is_some()
     }
 
     pub fn can_undo(&self) -> bool {
-        !self.gesture_open && self.history.undo_len() > 0
+        self.gesture.is_none() && self.history.undo_len() > 0
     }
 
     pub fn can_redo(&self) -> bool {
-        !self.gesture_open && self.history.redo_len() > 0
+        self.gesture.is_none() && self.history.redo_len() > 0
     }
 
     pub fn undo_label(&self) -> Option<&str> {
@@ -1104,7 +1278,7 @@ impl Editor {
     /// Duplicates the selection in place, just above the originals, and selects the copies.
     /// One Undo step. Returns the copies' ids.
     pub fn duplicate_selection(&mut self) -> Option<Vec<Id>> {
-        if self.selection.is_empty() || self.gesture_open {
+        if self.selection.is_empty() || self.gesture.is_some() {
             return None;
         }
         let ids = self.selection.clone();
@@ -1263,7 +1437,7 @@ impl Editor {
     /// Copies the selection, then removes the originals as one Undo step. Locked Layers and
     /// Objects are copied but stay.
     pub fn cut_selection(&mut self) {
-        if self.gesture_open || !self.copy_selection() {
+        if self.gesture.is_some() || !self.copy_selection() {
             return;
         }
         let roots = self.selected_roots();
@@ -1297,7 +1471,7 @@ impl Editor {
     /// at `at` (Canvas units). It goes above the selected Layer, or on top when nothing is
     /// selected, and the pasted items become the Selection. Returns their ids.
     pub fn paste(&mut self, at: [f64; 2]) -> Option<Vec<Id>> {
-        if self.gesture_open {
+        if self.gesture.is_some() {
             return None;
         }
         let clipboard = self.clipboard.contents()?.clone();
@@ -1307,7 +1481,7 @@ impl Editor {
     /// Pastes `clipboard` as [`Editor::paste`] does, leaving this Map's own clipboard alone:
     /// what a Layer or Object dragged in from another window's Map copies.
     pub fn paste_clipboard(&mut self, mut clipboard: Clipboard, at: [f64; 2]) -> Option<Vec<Id>> {
-        if self.gesture_open {
+        if self.gesture.is_some() {
             return None;
         }
         let (parent, index) = self.paste_destination(clipboard.has_objects)?;
@@ -2615,5 +2789,158 @@ mod tests {
             .collect();
         assert_eq!(before, restored);
         assert_ne!(editor.undo_label(), Some("Shuffle Variant"));
+    }
+
+    fn create_stamp(layer: Id) -> (Id, Command) {
+        let id = Id::new();
+        let command = Command::CreateStamp {
+            id,
+            parent: layer,
+            index: None,
+            stamp: Box::new(Stamp::new("pack/asset".parse().unwrap(), [1.0, 2.0])),
+        };
+        (id, command)
+    }
+
+    #[test]
+    fn a_typed_gesture_commits_one_undo_step() {
+        let mut editor = editor();
+        let layer = editor.new_layer().unwrap();
+        let undo_steps = editor.history.undo_len();
+        let id = editor.begin_gesture_typed("Two Stamps");
+        assert!(editor.gesture_open());
+        let (a, first) = create_stamp(layer);
+        let (b, second) = create_stamp(layer);
+        assert!(editor.gesture_typed(&id, first));
+        assert!(editor.gesture_typed(&id, second));
+        assert!(editor.end_gesture_typed(id));
+        assert!(!editor.gesture_open());
+        assert_eq!(editor.history.undo_len(), undo_steps + 1);
+        assert_eq!(editor.undo_label(), Some("Two Stamps"));
+        editor.undo();
+        assert!(editor.stamp(a).is_none() && editor.stamp(b).is_none());
+    }
+
+    #[test]
+    fn cancelling_a_typed_gesture_rolls_it_back() {
+        let mut editor = editor();
+        let layer = editor.new_layer().unwrap();
+        let undo_steps = editor.history.undo_len();
+        let selection = editor.selection().to_vec();
+        let id = editor.begin_gesture_typed("Stamp");
+        let (stamp, command) = create_stamp(layer);
+        assert!(editor.gesture_typed(&id, command));
+        editor.select(vec![stamp]);
+        assert!(editor.cancel_gesture_typed(id));
+        assert!(editor.stamp(stamp).is_none());
+        assert_eq!(editor.selection(), &selection[..]);
+        assert_eq!(editor.history.undo_len(), undo_steps);
+    }
+
+    #[test]
+    fn replacing_in_a_typed_gesture_keeps_one_commands_worth() {
+        let mut editor = editor();
+        let layer = editor.new_layer().unwrap();
+        let id = editor.begin_gesture_typed("Stamp");
+        let (first, command) = create_stamp(layer);
+        assert!(editor.gesture_typed(&id, command));
+        let (second, command) = create_stamp(layer);
+        assert!(editor.gesture_replace_typed(&id, command));
+        assert!(editor.end_gesture_typed(id));
+        assert!(editor.stamp(first).is_none());
+        assert!(editor.stamp(second).is_some());
+    }
+
+    #[test]
+    fn a_stale_token_is_a_no_op() {
+        let mut editor = editor();
+        let layer = editor.new_layer().unwrap();
+        let old = editor.begin_gesture_typed("First");
+        assert!(editor.cancel_open_gesture());
+        let current = editor.begin_gesture_typed("Second");
+        let (stamp, command) = create_stamp(layer);
+        assert!(!editor.gesture_typed(&old, command.clone()));
+        assert!(!editor.gesture_replace_typed(&old, command));
+        assert!(editor.stamp(stamp).is_none());
+        assert!(!editor.end_gesture_typed(old));
+        assert!(editor.gesture_open());
+        assert!(editor.end_gesture_typed(current));
+        // Stale again once its own gesture is over, and so is a foreign Editor's token.
+        // Both Editors issue the same number of tokens, so per-Editor counters would collide.
+        let mut other = self::tests::editor();
+        for label in ["One", "Two"] {
+            let token = other.begin_gesture_typed(label);
+            assert!(other.end_gesture_typed(token));
+        }
+        let foreign = other.begin_gesture_typed("Three");
+        let own = editor.begin_gesture_typed("Third");
+        assert!(!editor.cancel_gesture_typed(foreign));
+        assert!(editor.gesture_open());
+        assert!(editor.cancel_gesture_typed(own));
+        assert!(other.cancel_open_gesture());
+    }
+
+    #[test]
+    fn cancel_open_gesture_invalidates_the_token() {
+        let mut editor = editor();
+        let layer = editor.new_layer().unwrap();
+        assert!(!editor.cancel_open_gesture());
+        let id = editor.begin_gesture_typed("Stamp");
+        let (stamp, command) = create_stamp(layer);
+        assert!(editor.gesture_typed(&id, command));
+        assert!(editor.cancel_open_gesture());
+        assert!(!editor.gesture_open());
+        assert!(editor.stamp(stamp).is_none());
+        let (_, command) = create_stamp(layer);
+        assert!(!editor.gesture_typed(&id, command));
+        assert!(!editor.end_gesture_typed(id));
+    }
+
+    #[test]
+    fn in_gesture_commits_on_ok_and_rolls_back_on_err() {
+        let mut editor = editor();
+        let layer = editor.new_layer().unwrap();
+        let undo_steps = editor.history.undo_len();
+        let (kept, command) = create_stamp(layer);
+        let result = editor.in_gesture("Keep", |g| {
+            assert!(g.run(command));
+            Ok::<_, &str>(7)
+        });
+        assert_eq!(result, Some(Ok(7)));
+        assert!(editor.stamp(kept).is_some());
+        assert_eq!(editor.history.undo_len(), undo_steps + 1);
+
+        let (dropped, command) = create_stamp(layer);
+        let result = editor.in_gesture("Drop", |g| {
+            assert!(g.run(command));
+            Err::<(), _>("nope")
+        });
+        assert_eq!(result, Some(Err("nope")));
+        assert!(editor.stamp(dropped).is_none());
+        assert!(!editor.gesture_open());
+        assert_eq!(editor.history.undo_len(), undo_steps + 1);
+    }
+
+    #[test]
+    fn in_gesture_does_not_open_inside_another_gesture() {
+        let mut editor = editor();
+        editor.begin_gesture("Outer");
+        assert!(editor.in_gesture("Inner", |_| Ok::<(), ()>(())).is_none());
+        assert!(editor.gesture_open());
+        editor.cancel_gesture();
+    }
+
+    #[test]
+    fn history_begin_refuses_while_a_transaction_is_open() {
+        let mut editor = editor();
+        let id = editor.begin_gesture_typed("Open");
+        assert_eq!(
+            editor.history.begin("Second", Vec::new()),
+            Err(ssmap_core::HistoryError::TransactionOpen)
+        );
+        // The editor shows a refusal instead of panicking, and the first gesture survives.
+        let second = editor.begin_gesture_typed("Second");
+        assert!(!editor.end_gesture_typed(second));
+        assert!(editor.end_gesture_typed(id));
     }
 }

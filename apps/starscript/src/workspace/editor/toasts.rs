@@ -24,7 +24,7 @@ impl Editor {
 
     /// Strips the actions the history has moved past from the toasts.
     pub(super) fn drop_stale_toast_actions(&mut self) {
-        let (open, depth) = (self.gesture_open, self.history.undo_len());
+        let (open, depth) = (self.gesture_open(), self.history.undo_len());
         self.toasts.retain_actions(|action| match action {
             ToastAction::Undo { steps } => !open && depth == steps,
         });
