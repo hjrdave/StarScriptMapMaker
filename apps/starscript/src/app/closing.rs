@@ -8,26 +8,26 @@ impl MapMakerApp {
     /// turn; a clean close deletes every Recovery journal. Where closing the window leaves the
     /// app running, only a quit request exits.
     pub(super) fn handle_close(&mut self, ctx: &egui::Context) {
-        let window = std::mem::take(&mut self.win.close_requested)
-            || ctx.input(|input| input.viewport().close_requested());
+        let window =
+            self.win.close.take_request() || ctx.input(|input| input.viewport().close_requested());
         let quit = if self.win.main {
-            std::mem::take(&mut self.app.quit_requested)
+            self.app.quit.take_request()
         } else {
-            self.win.quit_asked
+            self.win.close.quit_asked()
         };
-        if (!quit && !window) || self.win.close_allowed {
+        if (!quit && !window) || self.win.close.is_allowed() {
             return;
         }
         // Popped-out windows go first, each asking about its own unsaved tabs. Quitting waits
         // for them, and stops if the user cancels in one.
         if self.win.main
             && !self.popped.is_empty()
-            && (quit || (window && !self.app.close_hides_window))
+            && (quit || (window && !self.app.quit.close_hides_window()))
         {
             for popped in &mut self.popped {
-                popped.quit_asked = true;
+                popped.close.ask_quit();
             }
-            self.app.quit_requested = true;
+            self.app.quit.request();
             if window {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             }
@@ -35,39 +35,52 @@ impl MapMakerApp {
         }
         // A question already on screen is the close in progress.
         let asking =
-            self.win.awaiting_save.is_some() || self.win.tabs.iter().any(|t| t.pending.is_some());
+            self.win.close.is_awaiting_save() || self.win.tabs.iter().any(|t| t.pending.is_some());
         if !self.win.main {
             // A popped-out window only ever closes itself; the app goes on.
-            self.win.leaving = Leaving::Window;
+            self.win.close.set_leaving(Leaving::Window);
         } else if quit {
-            self.win.leaving = Leaving::Quit;
+            self.win.close.set_leaving(Leaving::Quit);
         } else if !asking {
-            self.win.leaving = if self.app.close_hides_window {
-                Leaving::Window
-            } else {
-                Leaving::Quit
-            };
+            self.win
+                .close
+                .set_leaving(if self.app.quit.close_hides_window() {
+                    Leaving::Window
+                } else {
+                    Leaving::Quit
+                });
         }
         let unsaved = self.win.tabs.iter().any(MapTab::has_unsaved_changes);
-        if window && (unsaved || self.win.leaving == Leaving::Window) {
+        if window && (unsaved || self.win.close.leaving() == Leaving::Window) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
         }
         if unsaved {
             if !asking {
                 self.advance_quit(ctx);
             }
-        } else if quit || self.win.leaving == Leaving::Window {
+        } else if quit || self.win.close.leaving() == Leaving::Window {
             self.close(ctx);
         } else {
-            for tab in &mut self.win.tabs {
-                tab.recovery.reset();
-            }
+            self.reset_recoveries();
+        }
+    }
+
+    /// Deletes every tab's Recovery journal, telling the user about any that stays behind.
+    fn reset_recoveries(&mut self) {
+        let failed: Vec<_> = self
+            .win
+            .tabs
+            .iter_mut()
+            .map(|tab| tab.recovery.reset())
+            .collect();
+        for deleted in failed {
+            self.notify_journal_delete(deleted);
         }
     }
 
     /// Asks to quit the app, as ⌘Q does. Unsaved Maps are asked about first.
     pub fn request_quit(&mut self) {
-        self.app.quit_requested = true;
+        self.app.quit.request();
     }
 
     /// Whether the window was closed while the app keeps running.
@@ -88,7 +101,7 @@ impl MapMakerApp {
 
     /// Test hook: whether closing the window leaves the app running, as on macOS.
     pub fn set_close_hides_window(&mut self, hides: bool) {
-        self.app.close_hides_window = hides;
+        self.app.quit.set_close_hides_window(hides);
     }
 
     /// Quitting: shows the next tab with unsaved changes that has not been decided about and
@@ -114,19 +127,17 @@ impl MapMakerApp {
         for tab in &mut self.win.tabs {
             tab.quit_decided = false;
         }
-        self.win.quit_asked = false;
-        self.app.quit_requested = false;
+        self.win.close.cancel_quit();
+        self.app.quit.cancel();
     }
 
     /// Leaves, discarding unsaved changes and their Recovery journals: quits the app, or closes
     /// the window and its tabs and leaves the app running.
     pub(super) fn close(&mut self, ctx: &egui::Context) {
-        for tab in &mut self.win.tabs {
-            tab.recovery.reset();
-        }
-        match self.win.leaving {
+        self.reset_recoveries();
+        match self.win.close.leaving() {
             Leaving::Quit => {
-                self.win.close_allowed = true;
+                self.win.close.allow();
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
             Leaving::Window if !self.win.main => {
@@ -151,21 +162,20 @@ impl MapMakerApp {
             .get(self.win.active)
             .is_some_and(|tab| tab.pending.is_some() || tab.recovery_prompt.is_some())
             || self.win.tabs.iter().any(|tab| tab.pending.is_some())
-            || self.win.awaiting_save.is_some()
-            || (self.win.main && self.app.unsaved_prompt.is_some())
+            || self.win.close.is_awaiting_save()
+            || (self.win.main && self.app.unsaved.is_asking())
             || self.win.delete_prompt.is_some()
             || self.win.pack_delete_prompt.is_some()
             || self.win.paste_prompt.is_some()
             || self.win.new_map_dialog.open
-            || self.win.export_dialog.open
-            || self.win.export_run.is_some()
+            || self.win.export.is_busy()
             || self.win.open_dialog.is_open()
             || self.win.save_dialog.is_open()
     }
 
     /// Whether the user chose to close the window.
     pub fn is_closing(&self) -> bool {
-        self.win.close_allowed
+        self.win.close.is_allowed()
     }
 
     /// Asks what to do with the active tab's unsaved changes before it closes or the app quits.
@@ -215,7 +225,7 @@ impl MapMakerApp {
         match choice {
             UnsavedChoice::Save if self.tab().is_some_and(|tab| tab.document.path().is_none()) => {
                 // A Map never saved is saved through Save As.
-                self.win.awaiting_save = Some((self.win.active, pending));
+                self.win.close.await_save(self.win.active, pending);
                 self.show_save_dialog();
             }
             UnsavedChoice::Save => {
@@ -242,24 +252,6 @@ impl MapMakerApp {
             }
         }
     }
-}
-
-/// What a close in progress ends in.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Leaving {
-    /// The app exits.
-    Quit,
-    /// The window closes and the app keeps running.
-    Window,
-}
-
-/// What happens to a tab once the user has decided about its unsaved changes.
-#[derive(Clone)]
-pub(crate) enum Pending {
-    /// Close the tab.
-    CloseTab,
-    /// Quit the app, which asks about every tab with unsaved changes in turn.
-    Quit,
 }
 
 enum UnsavedChoice {

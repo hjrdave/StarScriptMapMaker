@@ -87,6 +87,8 @@ impl MacMenu {
                 self.built = Some(built);
                 self.shown = Some(spec);
             }
+            // macOS only, where stderr is kept; the egui menu bar is not drawn when the native
+            // one is on, but the menu is rebuilt on the next state change, so this retries.
             Err(error) => eprintln!("could not build the native menu: {error}"),
         }
     }

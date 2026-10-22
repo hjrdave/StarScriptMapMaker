@@ -15,7 +15,7 @@ use ssmap_core::{Color, Command};
 use self::color::hex_text;
 pub use self::color::parse_hex;
 use self::expr::eval_expression;
-use crate::editor::Editor;
+use crate::editor::{Editor, GestureId};
 use crate::icons::{self, Icon};
 use crate::theme::{self, metrics};
 
@@ -113,7 +113,17 @@ impl Edit {
 /// Turns [`Edit`]s into one gesture on the Editor: one Undo step per scrub.
 #[derive(Default)]
 pub struct LiveEdit {
-    owns_gesture: bool,
+    /// The gesture this edit opened; `None` when it opened none, or joins someone else's.
+    owns_gesture: Option<GestureId>,
+}
+
+impl Drop for LiveEdit {
+    fn drop(&mut self) {
+        // The Editor goes with the panel state, taking the open gesture with it.
+        if let Some(id) = self.owns_gesture.take() {
+            std::mem::forget(id);
+        }
+    }
 }
 
 impl LiveEdit {
@@ -139,22 +149,38 @@ impl LiveEdit {
         label: &str,
         commands: impl FnOnce() -> Vec<Command>,
     ) {
-        if (edit.began || edit.changed) && !self.owns_gesture && !editor.gesture_open() {
-            editor.begin_gesture(label);
-            self.owns_gesture = true;
+        if (edit.began || edit.changed) && self.owns_gesture.is_none() && !editor.gesture_open() {
+            let id = editor.begin_gesture_typed(label);
+            if editor.is_open(&id) {
+                self.owns_gesture = Some(id);
+            } else {
+                editor.cancel_gesture_typed(id);
+            }
+        }
+        // Escape or undo closed the gesture: a later change is a step of its own.
+        if let Some(id) = self.owns_gesture.take_if(|id| !editor.is_open(id)) {
+            editor.end_gesture_typed(id);
         }
         if edit.changed {
             for (i, command) in commands().into_iter().enumerate() {
-                if self.owns_gesture && i == 0 {
-                    editor.gesture_replace(command);
-                } else {
-                    editor.gesture(command);
+                match &self.owns_gesture {
+                    Some(id) if i == 0 => {
+                        editor.gesture_replace_typed(id, command);
+                    }
+                    Some(id) => {
+                        editor.gesture_typed(id, command);
+                    }
+                    // Joins a gesture someone else opened, or is a step of its own.
+                    None => {
+                        editor.run(command);
+                    }
                 }
             }
         }
-        if self.owns_gesture && (edit.finished || !editor.gesture_open()) {
-            self.owns_gesture = false;
-            editor.end_gesture();
+        if edit.finished
+            && let Some(id) = self.owns_gesture.take()
+        {
+            editor.end_gesture_typed(id);
         }
     }
 }
@@ -1389,5 +1415,43 @@ mod tests {
         assert_eq!(Speed::from_modifiers(shift), Speed::Coarse);
         assert_eq!(Speed::from_modifiers(alt), Speed::Fine);
         assert_eq!(Speed::from_modifiers(egui::Modifiers::NONE), Speed::Normal);
+    }
+
+    #[test]
+    fn a_live_edit_makes_one_undo_step() {
+        use ssmap_core::{Canvas, DistanceUnit, Map, Scale};
+
+        let mut editor = Editor::new(Map::new(Canvas::new(
+            100,
+            100,
+            Scale::new(1.0, DistanceUnit::Miles),
+        )));
+        let layer = editor.new_layer().expect("a Layer is made");
+        let mut live = LiveEdit::default();
+        let scrub = |began, changed, finished| Edit {
+            began,
+            changed,
+            finished,
+            reset: false,
+        };
+        for (i, opacity) in [0.8, 0.5, 0.2].into_iter().enumerate() {
+            live.apply(
+                &mut editor,
+                scrub(i == 0, true, false),
+                "Change Opacity",
+                || Command::SetOpacity { id: layer, opacity },
+            );
+            assert!(editor.gesture_open());
+        }
+        live.apply(
+            &mut editor,
+            scrub(false, false, true),
+            "Change Opacity",
+            || unreachable!("nothing changed"),
+        );
+        assert!(!editor.gesture_open());
+        assert_eq!(editor.undo_label(), Some("Change Opacity"));
+        editor.undo();
+        assert_ne!(editor.undo_label(), Some("Change Opacity"));
     }
 }

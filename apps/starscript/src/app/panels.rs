@@ -119,6 +119,7 @@ impl MapMakerApp {
             packs: self.app.credits.page().packs.len(),
             sprites: Some(&self.app.sprites),
             pack_status: self.win.pack_install.status(),
+            notices: &self.win.notices,
         };
         if self.win.main {
             self.app.credits.show(&ctx, None);
@@ -155,6 +156,7 @@ impl MapMakerApp {
                 home::Action::AddPackFolder(folder) => self.add_pack(&ctx, folder),
                 home::Action::DeletePack(id) => self.win.pack_delete_prompt = Some(id),
                 home::Action::DismissPackStatus => self.win.pack_install.dismiss(),
+                home::Action::DismissNotices => self.win.notices.clear(),
             }
         }
     }

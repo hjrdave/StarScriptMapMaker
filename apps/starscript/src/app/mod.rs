@@ -1,15 +1,18 @@
 //! The app itself: [`MapMakerApp`], its state, and the `eframe::App` impl. The methods are
 //! spread over the sibling modules by what they do.
 
+mod close_flow;
 mod closing;
 mod dialogs;
 mod drag_drop;
+mod export_flow;
 mod files;
 mod frame;
 mod menus;
 mod packs;
 mod panels;
 mod tabs;
+mod unsaved_offer;
 
 use eframe::{egui, egui_wgpu};
 use native_dialog::{Pick, Polled};
@@ -25,7 +28,7 @@ use std::time::{Duration, Instant};
 use crate::credits::Credits;
 use crate::document::Document;
 use crate::editor::Editor;
-use crate::export_dialog::{DialogAction, ExportDialog};
+use crate::export_dialog::DialogAction;
 use crate::export_run::{ExportRun, Outcome};
 use crate::new_map::NewMapDialog;
 use crate::recent::RecentFiles;
@@ -38,13 +41,15 @@ use crate::{
     pack_install, shell, tab_strip, theme,
 };
 
-pub(crate) use self::closing::Pending;
+pub(crate) use self::close_flow::Pending;
 pub(crate) use self::files::RecoveryPrompt;
 
-use self::closing::Leaving;
+use self::close_flow::{CloseFlow, Leaving, QuitState};
 use self::drag_drop::{PayloadDrop, TabDrop};
+use self::export_flow::ExportFlow;
 use self::files::after_trash;
 use self::panels::layers_panel;
+use self::unsaved_offer::UnsavedOffer;
 
 /// What every window shares: settings, recent Maps, the installed Asset packs, crash recovery
 /// and the native menu. Not tied to one window's Maps.
@@ -53,6 +58,8 @@ struct AppState {
     recovery_dir: Option<PathBuf>,
     /// Whether the Canvas renderer is installed, so new tabs get a tessellation cache.
     gpu: bool,
+    /// Shows the Open, Save and folder dialogs; tests swap it for one that shows nothing.
+    launch_dialog: native_dialog::Launch,
     /// The installed Asset packs' art, shared with the Canvas renderer and picking.
     sprites: SpriteStore,
     credits: Credits,
@@ -60,21 +67,16 @@ struct AppState {
     pack_roots: PackRoots,
     recent: RecentFiles,
     updates: UpdateCheck,
-    /// Journals of Maps never saved left by a crash, oldest first, offered one at a time.
-    unsaved_found: Vec<Found>,
-    /// The journal of a Map never saved being offered now; recovering it opens a new tab.
-    unsaved_prompt: Option<Found>,
+    /// Journals of Maps never saved left by a crash, offered one at a time.
+    unsaved: UnsavedOffer,
     /// `None` without a GPU, as in UI tests; saves then store no preview.
     render_state: Option<egui_wgpu::RenderState>,
     /// Asked for a repaint as background work finishes.
     egui_ctx: egui::Context,
-    /// Closing the window only hides it and leaves the app running (macOS); elsewhere closing
-    /// the window quits.
-    close_hides_window: bool,
     /// The frame-time overlay, off by default (F3 in debug and profiling builds).
     overlay: overlay::Overlay,
-    /// Quit was asked for (⌘Q) and is handled next frame.
-    quit_requested: bool,
+    /// A quit asked for (⌘Q), and whether closing the window quits.
+    quit: QuitState,
     /// Commands whose key the egui handler leaves alone, because something else (the native
     /// menu on macOS) owns it. Each key is then handled once.
     shortcuts_off: HashSet<menu::Command>,
@@ -117,6 +119,9 @@ struct WindowState {
     /// The index of the active tab: the one whose Map the window shows and every command acts
     /// on, reached through [`MapMakerApp::tab`]. Meaningless while `tabs` is empty.
     active: usize,
+    /// Problems to tell the user about while no Map is open to show them on; Home lists them
+    /// until dismissed.
+    notices: Vec<String>,
     /// Whether the Home tab shows instead of the active tab's Map. Always the case while no
     /// Map is open.
     home_active: bool,
@@ -140,9 +145,7 @@ struct WindowState {
     /// ⇥ just toggled the panels: clear keyboard focus at the next frame.
     drop_focus: bool,
     new_map_dialog: NewMapDialog,
-    export_dialog: ExportDialog,
-    /// The PNG export in progress, stepped once per frame behind a modal dialog.
-    export_run: Option<ExportRun>,
+    export: ExportFlow,
     open_dialog: Pick,
     save_dialog: Pick,
     /// The folder dialog of Add pack….
@@ -157,13 +160,8 @@ struct WindowState {
     pack_trash: fn(&Path) -> Result<(), TrashError>,
     /// A Paste into a Map that lacks something the copied layers need: the popup asks first.
     paste_prompt: Option<PastePrompt>,
-    /// A tab's unsaved-changes question was answered Save for a Map never saved: what to do
-    /// once the Save As dialog saves it. Closing that dialog instead cancels.
-    awaiting_save: Option<(usize, Pending)>,
-    /// Set once the user has chosen to close despite unsaved changes.
-    close_allowed: bool,
-    /// What the close or quit in progress is for.
-    leaving: Leaving,
+    /// This window's close or quit in progress.
+    close: CloseFlow,
     /// The window was closed but the app keeps running, with no Map open.
     window_hidden: bool,
     /// The window title last sent, so it is only sent when it changes.
@@ -172,10 +170,6 @@ struct WindowState {
     main: bool,
     /// The viewport this window is shown in.
     viewport: egui::ViewportId,
-    /// The app is quitting and this popped-out window is asked to go first.
-    quit_asked: bool,
-    /// Closing this window was asked for, as its close button does.
-    close_requested: bool,
 }
 
 pub struct MapMakerApp {
@@ -236,37 +230,43 @@ impl WindowState {
 
 impl MapMakerApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        Self::with_recovery_dir(cc, Recovery::default_unsaved_dir())
+        Self::build(
+            cc,
+            None,
+            Recovery::default_unsaved_dir(),
+            native_dialog::launch_native,
+        )
     }
 
     /// Starts on the Home tab with no Map open, keeping journals of Maps never saved in
-    /// `recovery_dir` (`None` turns them off) and offering any a crash left there.
+    /// `recovery_dir` (`None` turns them off) and offering any a crash left there. File
+    /// dialogs count as open but never show, for tests without a window.
     pub fn with_recovery_dir(
         cc: &eframe::CreationContext<'_>,
         recovery_dir: Option<PathBuf>,
     ) -> Self {
-        Self::build(cc, None, recovery_dir)
+        Self::build(cc, None, recovery_dir, native_dialog::launch_headless)
     }
 
-    /// Starts with `map` open in a tab.
+    /// Starts with `map` open in a tab. File dialogs count as open but never show, for tests
+    /// without a window.
     pub fn with_map(
         cc: &eframe::CreationContext<'_>,
         map: Map,
         recovery_dir: Option<PathBuf>,
     ) -> Self {
-        Self::build(cc, Some(map), recovery_dir)
+        Self::build(cc, Some(map), recovery_dir, native_dialog::launch_headless)
     }
 
     fn build(
         cc: &eframe::CreationContext<'_>,
         map: Option<Map>,
         recovery_dir: Option<PathBuf>,
+        launch_dialog: native_dialog::Launch,
     ) -> Self {
         theme::install(&cc.egui_ctx);
         let (library, problems) = PackLibrary::load(&PackRoots::installed());
-        for problem in &problems {
-            eprintln!("Asset pack problem: {problem}");
-        }
+        let notices: Vec<String> = problems.iter().map(packs::problem_notice).collect();
         let credits = Credits::new(&library);
         let sprites = SpriteStore::new(Arc::new(library));
         let ctx = cc.egui_ctx.clone();
@@ -275,8 +275,7 @@ impl MapMakerApp {
             Some(render_state) => canvas_view::install(render_state, sprites.clone()),
             None => false,
         };
-        let mut unsaved_found = Recovery::new(recovery_dir.clone()).find_unsaved();
-        unsaved_found.reverse();
+        let unsaved = UnsavedOffer::new(Recovery::new(recovery_dir.clone()).find_unsaved());
         let tabs: Vec<MapTab> = map
             .into_iter()
             .map(|map| {
@@ -303,7 +302,7 @@ impl MapMakerApp {
         let app = AppState {
             recovery_dir,
             gpu,
-            unsaved_prompt: None,
+            launch_dialog,
             sprites,
             credits,
             pack_roots: PackRoots::installed(),
@@ -317,12 +316,11 @@ impl MapMakerApp {
             #[cfg(target_os = "macos")]
             native_menu,
             updates: UpdateCheck::load(cc.storage),
-            unsaved_found,
+            unsaved,
             render_state: cc.wgpu_render_state.clone(),
             egui_ctx: cc.egui_ctx.clone(),
-            close_hides_window: cfg!(target_os = "macos"),
+            quit: QuitState::new(cfg!(target_os = "macos")),
             overlay: overlay::Overlay::default(),
-            quit_requested: false,
             clipboard: None,
             returning: Vec::new(),
             tab_drops: Vec::new(),
@@ -336,13 +334,13 @@ impl MapMakerApp {
             home_active: tabs.is_empty(),
             tabs,
             active: 0,
+            notices,
             strip: tab_strip::State::default(),
             screen_origin: egui::Pos2::ZERO,
             content_size: egui::Vec2::ZERO,
             canvas_zone: None,
             layers_zone: None,
             home: home::Home::default(),
-            awaiting_save: None,
             delete_prompt: None,
             pack_delete_prompt: None,
             pack_trash: file_actions::move_to_trash,
@@ -350,32 +348,16 @@ impl MapMakerApp {
             shell: shell::Shell::load(cc.storage),
             drop_focus: false,
             new_map_dialog: NewMapDialog::default(),
-            export_dialog: ExportDialog::default(),
-            export_run: None,
-            open_dialog: if gpu {
-                Pick::default()
-            } else {
-                Pick::headless()
-            },
-            save_dialog: if gpu {
-                Pick::default()
-            } else {
-                Pick::headless()
-            },
-            pack_dialog: if gpu {
-                Pick::default()
-            } else {
-                Pick::headless()
-            },
+            export: ExportFlow::new(launch_dialog),
+            open_dialog: Pick::new(launch_dialog),
+            save_dialog: Pick::new(launch_dialog),
+            pack_dialog: Pick::new(launch_dialog),
             pack_install: pack_install::PackInstall::default(),
-            close_allowed: false,
-            leaving: Leaving::Quit,
+            close: CloseFlow::new(Leaving::Quit),
             window_hidden: false,
             title: String::new(),
             main: true,
             viewport: egui::ViewportId::ROOT,
-            quit_asked: false,
-            close_requested: false,
         };
         Self {
             app,

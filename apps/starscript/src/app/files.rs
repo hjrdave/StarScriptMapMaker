@@ -94,7 +94,10 @@ impl MapMakerApp {
         let copy_name = copy_path.file_name().unwrap_or_default().to_string_lossy();
         match MapFile::create(&copy_path, &copy, None) {
             Ok(_) => {
-                let _ = remove_journal(&found.path);
+                if let Err(err) = remove_journal(&found.path) {
+                    tab.editor
+                        .error(format!("Couldn’t delete the unsaved changes: {err}"));
+                }
                 self.app.recent.add(&copy_path);
                 self.win.home.forget(&copy_path);
                 let skipped = match skipped {
@@ -180,7 +183,7 @@ impl MapMakerApp {
         let Some(tab) = self.tab_mut() else {
             return false;
         };
-        tab.editor.end_gesture();
+        tab.editor.end_open_gesture();
         tab.editor.embed_used_assets();
         let preview = self.preview_png();
         let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
@@ -200,7 +203,7 @@ impl MapMakerApp {
         let Some(tab) = self.tab_mut() else {
             return false;
         };
-        tab.editor.end_gesture();
+        tab.editor.end_open_gesture();
         tab.editor.embed_used_assets();
         let preview = self.preview_png();
         let path = document::with_extension(path.to_path_buf());
@@ -221,7 +224,10 @@ impl MapMakerApp {
             Ok(()) => {
                 // The save holds every change so far; the journal starts over.
                 tab.editor.take_applied();
-                tab.recovery.reset();
+                if let Err(err) = tab.recovery.reset() {
+                    tab.editor
+                        .error(format!("Couldn’t delete the unsaved changes: {err}"));
+                }
                 if let Some(path) = tab.document.path() {
                     self.app.recent.add(path);
                     self.win.home.forget(path);
@@ -288,12 +294,8 @@ impl MapMakerApp {
             .get(self.win.active)
             .is_some_and(|tab| tab.recovery_prompt.is_some() || tab.pending.is_some());
         // The offer of a Map never saved is shared, and shown in the main window only.
-        if self.win.main
-            && !tab_asking
-            && self.win.awaiting_save.is_none()
-            && self.app.unsaved_prompt.is_none()
-        {
-            self.app.unsaved_prompt = self.app.unsaved_found.pop();
+        if self.win.main && !tab_asking && !self.win.close.is_awaiting_save() {
+            self.app.unsaved.offer_next();
         }
         let Some(tab) = self.win.tabs.get(self.win.active) else {
             self.unsaved_journal_dialog(ctx);
@@ -348,14 +350,16 @@ impl MapMakerApp {
 
     /// Offers the journal of a Map never saved that a crash left: recovering it opens a tab.
     fn unsaved_journal_dialog(&mut self, ctx: &egui::Context) {
-        if !self.win.main || self.app.unsaved_prompt.is_none() {
+        if !self.win.main || !self.app.unsaved.is_asking() {
             return;
         }
         let text = "A Map that was never saved wasn’t closed properly. Recover it?";
         let Some(choice) = recovery_modal(ctx, text, "Recover") else {
             return;
         };
-        let found = self.app.unsaved_prompt.take().expect("shown above");
+        let Some(found) = self.app.unsaved.take_prompt() else {
+            return;
+        };
         match choice {
             RecoveryChoice::Recover => self.recover_unsaved(found),
             RecoveryChoice::Discard => {

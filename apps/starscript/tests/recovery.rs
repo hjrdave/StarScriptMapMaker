@@ -350,6 +350,32 @@ fn saving_from_the_close_prompt_saves_then_closes() {
 }
 
 #[test]
+fn a_journal_that_cannot_be_deleted_is_reported_on_home_until_dismissed() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut harness = app(dir.path());
+    new_layer(&mut harness);
+    wait_until_journaled(&mut harness);
+    let journal = harness.state().recovery_journal().unwrap().to_path_buf();
+    // A directory where the journal was can't be removed as a file.
+    std::fs::remove_file(&journal).unwrap();
+    std::fs::create_dir(&journal).unwrap();
+    assert!(harness.state().home_notices().is_empty());
+
+    // Closing the only Tab leaves no Tab to show the error on, so Home lists it.
+    harness.state_mut().close_tab(0);
+    harness.run();
+    harness.get_by_label("Don’t Save").click();
+    harness.run();
+    let notices = harness.state().home_notices();
+    assert_eq!(notices.len(), 1);
+    assert!(notices[0].starts_with("Couldn’t delete the unsaved changes"));
+
+    harness.get_by_label("Dismiss").click();
+    harness.run();
+    assert!(harness.state().home_notices().is_empty());
+}
+
+#[test]
 fn closing_without_unsaved_changes_does_not_ask() {
     let dir = tempfile::tempdir().unwrap();
     let mut harness = app(dir.path());
