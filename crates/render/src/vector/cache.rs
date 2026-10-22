@@ -272,7 +272,7 @@ impl Drop for TessellationRebuild {
                 .shared
                 .ended
                 .lock()
-                .expect("tessellation wait lock");
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             self.cache.shared.building.fetch_sub(1, Ordering::SeqCst);
         }
         self.cache.shared.generation.fetch_add(1, Ordering::SeqCst);

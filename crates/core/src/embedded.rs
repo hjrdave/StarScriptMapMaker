@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use thiserror::Error;
 
 use crate::asset::{ArtFormat, Asset, AssetRef, Pack};
 use crate::extra::Extra;
@@ -51,11 +52,11 @@ impl fmt::Debug for ContentHash {
 }
 
 impl FromStr for ContentHash {
-    type Err = String;
+    type Err = ParseHexError;
 
-    fn from_str(s: &str) -> Result<Self, String> {
+    fn from_str(s: &str) -> Result<Self, ParseHexError> {
         let bytes = from_hex(s)?;
-        let bytes = <[u8; 32]>::try_from(bytes).map_err(|_| "a hash is 32 bytes".to_string())?;
+        let bytes = <[u8; 32]>::try_from(bytes).map_err(|_| ParseHexError::WrongLength)?;
         Ok(Self(bytes))
     }
 }
@@ -140,13 +141,24 @@ impl JsonSchema for Blob {
     }
 }
 
-fn from_hex(text: &str) -> Result<Vec<u8>, String> {
+/// Why a string is not valid hex, or not a hash.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Error)]
+pub enum ParseHexError {
+    #[error("expected an even number of hex digits")]
+    OddLength,
+    #[error("expected hex digits")]
+    NotHex,
+    #[error("a hash is 32 bytes")]
+    WrongLength,
+}
+
+fn from_hex(text: &str) -> Result<Vec<u8>, ParseHexError> {
     if !text.len().is_multiple_of(2) || !text.is_ascii() {
-        return Err("expected an even number of hex digits".into());
+        return Err(ParseHexError::OddLength);
     }
     (0..text.len())
         .step_by(2)
-        .map(|i| u8::from_str_radix(&text[i..i + 2], 16).map_err(|_| "expected hex digits".into()))
+        .map(|i| u8::from_str_radix(&text[i..i + 2], 16).map_err(|_| ParseHexError::NotHex))
         .collect()
 }
 

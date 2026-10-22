@@ -415,7 +415,7 @@ impl Command {
     }
 
     /// Checks the Command against `map` and returns the Ops it applies, in order.
-    pub fn compile(&self, map: &Map) -> Result<Vec<Op>, CommandError> {
+    pub(crate) fn compile(&self, map: &Map) -> Result<Vec<Op>, CommandError> {
         match self {
             Command::CreateLayer {
                 id,

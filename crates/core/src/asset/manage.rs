@@ -45,7 +45,7 @@ pub struct InstallProgress {
 }
 
 /// Why a pack could not be deleted.
-#[derive(Clone, PartialEq, Eq, Debug, Error)]
+#[derive(Debug, Error)]
 pub enum DeleteError {
     /// No loaded pack has this id.
     #[error("no pack named `{0}` is installed")]
@@ -55,8 +55,11 @@ pub enum DeleteError {
     BuiltIn(String),
     /// Moving the pack to the Trash failed.
     #[error("cannot move the pack to the Trash: {0}")]
-    Trash(String),
+    Trash(TrashError),
 }
+
+/// What a `trash` closure passed to [`PackLibrary::delete_pack`] returns on failure.
+pub type TrashError = Box<dyn std::error::Error + Send + Sync>;
 
 impl Pack {
     /// Whether the pack ships with the app. Decided by where it was found, never by its manifest.
@@ -166,7 +169,7 @@ impl PackLibrary {
         &mut self,
         id: &str,
         roots: &PackRoots,
-        trash: impl FnOnce(&Path) -> Result<(), String>,
+        trash: impl FnOnce(&Path) -> Result<(), TrashError>,
     ) -> Result<Pack, DeleteError> {
         let pack = self
             .pack(id)
