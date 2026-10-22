@@ -115,7 +115,7 @@ fn user_packs_are_trashed_and_removed() {
     library
         .delete_pack("mine", &s.roots, |dir| {
             *trashed.borrow_mut() = Some(dir.to_path_buf());
-            std::fs::remove_dir_all(dir).map_err(|e| e.to_string())
+            std::fs::remove_dir_all(dir).map_err(Into::into)
         })
         .unwrap();
     assert!(trashed.into_inner().unwrap().ends_with("mine"));
@@ -134,7 +134,11 @@ fn a_failed_trash_keeps_the_pack() {
     let err = library
         .delete_pack("mine", &s.roots, |_| Err("no trash".into()))
         .unwrap_err();
-    assert_eq!(err, DeleteError::Trash("no trash".into()));
+    assert!(matches!(&err, DeleteError::Trash(cause) if cause.to_string() == "no trash"));
+    assert_eq!(
+        err.to_string(),
+        "cannot move the pack to the Trash: no trash"
+    );
     assert!(library.pack("mine").is_some());
 }
 
@@ -148,7 +152,7 @@ fn built_in_packs_cannot_be_deleted() {
             panic!("must not trash a built-in pack")
         })
         .unwrap_err();
-    assert_eq!(err, DeleteError::BuiltIn("core".into()));
+    assert!(matches!(&err, DeleteError::BuiltIn(id) if id == "core"));
     assert!(library.pack("core").is_some());
 }
 
@@ -161,10 +165,10 @@ fn a_user_pack_inside_the_built_in_folder_cannot_be_deleted() {
         user: Some(s.roots.built_in.clone()),
     });
     assert!(!user_loaded.pack("core").unwrap().is_built_in());
-    assert_eq!(
-        user_loaded.delete_pack("core", &s.roots, |_| panic!("must not trash")),
-        Err(DeleteError::BuiltIn("core".into()))
-    );
+    let err = user_loaded
+        .delete_pack("core", &s.roots, |_| panic!("must not trash"))
+        .unwrap_err();
+    assert!(matches!(&err, DeleteError::BuiltIn(id) if id == "core"));
 }
 
 #[test]

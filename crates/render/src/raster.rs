@@ -49,10 +49,26 @@ impl Raster {
 
 /// Asset art that could not be loaded.
 #[derive(Debug, thiserror::Error)]
-#[error("{}: {message}", path.display())]
-pub struct ArtError {
-    pub path: PathBuf,
-    pub message: String,
+pub enum ArtError {
+    #[error("is not a valid SVG: {0}")]
+    Svg(#[from] usvg::Error),
+    #[error("is not a valid PNG: {0}")]
+    Png(#[from] image::ImageError),
+    #[error("{}: cannot be read", path.display())]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("{}: is neither an .svg nor a .png file", path.display())]
+    UnknownFormat { path: PathBuf },
+    /// Art read from a file that then failed to parse.
+    #[error("{}: cannot be loaded", path.display())]
+    File {
+        path: PathBuf,
+        #[source]
+        source: Box<ArtError>,
+    },
 }
 
 /// One Asset's art (or Silhouette), parsed and ready to rasterise.
@@ -64,23 +80,26 @@ pub enum Art {
 impl Art {
     /// Loads an `.svg` or `.png` file.
     pub fn load(path: &Path) -> Result<Self, ArtError> {
-        let error = |message: String| ArtError {
+        let format = ArtFormat::from_path(path).ok_or_else(|| ArtError::UnknownFormat {
             path: path.to_path_buf(),
-            message,
-        };
-        let format = ArtFormat::from_path(path)
-            .ok_or_else(|| error("is neither an .svg nor a .png file".into()))?;
-        let data = std::fs::read(path).map_err(|err| error(format!("cannot be read: {err}")))?;
+        })?;
+        let data = std::fs::read(path).map_err(|source| ArtError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
         match format {
             ArtFormat::Svg => Self::from_svg(&data),
             ArtFormat::Png => Self::from_png(&data),
         }
-        .map_err(error)
+        .map_err(|source| ArtError::File {
+            path: path.to_path_buf(),
+            source: Box::new(source),
+        })
     }
 
     /// Parses art held in memory, such as an embedded copy, telling a PNG from an SVG by its
     /// signature.
-    pub fn from_bytes(data: &[u8]) -> Result<Self, String> {
+    pub fn from_bytes(data: &[u8]) -> Result<Self, ArtError> {
         if data.starts_with(b"\x89PNG") {
             Self::from_png(data)
         } else {
@@ -88,16 +107,14 @@ impl Art {
         }
     }
 
-    pub fn from_svg(data: &[u8]) -> Result<Self, String> {
-        let tree = usvg::Tree::from_data(data, &usvg::Options::default())
-            .map_err(|err| format!("is not a valid SVG: {err}"))?;
+    pub fn from_svg(data: &[u8]) -> Result<Self, ArtError> {
+        let tree = usvg::Tree::from_data(data, &usvg::Options::default())?;
         Ok(Art::Svg(Box::new(tree)))
     }
 
-    pub fn from_png(data: &[u8]) -> Result<Self, String> {
-        let image = image::load_from_memory_with_format(data, image::ImageFormat::Png)
-            .map_err(|err| format!("is not a valid PNG: {err}"))?
-            .into_rgba8();
+    pub fn from_png(data: &[u8]) -> Result<Self, ArtError> {
+        let image =
+            image::load_from_memory_with_format(data, image::ImageFormat::Png)?.into_rgba8();
         let (width, height) = image.dimensions();
         let mut pixels = image.into_raw();
         for px in pixels.chunks_exact_mut(4) {
@@ -220,5 +237,32 @@ mod tests {
                 .starts_with("nowhere/ghost.svg: cannot be read")
         );
         assert!(Art::from_svg(b"<not svg").is_err());
+    }
+
+    #[test]
+    fn errors_keep_the_underlying_cause() {
+        use std::error::Error;
+        let svg = Art::from_svg(b"<not svg").err().unwrap();
+        assert!(matches!(svg, ArtError::Svg(_)));
+        assert!(svg.source().is_some());
+        let png = Art::from_png(b"not a png").err().unwrap();
+        assert!(matches!(png, ArtError::Png(_)));
+        assert!(png.source().is_some());
+        let io = Art::load(Path::new("nowhere/ghost.png")).err().unwrap();
+        assert!(matches!(io, ArtError::Io { .. }));
+        assert!(io.source().is_some());
+
+        let dir = std::env::temp_dir().join(format!("ssmap-art-error-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bad = dir.join("bad.svg");
+        std::fs::write(&bad, b"<not svg").unwrap();
+        let file = Art::load(&bad).err().unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(matches!(file, ArtError::File { .. }));
+        assert!(file.source().is_some());
+        assert!(file.to_string().starts_with(&*bad.display().to_string()));
+
+        let unknown = Art::load(Path::new("art.xyz")).err().unwrap();
+        assert!(matches!(unknown, ArtError::UnknownFormat { .. }));
     }
 }
