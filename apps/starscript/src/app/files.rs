@@ -288,7 +288,7 @@ impl MapMakerApp {
             .get(self.win.active)
             .is_some_and(|tab| tab.recovery_prompt.is_some() || tab.pending.is_some());
         // The offer of a Map never saved is shared, and shown in the main window only.
-        if self.win.main && !tab_asking && self.win.awaiting_save.is_none() {
+        if self.win.main && !tab_asking && !self.win.close.is_awaiting_save() {
             self.app.unsaved.offer_next();
         }
         let Some(tab) = self.win.tabs.get(self.win.active) else {
