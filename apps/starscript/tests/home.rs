@@ -74,7 +74,7 @@ fn clicking_a_map_card_opens_it_and_an_open_map_is_focused_not_reopened() {
     let mut harness = app();
     harness.state_mut().open_path(&path);
     harness.state_mut().close_tab(0);
-    harness.run();
+    settle(&mut harness);
     assert!(harness.state().home_active());
     assert!(harness.state().tabs().is_empty());
 
@@ -85,7 +85,7 @@ fn clicking_a_map_card_opens_it_and_an_open_map_is_focused_not_reopened() {
 
     // Back on Home the Map is still listed; clicking it shows its tab again.
     harness.get_by_label("Home").click();
-    harness.run();
+    settle(&mut harness);
     assert!(harness.state().home_active());
     harness.get_by_label("Open first").click();
     harness.run();

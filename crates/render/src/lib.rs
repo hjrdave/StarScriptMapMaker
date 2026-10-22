@@ -33,7 +33,7 @@ pub use canvas::{Backdrop, CANVAS_FORMAT, CanvasRenderer, CanvasScene, Content, 
 pub use color::Color;
 pub use export_job::{ExportContext, ExportError, ExportJob, ExportStep};
 pub use gpu::{GpuCapabilities, Headless, HeadlessError, Suitability};
-pub use offscreen::{RgbaImage, read_texture, render_to_image};
+pub use offscreen::{ReadbackError, RgbaImage, read_texture, render_to_image};
 pub use png_writer::{PngMeta, PngWriteError, PngWriter};
 pub use present::Presenter;
 pub use scene::MapScene;
@@ -41,9 +41,7 @@ pub use sprite::{PLACEHOLDER_SIZE, Sprite, SpriteError, SpriteState, SpriteStore
 pub use stamp::{PlacedStamp, StampDraw};
 pub use text::{Fonts, LabelLayout};
 pub use tiled::{ExportStatus, TiledExport, TiledExportError};
-pub use vector::{
-    FillRule, Paint, TessellationCache, TessellationRebuild, VectorGroup, VectorRenderer,
-};
+pub use vector::{FillRule, Paint, TessellationCache, TessellationRebuild, VectorGroup};
 pub use view::View;
 
 /// The wgpu version this crate is built against, for callers that share a device with it.

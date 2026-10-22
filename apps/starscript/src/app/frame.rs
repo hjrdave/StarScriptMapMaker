@@ -1,7 +1,7 @@
 //! One frame of a window: the panels around the Canvas, in the order they are laid out.
 
 use super::*;
-use crate::{toast, tool_dock, window_chrome};
+use crate::{tool_dock, window_chrome};
 
 impl MapMakerApp {
     /// One frame of each window a tab was popped out into, each in a viewport of its own.
@@ -196,9 +196,7 @@ impl MapMakerApp {
         self.win.canvas_zone = Some(canvas.response.rect);
         self.win.layers_zone = layers_divider;
         tool_dock::show(&ctx, canvas.response.rect, &mut tab.editor.active_tool);
-        if let Some(action) = toast::show(&ctx, canvas.response.rect, tab.editor.toasts_mut()) {
-            tab.editor.run_toast_action(action);
-        }
+        tab.editor.show_toasts(&ctx, canvas.response.rect);
         // After the Canvas, so the strips on its edges win the pointer over it.
         for (side, rect) in [
             (shell::Side::Left, layers_divider),

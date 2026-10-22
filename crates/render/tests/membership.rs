@@ -87,6 +87,7 @@ fn render(headless: &Headless, map: &Map, view: &View) -> RgbaImage {
         &scene,
         view,
     )
+    .expect("the readback succeeds")
 }
 
 /// A 400 px view of the workspace from (-100, -100): the Canvas at the origin covers pixels

@@ -1,6 +1,6 @@
 # Rust stack and monorepo layout for v1
 
-Status: accepted
+Status: accepted. The renderer-swap part (`VectorRenderer`) is superseded by [ADR 0009](0009-lyon-is-the-only-vector-renderer.md).
 
 The v1 desktop app is a Cargo workspace at the repo root, split into `crates/core`, `crates/render` and `apps/starscript`. `core` holds the Map model, Commands, geometry and serialization, and must never depend on egui or wgpu, so the model stays UI-free and drivable by a future agent. `render` draws the Canvas and PNG exports through wgpu without the UI. `app` is the egui/eframe binary. The UI is egui on eframe, accepted after the editor-shell prototype showed custom wgpu passes, handles and nested layer-tree drag-and-drop all work without third-party crates. Vector layers render with lyon tessellation and 4x MSAA behind a `VectorRenderer` trait, not `vello_gpu`, even though the GPU research made `vello_gpu` the lead: `vello_gpu` panics on mask layers, and v1 needs Clip-to-landmass (a stencil pass in lyon). It also pins its own wgpu version, which would have to match egui-wgpu's. A later benchmark can swap renderers behind the trait.
 
@@ -9,7 +9,7 @@ The v1 desktop app is a Cargo workspace at the repo root, split into `crates/cor
 | Concern | Choice | Crate |
 | --- | --- | --- |
 | UI and windowing | egui on eframe (winit + egui-wgpu underneath); drop to raw winit only if eframe gets in the way | `app` |
-| Vector rendering | lyon tessellation, 4x MSAA, behind `VectorRenderer`; Clip via stencil | `render` |
+| Vector rendering | lyon tessellation, 4x MSAA (ADR 0009); Clip via stencil | `render` |
 | Placed assets | Instanced quads from paged atlases; page size from queried wgpu limits (2048 floor); allocator hidden behind the atlas module, `etagere` by default | `render` |
 | Geometry | kurbo (`f64` Bézier paths, hit tests); converted to `f32` only in `render`. Landmass and Lake outlines are polygons instead, per ADR 0002 | `core` |
 | Spatial index | rstar, for picking and culling | `core` |

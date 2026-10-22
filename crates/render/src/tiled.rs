@@ -6,7 +6,7 @@ use ssmap_core::{ExportSettings, ExportSize, ExportSizeError, Map, RoughnessCach
 use thiserror::Error;
 
 use crate::canvas::{CanvasRenderer, CanvasScene};
-use crate::offscreen::{RgbaImage, render_to_image};
+use crate::offscreen::{ReadbackError, RgbaImage, render_to_image};
 use crate::scene::MapScene;
 use crate::view::View;
 
@@ -30,6 +30,8 @@ pub enum TiledExportError<E: std::error::Error + 'static> {
     Size(#[from] ExportSizeError),
     #[error("could not write a row: {0}")]
     Sink(#[source] E),
+    #[error(transparent)]
+    Readback(#[from] ReadbackError),
 }
 
 /// A region of the output image, in pixels.
@@ -150,7 +152,7 @@ impl TiledExport<'_> {
                     zoom,
                     size: plan.render_size(),
                 };
-                let image = render_to_image(self.device, self.queue, self.renderer, &scene, &view);
+                let image = render_to_image(self.device, self.queue, self.renderer, &scene, &view)?;
                 copy_tile(&image, &plan, tile, &mut band, stride);
                 done += 1;
                 status(ExportStatus::Rendering { done, total });
