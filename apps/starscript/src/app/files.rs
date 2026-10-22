@@ -270,12 +270,8 @@ impl MapMakerApp {
             .get(self.win.active)
             .is_some_and(|tab| tab.recovery_prompt.is_some() || tab.pending.is_some());
         // The offer of a Map never saved is shared, and shown in the main window only.
-        if self.win.main
-            && !tab_asking
-            && self.win.awaiting_save.is_none()
-            && self.app.unsaved_prompt.is_none()
-        {
-            self.app.unsaved_prompt = self.app.unsaved_found.pop();
+        if self.win.main && !tab_asking && self.win.awaiting_save.is_none() {
+            self.app.unsaved.offer_next();
         }
         let Some(tab) = self.win.tabs.get(self.win.active) else {
             self.unsaved_journal_dialog(ctx);
@@ -331,14 +327,16 @@ impl MapMakerApp {
 
     /// Offers the journal of a Map never saved that a crash left: recovering it opens a tab.
     fn unsaved_journal_dialog(&mut self, ctx: &egui::Context) {
-        if !self.win.main || self.app.unsaved_prompt.is_none() {
+        if !self.win.main || !self.app.unsaved.is_asking() {
             return;
         }
         let text = "A Map that was never saved wasn’t closed properly. Recover it?";
         let Some(choice) = recovery_modal(ctx, text, "Recover") else {
             return;
         };
-        let found = self.app.unsaved_prompt.take().expect("shown above");
+        let Some(found) = self.app.unsaved.take_prompt() else {
+            return;
+        };
         match choice {
             RecoveryChoice::Recover => self.recover_unsaved(found),
             RecoveryChoice::Discard => {

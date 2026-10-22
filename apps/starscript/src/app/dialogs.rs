@@ -37,7 +37,7 @@ impl MapMakerApp {
             self.new_map_from(template, canvas);
         }
         if let Some(tab) = self.win.tabs.get_mut(self.win.active) {
-            match self.win.export_dialog.show(ctx, &tab.editor.map.canvas) {
+            match self.win.export.show_dialog(ctx, &tab.editor.map.canvas) {
                 Some(DialogAction::Save(settings)) => tab.editor.map.export_settings = settings,
                 Some(DialogAction::Export(settings)) => {
                     tab.editor.map.export_settings = settings;
@@ -139,7 +139,7 @@ impl MapMakerApp {
     pub(super) fn open_export_dialog(&mut self) {
         let tab = &self.win.tabs[self.win.active];
         let directory = tab.document.path().and_then(Path::parent);
-        self.win.export_dialog.open_with(
+        self.win.export.open_dialog(
             &tab.editor.map.export_settings,
             directory.map(Path::to_path_buf),
         );
@@ -147,7 +147,7 @@ impl MapMakerApp {
 
     /// The folder the dialog's Export button writes into: the one typed in the dialog.
     fn export_from_dialog(&mut self) {
-        let directory = PathBuf::from(self.win.export_dialog.directory.trim());
+        let directory = self.win.export.typed_directory();
         let directory = if directory.as_os_str().is_empty() {
             self.document_directory().unwrap_or_default()
         } else {
@@ -197,7 +197,7 @@ impl MapMakerApp {
     /// Starts exporting the active tab to the stored file name in `export_directory`. Only
     /// one export runs at a time.
     fn start_export(&mut self) {
-        if self.win.export_run.is_some() {
+        if self.win.export.is_running() {
             return;
         }
         if self.app.render_state.is_none() {
@@ -221,14 +221,17 @@ impl MapMakerApp {
             meta = meta.with_credits(CREDITS_CHUNK_KEYWORD, chunk);
         }
         match ExportJob::new(&tab.editor.map, &settings, meta, &dest) {
-            Ok(job) => self.win.export_run = Some(ExportRun::new(job, dest, output.file)),
+            Ok(job) => self
+                .win
+                .export
+                .start(ExportRun::new(job, dest, output.file)),
             Err(err) => tab.editor.error(format!("Export failed: {err}")),
         }
     }
 
     /// Steps the running export once and shows its progress dialog.
     fn export_progress(&mut self, ctx: &egui::Context) {
-        let Some(run) = self.win.export_run.as_mut() else {
+        let Some(run) = self.win.export.run_mut() else {
             return;
         };
         let Some(render_state) = self.app.render_state.as_ref() else {
@@ -249,7 +252,7 @@ impl MapMakerApp {
             Outcome::Running(progress) => {
                 if export_run::show_progress(ctx, &dest, progress, run.time_left()) {
                     run.cancel();
-                    self.win.export_run = None;
+                    self.win.export.end();
                     tab.editor.info("Export cancelled");
                 } else {
                     // Keep stepping even when no input arrives.
@@ -257,7 +260,7 @@ impl MapMakerApp {
                 }
             }
             Outcome::Finished(size) => {
-                self.win.export_run = None;
+                self.win.export.end();
                 tab.editor.info(format!(
                     "Exported {} × {} px to {}",
                     size.width,
@@ -266,7 +269,7 @@ impl MapMakerApp {
                 ));
             }
             Outcome::Failed(message) => {
-                self.win.export_run = None;
+                self.win.export.end();
                 tab.editor.error(format!("Export failed: {message}"));
             }
         }

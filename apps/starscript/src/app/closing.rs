@@ -152,13 +152,12 @@ impl MapMakerApp {
             .is_some_and(|tab| tab.pending.is_some() || tab.recovery_prompt.is_some())
             || self.win.tabs.iter().any(|tab| tab.pending.is_some())
             || self.win.awaiting_save.is_some()
-            || (self.win.main && self.app.unsaved_prompt.is_some())
+            || (self.win.main && self.app.unsaved.is_asking())
             || self.win.delete_prompt.is_some()
             || self.win.pack_delete_prompt.is_some()
             || self.win.paste_prompt.is_some()
             || self.win.new_map_dialog.open
-            || self.win.export_dialog.open
-            || self.win.export_run.is_some()
+            || self.win.export.is_busy()
             || self.win.open_dialog.is_open()
             || self.win.save_dialog.is_open()
     }

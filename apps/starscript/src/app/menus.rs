@@ -57,7 +57,7 @@ impl MapMakerApp {
         state.can_combine = editor.can_combine();
         state.can_split = editor.can_split();
         state.can_shuffle = editor.can_shuffle();
-        state.can_re_export = self.re_export_target().is_some() && self.win.export_run.is_none();
+        state.can_re_export = self.re_export_target().is_some() && !self.win.export.is_running();
         state
     }
 
