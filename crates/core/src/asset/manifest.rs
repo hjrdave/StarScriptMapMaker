@@ -4,16 +4,22 @@
 //! name the file, the Asset and the field, and one pass reports all of them.
 
 use std::collections::HashSet;
-use std::fmt;
 use std::path::{Component, Path, PathBuf};
 
+use thiserror::Error;
 use toml::{Table, Value};
 
 use super::install::PACK_MANIFEST;
 use super::{ArtFormat, Asset, Pack, PackSource, is_valid_id};
 
 /// One problem with a pack manifest.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Error)]
+#[error(
+    "{}{}{}: {message}",
+    file.display(),
+    asset.as_ref().map(|asset| format!(": Asset `{asset}`")).unwrap_or_default(),
+    field.as_ref().map(|field| format!(": field `{field}`")).unwrap_or_default(),
+)]
 pub struct ManifestError {
     /// The manifest file.
     pub file: PathBuf,
@@ -25,38 +31,10 @@ pub struct ManifestError {
     pub message: String,
 }
 
-impl fmt::Display for ManifestError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.file.display())?;
-        if let Some(asset) = &self.asset {
-            write!(f, ": Asset `{asset}`")?;
-        }
-        if let Some(field) = &self.field {
-            write!(f, ": field `{field}`")?;
-        }
-        write!(f, ": {}", self.message)
-    }
-}
-
-impl std::error::Error for ManifestError {}
-
 /// Every problem found in one manifest, in file order. Never empty.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Error)]
+#[error("{}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n"))]
 pub struct ManifestErrors(pub Vec<ManifestError>);
-
-impl fmt::Display for ManifestErrors {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (i, error) in self.0.iter().enumerate() {
-            if i > 0 {
-                writeln!(f)?;
-            }
-            write!(f, "{error}")?;
-        }
-        Ok(())
-    }
-}
-
-impl std::error::Error for ManifestErrors {}
 
 /// Reads and validates the pack in `dir`, including that every file it names exists.
 pub fn read_pack(dir: &Path, source: PackSource) -> Result<Pack, ManifestErrors> {

@@ -10,12 +10,13 @@
 //! missing and is never cached as such.
 
 use std::collections::{HashMap, VecDeque};
+use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex, RwLock, Weak};
 
 use ssmap_core::asset::{AssetRef, PackLibrary};
 use ssmap_core::{Embedded, SpriteShape};
 
-use crate::raster::{Art, Raster};
+use crate::raster::{Art, ArtError, Raster};
 use crate::silhouette;
 
 /// SVG art is rasterised this many pixels per Canvas unit. Re-rasterising for the zoom or
@@ -146,18 +147,33 @@ fn work(queue: Arc<Queue>, store: Weak<Inner>) {
     }
 }
 
-/// A sprite being built, or built. `Ready(None)` records an Asset that is missing or whose
+/// Why an Asset has no sprite.
+#[derive(Debug, thiserror::Error)]
+pub enum SpriteError {
+    /// No installed pack or embedded copy has the Asset.
+    #[error("Asset {0} is not installed or embedded")]
+    Unknown(AssetRef),
+    /// The Asset's art or Silhouette is unreadable or invalid.
+    #[error("Asset {asset}: {source}")]
+    Art {
+        asset: AssetRef,
+        #[source]
+        source: ArtError,
+    },
+}
+
+/// A sprite being built, or built. `Ready(Err(_))` records an Asset that is missing or whose
 /// art failed to load; `Pending` is never that.
 #[derive(Clone)]
 enum Slot {
     Pending,
-    Ready(Option<Arc<Sprite>>),
+    Ready(Result<Arc<Sprite>, Arc<SpriteError>>),
 }
 
 type Cache = HashMap<AssetRef, Slot>;
 
 /// Builds a sprite from copies of its inputs, so it never reads state that is being edited.
-type Job = Box<dyn FnOnce() -> Option<Sprite> + Send>;
+type Job = Box<dyn FnOnce() -> Result<Sprite, SpriteError> + Send>;
 
 struct State {
     /// The open Map's embedded Assets, which win over the library.
@@ -318,8 +334,19 @@ impl SpriteStore {
         }
         match slot {
             Slot::Pending => SpriteState::Pending,
-            Slot::Ready(Some(sprite)) => SpriteState::Ready(sprite),
-            Slot::Ready(None) => SpriteState::Missing,
+            Slot::Ready(Ok(sprite)) => SpriteState::Ready(sprite),
+            Slot::Ready(Err(_)) => SpriteState::Missing,
+        }
+    }
+
+    /// Why `asset` has no sprite, once that is known: it is unknown, or its art failed to
+    /// load. `None` while it is pending or if it loaded.
+    pub fn error(&self, asset: &AssetRef) -> Option<Arc<SpriteError>> {
+        let mut state = self.state();
+        let origin = state.origin(asset);
+        match state.cache(origin).get(asset) {
+            Some(Slot::Ready(Err(error))) => Some(error.clone()),
+            _ => None,
         }
     }
 
@@ -408,7 +435,7 @@ impl SpriteStore {
                 continue;
             }
             match slot {
-                Slot::Ready(sprite) => return sprite,
+                Slot::Ready(sprite) => return sprite.ok(),
                 // Another thread is building it: sleep until a job ends, then look again.
                 // The lock is held from the look to the wait, so the wake-up is not missed.
                 Slot::Pending => drop(self.inner.finished.wait(state).expect("sprite cache lock")),
@@ -475,7 +502,12 @@ impl Claimed {
     /// Builds the sprite, files it, wakes anyone waiting and asks for a repaint. The result
     /// is dropped if the embedded Assets changed meanwhile.
     fn finish(self, store: &SpriteStore) {
-        let sprite = (self.job)().map(Arc::new);
+        let sprite = (self.job)().map(Arc::new).map_err(Arc::new);
+        if let Err(error) = &sprite
+            && !matches!(**error, SpriteError::Unknown(_))
+        {
+            eprintln!("sprite: {error}");
+        }
         {
             let mut state = store.state();
             state.completed += 1;
@@ -536,14 +568,20 @@ pub fn placeholder() -> Sprite {
     }
 }
 
-fn load_installed(library: &PackLibrary, asset: &AssetRef) -> Option<Sprite> {
-    let (pack, entry) = library.asset(asset)?;
-    let art = Art::load(&pack.path(&entry.file)).ok()?;
+fn load_installed(library: &PackLibrary, asset: &AssetRef) -> Result<Sprite, SpriteError> {
+    let (pack, entry) = library
+        .asset(asset)
+        .ok_or_else(|| SpriteError::Unknown(asset.clone()))?;
+    let failed = |source| SpriteError::Art {
+        asset: asset.clone(),
+        source,
+    };
+    let art = Art::load(&pack.path(&entry.file)).map_err(failed)?;
     let outline = match &entry.silhouette {
-        Some(file) => Some(Art::load(&pack.path(file)).ok()?),
+        Some(file) => Some(Art::load(&pack.path(file)).map_err(failed)?),
         None => None,
     };
-    Some(build(&art, outline.as_ref(), entry.width, entry.anchor))
+    Ok(build(&art, outline.as_ref(), entry.width, entry.anchor))
 }
 
 /// A job over copies of the Asset's record and files.
@@ -551,14 +589,25 @@ fn embedded_job(embedded: &Embedded, asset: &AssetRef) -> Job {
     let record = embedded.assets.get(asset).cloned();
     let art = embedded.art(asset).cloned();
     let silhouette = embedded.silhouette(asset).cloned();
+    let asset = asset.clone();
     Box::new(move || {
-        let record = record?;
-        let art = Art::from_bytes(&art?).ok()?;
+        let unknown = || SpriteError::Unknown(asset.clone());
+        let record = record.ok_or_else(unknown)?;
+        let art = art.ok_or_else(unknown)?;
+        // Embedded art has no file; the error names the Asset instead.
+        let failed = |message| SpriteError::Art {
+            asset: asset.clone(),
+            source: ArtError {
+                path: PathBuf::from("<embedded>"),
+                message,
+            },
+        };
+        let art = Art::from_bytes(&art).map_err(failed)?;
         let outline = match &silhouette {
-            Some(blob) => Some(Art::from_bytes(blob).ok()?),
+            Some(blob) => Some(Art::from_bytes(blob).map_err(failed)?),
             None => None,
         };
-        Some(build(&art, outline.as_ref(), record.width, record.anchor))
+        Ok(build(&art, outline.as_ref(), record.width, record.anchor))
     })
 }
 
