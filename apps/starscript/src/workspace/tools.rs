@@ -466,8 +466,13 @@ pub fn canvas_input(
         ToolId::Select if editor.node_edit().is_some() => {
             node_edit_tool(editor, view, state, input);
         }
-        ToolId::LandBrush => land_brush(editor, view, state, input, false),
-        ToolId::WaterBrush => land_brush(editor, view, state, input, true),
+        ToolId::LandBrush | ToolId::WaterBrush => {
+            let pointer = PointerInput::from_response(response, ppp);
+            let water = editor.active_tool == ToolId::WaterBrush;
+            if let Some(icon) = land_brush(editor, view, state, &pointer, water) {
+                response.ctx.set_cursor_icon(icon);
+            }
+        }
         ToolId::Lasso => lasso_tool(editor, view, state, input),
         ToolId::Select => {
             let bounds = Bounds::of_selection(editor);
@@ -579,7 +584,13 @@ pub fn canvas_input(
             }
         }
         ToolId::Pan => {}
-        ToolId::Stamp => scatter_tool(editor, view, state, input, false),
+        ToolId::Stamp | ToolId::StampEraser => {
+            let pointer = PointerInput::from_response(response, ppp);
+            let erase = editor.active_tool == ToolId::StampEraser;
+            if let Some(icon) = scatter_tool(editor, view, state, &pointer, erase) {
+                response.ctx.set_cursor_icon(icon);
+            }
+        }
         ToolId::ExportRegion => {
             let pointer = PointerInput::from_response(response, ppp);
             if let Some(icon) = export_region_tool(editor, view, state, &pointer) {
@@ -592,7 +603,6 @@ pub fn canvas_input(
                 response.ctx.set_cursor_icon(icon);
             }
         }
-        ToolId::StampEraser => scatter_tool(editor, view, state, input, true),
         ToolId::Label => {
             if response.clicked()
                 && let Some(pos) = response.interact_pointer_pos()
@@ -838,35 +848,32 @@ fn land_brush(
     editor: &mut Editor,
     view: &View,
     state: &mut ToolState,
-    input: &CanvasInput<'_>,
+    input: &PointerInput,
     water: bool,
-) {
-    let response = input.response;
+) -> Option<egui::CursorIcon> {
     let radius = editor.brush_size / 2.0;
-    let erase_held = response.ctx.input(|i| i.modifiers.alt) != editor.erase_default;
-    if response.hovered() {
-        response.ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
-    }
+    let erase_held = input.alt != editor.erase_default;
+    let cursor = input.hovered.then_some(egui::CursorIcon::Crosshair);
 
     // A click is a stroke of one point: a single dab.
-    let pressed = response.drag_started_by(egui::PointerButton::Primary)
-        || response.clicked_by(egui::PointerButton::Primary);
-    if pressed && state.stroke.is_none() && !editor.gesture_open() {
-        let origin = response.ctx.input(|i| i.pointer.press_origin());
-        if let Some(origin) = origin.or(response.interact_pointer_pos()) {
-            let label = if water {
-                Editor::water_label(erase_held)
-            } else {
-                editor.brush_label(erase_held)
-            };
-            let tool = editor.active_tool;
-            if state.begin_held(editor, tool, label) {
-                state.stroke = Some(Stroke {
-                    points: vec![input.canvas_point(view, origin)],
-                    erase: erase_held,
-                    preview: None,
-                });
-            }
+    let pressed = input.drag_started || input.clicked;
+    if pressed
+        && state.stroke.is_none()
+        && !editor.gesture_open()
+        && let Some(origin) = input.press_origin.or(input.pointer_pos)
+    {
+        let label = if water {
+            Editor::water_label(erase_held)
+        } else {
+            editor.brush_label(erase_held)
+        };
+        let tool = editor.active_tool;
+        if state.begin_held(editor, tool, label) {
+            state.stroke = Some(Stroke {
+                points: vec![input.canvas_point(view, origin)],
+                erase: erase_held,
+                preview: None,
+            });
         }
     }
 
@@ -875,9 +882,9 @@ fn land_brush(
         state.stroke = None;
     }
     let Some(stroke) = &mut state.stroke else {
-        return;
+        return cursor;
     };
-    if let Some(pos) = response.interact_pointer_pos() {
+    if let Some(pos) = input.pointer_pos {
         let point = input.canvas_point(view, pos);
         // A tenth of the radius, but at least a screen pixel, keeps the path light.
         let spacing = (radius * 0.1).max(1.0 / view.zoom);
@@ -893,7 +900,7 @@ fn land_brush(
         start: stroke.points.first().copied().unwrap_or_default(),
         erase: stroke.erase,
     };
-    let released = response.drag_stopped() || response.clicked();
+    let released = input.drag_stopped || input.clicked;
     if !released
         && stroke
             .preview
@@ -916,6 +923,7 @@ fn land_brush(
             }
         }
     }
+    cursor
 }
 
 /// The Stamp tool and the Stamp eraser. Stamp: a click places one Stamp, and a drag scatters
@@ -927,44 +935,40 @@ fn scatter_tool(
     editor: &mut Editor,
     view: &View,
     state: &mut ToolState,
-    input: &CanvasInput<'_>,
+    input: &PointerInput,
     erase: bool,
-) {
-    let response = input.response;
-    if response.hovered() {
-        response.ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
-    }
+) -> Option<egui::CursorIcon> {
+    let cursor = input.hovered.then_some(egui::CursorIcon::Crosshair);
     if std::mem::take(&mut editor.cancel_tool) {
         state.stroke = None;
-        return;
+        return cursor;
     }
     if !erase
-        && response.clicked_by(egui::PointerButton::Primary)
-        && let Some(pos) = response.interact_pointer_pos()
+        && input.clicked
+        && let Some(pos) = input.pointer_pos
     {
         if editor.selected_asset.is_none() {
             editor.error("Choose an Asset in the Asset browser first");
         } else {
             editor.place_stamp(input.canvas_point(view, pos));
         }
-        return;
+        return cursor;
     }
-    let pressed = response.drag_started_by(egui::PointerButton::Primary)
-        || (erase && response.clicked_by(egui::PointerButton::Primary));
-    if pressed && state.stroke.is_none() {
-        let origin = response.ctx.input(|i| i.pointer.press_origin());
-        if let Some(origin) = origin.or(response.interact_pointer_pos()) {
-            state.stroke = Some(Stroke {
-                points: vec![input.canvas_point(view, origin)],
-                erase,
-                preview: None,
-            });
-        }
+    let pressed = input.drag_started || (erase && input.clicked);
+    if pressed
+        && state.stroke.is_none()
+        && let Some(origin) = input.press_origin.or(input.pointer_pos)
+    {
+        state.stroke = Some(Stroke {
+            points: vec![input.canvas_point(view, origin)],
+            erase,
+            preview: None,
+        });
     }
     let Some(stroke) = &mut state.stroke else {
-        return;
+        return cursor;
     };
-    if let Some(pos) = response.interact_pointer_pos() {
+    if let Some(pos) = input.pointer_pos {
         let point = input.canvas_point(view, pos);
         let spacing = (editor.brush_size * 0.05).max(1.0 / view.zoom);
         let last = *stroke.points.last().expect("a stroke starts with a point");
@@ -972,7 +976,7 @@ fn scatter_tool(
             stroke.points.push(point);
         }
     }
-    if (response.drag_stopped() || response.clicked())
+    if (input.drag_stopped || input.clicked)
         && let Some(stroke) = state.stroke.take()
     {
         if erase {
@@ -981,6 +985,7 @@ fn scatter_tool(
             editor.scatter_stamps(&stroke.points);
         }
     }
+    cursor
 }
 
 /// Draw a region to add to land, or with the erase modifier to cut out: drag a freehand loop, or
@@ -2178,6 +2183,24 @@ mod pointer_tests {
         )))
     }
 
+    /// An Editor whose Map has a Layer for the land brush to paint into.
+    fn land_editor() -> Editor {
+        let mut editor = editor();
+        let layer = Id::new();
+        editor
+            .run(Command::CreateLayer {
+                id: layer,
+                parent: None,
+                index: None,
+                name: "Land".into(),
+            })
+            .unwrap();
+        // Selecting a Layer makes it the active one; the Selection can then be emptied.
+        editor.select(vec![layer]);
+        editor.select(Vec::new());
+        editor
+    }
+
     /// One pixel per Canvas unit, and the widget at the screen origin.
     fn view() -> View {
         View::fit([500.0, 500.0], [500, 500], 0.0)
@@ -2459,5 +2482,236 @@ mod pointer_tests {
     fn nearest_on_segment_handles_a_zero_length_segment() {
         let (d, nearest) = nearest_on_segment([2.0, 2.0], [2.0, 2.0], [5.0, 6.0]);
         assert_eq!((d, nearest), (5.0, [2.0, 2.0]));
+    }
+
+    fn click_at(x: f32, y: f32) -> PointerInput {
+        PointerInput {
+            clicked: true,
+            press_origin: Some(at(x, y)),
+            pointer_pos: Some(at(x, y)),
+            ..input()
+        }
+    }
+
+    fn hovering() -> PointerInput {
+        PointerInput {
+            hovered: true,
+            hover_pos: Some(at(10.0, 10.0)),
+            ..input()
+        }
+    }
+
+    /// A land brush stroke from (100, 100) to (200, 150), up to and including the release.
+    fn paint_stroke(editor: &mut Editor, view: &View, state: &mut ToolState, water: bool) {
+        land_brush(editor, view, state, &press(100.0, 100.0), water);
+        land_brush(editor, view, state, &drag_to(150.0, 120.0), water);
+        land_brush(editor, view, state, &drag_to(200.0, 150.0), water);
+        land_brush(editor, view, state, &release(200.0, 150.0), water);
+    }
+
+    #[test]
+    fn a_land_brush_drag_is_one_undo_step_made_on_release() {
+        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+        let before = editor.history_steps().1;
+        land_brush(&mut editor, &view, &mut state, &press(100.0, 100.0), false);
+        assert!(editor.gesture_open() && state.stroke.is_some());
+        land_brush(
+            &mut editor,
+            &view,
+            &mut state,
+            &drag_to(200.0, 150.0),
+            false,
+        );
+        assert!(editor.gesture_open());
+        land_brush(
+            &mut editor,
+            &view,
+            &mut state,
+            &release(200.0, 150.0),
+            false,
+        );
+        assert!(!editor.gesture_open() && state.stroke.is_none());
+        assert_eq!(editor.undo_label(), Some("Paint Land"));
+        assert_eq!(editor.history_steps().1, before + 1);
+    }
+
+    #[test]
+    fn a_land_brush_click_starts_and_ends_a_stroke_in_one_frame() {
+        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+        let before = editor.history_steps().1;
+        land_brush(
+            &mut editor,
+            &view,
+            &mut state,
+            &click_at(250.0, 250.0),
+            false,
+        );
+        // A lone point has no outline to paint, so no Undo step is left, and nothing is held.
+        assert!(!editor.gesture_open() && state.stroke.is_none());
+        assert_eq!(editor.history_steps().1, before);
+    }
+
+    #[test]
+    fn the_water_brush_paints_water() {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        paint_stroke(&mut editor, &view, &mut state, true);
+        assert_eq!(editor.undo_label(), Some("Paint Water"));
+    }
+
+    #[test]
+    fn the_erase_modifier_flips_the_land_brush_to_erasing() {
+        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+        paint_stroke(&mut editor, &view, &mut state, false);
+        let erase = |input: PointerInput| PointerInput { alt: true, ..input };
+        land_brush(
+            &mut editor,
+            &view,
+            &mut state,
+            &erase(press(120.0, 110.0)),
+            false,
+        );
+        land_brush(
+            &mut editor,
+            &view,
+            &mut state,
+            &erase(drag_to(180.0, 140.0)),
+            false,
+        );
+        land_brush(
+            &mut editor,
+            &view,
+            &mut state,
+            &erase(release(180.0, 140.0)),
+            false,
+        );
+        assert_eq!(editor.undo_label(), Some("Erase Land"));
+    }
+
+    #[test]
+    fn escape_mid_stroke_drops_the_land_brush_stroke() {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        land_brush(&mut editor, &view, &mut state, &press(100.0, 100.0), false);
+        assert!(editor.cancel_open_gesture());
+        land_brush(
+            &mut editor,
+            &view,
+            &mut state,
+            &drag_to(200.0, 150.0),
+            false,
+        );
+        assert!(state.stroke.is_none());
+        land_brush(
+            &mut editor,
+            &view,
+            &mut state,
+            &release(200.0, 150.0),
+            false,
+        );
+        assert!(!editor.gesture_open());
+        assert_eq!(editor.history_steps().1, 0);
+    }
+
+    #[test]
+    fn switching_tools_mid_stroke_rolls_the_land_brush_back() {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        editor.active_tool = ToolId::LandBrush;
+        land_brush(&mut editor, &view, &mut state, &press(100.0, 100.0), false);
+        assert!(editor.gesture_open());
+        editor.active_tool = ToolId::Select;
+        state.drop_held_for_other_tool(&mut editor);
+        assert!(!editor.gesture_open());
+        assert_eq!(editor.history_steps().1, 0);
+    }
+
+    #[test]
+    fn the_brush_and_scatter_cursors_are_a_crosshair_over_the_canvas() {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        let over = Some(egui::CursorIcon::Crosshair);
+        assert_eq!(
+            land_brush(&mut editor, &view, &mut state, &hovering(), false),
+            over
+        );
+        assert_eq!(
+            scatter_tool(&mut editor, &view, &mut state, &hovering(), false),
+            over
+        );
+        assert_eq!(
+            land_brush(&mut editor, &view, &mut state, &input(), false),
+            None
+        );
+        assert_eq!(
+            scatter_tool(&mut editor, &view, &mut state, &input(), true),
+            None
+        );
+    }
+
+    #[test]
+    fn a_scatter_drag_collects_points_and_ends_on_release() {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        scatter_tool(&mut editor, &view, &mut state, &press(100.0, 100.0), false);
+        scatter_tool(
+            &mut editor,
+            &view,
+            &mut state,
+            &drag_to(160.0, 100.0),
+            false,
+        );
+        scatter_tool(
+            &mut editor,
+            &view,
+            &mut state,
+            &drag_to(220.0, 100.0),
+            false,
+        );
+        let points = state.stroke.as_ref().map(|s| s.points.len());
+        assert!(points.is_some_and(|n| n >= 3), "points: {points:?}");
+        scatter_tool(
+            &mut editor,
+            &view,
+            &mut state,
+            &release(220.0, 100.0),
+            false,
+        );
+        assert!(state.stroke.is_none());
+    }
+
+    #[test]
+    fn a_scatter_click_without_an_asset_asks_for_one_and_changes_nothing() {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        scatter_tool(
+            &mut editor,
+            &view,
+            &mut state,
+            &click_at(100.0, 100.0),
+            false,
+        );
+        assert!(state.stroke.is_none());
+        assert_eq!(editor.history_steps().1, 0);
+    }
+
+    #[test]
+    fn the_stamp_eraser_starts_a_stroke_on_a_click() {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        scatter_tool(&mut editor, &view, &mut state, &press(100.0, 100.0), true);
+        assert!(state.stroke.as_ref().is_some_and(|s| s.erase));
+        scatter_tool(&mut editor, &view, &mut state, &release(100.0, 100.0), true);
+        assert!(state.stroke.is_none());
+    }
+
+    #[test]
+    fn escape_drops_a_scatter_stroke() {
+        let (mut editor, view, mut state) = (editor(), view(), ToolState::default());
+        scatter_tool(&mut editor, &view, &mut state, &press(100.0, 100.0), false);
+        assert!(state.stroke.is_some());
+        editor.cancel_tool = true;
+        scatter_tool(
+            &mut editor,
+            &view,
+            &mut state,
+            &drag_to(200.0, 100.0),
+            false,
+        );
+        assert!(state.stroke.is_none());
+        assert!(!editor.cancel_tool);
     }
 }
