@@ -149,16 +149,24 @@ pub(crate) struct PointerInput {
     /// A drag ended (any button).
     pub drag_stopped: bool,
     pub clicked: bool,
+    pub double_clicked: bool,
     pub shift: bool,
     pub alt: bool,
+    /// Enter went down this frame.
+    pub enter: bool,
 }
 
 impl PointerInput {
     fn from_response(response: &egui::Response, pixels_per_point: f64) -> Self {
         let primary = egui::PointerButton::Primary;
-        let (press_origin, shift, alt) = response
-            .ctx
-            .input(|i| (i.pointer.press_origin(), i.modifiers.shift, i.modifiers.alt));
+        let (press_origin, shift, alt, enter) = response.ctx.input(|i| {
+            (
+                i.pointer.press_origin(),
+                i.modifiers.shift,
+                i.modifiers.alt,
+                i.key_pressed(egui::Key::Enter),
+            )
+        });
         Self {
             rect_min: response.rect.min,
             pixels_per_point,
@@ -170,8 +178,10 @@ impl PointerInput {
             dragging: response.dragged_by(primary),
             drag_stopped: response.drag_stopped(),
             clicked: response.clicked(),
+            double_clicked: response.double_clicked(),
             shift,
             alt,
+            enter,
         }
     }
 
@@ -473,7 +483,13 @@ pub fn canvas_input(
                 response.ctx.set_cursor_icon(icon);
             }
         }
-        ToolId::Lasso => lasso_tool(editor, view, state, input),
+        ToolId::Lasso => {
+            let pointer = PointerInput::from_response(response, ppp);
+            if pointer.hovered {
+                response.ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+            }
+            lasso_tool(editor, view, state, &pointer);
+        }
         ToolId::Select => {
             let bounds = Bounds::of_selection(editor);
             let rotatable = selection_has_label(editor);
@@ -511,23 +527,12 @@ pub fn canvas_input(
                     start_drag(editor, state, bounds, grip, point, duplicate);
                 }
             }
-            if let Some(select_box) = &mut state.select_box {
-                if response.dragged_by(egui::PointerButton::Primary)
-                    && let Some(pos) = response.interact_pointer_pos()
-                {
-                    select_box.end = to_canvas(pos);
-                }
-                if response.drag_stopped() {
-                    let done = state.select_box.take().expect("a box in progress");
-                    let mut selection = done.keep;
-                    for id in objects_in_box(editor, done.start, done.end) {
-                        if !selection.contains(&id) {
-                            selection.push(id);
-                        }
-                    }
-                    editor.select(selection);
-                }
-            }
+            select_box_tool(
+                editor,
+                view,
+                state,
+                &PointerInput::from_response(response, ppp),
+            );
             let over_selection = || {
                 let pos = response.hover_pos()?;
                 let inside =
@@ -991,21 +996,13 @@ fn scatter_tool(
 /// Draw a region to add to land, or with the erase modifier to cut out: drag a freehand loop, or
 /// click corners and close the loop by clicking the first one, double-clicking or pressing
 /// Enter. Escape drops a loop in progress. The region follows the land brush's merge rules.
-fn lasso_tool(editor: &mut Editor, view: &View, state: &mut ToolState, input: &CanvasInput<'_>) {
-    let response = input.response;
-    let (alt, enter) = response
-        .ctx
-        .input(|i| (i.modifiers.alt, i.key_pressed(egui::Key::Enter)));
-    if response.hovered() {
-        response.ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
-    }
+fn lasso_tool(editor: &mut Editor, view: &View, state: &mut ToolState, input: &PointerInput) {
+    let (alt, enter) = (input.alt, input.enter);
     if std::mem::take(&mut editor.cancel_tool) {
         state.lasso = None;
         return;
     }
-    let pointer = response
-        .interact_pointer_pos()
-        .map(|pos| input.canvas_point(view, pos));
+    let pointer = input.pointer_pos.map(|pos| input.canvas_point(view, pos));
     let near_first = |lasso: &Lasso, point: Point| {
         let reach = NODE_GRAB * input.pixels_per_point / view.zoom;
         match lasso.points.first() {
@@ -1016,9 +1013,9 @@ fn lasso_tool(editor: &mut Editor, view: &View, state: &mut ToolState, input: &C
         }
     };
 
-    if response.drag_started_by(egui::PointerButton::Primary)
+    if input.drag_started
         && state.lasso.is_none()
-        && let Some(origin) = response.ctx.input(|i| i.pointer.press_origin())
+        && let Some(origin) = input.press_origin
     {
         state.lasso = Some(Lasso {
             points: vec![input.canvas_point(view, origin)],
@@ -1026,7 +1023,7 @@ fn lasso_tool(editor: &mut Editor, view: &View, state: &mut ToolState, input: &C
             erase: alt,
         });
     }
-    if response.dragged_by(egui::PointerButton::Primary)
+    if input.dragging
         && let Some(lasso) = &mut state.lasso
         && lasso.freehand
         && let Some(point) = pointer
@@ -1039,9 +1036,9 @@ fn lasso_tool(editor: &mut Editor, view: &View, state: &mut ToolState, input: &C
     }
 
     let mut close = false;
-    if response.drag_stopped() && state.lasso.as_ref().is_some_and(|l| l.freehand) {
+    if input.drag_stopped && state.lasso.as_ref().is_some_and(|l| l.freehand) {
         close = true;
-    } else if response.clicked_by(egui::PointerButton::Primary)
+    } else if input.clicked
         && let Some(point) = pointer
     {
         match &mut state.lasso {
@@ -1056,8 +1053,7 @@ fn lasso_tool(editor: &mut Editor, view: &View, state: &mut ToolState, input: &C
             Some(lasso) => lasso.points.push(point),
         }
     }
-    if enter || (response.double_clicked_by(egui::PointerButton::Primary) && state.lasso.is_some())
-    {
+    if enter || (input.double_clicked && state.lasso.is_some()) {
         close = true;
     }
 
@@ -1081,6 +1077,30 @@ fn lasso_tool(editor: &mut Editor, view: &View, state: &mut ToolState, input: &C
                 erase: lasso.erase,
             },
         );
+    }
+}
+
+/// Grows the box-select started with the Select tool while the pointer drags, and selects the
+/// Objects inside it on release.
+fn select_box_tool(editor: &mut Editor, view: &View, state: &mut ToolState, input: &PointerInput) {
+    let Some(select_box) = &mut state.select_box else {
+        return;
+    };
+    if input.dragging
+        && let Some(pos) = input.pointer_pos
+    {
+        select_box.end = input.canvas_point(view, pos);
+    }
+    if input.drag_stopped
+        && let Some(done) = state.select_box.take()
+    {
+        let mut selection = done.keep;
+        for id in objects_in_box(editor, done.start, done.end) {
+            if !selection.contains(&id) {
+                selection.push(id);
+            }
+        }
+        editor.select(selection);
     }
 }
 
@@ -2713,5 +2733,121 @@ mod pointer_tests {
         );
         assert!(state.stroke.is_none());
         assert!(!editor.cancel_tool);
+    }
+
+    fn click(x: f32, y: f32) -> PointerInput {
+        PointerInput {
+            clicked: true,
+            pointer_pos: Some(at(x, y)),
+            ..input()
+        }
+    }
+
+    fn enter_key() -> PointerInput {
+        PointerInput {
+            enter: true,
+            ..input()
+        }
+    }
+
+    fn lasso_points(state: &ToolState) -> usize {
+        state.lasso.as_ref().map_or(0, |l| l.points.len())
+    }
+
+    #[test]
+    fn a_freehand_lasso_closes_on_release_into_one_undo_step() {
+        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+        let before = editor.history_steps().1;
+        lasso_tool(&mut editor, &view, &mut state, &press(100.0, 100.0));
+        for (x, y) in [(200.0, 100.0), (200.0, 200.0), (100.0, 200.0)] {
+            lasso_tool(&mut editor, &view, &mut state, &drag_to(x, y));
+        }
+        assert!(state.lasso.as_ref().is_some_and(|l| l.freehand));
+        lasso_tool(&mut editor, &view, &mut state, &release(100.0, 200.0));
+        assert!(state.lasso.is_none());
+        assert_eq!(editor.undo_label(), Some("Paint Land"));
+        assert_eq!(editor.history_steps().1, before + 1);
+    }
+
+    #[test]
+    fn clicking_the_first_corner_closes_a_polygon_lasso() {
+        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+        for (x, y) in [(100.0, 100.0), (200.0, 100.0), (200.0, 200.0)] {
+            lasso_tool(&mut editor, &view, &mut state, &click(x, y));
+        }
+        assert_eq!(lasso_points(&state), 3);
+        lasso_tool(&mut editor, &view, &mut state, &click(100.0, 100.0));
+        assert!(state.lasso.is_none());
+        assert_eq!(editor.undo_label(), Some("Paint Land"));
+    }
+
+    #[test]
+    fn enter_closes_a_polygon_lasso_and_alt_makes_it_an_erase() {
+        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+        for (x, y) in [(100.0, 100.0), (200.0, 100.0), (200.0, 200.0)] {
+            let alt_click = PointerInput {
+                alt: true,
+                ..click(x, y)
+            };
+            lasso_tool(&mut editor, &view, &mut state, &alt_click);
+        }
+        assert!(state.lasso.as_ref().is_some_and(|l| l.erase));
+        lasso_tool(&mut editor, &view, &mut state, &enter_key());
+        assert!(state.lasso.is_none());
+    }
+
+    #[test]
+    fn a_lasso_that_encloses_nothing_changes_nothing() {
+        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+        let before = editor.history_steps().1;
+        lasso_tool(&mut editor, &view, &mut state, &click(100.0, 100.0));
+        lasso_tool(&mut editor, &view, &mut state, &enter_key());
+        assert!(state.lasso.is_none());
+        assert_eq!(editor.history_steps().1, before);
+    }
+
+    #[test]
+    fn escape_drops_a_lasso_in_progress() {
+        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+        lasso_tool(&mut editor, &view, &mut state, &click(100.0, 100.0));
+        assert_eq!(lasso_points(&state), 1);
+        editor.cancel_tool = true;
+        lasso_tool(&mut editor, &view, &mut state, &input());
+        assert!(state.lasso.is_none());
+        assert!(!editor.cancel_tool);
+    }
+
+    #[test]
+    fn a_select_box_selects_the_objects_it_meets_on_release() {
+        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+        paint_stroke(&mut editor, &view, &mut state, false);
+        editor.select(Vec::new());
+        state.select_box = Some(SelectBox {
+            start: [0.0, 0.0],
+            end: [0.0, 0.0],
+            keep: Vec::new(),
+        });
+        select_box_tool(&mut editor, &view, &mut state, &drag_to(300.0, 300.0));
+        assert_eq!(
+            state.select_box.as_ref().map(|b| b.end),
+            Some([300.0, 300.0])
+        );
+        assert!(editor.selection().is_empty());
+        select_box_tool(&mut editor, &view, &mut state, &release(300.0, 300.0));
+        assert!(state.select_box.is_none());
+        assert_eq!(editor.selection().len(), 1);
+    }
+
+    #[test]
+    fn a_select_box_keeps_the_selection_it_was_given() {
+        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+        let kept = Id::new();
+        state.select_box = Some(SelectBox {
+            start: [400.0, 400.0],
+            end: [400.0, 400.0],
+            keep: vec![kept],
+        });
+        select_box_tool(&mut editor, &view, &mut state, &release(450.0, 450.0));
+        assert_eq!(editor.selection(), [kept]);
     }
 }
