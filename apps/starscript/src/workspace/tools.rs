@@ -118,17 +118,6 @@ pub struct CanvasInput<'a> {
     pub pixels_per_point: f64,
 }
 
-impl CanvasInput<'_> {
-    /// The Canvas point under a screen position.
-    fn canvas_point(&self, view: &View, pos: egui::Pos2) -> [f64; 2] {
-        let local = pos - self.response.rect.min;
-        view.to_canvas([
-            f64::from(local.x) * self.pixels_per_point,
-            f64::from(local.y) * self.pixels_per_point,
-        ])
-    }
-}
-
 /// One frame of primary-button pointer input as plain data, so a tool can be a function from
 /// this to `Command`s and be tested without a running `egui::Context`. Positions are egui
 /// points on the screen; `rect_min` is the top-left of the Canvas widget.
@@ -177,8 +166,8 @@ impl PointerInput {
             drag_started: response.drag_started_by(primary),
             dragging: response.dragged_by(primary),
             drag_stopped: response.drag_stopped(),
-            clicked: response.clicked(),
-            double_clicked: response.double_clicked(),
+            clicked: response.clicked_by(primary),
+            double_clicked: response.double_clicked_by(primary),
             shift,
             alt,
             enter,
@@ -474,7 +463,10 @@ pub fn canvas_input(
     let shift = response.ctx.input(|i| i.modifiers.shift);
     match editor.active_tool {
         ToolId::Select if editor.node_edit().is_some() => {
-            node_edit_tool(editor, view, state, input);
+            let pointer = PointerInput::from_response(response, ppp);
+            if let Some(icon) = node_edit_tool(editor, view, state, &pointer) {
+                response.ctx.set_cursor_icon(icon);
+            }
         }
         ToolId::LandBrush | ToolId::WaterBrush => {
             let pointer = PointerInput::from_response(response, ppp);
@@ -1210,10 +1202,10 @@ fn node_edit_tool(
     editor: &mut Editor,
     view: &View,
     state: &mut ToolState,
-    input: &CanvasInput<'_>,
-) {
-    let response = input.response;
-    let shift = response.ctx.input(|i| i.modifiers.shift);
+    input: &PointerInput,
+) -> Option<egui::CursorIcon> {
+    let shift = input.shift;
+    let mut cursor = None;
     let per_point = input.pixels_per_point / view.zoom;
     let hit_at = |editor: &Editor, pos: egui::Pos2| {
         let point = input.canvas_point(view, pos);
@@ -1222,19 +1214,16 @@ fn node_edit_tool(
         })
     };
 
-    if let Some(pos) = response.hover_pos()
+    if let Some(pos) = input.hover_pos
         && state.node_drag.is_none()
         && let Some(NodeHit::Node(_)) = hit_at(editor, pos)
     {
-        response.ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+        cursor = Some(egui::CursorIcon::PointingHand);
     }
 
     // Drag: move nodes, or box-select.
-    if response.drag_started_by(egui::PointerButton::Primary) && !editor.gesture_open() {
-        let origin = response
-            .ctx
-            .input(|i| i.pointer.press_origin())
-            .or(response.interact_pointer_pos());
+    if input.drag_started && !editor.gesture_open() {
+        let origin = input.press_origin.or(input.pointer_pos);
         if let Some(origin) = origin {
             let start = input.canvas_point(view, origin);
             match hit_at(editor, origin) {
@@ -1261,8 +1250,8 @@ fn node_edit_tool(
         }
     }
 
-    if response.dragged_by(egui::PointerButton::Primary)
-        && let Some(pos) = response.interact_pointer_pos()
+    if input.dragging
+        && let Some(pos) = input.pointer_pos
     {
         let point = input.canvas_point(view, pos);
         // Escape rolled the gesture back.
@@ -1286,7 +1275,7 @@ fn node_edit_tool(
         }
     }
 
-    if response.drag_stopped() {
+    if input.drag_stopped {
         if let Some(drag) = state.node_drag.take() {
             state.end_held(editor);
             editor.keep_nodes_if_shape(&drag.shape);
@@ -1328,16 +1317,16 @@ fn node_edit_tool(
         }
     }
 
-    if response.double_clicked_by(egui::PointerButton::Primary)
-        && let Some(pos) = response.interact_pointer_pos()
+    if input.double_clicked
+        && let Some(pos) = input.pointer_pos
         && let Some(NodeHit::Edge(edge, point)) = hit_at(editor, pos)
     {
         editor.insert_node(edge, point);
-        return;
+        return cursor;
     }
 
-    if response.clicked_by(egui::PointerButton::Primary)
-        && let Some(pos) = response.interact_pointer_pos()
+    if input.clicked
+        && let Some(pos) = input.pointer_pos
     {
         let current = editor
             .node_edit()
@@ -1361,6 +1350,7 @@ fn node_edit_tool(
             Some(NodeHit::Outside) | None => editor.leave_node_edit(),
         }
     }
+    cursor
 }
 
 /// Draws the outline being edited, its nodes (those in view, thinned when crowded) and a
@@ -2482,6 +2472,108 @@ mod pointer_tests {
         assert!(matches!(inside, NodeHit::Inside));
         let outside = hit_outline(&outline(), [150.0, 50.0], 5.0, 5.0);
         assert!(matches!(outside, NodeHit::Outside));
+    }
+
+    /// An Editor in node-edit mode on a Landmass shaped like `outline()`.
+    fn node_editor() -> Editor {
+        let mut editor = land_editor();
+        let layer = editor.map.children(None).first().copied();
+        let id = Id::new();
+        assert!(
+            editor
+                .run(Command::CreateLandmass {
+                    id,
+                    parent: layer.unwrap_or_else(Id::new),
+                    index: None,
+                    geometry: outline(),
+                    fill: None,
+                })
+                .is_ok()
+        );
+        editor.enter_node_edit(id);
+        editor
+    }
+
+    fn selected_nodes(editor: &Editor) -> Vec<NodeRef> {
+        editor
+            .node_edit()
+            .map(|e| e.nodes.clone())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn node_edit_click_selects_a_node_and_shift_adds_another() {
+        let mut editor = node_editor();
+        let (view, mut state) = (view(), ToolState::default());
+        node_edit_tool(&mut editor, &view, &mut state, &click_at(100.0, 0.0));
+        let first = NodeRef {
+            part: 0,
+            ring: 0,
+            index: 1,
+        };
+        assert_eq!(selected_nodes(&editor), vec![first]);
+        let shift_click = PointerInput {
+            shift: true,
+            ..click_at(100.0, 100.0)
+        };
+        node_edit_tool(&mut editor, &view, &mut state, &shift_click);
+        assert_eq!(selected_nodes(&editor).len(), 2);
+    }
+
+    #[test]
+    fn node_edit_click_outside_leaves_node_edit() {
+        let mut editor = node_editor();
+        let (view, mut state) = (view(), ToolState::default());
+        node_edit_tool(&mut editor, &view, &mut state, &click_at(300.0, 300.0));
+        assert!(editor.node_edit().is_none());
+    }
+
+    #[test]
+    fn node_edit_double_click_on_an_edge_adds_a_node() {
+        let mut editor = node_editor();
+        let (view, mut state) = (view(), ToolState::default());
+        let double = PointerInput {
+            double_clicked: true,
+            ..click_at(50.0, 1.0)
+        };
+        node_edit_tool(&mut editor, &view, &mut state, &double);
+        assert_eq!(editor.edited_shape(), vec![5]);
+    }
+
+    #[test]
+    fn node_edit_drag_moves_the_selected_node_in_one_step() {
+        let mut editor = node_editor();
+        let (view, mut state) = (view(), ToolState::default());
+        node_edit_tool(&mut editor, &view, &mut state, &press(100.0, 0.0));
+        node_edit_tool(&mut editor, &view, &mut state, &drag_to(120.0, 10.0));
+        node_edit_tool(&mut editor, &view, &mut state, &release(120.0, 10.0));
+        let moved = editor.edited_outline().map(|o| o.0[0].exterior[1]);
+        assert_eq!(moved, Some([120.0, 10.0]));
+    }
+
+    #[test]
+    fn node_edit_drag_on_empty_space_box_selects() {
+        let mut editor = node_editor();
+        let (view, mut state) = (view(), ToolState::default());
+        node_edit_tool(&mut editor, &view, &mut state, &press(50.0, 50.0));
+        node_edit_tool(&mut editor, &view, &mut state, &drag_to(150.0, 150.0));
+        node_edit_tool(&mut editor, &view, &mut state, &release(150.0, 150.0));
+        assert_eq!(selected_nodes(&editor).len(), 1);
+    }
+
+    #[test]
+    fn node_edit_hover_over_a_node_asks_for_a_pointing_hand() {
+        let mut editor = node_editor();
+        let (view, mut state) = (view(), ToolState::default());
+        let hover = |x, y| PointerInput {
+            hovered: true,
+            hover_pos: Some(at(x, y)),
+            ..input()
+        };
+        let icon = node_edit_tool(&mut editor, &view, &mut state, &hover(2.0, 2.0));
+        assert_eq!(icon, Some(egui::CursorIcon::PointingHand));
+        let icon = node_edit_tool(&mut editor, &view, &mut state, &hover(50.0, 50.0));
+        assert_eq!(icon, None);
     }
 
     #[test]
