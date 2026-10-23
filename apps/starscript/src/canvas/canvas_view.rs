@@ -13,7 +13,7 @@ use crate::canvas_controls::{self, BannerAction};
 use crate::editor::Editor;
 use crate::handles::{self, Bounds};
 use crate::tessellation::BackgroundTessellation;
-use crate::tools::{self, CanvasInput, ToolId, ToolState};
+use crate::tools::{self, ToolId, ToolState};
 use crate::zoom::{self, FRAME_MARGIN as FIT_MARGIN, MAX_ZOOM, MIN_ZOOM, Zoom};
 
 /// How long the view must hold still, in seconds, before a pan or zoom counts as finished and
@@ -258,15 +258,7 @@ impl CanvasView {
             zoom::apply(view, requested, ppp, canvas, bounds);
         }
 
-        tools::canvas_input(
-            editor,
-            view,
-            &mut self.tools,
-            &CanvasInput {
-                response: &response,
-                pixels_per_point: ppp,
-            },
-        );
+        tools::canvas_input(editor, view, &mut self.tools, &response, ppp);
         Self::context_menu(&mut self.menu_point, &response, editor, view, rect, ppp);
         if let Some(pointer) = response.hover_pos() {
             let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));
