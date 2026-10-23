@@ -148,12 +148,16 @@ mod tests {
         assert_eq!(tab.document().name(), "Isle.ssmap");
         assert!(!tab.has_unsaved_changes());
         let layers = tab.editor().map.children(None).len();
-        assert!(tab.editor.run(Command::CreateLayer {
-            id: Id::new(),
-            parent: None,
-            index: None,
-            name: "Roads".into(),
-        }));
+        assert!(
+            tab.editor
+                .run(Command::CreateLayer {
+                    id: Id::new(),
+                    parent: None,
+                    index: None,
+                    name: "Roads".into(),
+                })
+                .is_ok()
+        );
         assert_eq!(tab.editor().map.children(None).len(), layers + 1);
         assert!(tab.has_unsaved_changes());
         let _ = std::fs::remove_dir_all(&dir);

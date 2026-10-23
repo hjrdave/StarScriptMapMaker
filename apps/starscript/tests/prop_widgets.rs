@@ -57,7 +57,10 @@ fn harness(use_slider: bool) -> Harness<'static, Fixture> {
                 };
                 let id = state.layer;
                 if edit.reset {
-                    state.editor.run(Command::SetOpacity { id, opacity: 1.0 });
+                    state
+                        .editor
+                        .run(Command::SetOpacity { id, opacity: 1.0 })
+                        .unwrap();
                 }
                 state
                     .live
@@ -150,7 +153,8 @@ fn the_reset_arrow_clears_an_override() {
     harness
         .state_mut()
         .editor
-        .run(Command::SetOpacity { id, opacity: 0.4 });
+        .run(Command::SetOpacity { id, opacity: 0.4 })
+        .unwrap();
     harness.run();
     harness.get_by_label("Reset Opacity").click();
     harness.run();

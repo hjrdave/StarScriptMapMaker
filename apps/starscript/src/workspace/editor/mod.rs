@@ -390,7 +390,7 @@ impl Editor {
         let Some(id) = self.node_edit.as_ref().map(|edit| edit.id) else {
             return;
         };
-        if self.run(Command::InsertNode { id, edge, point }) {
+        if self.run(Command::InsertNode { id, edge, point }).is_ok() {
             let added = NodeRef {
                 index: edge.index + 1,
                 ..edge
@@ -416,7 +416,7 @@ impl Editor {
             id: edit.id,
             nodes: edit.nodes,
         };
-        if self.run(command) {
+        if self.run(command).is_ok() {
             self.select_nodes(Vec::new());
             self.info_with_undo(match count {
                 1 => "Deleted 1 node".to_string(),
@@ -527,20 +527,26 @@ impl Editor {
         self.selection.contains(&id)
     }
 
-    /// Runs one Command as its own Undo step. A refusal shows in the status bar.
-    pub fn run(&mut self, command: Command) -> bool {
+    /// Runs one Command as its own Undo step. A refusal shows in the status bar and is
+    /// returned too.
+    pub fn run(&mut self, command: Command) -> Result<(), ExecuteError> {
         let selection = self.selection.clone();
         self.run_selecting(command, selection)
     }
 
-    /// Runs one Command as its own Undo step and selects `selection` afterwards.
-    pub fn run_selecting(&mut self, command: Command, selection: Selection) -> bool {
+    /// Runs one Command as its own Undo step and selects `selection` afterwards. A refusal
+    /// shows in the status bar and is returned too.
+    pub fn run_selecting(
+        &mut self,
+        command: Command,
+        selection: Selection,
+    ) -> Result<(), ExecuteError> {
         if self.gesture.is_some() {
             return self.execute_in_gesture(&command);
         }
         if let Err(err) = self.history.begin(command.label(), self.selection.clone()) {
             self.error(err.to_string());
-            return false;
+            return Err(err.into());
         }
         match self.history.execute(&mut self.map, &command) {
             Ok(()) => {
@@ -548,12 +554,12 @@ impl Editor {
                     .commit(selection.clone())
                     .expect("opened above");
                 self.restore(selection);
-                true
+                Ok(())
             }
             Err(err) => {
                 self.history.rollback(&mut self.map).expect("opened above");
                 self.refused(&err);
-                false
+                Err(err)
             }
         }
     }
@@ -571,13 +577,13 @@ impl Editor {
     /// Runs a Command inside the gesture `id` opened. A stale `id` does nothing and returns
     /// `false`.
     pub fn gesture(&mut self, id: &GestureId, command: Command) -> bool {
-        self.is_open(id) && self.execute_in_gesture(&command)
+        self.is_open(id) && self.execute_in_gesture(&command).is_ok()
     }
 
     /// Replaces everything the gesture `id` opened has done so far with `command`. A stale
     /// `id` does nothing and returns `false`.
     pub fn gesture_replace(&mut self, id: &GestureId, command: Command) -> bool {
-        self.is_open(id) && self.rewind_gesture() && self.execute_in_gesture(&command)
+        self.is_open(id) && self.rewind_gesture() && self.execute_in_gesture(&command).is_ok()
     }
 
     /// Commits the gesture `id` opened as one Undo step. Returns `false`, and changes
@@ -681,14 +687,12 @@ impl Editor {
         }
     }
 
-    fn execute_in_gesture(&mut self, command: &Command) -> bool {
-        match self.history.execute(&mut self.map, command) {
-            Ok(()) => true,
-            Err(err) => {
-                self.refused(&err);
-                false
-            }
+    fn execute_in_gesture(&mut self, command: &Command) -> Result<(), ExecuteError> {
+        let result = self.history.execute(&mut self.map, command);
+        if let Err(err) = &result {
+            self.refused(err);
         }
+        result
     }
 
     fn rewind_gesture(&mut self) -> bool {
@@ -913,7 +917,7 @@ impl Editor {
     pub fn union_selection(&mut self) {
         let ids = self.selected_landmasses();
         if let Some(&keeper) = ids.first() {
-            self.run_selecting(Command::Union { ids }, vec![keeper]);
+            let _ = self.run_selecting(Command::Union { ids }, vec![keeper]);
         }
     }
 
@@ -922,7 +926,7 @@ impl Editor {
         let ids = self.selected_landmasses();
         let rest: Vec<Id> = ids.iter().skip(1).copied().collect();
         if !ids.is_empty() {
-            self.run_selecting(Command::Subtract { ids }, rest);
+            let _ = self.run_selecting(Command::Subtract { ids }, rest);
         }
     }
 
@@ -1072,7 +1076,7 @@ impl Editor {
         if assets.is_empty() && fonts.is_empty() {
             return false;
         }
-        self.run(Command::EmbedAssets { assets, fonts })
+        self.run(Command::EmbedAssets { assets, fonts }).is_ok()
     }
 
     /// Re-pulls the art of every embedded Asset that an installed pack now provides differently,
@@ -1103,7 +1107,7 @@ impl Editor {
         if assets.is_empty() {
             return false;
         }
-        self.run(Command::UpdateFromPack { assets })
+        self.run(Command::UpdateFromPack { assets }).is_ok()
     }
 
     /// Takes the Ops that committed steps, undo and redo applied since the last call, for the
@@ -1144,7 +1148,7 @@ impl Editor {
             index,
             name,
         };
-        self.run_selecting(command, vec![id]).then_some(id)
+        self.run_selecting(command, vec![id]).is_ok().then_some(id)
     }
 
     /// Wraps the selection in a new Group and selects it. One Undo step; refused with a
@@ -1157,6 +1161,7 @@ impl Editor {
         let id = Id::new();
         let name = format!("Group {}", self.layer_count() + 1);
         self.run_selecting(Command::CreateGroup { id, ids, name }, vec![id])
+            .is_ok()
             .then_some(id)
     }
 
@@ -1174,7 +1179,7 @@ impl Editor {
             .iter()
             .flat_map(|&id| self.map.children(Some(id)).to_vec())
             .collect();
-        self.run_selecting(Command::Ungroup { ids }, freed)
+        self.run_selecting(Command::Ungroup { ids }, freed).is_ok()
     }
 
     /// The Objects that move or transform with the selection because of Links. When a linked
@@ -1206,7 +1211,7 @@ impl Editor {
             return false;
         }
         let ids = self.selection.clone();
-        self.run(Command::Link { id: Id::new(), ids })
+        self.run(Command::Link { id: Id::new(), ids }).is_ok()
     }
 
     /// Whether any selected Layer or Object is linked.
@@ -1222,7 +1227,7 @@ impl Editor {
             .copied()
             .filter(|&id| self.map.is_linked(id))
             .collect();
-        !ids.is_empty() && self.run(Command::Unlink { ids })
+        !ids.is_empty() && self.run(Command::Unlink { ids }).is_ok()
     }
 
     pub fn delete_selection(&mut self) {
@@ -1231,7 +1236,10 @@ impl Editor {
         }
         let ids = self.selection.clone();
         let count = ids.len();
-        if self.run_selecting(Command::Delete { ids }, Vec::new()) {
+        if self
+            .run_selecting(Command::Delete { ids }, Vec::new())
+            .is_ok()
+        {
             self.info_with_undo(match count {
                 1 => "Deleted 1 item".to_string(),
                 n => format!("Deleted {n} items"),
@@ -1448,7 +1456,7 @@ impl Editor {
             self.info("Locked layers were copied but not cut");
         }
         if !removable.is_empty() {
-            self.run_selecting(Command::Delete { ids: removable }, Vec::new());
+            let _ = self.run_selecting(Command::Delete { ids: removable }, Vec::new());
         }
     }
 
@@ -1506,7 +1514,9 @@ impl Editor {
             new_ids,
             offset,
         };
-        self.run_selecting(command, tops.clone()).then_some(tops)
+        self.run_selecting(command, tops.clone())
+            .is_ok()
+            .then_some(tops)
     }
 
     /// The Layer (`None` for the root) and position pasted items go in. Layers go just above
@@ -1797,7 +1807,7 @@ impl Editor {
             return false;
         };
         match scatter::erase_command(&self.map, layer, points, self.brush_size / 2.0) {
-            Some(command) => self.run(command),
+            Some(command) => self.run(command).is_ok(),
             None => false,
         }
     }
@@ -2000,12 +2010,16 @@ mod tests {
 
     fn add_stamp(editor: &mut Editor, layer: Id, x: f64, y: f64) -> Id {
         let id = Id::new();
-        assert!(editor.run(Command::CreateStamp {
-            id,
-            parent: layer,
-            index: None,
-            stamp: Box::new(Stamp::new("pack/asset".parse().unwrap(), [x, y])),
-        }));
+        assert!(
+            editor
+                .run(Command::CreateStamp {
+                    id,
+                    parent: layer,
+                    index: None,
+                    stamp: Box::new(Stamp::new("pack/asset".parse().unwrap(), [x, y])),
+                })
+                .is_ok()
+        );
         id
     }
 
@@ -2058,10 +2072,14 @@ mod tests {
         let mut editor = editor();
         let open = editor.new_layer().unwrap();
         let locked = editor.new_layer().unwrap();
-        assert!(editor.run(Command::SetLocked {
-            id: locked,
-            locked: true
-        }));
+        assert!(
+            editor
+                .run(Command::SetLocked {
+                    id: locked,
+                    locked: true
+                })
+                .is_ok()
+        );
         editor.select(vec![open, locked]);
         editor.cut_selection();
         assert_eq!(editor.map.children(None), &[locked]);
@@ -2089,12 +2107,16 @@ mod tests {
     fn add_label(editor: &mut Editor, layer: Id, mut label: Label) -> Id {
         label.text = "Hello".into();
         let id = Id::new();
-        assert!(editor.run(Command::CreateLabel {
-            id,
-            parent: layer,
-            index: None,
-            label: Box::new(label),
-        }));
+        assert!(
+            editor
+                .run(Command::CreateLabel {
+                    id,
+                    parent: layer,
+                    index: None,
+                    label: Box::new(label),
+                })
+                .is_ok()
+        );
         id
     }
 
@@ -2139,9 +2161,12 @@ mod tests {
         let mut from = editor();
         let layer = from.new_layer().unwrap();
         let style = Id::new();
-        assert!(from.run(Command::CreateLabelStyle {
-            style: ssmap_core::LabelStyle::new(style, "Realm"),
-        }));
+        assert!(
+            from.run(Command::CreateLabelStyle {
+                style: ssmap_core::LabelStyle::new(style, "Realm"),
+            })
+            .is_ok()
+        );
         let label = add_label(
             &mut from,
             layer,
@@ -2268,15 +2293,20 @@ mod tests {
     fn refusals_show_a_message_and_change_nothing() {
         let mut editor = editor();
         let layer = editor.new_layer().unwrap();
-        editor.run(Command::SetLocked {
-            id: layer,
-            locked: true,
-        });
+        editor
+            .run(Command::SetLocked {
+                id: layer,
+                locked: true,
+            })
+            .unwrap();
         let before = editor.map.view();
-        assert!(!editor.run(Command::RenameLayer {
-            id: layer,
-            name: "Nope".into(),
-        }));
+        assert_eq!(
+            editor.run(Command::RenameLayer {
+                id: layer,
+                name: "Nope".into(),
+            }),
+            Err(ExecuteError::Command(CommandError::Locked(layer)))
+        );
         assert_eq!(editor.map.view(), before);
         let notice = editor.notice().expect("a visible message");
         assert!(notice.is_error());
@@ -2350,16 +2380,20 @@ mod tests {
         editor.end_gesture(gesture);
         assert_eq!(editor.pick([50.0, 50.0]), Some(above));
         assert_eq!(editor.pick([-500.0, 50.0]), None);
-        editor.run(Command::SetLocked {
-            id: above,
-            locked: true,
-        });
+        editor
+            .run(Command::SetLocked {
+                id: above,
+                locked: true,
+            })
+            .unwrap();
         assert_eq!(editor.pick([50.0, 50.0]), Some(below));
         let layer = editor.map.parent(below).unwrap();
-        editor.run(Command::SetVisible {
-            id: layer,
-            visible: false,
-        });
+        editor
+            .run(Command::SetVisible {
+                id: layer,
+                visible: false,
+            })
+            .unwrap();
         assert_eq!(editor.pick([50.0, 50.0]), None);
     }
 
@@ -2374,16 +2408,18 @@ mod tests {
         let mut editor = editor();
         let layer = editor.new_layer().unwrap();
         let id = Id::new();
-        editor.run(Command::CreateLandmass {
-            id,
-            parent: layer,
-            index: None,
-            geometry: MultiPolygon(vec![ssmap_core::Polygon {
-                exterior: vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
-                holes: Vec::new(),
-            }]),
-            fill: None,
-        });
+        editor
+            .run(Command::CreateLandmass {
+                id,
+                parent: layer,
+                index: None,
+                geometry: MultiPolygon(vec![ssmap_core::Polygon {
+                    exterior: vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+                    holes: Vec::new(),
+                }]),
+                fill: None,
+            })
+            .unwrap();
         (editor, id)
     }
 
@@ -2494,16 +2530,18 @@ mod tests {
         let (mut editor, a) = editor_with_square();
         let layer = editor.map.parent(a).unwrap();
         let b = Id::new();
-        editor.run(Command::CreateLandmass {
-            id: b,
-            parent: layer,
-            index: None,
-            geometry: MultiPolygon(vec![ssmap_core::Polygon {
-                exterior: vec![[5.0, 5.0], [20.0, 5.0], [20.0, 20.0], [5.0, 20.0]],
-                holes: Vec::new(),
-            }]),
-            fill: None,
-        });
+        editor
+            .run(Command::CreateLandmass {
+                id: b,
+                parent: layer,
+                index: None,
+                geometry: MultiPolygon(vec![ssmap_core::Polygon {
+                    exterior: vec![[5.0, 5.0], [20.0, 5.0], [20.0, 20.0], [5.0, 20.0]],
+                    holes: Vec::new(),
+                }]),
+                fill: None,
+            })
+            .unwrap();
         editor.select(vec![a, b]);
         assert!(editor.can_combine() && !editor.can_split());
         editor.union_selection();
@@ -2515,13 +2553,15 @@ mod tests {
 
         // Two islands split into two Landmasses with one Undo step.
         editor.select(vec![a]);
-        editor.run(Command::AddRegion {
-            id: a,
-            region: MultiPolygon(vec![ssmap_core::Polygon {
-                exterior: vec![[50.0, 50.0], [60.0, 50.0], [60.0, 60.0], [50.0, 60.0]],
-                holes: Vec::new(),
-            }]),
-        });
+        editor
+            .run(Command::AddRegion {
+                id: a,
+                region: MultiPolygon(vec![ssmap_core::Polygon {
+                    exterior: vec![[50.0, 50.0], [60.0, 50.0], [60.0, 60.0], [50.0, 60.0]],
+                    holes: Vec::new(),
+                }]),
+            })
+            .unwrap();
         assert!(editor.can_split());
         let before = editor.map.children(Some(layer)).len();
         editor.split_selection();
@@ -2671,10 +2711,12 @@ mod tests {
         );
 
         // A locked Stamp can't be picked there, so what's beneath is.
-        editor.run(Command::SetLocked {
-            id: above,
-            locked: true,
-        });
+        editor
+            .run(Command::SetLocked {
+                id: above,
+                locked: true,
+            })
+            .unwrap();
         assert_eq!(editor.pick([205.0, 190.0]), Some(below));
     }
 
@@ -2689,20 +2731,24 @@ mod tests {
     fn editor_with_island() -> (Editor, Id) {
         let mut editor = editor_with_assets();
         let layer = editor.new_layer().unwrap();
-        editor.run(Command::CreateLandmass {
-            id: Id::new(),
-            parent: layer,
-            index: None,
-            geometry: square(0.0, 200.0),
-            fill: None,
-        });
-        editor.run(Command::CreateLake {
-            id: Id::new(),
-            parent: layer,
-            index: None,
-            geometry: square(80.0, 120.0),
-            fill: None,
-        });
+        editor
+            .run(Command::CreateLandmass {
+                id: Id::new(),
+                parent: layer,
+                index: None,
+                geometry: square(0.0, 200.0),
+                fill: None,
+            })
+            .unwrap();
+        editor
+            .run(Command::CreateLake {
+                id: Id::new(),
+                parent: layer,
+                index: None,
+                geometry: square(80.0, 120.0),
+                fill: None,
+            })
+            .unwrap();
         editor.selected_asset = Some(asset("test-pack/mountain-1"));
         editor.brush_size = 400.0;
         editor.scatter.density = 40.0;

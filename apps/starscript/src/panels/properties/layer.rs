@@ -38,7 +38,7 @@ impl PropertiesPanel {
 
             let mut depth_sort = layer.depth_sort;
             if prop_widgets::checkbox_row(ui, "Depth sort", &mut depth_sort) {
-                editor.run(Command::SetDepthSort { id, depth_sort });
+                let _ = editor.run(Command::SetDepthSort { id, depth_sort });
             }
             caption(ui, crate::layer_tree::DEPTH_SORT_HINT);
 
@@ -50,7 +50,7 @@ impl PropertiesPanel {
                     .selected_text(current)
                     .show_ui(ui, |ui| {
                         if ui.selectable_label(layer.clip.is_none(), "None").clicked() {
-                            editor.run(Command::SetClip { id, target: None });
+                            let _ = editor.run(Command::SetClip { id, target: None });
                         }
                         for target in landmasses(&editor.map) {
                             let name = landmass_name(&editor.map, target);
@@ -58,7 +58,7 @@ impl PropertiesPanel {
                                 .selectable_label(layer.clip == Some(target), name)
                                 .clicked()
                             {
-                                editor.run(Command::SetClip {
+                                let _ = editor.run(Command::SetClip {
                                     id,
                                     target: Some(target),
                                 });
@@ -71,7 +71,7 @@ impl PropertiesPanel {
                 .add_enabled(selected.is_some(), egui::Button::new("Use selection"))
                 .clicked()
             {
-                editor.run(Command::SetClip {
+                let _ = editor.run(Command::SetClip {
                     id,
                     target: selected,
                 });

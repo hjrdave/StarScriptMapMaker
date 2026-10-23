@@ -19,7 +19,7 @@ impl PropertiesPanel {
     ) {
         if edit.reset {
             if let Some(reset) = group.reset.clone() {
-                editor.run(reset);
+                let _ = editor.run(reset);
             }
             return;
         }

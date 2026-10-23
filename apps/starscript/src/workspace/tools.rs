@@ -2044,12 +2044,16 @@ mod link_tests {
         let mut ids = [Id::new(), Id::new(), Id::new()];
         for (n, id) in ids.iter_mut().enumerate() {
             let layer = Id::new();
-            assert!(editor.run(Command::CreateLayer {
-                id: layer,
-                parent: None,
-                index: None,
-                name: format!("Layer {n}"),
-            }));
+            assert!(
+                editor
+                    .run(Command::CreateLayer {
+                        id: layer,
+                        parent: None,
+                        index: None,
+                        name: format!("Layer {n}"),
+                    })
+                    .is_ok()
+            );
             let command = if n == 2 {
                 Command::CreateStamp {
                     id: *id,
@@ -2066,7 +2070,7 @@ mod link_tests {
                     fill: None,
                 }
             };
-            assert!(editor.run(command));
+            assert!(editor.run(command).is_ok());
         }
         editor.select(ids.to_vec());
         assert!(editor.link_selection());
@@ -2111,14 +2115,22 @@ mod link_tests {
     #[test]
     fn a_locked_linked_object_blocks_the_drag_and_the_status_names_it() {
         let (mut editor, [a, b, _]) = linked();
-        assert!(editor.run(Command::RenameObject {
-            id: b,
-            name: "Far Isle".into()
-        }));
-        assert!(editor.run(Command::SetLocked {
-            id: b,
-            locked: true
-        }));
+        assert!(
+            editor
+                .run(Command::RenameObject {
+                    id: b,
+                    name: "Far Isle".into()
+                })
+                .is_ok()
+        );
+        assert!(
+            editor
+                .run(Command::SetLocked {
+                    id: b,
+                    locked: true
+                })
+                .is_ok()
+        );
         let before = editor.map.view();
         let mut state = ToolState::default();
         let bounds = Bounds::of_selection(&mut editor);

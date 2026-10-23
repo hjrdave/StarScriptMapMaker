@@ -190,7 +190,7 @@ impl PropertiesPanel {
         prop_widgets::section(ui, header, |ui| {
             let mut locked = object.locked;
             if prop_widgets::checkbox_row(ui, "Locked", &mut locked) {
-                editor.run(Command::SetLocked { id, locked });
+                let _ = editor.run(Command::SetLocked { id, locked });
             }
             if let Some(fill) = object.kind.fill() {
                 self.fill(ui, editor, id, fill);
@@ -361,13 +361,17 @@ mod tests {
         )));
         let layer = editor.new_layer().expect("a Layer");
         let island = Id::new();
-        assert!(editor.run(Command::CreateLandmass {
-            id: island,
-            parent: layer,
-            index: None,
-            geometry: square(0.0, 40.0),
-            fill: None,
-        }));
+        assert!(
+            editor
+                .run(Command::CreateLandmass {
+                    id: island,
+                    parent: layer,
+                    index: None,
+                    geometry: square(0.0, 40.0),
+                    fill: None,
+                })
+                .is_ok()
+        );
         editor.select(Vec::new());
         let panel = PropertiesPanel::default();
         (Fixture { editor, panel }, layer, island)
@@ -427,10 +431,15 @@ mod tests {
         let (mut fixture, _, island) = fixture();
         let default = fixture.editor.map.defaults().roughness.clone();
         let own = Roughness::new(default.amount + 5.0, default.scale, default.seed);
-        assert!(fixture.editor.run(Command::SetRoughness {
-            ids: vec![island],
-            roughness: Some(own),
-        }));
+        assert!(
+            fixture
+                .editor
+                .run(Command::SetRoughness {
+                    ids: vec![island],
+                    roughness: Some(own),
+                })
+                .is_ok()
+        );
         fixture.editor.select(vec![island]);
         let mut harness = harness(fixture);
 
@@ -487,13 +496,18 @@ mod tests {
     fn a_multi_selection_is_summarised_and_can_be_combined() {
         let (mut fixture, layer, island) = fixture();
         let other = Id::new();
-        assert!(fixture.editor.run(Command::CreateLandmass {
-            id: other,
-            parent: layer,
-            index: None,
-            geometry: square(10.0, 50.0),
-            fill: None,
-        }));
+        assert!(
+            fixture
+                .editor
+                .run(Command::CreateLandmass {
+                    id: other,
+                    parent: layer,
+                    index: None,
+                    geometry: square(10.0, 50.0),
+                    fill: None,
+                })
+                .is_ok()
+        );
         fixture.editor.select(vec![island, other]);
         let mut harness = harness(fixture);
         assert!(harness.query_by_label("2 Landmasses").is_some());
@@ -511,16 +525,21 @@ mod tests {
             .resolve(fixture.editor.map.label_styles())
             .size;
         let label = Id::new();
-        assert!(fixture.editor.run(Command::CreateLabel {
-            id: label,
-            parent: layer,
-            index: None,
-            label: Box::new(Label {
-                text: "Hello".to_owned(),
-                size: Some(style_size + 10.0),
-                ..Label::default()
-            }),
-        }));
+        assert!(
+            fixture
+                .editor
+                .run(Command::CreateLabel {
+                    id: label,
+                    parent: layer,
+                    index: None,
+                    label: Box::new(Label {
+                        text: "Hello".to_owned(),
+                        size: Some(style_size + 10.0),
+                        ..Label::default()
+                    }),
+                })
+                .is_ok()
+        );
         fixture.editor.select(vec![label]);
         let mut harness = harness(fixture);
         harness.get_by_label("Reset Size").click();
@@ -542,15 +561,20 @@ mod tests {
     fn manage_label_styles_asks_for_the_window() {
         let (mut fixture, layer, _) = fixture();
         let label = Id::new();
-        assert!(fixture.editor.run(Command::CreateLabel {
-            id: label,
-            parent: layer,
-            index: None,
-            label: Box::new(Label {
-                text: "Hello".to_owned(),
-                ..Label::default()
-            }),
-        }));
+        assert!(
+            fixture
+                .editor
+                .run(Command::CreateLabel {
+                    id: label,
+                    parent: layer,
+                    index: None,
+                    label: Box::new(Label {
+                        text: "Hello".to_owned(),
+                        ..Label::default()
+                    }),
+                })
+                .is_ok()
+        );
         fixture.editor.select(vec![label]);
         let mut harness = harness(fixture);
         harness.get_by_label("Manage Label styles…").click();

@@ -682,16 +682,18 @@ mod tests {
         )));
         let layer = editor.new_layer().unwrap();
         let id = Id::new();
-        editor.run(Command::CreateLandmass {
-            id,
-            parent: layer,
-            index: None,
-            geometry: MultiPolygon(vec![Polygon {
-                exterior: vec![[10.0, 10.0], [60.0, 10.0], [60.0, 60.0], [10.0, 60.0]],
-                holes: Vec::new(),
-            }]),
-            fill: None,
-        });
+        editor
+            .run(Command::CreateLandmass {
+                id,
+                parent: layer,
+                index: None,
+                geometry: MultiPolygon(vec![Polygon {
+                    exterior: vec![[10.0, 10.0], [60.0, 10.0], [60.0, 60.0], [10.0, 60.0]],
+                    holes: Vec::new(),
+                }]),
+                fill: None,
+            })
+            .unwrap();
         editor.enter_node_edit(id);
         editor.select_nodes(vec![NodeRef {
             part: 0,
