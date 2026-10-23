@@ -395,7 +395,7 @@ impl LayerTree {
                 }
                 Action::Paste => self.paste_requested = true,
                 Action::Run(command) => {
-                    editor.run(command);
+                    let _ = editor.run(command);
                 }
                 Action::Toggle(id) => {
                     if !self.collapsed.remove(&id) {
@@ -456,7 +456,7 @@ impl LayerTree {
                             Some(Node::Object(_)) => Command::RenameObject { id, name },
                             _ => Command::RenameLayer { id, name },
                         };
-                        editor.run(command);
+                        let _ = editor.run(command);
                     }
                 }
                 Action::CancelRename => self.renaming = None,
@@ -1108,16 +1108,20 @@ mod tests {
         )));
         let layer = editor.new_layer().unwrap();
         let land = Id::new();
-        assert!(editor.run(Command::CreateLandmass {
-            id: land,
-            parent: layer,
-            index: None,
-            geometry: MultiPolygon(vec![Polygon {
-                exterior: vec![[0.0, 0.0], [50.0, 0.0], [50.0, 50.0], [0.0, 50.0]],
-                holes: vec![],
-            }]),
-            fill: None,
-        }));
+        assert!(
+            editor
+                .run(Command::CreateLandmass {
+                    id: land,
+                    parent: layer,
+                    index: None,
+                    geometry: MultiPolygon(vec![Polygon {
+                        exterior: vec![[0.0, 0.0], [50.0, 0.0], [50.0, 50.0], [0.0, 50.0]],
+                        holes: vec![],
+                    }]),
+                    fill: None,
+                })
+                .is_ok()
+        );
         let art = editor.new_layer().unwrap();
         assert_eq!(selected_landmass(&editor.map, &[layer]), None);
         assert_eq!(selected_landmass(&editor.map, &[land, art]), None);
@@ -1130,12 +1134,16 @@ mod tests {
             Some(Node::Layer(layer)) => layer.clip,
             _ => panic!("a Layer"),
         };
-        assert!(editor.run(Command::SetClip { id: art, target }));
+        assert!(editor.run(Command::SetClip { id: art, target }).is_ok());
         assert_eq!(clip(&editor), Some(land));
-        assert!(editor.run(Command::SetClip {
-            id: art,
-            target: None
-        }));
+        assert!(
+            editor
+                .run(Command::SetClip {
+                    id: art,
+                    target: None
+                })
+                .is_ok()
+        );
         assert_eq!(clip(&editor), None);
         editor.undo();
         assert_eq!(clip(&editor), Some(land));
@@ -1162,26 +1170,42 @@ mod tests {
         let c = editor.new_layer().unwrap();
         let drag = |editor: &mut Editor, id, target| {
             let command = move_command(&editor.map, id, target).expect("a move");
-            assert!(editor.run(command));
+            assert!(editor.run(command).is_ok());
         };
-        assert!(editor.run(Command::RenameLayer {
-            id: a,
-            name: "Coast".into()
-        }));
+        assert!(
+            editor
+                .run(Command::RenameLayer {
+                    id: a,
+                    name: "Coast".into()
+                })
+                .is_ok()
+        );
         drag(&mut editor, c, DropTarget::Into(a)); // nest
         drag(&mut editor, b, DropTarget::Below(a)); // reorder
-        assert!(editor.run(Command::SetVisible {
-            id: b,
-            visible: false
-        }));
-        assert!(editor.run(Command::SetLocked {
-            id: c,
-            locked: true
-        }));
-        assert!(editor.run(Command::SetLocked {
-            id: c,
-            locked: false
-        }));
+        assert!(
+            editor
+                .run(Command::SetVisible {
+                    id: b,
+                    visible: false
+                })
+                .is_ok()
+        );
+        assert!(
+            editor
+                .run(Command::SetLocked {
+                    id: c,
+                    locked: true
+                })
+                .is_ok()
+        );
+        assert!(
+            editor
+                .run(Command::SetLocked {
+                    id: c,
+                    locked: false
+                })
+                .is_ok()
+        );
         editor.select(vec![b]);
         editor.delete_selection();
         let done = editor.map.view();
@@ -1236,10 +1260,14 @@ mod tests {
     #[test]
     fn a_hidden_row_is_italic_with_the_slashed_eye() {
         let (mut editor, a, b) = editor_with_two_layers();
-        assert!(editor.run(Command::SetVisible {
-            id: a,
-            visible: false
-        }));
+        assert!(
+            editor
+                .run(Command::SetVisible {
+                    id: a,
+                    visible: false
+                })
+                .is_ok()
+        );
         assert!(RowState::of(&editor.map, a).italic());
         assert!(!RowState::of(&editor.map, b).italic());
         let harness = harness(editor);
@@ -1252,11 +1280,15 @@ mod tests {
     fn a_child_of_a_locked_layer_shows_a_dashed_padlock_that_does_nothing() {
         let (mut editor, a, b) = editor_with_two_layers();
         let command = move_command(&editor.map, b, DropTarget::Into(a)).unwrap();
-        assert!(editor.run(command));
-        assert!(editor.run(Command::SetLocked {
-            id: a,
-            locked: true
-        }));
+        assert!(editor.run(command).is_ok());
+        assert!(
+            editor
+                .run(Command::SetLocked {
+                    id: a,
+                    locked: true
+                })
+                .is_ok()
+        );
         let state = RowState::of(&editor.map, b);
         assert!(state.locked_by_parent && !state.locked);
         assert!(!RowState::of(&editor.map, a).locked_by_parent);
@@ -1291,10 +1323,14 @@ mod tests {
     #[test]
     fn indicators_show_clip_depth_sort_and_opacity() {
         let (mut editor, a, _) = editor_with_two_layers();
-        assert!(editor.run(Command::SetDepthSort {
-            id: a,
-            depth_sort: true
-        }));
+        assert!(
+            editor
+                .run(Command::SetDepthSort {
+                    id: a,
+                    depth_sort: true
+                })
+                .is_ok()
+        );
         let harness = harness(editor);
         harness.get_by_label("Depth-sorted");
         assert!(harness.query_by_label("Clipped to Landmass").is_none());
@@ -1351,23 +1387,35 @@ mod tests {
             })
             .unwrap();
         assert_eq!(node_name(&editor.map, id), "Stamp");
-        assert!(editor.run(Command::RenameObject {
-            id,
-            name: "  Old Keep ".into()
-        }));
+        assert!(
+            editor
+                .run(Command::RenameObject {
+                    id,
+                    name: "  Old Keep ".into()
+                })
+                .is_ok()
+        );
         assert_eq!(node_name(&editor.map, id), "Old Keep");
-        assert!(editor.run(Command::RenameObject {
-            id,
-            name: String::new()
-        }));
+        assert!(
+            editor
+                .run(Command::RenameObject {
+                    id,
+                    name: String::new()
+                })
+                .is_ok()
+        );
         assert_eq!(node_name(&editor.map, id), "Stamp");
         editor.undo();
         assert_eq!(node_name(&editor.map, id), "Old Keep");
         // Layers are renamed with their own Command.
-        assert!(!editor.run(Command::RenameObject {
-            id: a,
-            name: "x".into()
-        }));
+        assert!(
+            editor
+                .run(Command::RenameObject {
+                    id: a,
+                    name: "x".into()
+                })
+                .is_err()
+        );
     }
 
     #[test]
@@ -1376,16 +1424,20 @@ mod tests {
         let (mut editor, a, _) = editor_with_two_layers();
         assert_eq!(footer_text(0, 2), "0 Objects · 2 Layers");
         assert_eq!(footer_text(1, 1), "1 Object · 1 Layer");
-        assert!(editor.run(Command::CreateLandmass {
-            id: Id::new(),
-            parent: a,
-            index: None,
-            geometry: MultiPolygon(vec![Polygon {
-                exterior: vec![[0.0, 0.0], [50.0, 0.0], [50.0, 50.0], [0.0, 50.0]],
-                holes: vec![],
-            }]),
-            fill: None,
-        }));
+        assert!(
+            editor
+                .run(Command::CreateLandmass {
+                    id: Id::new(),
+                    parent: a,
+                    index: None,
+                    geometry: MultiPolygon(vec![Polygon {
+                        exterior: vec![[0.0, 0.0], [50.0, 0.0], [50.0, 50.0], [0.0, 50.0]],
+                        holes: vec![],
+                    }]),
+                    fill: None,
+                })
+                .is_ok()
+        );
         assert_eq!(counts(&editor.map), (1, 2));
         let mut harness = harness(editor);
         harness.get_by_label("1 Object · 2 Layers");
@@ -1420,7 +1472,7 @@ mod tests {
         let group = editor.new_group().expect("a Group");
         assert!(editor.map.children(Some(group)).is_empty());
         let command = move_command(&editor.map, a, DropTarget::Into(group)).unwrap();
-        assert!(editor.run(command));
+        assert!(editor.run(command).is_ok());
         let mut collapsed = HashSet::new();
         assert!(rows(&editor.map, &collapsed).iter().any(|r| r.id == a));
         collapsed.insert(group);
@@ -1437,10 +1489,10 @@ mod tests {
         let (mut editor, a, b) = editor_with_two_layers();
         let group = editor.new_group().unwrap();
         let into = move_command(&editor.map, a, DropTarget::Into(group)).unwrap();
-        assert!(editor.run(into));
+        assert!(editor.run(into).is_ok());
         assert_eq!(editor.map.parent(a), Some(group));
         let out = move_command(&editor.map, a, DropTarget::Above(b)).unwrap();
-        assert!(editor.run(out));
+        assert!(editor.run(out).is_ok());
         assert_eq!(editor.map.parent(a), None);
         editor.undo();
         assert_eq!(editor.map.parent(a), Some(group));
@@ -1451,11 +1503,15 @@ mod tests {
         let (mut editor, a, b) = editor_with_two_layers();
         let group = editor.new_group().unwrap();
         let into = move_command(&editor.map, a, DropTarget::Into(group)).unwrap();
-        assert!(editor.run(into));
-        assert!(editor.run(Command::SetLocked {
-            id: group,
-            locked: true
-        }));
+        assert!(editor.run(into).is_ok());
+        assert!(
+            editor
+                .run(Command::SetLocked {
+                    id: group,
+                    locked: true
+                })
+                .is_ok()
+        );
         assert!(RowState::of(&editor.map, a).locked_by_parent);
         assert!(move_command(&editor.map, b, DropTarget::Into(group)).is_none());
         assert!(move_command(&editor.map, b, DropTarget::Above(a)).is_none());
@@ -1466,11 +1522,15 @@ mod tests {
         let (mut editor, a, _) = editor_with_two_layers();
         let group = editor.new_group().unwrap();
         let into = move_command(&editor.map, a, DropTarget::Into(group)).unwrap();
-        assert!(editor.run(into));
-        assert!(editor.run(Command::RenameLayer {
-            id: group,
-            name: "Coast".into()
-        }));
+        assert!(editor.run(into).is_ok());
+        assert!(
+            editor
+                .run(Command::RenameLayer {
+                    id: group,
+                    name: "Coast".into()
+                })
+                .is_ok()
+        );
         assert_eq!(filled_group(&editor.map, &[group]), Some(group));
         assert_eq!(filled_group(&editor.map, &[a]), None);
         assert_eq!(contents(&editor.map, &[group]), 1);
@@ -1500,7 +1560,7 @@ mod tests {
         editor.new_layer().unwrap();
         let group = editor.new_group().unwrap();
         let command = move_command(&editor.map, a, DropTarget::Into(group)).unwrap();
-        assert!(editor.run(command));
+        assert!(editor.run(command).is_ok());
         editor.select(Vec::new());
         let ids = rows(&editor.map, &HashSet::new())
             .iter()

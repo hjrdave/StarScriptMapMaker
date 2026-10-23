@@ -36,30 +36,38 @@ fn app() -> (Harness<'static, MapMakerApp>, [Id; 2]) {
     harness.run();
     let (layer, a, b) = (Id::new(), Id::new(), Id::new());
     let editor = harness.state_mut().active_editor_mut().unwrap();
-    editor.run(Command::CreateLayer {
-        id: layer,
-        parent: None,
-        index: None,
-        name: "Land".into(),
-    });
-    for (i, (id, min)) in [(a, 0.0), (b, 500.0)].into_iter().enumerate() {
-        editor.run(Command::CreateLandmass {
-            id,
-            parent: layer,
+    editor
+        .run(Command::CreateLayer {
+            id: layer,
+            parent: None,
             index: None,
-            geometry: square(min),
-            fill: None,
-        });
-        editor.run(Command::SetRoughness {
-            ids: vec![id],
-            roughness: Some(Roughness::new(10.0 + 20.0 * i as f64, 40.0, 7)),
-        });
+            name: "Land".into(),
+        })
+        .unwrap();
+    for (i, (id, min)) in [(a, 0.0), (b, 500.0)].into_iter().enumerate() {
+        editor
+            .run(Command::CreateLandmass {
+                id,
+                parent: layer,
+                index: None,
+                geometry: square(min),
+                fill: None,
+            })
+            .unwrap();
+        editor
+            .run(Command::SetRoughness {
+                ids: vec![id],
+                roughness: Some(Roughness::new(10.0 + 20.0 * i as f64, 40.0, 7)),
+            })
+            .unwrap();
         let mut shore = ShoreStyle::landmass_default();
         shore.ripples.count = 2 + 2 * i as u32;
-        editor.run(Command::SetShore {
-            ids: vec![id],
-            shore: Some(shore),
-        });
+        editor
+            .run(Command::SetShore {
+                ids: vec![id],
+                shore: Some(shore),
+            })
+            .unwrap();
     }
     editor.select(vec![a, b]);
     harness.run();

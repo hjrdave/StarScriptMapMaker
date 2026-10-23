@@ -85,10 +85,13 @@ impl PropertiesPanel {
                 text: text.clone(),
                 ..label.clone()
             };
-            if !editor.run(Command::SetLabel {
-                id,
-                label: Box::new(next),
-            }) {
+            if editor
+                .run(Command::SetLabel {
+                    id,
+                    label: Box::new(next),
+                })
+                .is_err()
+            {
                 self.text_edit = None;
             }
         } else if !field.has_focus() && *text != label.text {
@@ -142,7 +145,7 @@ impl PropertiesPanel {
             }
         });
         if let Some(next) = restyled {
-            editor.run(Command::SetLabel {
+            let _ = editor.run(Command::SetLabel {
                 id,
                 label: Box::new(next),
             });
@@ -346,7 +349,7 @@ impl PropertiesPanel {
 
         let mut lock = locked;
         if prop_widgets::checkbox_row(ui, "Locked", &mut lock) {
-            editor.run(Command::SetLocked { id, locked: lock });
+            let _ = editor.run(Command::SetLocked { id, locked: lock });
         }
     }
 
@@ -376,7 +379,7 @@ impl PropertiesPanel {
         if edit.reset {
             let mut cleared = ctx.label.clone();
             clear(&mut cleared);
-            editor.run(Command::SetLabel {
+            let _ = editor.run(Command::SetLabel {
                 id: ctx.id,
                 label: Box::new(cleared),
             });
@@ -477,7 +480,7 @@ impl PropertiesPanel {
 
             let mut lock = locked;
             if prop_widgets::checkbox_row(ui, "Locked", &mut lock) {
-                editor.run(Command::SetLocked { id, locked: lock });
+                let _ = editor.run(Command::SetLocked { id, locked: lock });
             }
 
             if ui
@@ -517,12 +520,16 @@ mod tests {
     fn add_label(editor: &mut Editor, layer: Id, mut label: Label) -> Id {
         label.text = "Hello".into();
         let id = Id::new();
-        assert!(editor.run(Command::CreateLabel {
-            id,
-            parent: layer,
-            index: None,
-            label: Box::new(label),
-        }));
+        assert!(
+            editor
+                .run(Command::CreateLabel {
+                    id,
+                    parent: layer,
+                    index: None,
+                    label: Box::new(label),
+                })
+                .is_ok()
+        );
         id
     }
 
@@ -584,12 +591,16 @@ mod tests {
         let (mut editor, layer) = editor_with_layer();
         let id = Id::new();
         let stamp = Stamp::new("pack/asset".parse().expect("an Asset ref"), [10.0, 10.0]);
-        assert!(editor.run(Command::CreateStamp {
-            id,
-            parent: layer,
-            index: None,
-            stamp: Box::new(stamp.clone()),
-        }));
+        assert!(
+            editor
+                .run(Command::CreateStamp {
+                    id,
+                    parent: layer,
+                    index: None,
+                    stamp: Box::new(stamp.clone()),
+                })
+                .is_ok()
+        );
         let next = Stamp {
             scale: 2.0,
             ..stamp

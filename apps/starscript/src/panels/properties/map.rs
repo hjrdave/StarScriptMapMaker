@@ -54,7 +54,7 @@ impl PropertiesPanel {
         if width_edit.changed || height_edit.changed {
             let (width, height) = (width.round() as u32, height.round() as u32);
             if width > 0 && height > 0 {
-                editor.run(Command::ResizeCanvas {
+                let _ = editor.run(Command::ResizeCanvas {
                     origin: anchored_origin(canvas, width, height, self.canvas_anchor),
                     width,
                     height,
@@ -80,7 +80,7 @@ impl PropertiesPanel {
                 let same = *template.background() == canvas.background;
                 let name = format!("{} look", template.name());
                 if ui.selectable_label(same, name).clicked() {
-                    editor.run(Command::SetBackground {
+                    let _ = editor.run(Command::SetBackground {
                         background: template.background().clone(),
                     });
                 }

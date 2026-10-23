@@ -172,7 +172,7 @@ impl LiveEdit {
                     }
                     // Joins a gesture someone else opened, or is a step of its own.
                     None => {
-                        editor.run(command);
+                        let _ = editor.run(command);
                     }
                 }
             }

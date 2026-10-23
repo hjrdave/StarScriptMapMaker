@@ -288,7 +288,10 @@ impl LabelStylesPanel {
                     ..current.clone()
                 };
                 let id = copy.id;
-                if editor.run(Command::CreateLabelStyle { style: copy }) {
+                if editor
+                    .run(Command::CreateLabelStyle { style: copy })
+                    .is_ok()
+                {
                     self.selected = Some(id);
                     self.rename = None;
                 }
@@ -300,7 +303,10 @@ impl LabelStylesPanel {
                 .clicked()
             {
                 let count = editor.map.labels_using(current.id).len();
-                if editor.run(Command::DeleteLabelStyle { id: current.id }) {
+                if editor
+                    .run(Command::DeleteLabelStyle { id: current.id })
+                    .is_ok()
+                {
                     let default = editor.map.label_styles().default_style().name.clone();
                     editor.info(deleted_notice(&current.name, count, &default));
                 }
@@ -319,10 +325,13 @@ impl LabelStylesPanel {
             })
             .inner;
         if name_field.lost_focus() && *name != current.name {
-            if !editor.run(Command::RenameLabelStyle {
-                id: current.id,
-                name: name.clone(),
-            }) {
+            if editor
+                .run(Command::RenameLabelStyle {
+                    id: current.id,
+                    name: name.clone(),
+                })
+                .is_err()
+            {
                 *name = current.name.clone();
             }
         } else if !name_field.has_focus() && *name != current.name {
@@ -474,18 +483,22 @@ mod tests {
         let layer = editor.new_layer().expect("a Layer");
         let style = LabelStyle::new(Id::new(), "Realm");
         let style_id = style.id;
-        assert!(editor.run(Command::CreateLabelStyle { style }));
+        assert!(editor.run(Command::CreateLabelStyle { style }).is_ok());
         let label_id = Id::new();
-        assert!(editor.run(Command::CreateLabel {
-            id: label_id,
-            parent: layer,
-            index: None,
-            label: Box::new(Label {
-                text: "Valdren".into(),
-                style: style_id,
-                ..Label::default()
-            }),
-        }));
+        assert!(
+            editor
+                .run(Command::CreateLabel {
+                    id: label_id,
+                    parent: layer,
+                    index: None,
+                    label: Box::new(Label {
+                        text: "Valdren".into(),
+                        style: style_id,
+                        ..Label::default()
+                    }),
+                })
+                .is_ok()
+        );
         let panel = LabelStylesPanel {
             open: true,
             selected: Some(style_id),
