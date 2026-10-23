@@ -111,13 +111,6 @@ pub fn uses_brush_size(tool: ToolId) -> bool {
     )
 }
 
-/// What a tool sees of one frame of Canvas input.
-pub struct CanvasInput<'a> {
-    pub response: &'a egui::Response,
-    /// Physical pixels per egui point.
-    pub pixels_per_point: f64,
-}
-
 /// One frame of primary-button pointer input as plain data, so a tool can be a function from
 /// this to `Command`s and be tested without a running `egui::Context`. Positions are egui
 /// points on the screen; `rect_min` is the top-left of the Canvas widget.
@@ -139,6 +132,13 @@ pub(crate) struct PointerInput {
     pub drag_stopped: bool,
     pub clicked: bool,
     pub double_clicked: bool,
+    /// The middle button is dragging.
+    pub middle_dragging: bool,
+    /// Any button is dragging.
+    pub any_dragging: bool,
+    /// How far the pointer moved this frame, in egui points.
+    pub drag_delta: egui::Vec2,
+    pub space_held: bool,
     pub shift: bool,
     pub alt: bool,
     /// Enter went down this frame.
@@ -148,12 +148,13 @@ pub(crate) struct PointerInput {
 impl PointerInput {
     fn from_response(response: &egui::Response, pixels_per_point: f64) -> Self {
         let primary = egui::PointerButton::Primary;
-        let (press_origin, shift, alt, enter) = response.ctx.input(|i| {
+        let (press_origin, shift, alt, enter, space_held) = response.ctx.input(|i| {
             (
                 i.pointer.press_origin(),
                 i.modifiers.shift,
                 i.modifiers.alt,
                 i.key_pressed(egui::Key::Enter),
+                i.key_down(egui::Key::Space),
             )
         });
         Self {
@@ -168,6 +169,10 @@ impl PointerInput {
             drag_stopped: response.drag_stopped(),
             clicked: response.clicked_by(primary),
             double_clicked: response.double_clicked_by(primary),
+            middle_dragging: response.dragged_by(egui::PointerButton::Middle),
+            any_dragging: response.dragged(),
+            drag_delta: response.drag_delta(),
+            space_held,
             shift,
             alt,
             enter,
@@ -431,15 +436,16 @@ impl ToolState {
 }
 
 /// Lets the active tool handle Canvas input. Panning with the middle button, or with Space
-/// held, works whatever the tool.
+/// held, works whatever the tool. This is the only place that reads the `egui::Response`; the
+/// tools see a `PointerInput`.
 pub fn canvas_input(
     editor: &mut Editor,
     view: &mut View,
     state: &mut ToolState,
-    input: &CanvasInput<'_>,
+    response: &egui::Response,
+    pixels_per_point: f64,
 ) {
-    let response = input.response;
-    let ppp = input.pixels_per_point;
+    let pointer = PointerInput::from_response(response, pixels_per_point);
     if editor.active_tool != ToolId::Select {
         editor.leave_node_edit();
     }
@@ -448,168 +454,36 @@ pub fn canvas_input(
         state.board_label = None;
         editor.select_board(false);
     }
-    let space_held = response.ctx.input(|i| i.key_down(egui::Key::Space));
-    let temporary_pan = response.dragged_by(egui::PointerButton::Middle)
-        || (space_held && response.dragged_by(egui::PointerButton::Primary));
-    if temporary_pan || (editor.active_tool == ToolId::Pan && response.dragged()) {
-        let delta = response.drag_delta();
-        view.pan([f64::from(delta.x) * ppp, f64::from(delta.y) * ppp]);
+    if pan_tool(editor, view, &pointer) {
         return;
     }
-    let to_canvas = |pos: egui::Pos2| {
-        let local = pos - response.rect.min;
-        view.to_canvas([f64::from(local.x) * ppp, f64::from(local.y) * ppp])
-    };
-    let shift = response.ctx.input(|i| i.modifiers.shift);
-    match editor.active_tool {
+    let cursor = match editor.active_tool {
         ToolId::Select if editor.node_edit().is_some() => {
-            let pointer = PointerInput::from_response(response, ppp);
-            if let Some(icon) = node_edit_tool(editor, view, state, &pointer) {
-                response.ctx.set_cursor_icon(icon);
-            }
+            node_edit_tool(editor, view, state, &pointer)
         }
+        ToolId::Select => select_tool(editor, view, state, &pointer),
         ToolId::LandBrush | ToolId::WaterBrush => {
-            let pointer = PointerInput::from_response(response, ppp);
             let water = editor.active_tool == ToolId::WaterBrush;
-            if let Some(icon) = land_brush(editor, view, state, &pointer, water) {
-                response.ctx.set_cursor_icon(icon);
-            }
+            land_brush(editor, view, state, &pointer, water)
         }
         ToolId::Lasso => {
-            let pointer = PointerInput::from_response(response, ppp);
-            if pointer.hovered {
-                response.ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
-            }
             lasso_tool(editor, view, state, &pointer);
+            pointer.hovered.then_some(egui::CursorIcon::Crosshair)
         }
-        ToolId::Select => {
-            let bounds = Bounds::of_selection(editor);
-            let rotatable = selection_has_label(editor);
-            let grip_at = |pos: egui::Pos2| {
-                let bounds = bounds?;
-                handles::hit(&bounds, view, response.rect.min, ppp, pos, rotatable)
-            };
-            if state.drag.is_none()
-                && let Some(pos) = response.hover_pos()
-                && let Some(grip) = grip_at(pos)
-            {
-                response.ctx.set_cursor_icon(grip.cursor());
-            }
-            if response.drag_started_by(egui::PointerButton::Primary)
-                && !editor.gesture_open()
-                && let Some(pos) = response.ctx.input(|i| i.pointer.press_origin())
-            {
-                let duplicate = response.ctx.input(|i| i.modifiers.alt);
-                let point = to_canvas(pos);
-                let grip = grip_at(pos);
-                let on_selection = bounds.is_some_and(|b| b.contains(point));
-                if grip.is_none() && !on_selection && editor.pick(point).is_none() {
-                    // Empty Canvas or pasteboard: the drag draws a selection box.
-                    let keep = if shift {
-                        editor.selection().to_vec()
-                    } else {
-                        Vec::new()
-                    };
-                    state.select_box = Some(SelectBox {
-                        start: point,
-                        end: point,
-                        keep,
-                    });
-                } else {
-                    start_drag(editor, state, bounds, grip, point, duplicate);
-                }
-            }
-            select_box_tool(
-                editor,
-                view,
-                state,
-                &PointerInput::from_response(response, ppp),
-            );
-            let over_selection = || {
-                let pos = response.hover_pos()?;
-                let inside =
-                    grip_at(pos).is_none() && bounds.is_some_and(|b| b.contains(to_canvas(pos)));
-                inside.then_some(())
-            };
-            let option_held = response.ctx.input(|i| i.modifiers.alt);
-            if state
-                .drag
-                .as_ref()
-                .is_some_and(|drag| drag.copies.is_some())
-                || (state.drag.is_none() && option_held && over_selection().is_some())
-            {
-                response.ctx.set_cursor_icon(egui::CursorIcon::Copy);
-            }
-            // Escape or undo ended the gesture under the drag.
-            if state.drag.is_some() && !state.holds_open(editor) {
-                state.drag = None;
-            }
-            if let Some(drag) = &state.drag
-                && response.dragged_by(egui::PointerButton::Primary)
-                && let Some(pos) = response.interact_pointer_pos()
-                && let Some(commands) = drag_commands(drag, to_canvas(pos), shift)
-            {
-                let mut commands = commands.into_iter();
-                if let Some(first) = commands.next() {
-                    state.replace_held(editor, first);
-                }
-                for command in commands {
-                    state.run_held(editor, command);
-                }
-                if let Some(command) = membership_command(editor, drag, to_canvas(pos)) {
-                    state.run_held(editor, command);
-                }
-            }
-            if response.drag_stopped() && state.drag.take().is_some() {
-                state.end_held(editor);
-            }
-            if let Some(pos) = response.interact_pointer_pos() {
-                let point = to_canvas(pos);
-                if response.double_clicked() {
-                    if let Some(id) = editor.pick(point) {
-                        if editor.label(id).is_some() {
-                            editor.select(vec![id]);
-                            state.edit_text(editor, id);
-                        } else {
-                            editor.enter_node_edit(id);
-                        }
-                    }
-                } else if response.clicked() {
-                    let hit = editor.pick(point);
-                    click_select(editor, hit, shift);
-                }
-            }
-        }
-        ToolId::Pan => {}
+        ToolId::Pan => None,
         ToolId::Stamp | ToolId::StampEraser => {
-            let pointer = PointerInput::from_response(response, ppp);
             let erase = editor.active_tool == ToolId::StampEraser;
-            if let Some(icon) = scatter_tool(editor, view, state, &pointer, erase) {
-                response.ctx.set_cursor_icon(icon);
-            }
+            scatter_tool(editor, view, state, &pointer, erase)
         }
-        ToolId::ExportRegion => {
-            let pointer = PointerInput::from_response(response, ppp);
-            if let Some(icon) = export_region_tool(editor, view, state, &pointer) {
-                response.ctx.set_cursor_icon(icon);
-            }
-        }
-        ToolId::ArtBoard => {
-            let pointer = PointerInput::from_response(response, ppp);
-            if let Some(icon) = art_board_tool(editor, view, state, &pointer) {
-                response.ctx.set_cursor_icon(icon);
-            }
-        }
+        ToolId::ExportRegion => export_region_tool(editor, view, state, &pointer),
+        ToolId::ArtBoard => art_board_tool(editor, view, state, &pointer),
         ToolId::Label => {
-            if response.clicked()
-                && let Some(pos) = response.interact_pointer_pos()
-                && let Some((id, gesture)) = editor.place_label(to_canvas(pos))
-            {
-                // Typing joins the "Add Label" gesture, so placing and naming undo together.
-                state.edit_placed_text(editor, id, gesture);
-                editor.active_tool = ToolId::Select;
-            }
+            label_tool(editor, view, state, &pointer);
+            None
         }
+    };
+    if let Some(icon) = cursor {
+        response.ctx.set_cursor_icon(icon);
     }
     if editor.active_tool != ToolId::ExportRegion {
         state.region_drag = None;
@@ -624,6 +498,142 @@ pub fn canvas_input(
     editor.tool_busy = state.lasso.is_some()
         || state.region_drag.is_some()
         || (scattering && state.stroke.is_some());
+}
+
+/// Pans the view for a middle-button drag, a Space-drag, or a drag with the Pan tool, whatever
+/// the active tool. Returns whether the frame was a pan.
+fn pan_tool(editor: &Editor, view: &mut View, input: &PointerInput) -> bool {
+    let temporary = input.middle_dragging || (input.space_held && input.dragging);
+    if !(temporary || (editor.active_tool == ToolId::Pan && input.any_dragging)) {
+        return false;
+    }
+    let ppp = input.pixels_per_point;
+    view.pan([
+        f64::from(input.drag_delta.x) * ppp,
+        f64::from(input.drag_delta.y) * ppp,
+    ]);
+    true
+}
+
+/// The Label tool: a click places a Label and starts editing its text.
+fn label_tool(editor: &mut Editor, view: &View, state: &mut ToolState, input: &PointerInput) {
+    if input.clicked
+        && let Some(pos) = input.pointer_pos
+        && let Some((id, gesture)) = editor.place_label(input.canvas_point(view, pos))
+    {
+        // Typing joins the "Add Label" gesture, so placing and naming undo together.
+        state.edit_placed_text(editor, id, gesture);
+        editor.active_tool = ToolId::Select;
+    }
+}
+
+/// The Select tool: click, box-select, move/scale/rotate drags, and double-click to edit.
+fn select_tool(
+    editor: &mut Editor,
+    view: &View,
+    state: &mut ToolState,
+    input: &PointerInput,
+) -> Option<egui::CursorIcon> {
+    let shift = input.shift;
+    let bounds = Bounds::of_selection(editor);
+    let rotatable = selection_has_label(editor);
+    let grip_at = |pos: egui::Pos2| {
+        let bounds = bounds?;
+        handles::hit(
+            &bounds,
+            view,
+            input.rect_min,
+            input.pixels_per_point,
+            pos,
+            rotatable,
+        )
+    };
+    let mut cursor = None;
+    if state.drag.is_none()
+        && let Some(pos) = input.hover_pos
+        && let Some(grip) = grip_at(pos)
+    {
+        cursor = Some(grip.cursor());
+    }
+    if input.drag_started
+        && !editor.gesture_open()
+        && let Some(pos) = input.press_origin
+    {
+        let duplicate = input.alt;
+        let point = input.canvas_point(view, pos);
+        let grip = grip_at(pos);
+        let on_selection = bounds.is_some_and(|b| b.contains(point));
+        if grip.is_none() && !on_selection && editor.pick(point).is_none() {
+            // Empty Canvas or pasteboard: the drag draws a selection box.
+            let keep = if shift {
+                editor.selection().to_vec()
+            } else {
+                Vec::new()
+            };
+            state.select_box = Some(SelectBox {
+                start: point,
+                end: point,
+                keep,
+            });
+        } else {
+            start_drag(editor, state, bounds, grip, point, duplicate);
+        }
+    }
+    select_box_tool(editor, view, state, input);
+    let over_selection = || {
+        let pos = input.hover_pos?;
+        let inside = grip_at(pos).is_none()
+            && bounds.is_some_and(|b| b.contains(input.canvas_point(view, pos)));
+        inside.then_some(())
+    };
+    if state
+        .drag
+        .as_ref()
+        .is_some_and(|drag| drag.copies.is_some())
+        || (state.drag.is_none() && input.alt && over_selection().is_some())
+    {
+        cursor = Some(egui::CursorIcon::Copy);
+    }
+    // Escape or undo ended the gesture under the drag.
+    if state.drag.is_some() && !state.holds_open(editor) {
+        state.drag = None;
+    }
+    if let Some(drag) = &state.drag
+        && input.dragging
+        && let Some(pos) = input.pointer_pos
+        && let Some(commands) = drag_commands(drag, input.canvas_point(view, pos), shift)
+    {
+        let mut commands = commands.into_iter();
+        if let Some(first) = commands.next() {
+            state.replace_held(editor, first);
+        }
+        for command in commands {
+            state.run_held(editor, command);
+        }
+        if let Some(command) = membership_command(editor, drag, input.canvas_point(view, pos)) {
+            state.run_held(editor, command);
+        }
+    }
+    if input.drag_stopped && state.drag.take().is_some() {
+        state.end_held(editor);
+    }
+    if let Some(pos) = input.pointer_pos {
+        let point = input.canvas_point(view, pos);
+        if input.double_clicked {
+            if let Some(id) = editor.pick(point) {
+                if editor.label(id).is_some() {
+                    editor.select(vec![id]);
+                    state.edit_text(editor, id);
+                } else {
+                    editor.enter_node_edit(id);
+                }
+            }
+        } else if input.clicked {
+            let hit = editor.pick(point);
+            click_select(editor, hit, shift);
+        }
+    }
+    cursor
 }
 
 /// The Canvas's box in screen points.
@@ -2941,5 +2951,151 @@ mod pointer_tests {
         });
         select_box_tool(&mut editor, &view, &mut state, &release(450.0, 450.0));
         assert_eq!(editor.selection(), [kept]);
+    }
+
+    /// Land painted over (100, 100) to (200, 150), the Select tool active and nothing selected.
+    fn with_land() -> (Editor, View, ToolState) {
+        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+        paint_stroke(&mut editor, &view, &mut state, false);
+        editor.select(Vec::new());
+        editor.active_tool = ToolId::Select;
+        (editor, view, state)
+    }
+
+    fn alt(input: PointerInput) -> PointerInput {
+        PointerInput { alt: true, ..input }
+    }
+
+    #[test]
+    fn a_click_selects_the_object_under_it_and_empty_space_clears() {
+        let (mut editor, view, mut state) = with_land();
+        select_tool(&mut editor, &view, &mut state, &click(150.0, 125.0));
+        assert_eq!(editor.selection().len(), 1);
+        select_tool(&mut editor, &view, &mut state, &click(400.0, 400.0));
+        assert!(editor.selection().is_empty());
+    }
+
+    #[test]
+    fn a_select_drag_on_empty_space_box_selects() {
+        let (mut editor, view, mut state) = with_land();
+        select_tool(&mut editor, &view, &mut state, &press(50.0, 50.0));
+        assert!(state.select_box.is_some());
+        select_tool(&mut editor, &view, &mut state, &drag_to(300.0, 300.0));
+        select_tool(&mut editor, &view, &mut state, &release(300.0, 300.0));
+        assert!(state.select_box.is_none());
+        assert_eq!(editor.selection().len(), 1);
+    }
+
+    #[test]
+    fn dragging_the_selection_moves_it_in_one_undo_step() {
+        let (mut editor, view, mut state) = with_land();
+        select_tool(&mut editor, &view, &mut state, &click(150.0, 125.0));
+        let before = editor.history_steps().1;
+        let start = Bounds::of_selection(&mut editor).map(|b| b.min);
+        select_tool(&mut editor, &view, &mut state, &press(150.0, 125.0));
+        select_tool(&mut editor, &view, &mut state, &drag_to(170.0, 145.0));
+        select_tool(&mut editor, &view, &mut state, &drag_to(190.0, 165.0));
+        assert!(editor.gesture_open());
+        select_tool(&mut editor, &view, &mut state, &release(190.0, 165.0));
+        assert_ne!(Bounds::of_selection(&mut editor).map(|b| b.min), start);
+        assert!(state.drag.is_none() && !editor.gesture_open());
+        assert_eq!(editor.history_steps().1, before + 1);
+    }
+
+    #[test]
+    fn switching_tools_cancels_a_selection_drag() {
+        let (mut editor, view, mut state) = with_land();
+        select_tool(&mut editor, &view, &mut state, &click(150.0, 125.0));
+        let start = Bounds::of_selection(&mut editor).map(|b| b.min);
+        let before = editor.history_steps().1;
+        select_tool(&mut editor, &view, &mut state, &press(150.0, 125.0));
+        select_tool(&mut editor, &view, &mut state, &drag_to(190.0, 165.0));
+        assert!(state.drag.is_some());
+        editor.active_tool = ToolId::Lasso;
+        state.drop_held_for_other_tool(&mut editor);
+        assert!(state.drag.is_none() && !editor.gesture_open());
+        assert_eq!(Bounds::of_selection(&mut editor).map(|b| b.min), start);
+        assert_eq!(editor.history_steps().1, before);
+    }
+
+    #[test]
+    fn double_click_on_a_shape_enters_node_edit() {
+        let (mut editor, view, mut state) = with_land();
+        let double = PointerInput {
+            double_clicked: true,
+            ..click(150.0, 125.0)
+        };
+        select_tool(&mut editor, &view, &mut state, &double);
+        assert!(editor.node_edit().is_some());
+    }
+
+    #[test]
+    fn double_click_on_a_label_opens_its_text() {
+        let (mut editor, view, mut state) = with_land();
+        editor.active_tool = ToolId::Label;
+        label_tool(&mut editor, &view, &mut state, &click(300.0, 300.0));
+        assert_eq!(editor.active_tool, ToolId::Select);
+        let placed = state.editing.take().map(|e| e.gesture);
+        assert!(placed.is_some());
+        if let Some(gesture) = placed {
+            editor.end_gesture(gesture);
+        }
+        editor.select(Vec::new());
+        let double = PointerInput {
+            double_clicked: true,
+            ..click(300.0, 300.0)
+        };
+        select_tool(&mut editor, &view, &mut state, &double);
+        let reopened = state.editing.take().map(|e| e.gesture);
+        assert!(reopened.is_some());
+        if let Some(gesture) = reopened {
+            editor.end_gesture(gesture);
+        }
+    }
+
+    #[test]
+    fn an_alt_drag_copies_the_selection() {
+        let (mut editor, view, mut state) = with_land();
+        select_tool(&mut editor, &view, &mut state, &click(150.0, 125.0));
+        let original = editor.selection().to_vec();
+        select_tool(&mut editor, &view, &mut state, &alt(press(150.0, 125.0)));
+        assert!(state.drag.as_ref().is_some_and(|d| d.copies.is_some()));
+        let cursor = select_tool(&mut editor, &view, &mut state, &alt(drag_to(250.0, 225.0)));
+        assert_eq!(cursor, Some(egui::CursorIcon::Copy));
+        select_tool(&mut editor, &view, &mut state, &release(250.0, 225.0));
+        assert!(!editor.gesture_open());
+        assert_ne!(editor.selection(), original);
+    }
+
+    #[test]
+    fn pan_moves_the_view_by_the_drag_delta() {
+        let mut editor = editor();
+        let mut view = view();
+        let before = view.to_canvas([0.0, 0.0]);
+        let dragged = PointerInput {
+            any_dragging: true,
+            drag_delta: egui::vec2(10.0, 5.0),
+            pixels_per_point: 2.0,
+            ..input()
+        };
+        // A plain drag pans only with the Pan tool.
+        editor.active_tool = ToolId::Select;
+        assert!(!pan_tool(&editor, &mut view, &dragged));
+        editor.active_tool = ToolId::Pan;
+        assert!(pan_tool(&editor, &mut view, &dragged));
+        assert_ne!(view.to_canvas([0.0, 0.0]), before);
+        // Space-drag and middle-drag pan under any tool.
+        editor.active_tool = ToolId::Select;
+        let space = PointerInput {
+            space_held: true,
+            dragging: true,
+            ..dragged.clone()
+        };
+        assert!(pan_tool(&editor, &mut view, &space));
+        let middle = PointerInput {
+            middle_dragging: true,
+            ..dragged
+        };
+        assert!(pan_tool(&editor, &mut view, &middle));
     }
 }
