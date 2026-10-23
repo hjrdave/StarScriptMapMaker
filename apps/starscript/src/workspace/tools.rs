@@ -261,12 +261,12 @@ impl ToolState {
     /// Opens a gesture for `tool` to hold until [`Self::end_held`] or [`Self::cancel_held`].
     /// `false` if it could not be opened (the status bar says why).
     fn begin_held(&mut self, editor: &mut Editor, tool: ToolId, label: &str) -> bool {
-        let id = editor.begin_gesture_typed(label);
+        let id = editor.begin_gesture(label);
         if editor.is_open(&id) {
             self.held = Some((tool, id));
             true
         } else {
-            editor.cancel_gesture_typed(id);
+            editor.cancel_gesture(id);
             false
         }
     }
@@ -285,20 +285,20 @@ impl ToolState {
     fn run_held(&self, editor: &mut Editor, command: Command) -> bool {
         self.held
             .as_ref()
-            .is_some_and(|(_, id)| editor.gesture_typed(id, command))
+            .is_some_and(|(_, id)| editor.gesture(id, command))
     }
 
     /// Replaces what the held gesture has done so far with `command`.
     fn replace_held(&self, editor: &mut Editor, command: Command) -> bool {
         self.held
             .as_ref()
-            .is_some_and(|(_, id)| editor.gesture_replace_typed(id, command))
+            .is_some_and(|(_, id)| editor.gesture_replace(id, command))
     }
 
     /// Commits the held gesture as one Undo step.
     fn end_held(&mut self, editor: &mut Editor) {
         if let Some((_, id)) = self.held.take() {
-            editor.end_gesture_typed(id);
+            editor.end_gesture(id);
         }
     }
 
@@ -310,7 +310,7 @@ impl ToolState {
     /// Rolls the held gesture back.
     fn cancel_held(&mut self, editor: &mut Editor) {
         if let Some((_, id)) = self.held.take() {
-            editor.cancel_gesture_typed(id);
+            editor.cancel_gesture(id);
         }
     }
 
@@ -362,12 +362,12 @@ pub struct TextEditing {
 impl TextEditing {
     /// Runs a Command in the gesture the text is typed in.
     pub fn run(&self, editor: &mut Editor, command: Command) -> bool {
-        editor.gesture_typed(&self.gesture, command)
+        editor.gesture(&self.gesture, command)
     }
 
     /// Commits the gesture the text was typed in.
     pub fn finish(self, editor: &mut Editor) {
-        editor.end_gesture_typed(self.gesture);
+        editor.end_gesture(self.gesture);
     }
 }
 
@@ -398,7 +398,7 @@ impl ToolState {
         if editor.label(id).is_none() {
             return;
         }
-        let gesture = editor.begin_gesture_typed("Edit Label");
+        let gesture = editor.begin_gesture("Edit Label");
         self.edit_placed_text(editor, id, gesture);
     }
 
@@ -406,7 +406,7 @@ impl ToolState {
     /// placement ("Add Label").
     fn edit_placed_text(&mut self, editor: &mut Editor, id: Id, gesture: GestureId) {
         let Some(label) = editor.label(id) else {
-            editor.cancel_gesture_typed(gesture);
+            editor.cancel_gesture(gesture);
             return;
         };
         let text = label.text.clone();
@@ -1067,7 +1067,7 @@ fn lasso_tool(editor: &mut Editor, view: &View, state: &mut ToolState, input: &C
             editor.info("The loop doesn't enclose any area");
             return;
         }
-        let id = editor.begin_gesture_typed(editor.brush_label(lasso.erase));
+        let id = editor.begin_gesture(editor.brush_label(lasso.erase));
         editor.finish_brush_stroke(
             id,
             BrushStroke {

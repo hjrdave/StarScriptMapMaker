@@ -150,25 +150,25 @@ impl LiveEdit {
         commands: impl FnOnce() -> Vec<Command>,
     ) {
         if (edit.began || edit.changed) && self.owns_gesture.is_none() && !editor.gesture_open() {
-            let id = editor.begin_gesture_typed(label);
+            let id = editor.begin_gesture(label);
             if editor.is_open(&id) {
                 self.owns_gesture = Some(id);
             } else {
-                editor.cancel_gesture_typed(id);
+                editor.cancel_gesture(id);
             }
         }
         // Escape or undo closed the gesture: a later change is a step of its own.
         if let Some(id) = self.owns_gesture.take_if(|id| !editor.is_open(id)) {
-            editor.end_gesture_typed(id);
+            editor.end_gesture(id);
         }
         if edit.changed {
             for (i, command) in commands().into_iter().enumerate() {
                 match &self.owns_gesture {
                     Some(id) if i == 0 => {
-                        editor.gesture_replace_typed(id, command);
+                        editor.gesture_replace(id, command);
                     }
                     Some(id) => {
-                        editor.gesture_typed(id, command);
+                        editor.gesture(id, command);
                     }
                     // Joins a gesture someone else opened, or is a step of its own.
                     None => {
@@ -180,7 +180,7 @@ impl LiveEdit {
         if edit.finished
             && let Some(id) = self.owns_gesture.take()
         {
-            editor.end_gesture_typed(id);
+            editor.end_gesture(id);
         }
     }
 }

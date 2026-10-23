@@ -42,8 +42,8 @@ pub const WATER_LAYER: &str = "Water";
 /// "never opened".
 static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
 
-/// Proof that a gesture is open, handed out by [`Editor::begin_gesture_typed`]. It has to be
-/// given back to [`Editor::end_gesture_typed`] or [`Editor::cancel_gesture_typed`]. A token
+/// Proof that a gesture is open, handed out by [`Editor::begin_gesture`]. It has to be
+/// given back to [`Editor::end_gesture`] or [`Editor::cancel_gesture`]. A token
 /// whose gesture is over, or that another Editor issued, is stale: calls with it do nothing.
 #[must_use = "a gesture has to be ended or cancelled with its GestureId"]
 #[derive(Debug)]
@@ -91,12 +91,12 @@ pub struct Gesture<'a> {
 impl Gesture<'_> {
     /// Runs a Command inside the gesture.
     pub fn run(&mut self, command: Command) -> bool {
-        self.editor.gesture_typed(self.id, command)
+        self.editor.gesture(self.id, command)
     }
 
     /// Replaces everything the gesture has done so far with `command`.
     pub fn replace(&mut self, command: Command) -> bool {
-        self.editor.gesture_replace_typed(self.id, command)
+        self.editor.gesture_replace(self.id, command)
     }
 
     /// The Layer a new Object goes into, creating one inside the gesture if the Map has none.
@@ -536,7 +536,7 @@ impl Editor {
     /// Runs one Command as its own Undo step and selects `selection` afterwards.
     pub fn run_selecting(&mut self, command: Command, selection: Selection) -> bool {
         if self.gesture.is_some() {
-            return self.gesture(command);
+            return self.execute_in_gesture(&command);
         }
         if let Err(err) = self.history.begin(command.label(), self.selection.clone()) {
             self.error(err.to_string());
@@ -558,29 +558,9 @@ impl Editor {
         }
     }
 
-    /// Opens a gesture: Commands until `end_gesture` make one Undo step, applied live.
-    pub fn begin_gesture(&mut self, label: &str) {
-        if self.gesture.is_none() {
-            // A refusal shows in the status bar.
-            let _ = self.open_gesture(label);
-        }
-    }
-
-    /// Runs a Command inside the open gesture, or as its own step if none is open.
-    pub fn gesture(&mut self, command: Command) -> bool {
-        if self.gesture.is_none() {
-            return self.run(command);
-        }
-        self.execute_in_gesture(&command)
-    }
-
-    pub fn end_gesture(&mut self) {
-        self.close_gesture(true);
-    }
-
     /// Opens a gesture and returns its token. If a gesture is already open, or History
     /// refuses, the status bar says so and the token is stale.
-    pub fn begin_gesture_typed(&mut self, label: &str) -> GestureId {
+    pub fn begin_gesture(&mut self, label: &str) -> GestureId {
         if self.gesture.is_some() {
             self.error("Another edit is still in progress");
             return GestureId::new(0);
@@ -590,19 +570,19 @@ impl Editor {
 
     /// Runs a Command inside the gesture `id` opened. A stale `id` does nothing and returns
     /// `false`.
-    pub fn gesture_typed(&mut self, id: &GestureId, command: Command) -> bool {
+    pub fn gesture(&mut self, id: &GestureId, command: Command) -> bool {
         self.is_open(id) && self.execute_in_gesture(&command)
     }
 
     /// Replaces everything the gesture `id` opened has done so far with `command`. A stale
     /// `id` does nothing and returns `false`.
-    pub fn gesture_replace_typed(&mut self, id: &GestureId, command: Command) -> bool {
+    pub fn gesture_replace(&mut self, id: &GestureId, command: Command) -> bool {
         self.is_open(id) && self.rewind_gesture() && self.execute_in_gesture(&command)
     }
 
     /// Commits the gesture `id` opened as one Undo step. Returns `false`, and changes
     /// nothing, if `id` is stale.
-    pub fn end_gesture_typed(&mut self, id: GestureId) -> bool {
+    pub fn end_gesture(&mut self, id: GestureId) -> bool {
         let live = self.is_open(&id);
         id.consume();
         if live {
@@ -613,7 +593,7 @@ impl Editor {
 
     /// Rolls the gesture `id` opened back, Selection included. Returns `false`, and changes
     /// nothing, if `id` is stale.
-    pub fn cancel_gesture_typed(&mut self, id: GestureId) -> bool {
+    pub fn cancel_gesture(&mut self, id: GestureId) -> bool {
         let live = self.is_open(&id);
         id.consume();
         if live {
@@ -645,7 +625,7 @@ impl Editor {
         label: &str,
         f: impl FnOnce(&mut Gesture<'_>) -> Result<T, E>,
     ) -> Option<Result<T, E>> {
-        let id = self.begin_gesture_typed(label);
+        let id = self.begin_gesture(label);
         if !self.is_open(&id) {
             id.consume();
             return None;
@@ -655,9 +635,9 @@ impl Editor {
             id: &id,
         });
         if result.is_ok() {
-            self.end_gesture_typed(id);
+            self.end_gesture(id);
         } else {
-            self.cancel_gesture_typed(id);
+            self.cancel_gesture(id);
         }
         Some(result)
     }
@@ -753,20 +733,20 @@ impl Editor {
         match planned {
             Ok(Some(command)) => {
                 let creates = matches!(command, Command::CreateLandmass { .. });
-                if self.gesture_typed(&id, command) {
+                if self.gesture(&id, command) {
                     if creates {
                         self.select(vec![new_id]);
                     }
-                    self.end_gesture_typed(id);
+                    self.end_gesture(id);
                 } else {
-                    self.cancel_gesture_typed(id);
+                    self.cancel_gesture(id);
                 }
             }
             Ok(None) => {
-                self.cancel_gesture_typed(id);
+                self.cancel_gesture(id);
             }
             Err(err) => {
-                self.cancel_gesture_typed(id);
+                self.cancel_gesture(id);
                 let text = err.to_string();
                 let mut chars = text.chars();
                 let first = chars.next().map(|c| c.to_uppercase().to_string());
@@ -851,7 +831,7 @@ impl Editor {
         );
         if planned == Err(land::BrushError::NoLayer) {
             let layer = Id::new();
-            let created = self.gesture_typed(
+            let created = self.gesture(
                 &id,
                 Command::CreateLayer {
                     id: layer,
@@ -861,7 +841,7 @@ impl Editor {
                 },
             );
             if !created {
-                self.cancel_gesture_typed(id);
+                self.cancel_gesture(id);
                 return;
             }
             planned = land::water_command(
@@ -876,20 +856,20 @@ impl Editor {
         match planned {
             Ok(Some(command)) => {
                 let creates = matches!(command, Command::CreateLake { .. });
-                if self.gesture_typed(&id, command) {
+                if self.gesture(&id, command) {
                     if creates {
                         self.select(vec![new_id]);
                     }
-                    self.end_gesture_typed(id);
+                    self.end_gesture(id);
                 } else {
-                    self.cancel_gesture_typed(id);
+                    self.cancel_gesture(id);
                 }
             }
             Ok(None) => {
-                self.cancel_gesture_typed(id);
+                self.cancel_gesture(id);
             }
             Err(err) => {
-                self.cancel_gesture_typed(id);
+                self.cancel_gesture(id);
                 self.error(err.to_string());
             }
         }
@@ -974,21 +954,6 @@ impl Editor {
             g.editor.select(selection);
             Ok(())
         });
-    }
-
-    /// Escape: undoes everything the open gesture did, Selection included.
-    pub fn cancel_gesture(&mut self) {
-        self.close_gesture(false);
-    }
-
-    /// Replaces everything the open gesture has done so far with `command`. Drags use it to
-    /// re-issue their whole effect each frame, so the Undo step holds one Command and nothing
-    /// drifts. Without an open gesture it runs `command` as its own step.
-    pub fn gesture_replace(&mut self, command: Command) -> bool {
-        if self.gesture.is_none() {
-            return self.run(command);
-        }
-        self.rewind_gesture() && self.execute_in_gesture(&command)
     }
 
     pub fn gesture_open(&self) -> bool {
@@ -1318,18 +1283,19 @@ impl Editor {
             .iter()
             .all(|&id| self.map.node(id).is_some_and(Node::is_layer));
         let (command, copies) = self.duplicate_command(&ids, [0.0, 0.0]);
-        self.begin_gesture(if only_layers {
+        let label = if only_layers {
             "Duplicate Layer"
         } else {
             "Duplicate Objects"
+        };
+        let done = self.in_gesture(label, |g| {
+            if !g.run(command) {
+                return Err(());
+            }
+            g.editor.select(copies.clone());
+            Ok(())
         });
-        if !self.gesture(command) {
-            self.cancel_gesture();
-            return None;
-        }
-        self.select(copies.clone());
-        self.end_gesture();
-        Some(copies)
+        done.is_some_and(|result| result.is_ok()).then_some(copies)
     }
 
     /// Whether Paste has anything to paste.
@@ -1671,9 +1637,9 @@ impl Editor {
     /// creating a Layer if the Map has none. The gesture stays open for typing the text.
     pub fn place_label(&mut self, position: [f64; 2]) -> Option<(Id, GestureId)> {
         self.end_open_gesture();
-        let gesture = self.begin_gesture_typed("Add Label");
-        let Some(parent) = self.placement_layer(Placing::Label) else {
-            self.cancel_gesture_typed(gesture);
+        let gesture = self.begin_gesture("Add Label");
+        let Some(parent) = self.placement_layer(&gesture, Placing::Label) else {
+            self.cancel_gesture(gesture);
             return None;
         };
         let id = Id::new();
@@ -1682,7 +1648,7 @@ impl Editor {
             position,
             ..Label::default()
         };
-        if !self.gesture_typed(
+        if !self.gesture(
             &gesture,
             Command::CreateLabel {
                 id,
@@ -1691,7 +1657,7 @@ impl Editor {
                 label: Box::new(label),
             },
         ) {
-            self.cancel_gesture_typed(gesture);
+            self.cancel_gesture(gesture);
             return None;
         }
         self.select(vec![id]);
@@ -1941,12 +1907,12 @@ impl Editor {
 
     /// The Layer new Objects go into: see [`Self::target_layer`], else the top Layer, creating
     /// a Layer if the Map has none. Runs inside the open gesture.
-    fn placement_layer(&mut self, placing: Placing) -> Option<Id> {
+    fn placement_layer(&mut self, gesture: &GestureId, placing: Placing) -> Option<Id> {
         match self.placement_layer_or_new(placing) {
             Ok(layer) => Some(layer),
             Err(create) => {
                 let (id, command) = *create;
-                self.gesture(command).then_some(id)
+                self.gesture(gesture, command).then_some(id)
             }
         }
     }
@@ -2265,7 +2231,7 @@ mod tests {
             start: [10.0, 10.0],
             erase,
         };
-        let gesture = editor.begin_gesture_typed(Editor::water_label(false));
+        let gesture = editor.begin_gesture(Editor::water_label(false));
         editor.finish_water_stroke(gesture, stroke(false));
         assert_eq!(editor.undo_label(), Some("Paint Water"));
         let layer = editor.water_layer().expect("a Water layer");
@@ -2274,7 +2240,7 @@ mod tests {
         assert_eq!(editor.selection(), lakes);
 
         // A second stroke extends the Lake and reuses the Layer.
-        let gesture = editor.begin_gesture_typed(Editor::water_label(false));
+        let gesture = editor.begin_gesture(Editor::water_label(false));
         editor.finish_water_stroke(gesture, stroke(false));
         assert_eq!(editor.map.children(Some(layer)), lakes);
         assert_eq!(editor.map.children(None), &[layer]);
@@ -2321,21 +2287,24 @@ mod tests {
     fn a_gesture_is_one_undo_step_and_cancel_restores() {
         let mut editor = editor();
         let layer = editor.new_layer().unwrap();
-        editor.begin_gesture("Change Opacity");
+        let gesture = editor.begin_gesture("Change Opacity");
         for opacity in [0.8, 0.5, 0.2] {
-            editor.gesture(Command::SetOpacity { id: layer, opacity });
+            editor.gesture(&gesture, Command::SetOpacity { id: layer, opacity });
         }
-        editor.end_gesture();
+        editor.end_gesture(gesture);
         assert_eq!(editor.undo_label(), Some("Change Opacity"));
         editor.undo();
         assert_eq!(opacity(&editor, layer), 1.0);
 
-        editor.begin_gesture("Change Opacity");
-        editor.gesture(Command::SetOpacity {
-            id: layer,
-            opacity: 0.3,
-        });
-        editor.cancel_gesture();
+        let gesture = editor.begin_gesture("Change Opacity");
+        editor.gesture(
+            &gesture,
+            Command::SetOpacity {
+                id: layer,
+                opacity: 0.3,
+            },
+        );
+        editor.cancel_gesture(gesture);
         assert_eq!(opacity(&editor, layer), 1.0);
         assert_eq!(editor.redo_label(), Some("Change Opacity"));
     }
@@ -2346,14 +2315,14 @@ mod tests {
         let (id, gesture) = editor.place_label([50.0, 50.0]).unwrap();
         let mut label = editor.label(id).unwrap().clone();
         label.text = "Thule".into();
-        editor.gesture_typed(
+        editor.gesture(
             &gesture,
             Command::SetLabel {
                 id,
                 label: Box::new(label),
             },
         );
-        editor.end_gesture_typed(gesture);
+        editor.end_gesture(gesture);
         assert_eq!(editor.selection(), &[id]);
         assert_eq!(editor.label(id).unwrap().text, "Thule");
         assert_eq!(editor.undo_label(), Some("Add Label"));
@@ -2367,7 +2336,7 @@ mod tests {
         let mut editor = editor();
         let layer = editor.new_layer().unwrap();
         let (_, gesture) = editor.place_label([50.0, 50.0]).unwrap();
-        editor.cancel_gesture_typed(gesture);
+        editor.cancel_gesture(gesture);
         assert_eq!(editor.map.children(Some(layer)).len(), 0);
         assert_eq!(editor.selection(), &[layer]);
     }
@@ -2376,9 +2345,9 @@ mod tests {
     fn picking_finds_the_topmost_unlocked_visible_label() {
         let mut editor = editor();
         let (below, gesture) = editor.place_label([50.0, 50.0]).unwrap();
-        editor.end_gesture_typed(gesture);
+        editor.end_gesture(gesture);
         let (above, gesture) = editor.place_label([52.0, 50.0]).unwrap();
-        editor.end_gesture_typed(gesture);
+        editor.end_gesture(gesture);
         assert_eq!(editor.pick([50.0, 50.0]), Some(above));
         assert_eq!(editor.pick([-500.0, 50.0]), None);
         editor.run(Command::SetLocked {
@@ -2434,15 +2403,18 @@ mod tests {
 
         // A drag is one gesture and one Undo step, however many frames it takes.
         editor.select_nodes(vec![node(2)]);
-        editor.begin_gesture("Move Nodes");
+        let gesture = editor.begin_gesture("Move Nodes");
         for step in 1..=5 {
-            editor.gesture_replace(Command::MoveNodes {
-                id,
-                nodes: vec![node(2)],
-                offset: [f64::from(step), 0.0],
-            });
+            editor.gesture_replace(
+                &gesture,
+                Command::MoveNodes {
+                    id,
+                    nodes: vec![node(2)],
+                    offset: [f64::from(step), 0.0],
+                },
+            );
         }
-        editor.end_gesture();
+        editor.end_gesture(gesture);
         assert_eq!(
             editor.edited_outline().unwrap().node(node(2)),
             Some([15.0, 10.0])
@@ -2640,7 +2612,7 @@ mod tests {
         let stamp = editor.place_stamp([40.0, 50.0]).unwrap();
         assert_eq!(editor.map.parent(stamp), layers.assets);
         let (label, gesture) = editor.place_label([60.0, 50.0]).unwrap();
-        editor.end_gesture_typed(gesture);
+        editor.end_gesture(gesture);
         assert_eq!(editor.map.parent(label), layers.labels);
         assert_eq!(editor.default_layer(Placing::Land), layers.land);
         assert_eq!(editor.map.children(layers.assets), [stamp]);
@@ -2844,17 +2816,17 @@ mod tests {
     }
 
     #[test]
-    fn a_typed_gesture_commits_one_undo_step() {
+    fn a_gesture_commits_one_undo_step() {
         let mut editor = editor();
         let layer = editor.new_layer().unwrap();
         let undo_steps = editor.history.undo_len();
-        let id = editor.begin_gesture_typed("Two Stamps");
+        let id = editor.begin_gesture("Two Stamps");
         assert!(editor.gesture_open());
         let (a, first) = create_stamp(layer);
         let (b, second) = create_stamp(layer);
-        assert!(editor.gesture_typed(&id, first));
-        assert!(editor.gesture_typed(&id, second));
-        assert!(editor.end_gesture_typed(id));
+        assert!(editor.gesture(&id, first));
+        assert!(editor.gesture(&id, second));
+        assert!(editor.end_gesture(id));
         assert!(!editor.gesture_open());
         assert_eq!(editor.history.undo_len(), undo_steps + 1);
         assert_eq!(editor.undo_label(), Some("Two Stamps"));
@@ -2863,31 +2835,31 @@ mod tests {
     }
 
     #[test]
-    fn cancelling_a_typed_gesture_rolls_it_back() {
+    fn cancelling_a_gesture_rolls_it_back() {
         let mut editor = editor();
         let layer = editor.new_layer().unwrap();
         let undo_steps = editor.history.undo_len();
         let selection = editor.selection().to_vec();
-        let id = editor.begin_gesture_typed("Stamp");
+        let id = editor.begin_gesture("Stamp");
         let (stamp, command) = create_stamp(layer);
-        assert!(editor.gesture_typed(&id, command));
+        assert!(editor.gesture(&id, command));
         editor.select(vec![stamp]);
-        assert!(editor.cancel_gesture_typed(id));
+        assert!(editor.cancel_gesture(id));
         assert!(editor.stamp(stamp).is_none());
         assert_eq!(editor.selection(), &selection[..]);
         assert_eq!(editor.history.undo_len(), undo_steps);
     }
 
     #[test]
-    fn replacing_in_a_typed_gesture_keeps_one_commands_worth() {
+    fn replacing_in_a_gesture_keeps_one_commands_worth() {
         let mut editor = editor();
         let layer = editor.new_layer().unwrap();
-        let id = editor.begin_gesture_typed("Stamp");
+        let id = editor.begin_gesture("Stamp");
         let (first, command) = create_stamp(layer);
-        assert!(editor.gesture_typed(&id, command));
+        assert!(editor.gesture(&id, command));
         let (second, command) = create_stamp(layer);
-        assert!(editor.gesture_replace_typed(&id, command));
-        assert!(editor.end_gesture_typed(id));
+        assert!(editor.gesture_replace(&id, command));
+        assert!(editor.end_gesture(id));
         assert!(editor.stamp(first).is_none());
         assert!(editor.stamp(second).is_some());
     }
@@ -2896,28 +2868,28 @@ mod tests {
     fn a_stale_token_is_a_no_op() {
         let mut editor = editor();
         let layer = editor.new_layer().unwrap();
-        let old = editor.begin_gesture_typed("First");
+        let old = editor.begin_gesture("First");
         assert!(editor.cancel_open_gesture());
-        let current = editor.begin_gesture_typed("Second");
+        let current = editor.begin_gesture("Second");
         let (stamp, command) = create_stamp(layer);
-        assert!(!editor.gesture_typed(&old, command.clone()));
-        assert!(!editor.gesture_replace_typed(&old, command));
+        assert!(!editor.gesture(&old, command.clone()));
+        assert!(!editor.gesture_replace(&old, command));
         assert!(editor.stamp(stamp).is_none());
-        assert!(!editor.end_gesture_typed(old));
+        assert!(!editor.end_gesture(old));
         assert!(editor.gesture_open());
-        assert!(editor.end_gesture_typed(current));
+        assert!(editor.end_gesture(current));
         // Stale again once its own gesture is over, and so is a foreign Editor's token.
         // Both Editors issue the same number of tokens, so per-Editor counters would collide.
         let mut other = self::tests::editor();
         for label in ["One", "Two"] {
-            let token = other.begin_gesture_typed(label);
-            assert!(other.end_gesture_typed(token));
+            let token = other.begin_gesture(label);
+            assert!(other.end_gesture(token));
         }
-        let foreign = other.begin_gesture_typed("Three");
-        let own = editor.begin_gesture_typed("Third");
-        assert!(!editor.cancel_gesture_typed(foreign));
+        let foreign = other.begin_gesture("Three");
+        let own = editor.begin_gesture("Third");
+        assert!(!editor.cancel_gesture(foreign));
         assert!(editor.gesture_open());
-        assert!(editor.cancel_gesture_typed(own));
+        assert!(editor.cancel_gesture(own));
         assert!(other.cancel_open_gesture());
     }
 
@@ -2926,15 +2898,15 @@ mod tests {
         let mut editor = editor();
         let layer = editor.new_layer().unwrap();
         assert!(!editor.cancel_open_gesture());
-        let id = editor.begin_gesture_typed("Stamp");
+        let id = editor.begin_gesture("Stamp");
         let (stamp, command) = create_stamp(layer);
-        assert!(editor.gesture_typed(&id, command));
+        assert!(editor.gesture(&id, command));
         assert!(editor.cancel_open_gesture());
         assert!(!editor.gesture_open());
         assert!(editor.stamp(stamp).is_none());
         let (_, command) = create_stamp(layer);
-        assert!(!editor.gesture_typed(&id, command));
-        assert!(!editor.end_gesture_typed(id));
+        assert!(!editor.gesture(&id, command));
+        assert!(!editor.end_gesture(id));
     }
 
     #[test]
@@ -2965,23 +2937,23 @@ mod tests {
     #[test]
     fn in_gesture_does_not_open_inside_another_gesture() {
         let mut editor = editor();
-        editor.begin_gesture("Outer");
+        let outer = editor.begin_gesture("Outer");
         assert!(editor.in_gesture("Inner", |_| Ok::<(), ()>(())).is_none());
         assert!(editor.gesture_open());
-        editor.cancel_gesture();
+        editor.cancel_gesture(outer);
     }
 
     #[test]
     fn history_begin_refuses_while_a_transaction_is_open() {
         let mut editor = editor();
-        let id = editor.begin_gesture_typed("Open");
+        let id = editor.begin_gesture("Open");
         assert_eq!(
             editor.history.begin("Second", Vec::new()),
             Err(ssmap_core::HistoryError::TransactionOpen)
         );
         // The editor shows a refusal instead of panicking, and the first gesture survives.
-        let second = editor.begin_gesture_typed("Second");
-        assert!(!editor.end_gesture_typed(second));
-        assert!(editor.end_gesture_typed(id));
+        let second = editor.begin_gesture("Second");
+        assert!(!editor.end_gesture(second));
+        assert!(editor.end_gesture(id));
     }
 }

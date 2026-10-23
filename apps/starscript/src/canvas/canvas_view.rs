@@ -724,11 +724,11 @@ mod tests {
     #[test]
     fn cancel_drops_a_gesture_then_leaves_node_edit() {
         let mut harness = harness();
-        let gesture = harness.state_mut().1.begin_gesture_typed("Move Nodes");
+        let gesture = harness.state_mut().1.begin_gesture("Move Nodes");
         harness.get_by_label("Cancel").click();
         harness.run();
         // The button rolled it back, so the token is stale.
-        assert!(!harness.state_mut().1.cancel_gesture_typed(gesture));
+        assert!(!harness.state_mut().1.cancel_gesture(gesture));
         assert!(!harness.state().1.gesture_open());
         assert!(harness.state().1.node_edit().is_some());
         harness.get_by_label("Cancel").click();
