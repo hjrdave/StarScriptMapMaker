@@ -49,9 +49,9 @@ stored in tool state without borrowing.
 
 ## Rollout
 
-1. Add the typed API next to the old one (this change). Rust has no overloading, so the typed
-   methods carry a `_typed` suffix while the old ones keep their names:
-   `begin_gesture_typed`, `gesture_typed`, `gesture_replace_typed`, `end_gesture_typed`,
-   `cancel_gesture_typed`.
+1. Add the typed API next to the old one. Rust has no overloading, so the typed methods
+   temporarily carried a suffix while the old ones kept their names.
 2. Move callers over.
-3. Remove the old API and drop the suffix.
+3. Remove the old API and drop the suffix. Done: `begin_gesture`, `gesture`, `gesture_replace`,
+   `end_gesture` and `cancel_gesture` all take or return a `GestureId`, and no token-less form
+   remains. `gesture_open()` stays for UI gating.
