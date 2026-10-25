@@ -50,6 +50,16 @@ CI (`.github/workflows/ci.yml`) runs the same checks. Do not edit `.github/`.
 - `insta` snapshots are in `crates/core/tests/snapshots/`. After an intended change, run `cargo insta review` (needs `cargo-insta`), or run the tests with `INSTA_UPDATE=always` and check the `.snap` diff.
 - Benches and the frame-time check read `SSMAP_BENCH_*` env vars; see `crates/*/benches/` and `apps/starscript/tests/frame_time.rs`.
 
+### In a cloud session
+
+`.claude/hooks/session-start.sh` installs the pinned toolchain and fetches crates. All four checks above run there. The container has no GPU, so some tests pass without checking anything:
+
+- The render tests that need an adapter return early and pass: `crates/render/tests/golden.rs` (it prints `skipping render test`), `tiled_export.rs` and `membership.rs`. Golden images are not compared.
+- `apps/starscript/tests/frame_time.rs` prints `skipping:` and passes.
+- macOS packaging and anything that opens a window can't be checked.
+
+Say which of these a change touches, so they get checked on a machine with a GPU.
+
 ## Language and design
 
 - Use the terms in `CONTEXT.md` (Map, Object, Layer, Landmass, Stamp...) in code, docs, UI text and commit messages. Do not use the `_Avoid_` alternatives listed there.
