@@ -239,10 +239,6 @@ fn fill(ui: &egui::Ui, rect: Rect, color: Color32) {
 /// Draws the strip in the panel `ui` and returns what the user did. `inset` is the room left
 /// clear at the left for the native window buttons; `custom_chrome` makes the empty part drag
 /// the window and a double-click zoom it.
-#[allow(
-    clippy::too_many_lines,
-    reason = "existing long function; split over time (#351)"
-)]
 pub(crate) fn show(
     ui: &mut egui::Ui,
     tabs: &[TabInfo],
@@ -263,27 +259,8 @@ pub(crate) fn show(
 
     // Behind everything else, so a tab or button wins where they overlap.
     if custom_chrome {
-        let background = ui.interact(strip, ui.id().with("tab-strip-bg"), Sense::click_and_drag());
-        if background.drag_started() {
-            ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
-        }
-        if background.double_clicked() {
-            let zoomed = ui.input(|i| i.viewport().maximized).unwrap_or(false);
-            ui.ctx()
-                .send_viewport_cmd(egui::ViewportCommand::Maximized(!zoomed));
-        }
+        drag_window(ui, strip);
     }
-
-    let flat_button = |ui: &mut egui::Ui, rect: Rect, id: &str, label: &str| {
-        let response = ui.interact(rect, ui.id().with(id), Sense::click());
-        response.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
-        });
-        if response.hovered() {
-            fill(ui, rect, p.tab_hover);
-        }
-        response
-    };
 
     // Home, which only the main window has.
     let has_home = placement == Placement::Main;
@@ -291,35 +268,7 @@ pub(crate) fn show(
     let home = column(strip.min.x + inset, home_width);
     let home_active = current == Slot::Home;
     if has_home {
-        let response = ui.interact(home, ui.id().with("tab-home"), Sense::click());
-        response.widget_info(|| {
-            egui::WidgetInfo::selected(
-                egui::WidgetType::Button,
-                ui.is_enabled(),
-                home_active,
-                "Home",
-            )
-        });
-        if home_active {
-            fill(ui, home, p.tab_active);
-            fill(
-                ui,
-                Rect::from_min_max(egui::pos2(home.min.x, home.max.y - ACTIVE_LINE), home.max),
-                p.gold,
-            );
-        } else if response.hovered() {
-            fill(ui, home, p.tab_hover);
-        }
-        let tint = if home_active {
-            p.text_primary
-        } else {
-            p.text_tertiary
-        };
-        icons::paint(ui, home, Icon::Home, icons::GRID, tint);
-        if response.clicked() {
-            actions.push(Action::Show(Slot::Home));
-        }
-        response.on_hover_text("Home");
+        paint_home(ui, home, home_active, &mut actions);
     }
 
     // Map tabs.
@@ -361,144 +310,31 @@ pub(crate) fn show(
             }
             let active = current == Slot::Map(index);
             let hovered = pointer.is_some_and(|at| rect.contains(at) && viewport.contains(at));
-            let body = ui.interact(
-                rect.intersect(viewport),
-                ui.id().with(("tab", index)),
-                Sense::click_and_drag(),
-            );
-            if body.dragged() {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-            }
-            if body.drag_stopped()
-                && let Some(at) = ui.input(|i| i.pointer.latest_pos())
-            {
-                actions.push(Action::Dropped { index, at });
-            }
-            body.widget_info(|| {
-                egui::WidgetInfo::selected(
-                    egui::WidgetType::Button,
-                    ui.is_enabled(),
-                    active,
-                    &info.name,
-                )
-            });
-            if active {
-                fill(ui, rect, p.tab_active);
-            } else if hovered {
-                fill(ui, rect, p.tab_hover);
-            }
-            fill(
-                ui,
-                Rect::from_min_size(rect.min, vec2(1.0, rect.height())),
-                p.tab_divider,
-            );
-            if active {
-                fill(
-                    ui,
-                    Rect::from_min_max(egui::pos2(rect.min.x, rect.max.y - ACTIVE_LINE), rect.max),
-                    p.gold,
-                );
-            }
-
-            let mark = indicator(info.unsaved, hovered, active);
-            let hit = Rect::from_center_size(
-                egui::pos2(rect.max.x - TAB_PADDING - CLOSE_HIT / 2.0, rect.center().y),
-                vec2(CLOSE_HIT, CLOSE_HIT),
-            );
-            let color = if active {
-                p.text_primary
-            } else {
-                p.text_tertiary
+            let tab = TabDraw {
+                info,
+                index,
+                rect,
+                viewport,
+                width,
+                active,
+                hovered,
+                tab_count: tabs.len(),
+                placement,
             };
-            let galley = ui.painter().layout_job(tab_text(
-                &info.name,
-                color,
-                width - 2.0 * TAB_PADDING - CLOSE_HIT - 4.0,
-            ));
-            let text_at = egui::pos2(
-                rect.min.x + TAB_PADDING,
-                rect.center().y - galley.size().y / 2.0,
-            );
-            ui.painter().galley(text_at, galley, color);
-
-            match mark {
-                Indicator::Nothing => {}
-                Indicator::Dot => {
-                    ui.painter().circle_filled(hit.center(), DOT / 2.0, p.gold);
-                }
-                Indicator::Close => {
-                    let label = format!("Close {}", info.name);
-                    let close = ui.interact(
-                        hit.intersect(viewport),
-                        ui.id().with(("tab-close", index)),
-                        Sense::click(),
-                    );
-                    close.widget_info(|| {
-                        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &label)
-                    });
-                    if close.hovered() {
-                        ui.painter()
-                            .rect_filled(hit, theme::RADIUS_CHIP, p.tab_divider);
-                    }
-                    icons::paint(ui, hit, Icon::Close, 12.0, color);
-                    if close.clicked() {
-                        actions.push(Action::Close(index));
-                    }
-                }
-            }
-
-            if body.clicked() && !actions.contains(&Action::Close(index)) {
-                actions.push(Action::Show(Slot::Map(index)));
-            }
-            if body.middle_clicked() {
-                actions.push(Action::Close(index));
-            }
-            let body = body.on_hover_text(info.path.as_deref().unwrap_or("Not saved yet"));
-            body.context_menu(|ui| {
-                // A popped-out window's only tab can only go back.
-                if (placement == Placement::Main || tabs.len() > 1)
-                    && ui.button("Move Tab to New Window").clicked()
-                {
-                    actions.push(Action::MoveToNewWindow(index));
-                    ui.close();
-                }
-                if placement == Placement::Popped && ui.button("Move Tab to Main Window").clicked()
-                {
-                    actions.push(Action::MoveToMainWindow(index));
-                    ui.close();
-                }
-                if ui.button("Close Tab").clicked() {
-                    actions.push(Action::Close(index));
-                    ui.close();
-                }
-            });
+            paint_tab(ui, &tab, &mut actions);
         }
     });
 
     // Chevrons, only when the tabs scroll.
     let mut plus_left = viewport.max.x;
     if fit.scrolls {
-        let left = column(first, CHEVRON);
-        let right = column(viewport.max.x, CHEVRON);
-        let can_left = state.scroll > 0.0;
-        let can_right = state.scroll < fit.max_scroll(tabs.len());
-        for (rect, label, flip, can) in [
-            (left, "Scroll tabs left", true, can_left),
-            (right, "Scroll tabs right", false, can_right),
-        ] {
-            let response = flat_button(ui, rect, label, label);
-            let tint = if can {
-                p.text_secondary
-            } else {
-                p.text_tertiary
-            };
-            icons::paint_flipped(ui, rect, Icon::ChevronRight, icons::GRID, tint, flip);
-            if response.clicked() {
-                let step = if flip { -width } else { width };
-                state.scroll = (state.scroll + step).clamp(0.0, fit.max_scroll(tabs.len()));
-            }
-        }
-        plus_left = right.max.x;
+        plus_left = paint_chevrons(
+            ui,
+            [column(first, CHEVRON), column(viewport.max.x, CHEVRON)],
+            state,
+            &fit,
+            tabs.len(),
+        );
     }
 
     // New Tab.
@@ -511,6 +347,240 @@ pub(crate) fn show(
     response.on_hover_text("New Tab");
 
     actions
+}
+
+/// Lets the empty part of the strip drag the window and a double-click zoom it. It goes behind
+/// everything else, so a tab or button wins where they overlap.
+fn drag_window(ui: &mut egui::Ui, strip: Rect) {
+    let background = ui.interact(strip, ui.id().with("tab-strip-bg"), Sense::click_and_drag());
+    if background.drag_started() {
+        ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+    }
+    if background.double_clicked() {
+        let zoomed = ui.input(|i| i.viewport().maximized).unwrap_or(false);
+        ui.ctx()
+            .send_viewport_cmd(egui::ViewportCommand::Maximized(!zoomed));
+    }
+}
+
+/// A flat button over `rect` that highlights when hovered.
+fn flat_button(ui: &mut egui::Ui, rect: Rect, id: &str, label: &str) -> egui::Response {
+    let p: &Palette = theme::palette(ui.ctx());
+    let response = ui.interact(rect, ui.id().with(id), Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
+    });
+    if response.hovered() {
+        fill(ui, rect, p.tab_hover);
+    }
+    response
+}
+
+/// Draws the Home tab in `home` and records a click on it.
+fn paint_home(ui: &mut egui::Ui, home: Rect, home_active: bool, actions: &mut Vec<Action>) {
+    let p: &Palette = theme::palette(ui.ctx());
+    let response = ui.interact(home, ui.id().with("tab-home"), Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::Button,
+            ui.is_enabled(),
+            home_active,
+            "Home",
+        )
+    });
+    if home_active {
+        fill(ui, home, p.tab_active);
+        fill(
+            ui,
+            Rect::from_min_max(egui::pos2(home.min.x, home.max.y - ACTIVE_LINE), home.max),
+            p.gold,
+        );
+    } else if response.hovered() {
+        fill(ui, home, p.tab_hover);
+    }
+    let tint = if home_active {
+        p.text_primary
+    } else {
+        p.text_tertiary
+    };
+    icons::paint(ui, home, Icon::Home, icons::GRID, tint);
+    if response.clicked() {
+        actions.push(Action::Show(Slot::Home));
+    }
+    response.on_hover_text("Home");
+}
+
+/// One Map tab to draw: where it is, and what it should look like.
+struct TabDraw<'a> {
+    info: &'a TabInfo,
+    index: usize,
+    rect: Rect,
+    /// The visible part of the strip, which clips the tab.
+    viewport: Rect,
+    width: f32,
+    active: bool,
+    hovered: bool,
+    tab_count: usize,
+    placement: Placement,
+}
+
+/// Draws one Map tab with its close button and context menu, and records what the user did.
+fn paint_tab(ui: &mut egui::Ui, tab: &TabDraw<'_>, actions: &mut Vec<Action>) {
+    let p: &Palette = theme::palette(ui.ctx());
+    let TabDraw {
+        info,
+        index,
+        rect,
+        viewport,
+        width,
+        active,
+        hovered,
+        placement,
+        ..
+    } = *tab;
+    let body = ui.interact(
+        rect.intersect(viewport),
+        ui.id().with(("tab", index)),
+        Sense::click_and_drag(),
+    );
+    if body.dragged() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+    }
+    if body.drag_stopped()
+        && let Some(at) = ui.input(|i| i.pointer.latest_pos())
+    {
+        actions.push(Action::Dropped { index, at });
+    }
+    body.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::Button,
+            ui.is_enabled(),
+            active,
+            &info.name,
+        )
+    });
+    if active {
+        fill(ui, rect, p.tab_active);
+    } else if hovered {
+        fill(ui, rect, p.tab_hover);
+    }
+    fill(
+        ui,
+        Rect::from_min_size(rect.min, vec2(1.0, rect.height())),
+        p.tab_divider,
+    );
+    if active {
+        fill(
+            ui,
+            Rect::from_min_max(egui::pos2(rect.min.x, rect.max.y - ACTIVE_LINE), rect.max),
+            p.gold,
+        );
+    }
+
+    let mark = indicator(info.unsaved, hovered, active);
+    let hit = Rect::from_center_size(
+        egui::pos2(rect.max.x - TAB_PADDING - CLOSE_HIT / 2.0, rect.center().y),
+        vec2(CLOSE_HIT, CLOSE_HIT),
+    );
+    let color = if active {
+        p.text_primary
+    } else {
+        p.text_tertiary
+    };
+    let galley = ui.painter().layout_job(tab_text(
+        &info.name,
+        color,
+        width - 2.0 * TAB_PADDING - CLOSE_HIT - 4.0,
+    ));
+    let text_at = egui::pos2(
+        rect.min.x + TAB_PADDING,
+        rect.center().y - galley.size().y / 2.0,
+    );
+    ui.painter().galley(text_at, galley, color);
+
+    match mark {
+        Indicator::Nothing => {}
+        Indicator::Dot => {
+            ui.painter().circle_filled(hit.center(), DOT / 2.0, p.gold);
+        }
+        Indicator::Close => {
+            let label = format!("Close {}", info.name);
+            let close = ui.interact(
+                hit.intersect(viewport),
+                ui.id().with(("tab-close", index)),
+                Sense::click(),
+            );
+            close.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), &label)
+            });
+            if close.hovered() {
+                ui.painter()
+                    .rect_filled(hit, theme::RADIUS_CHIP, p.tab_divider);
+            }
+            icons::paint(ui, hit, Icon::Close, 12.0, color);
+            if close.clicked() {
+                actions.push(Action::Close(index));
+            }
+        }
+    }
+
+    if body.clicked() && !actions.contains(&Action::Close(index)) {
+        actions.push(Action::Show(Slot::Map(index)));
+    }
+    if body.middle_clicked() {
+        actions.push(Action::Close(index));
+    }
+    let body = body.on_hover_text(info.path.as_deref().unwrap_or("Not saved yet"));
+    body.context_menu(|ui| {
+        // A popped-out window's only tab can only go back.
+        if (placement == Placement::Main || tab.tab_count > 1)
+            && ui.button("Move Tab to New Window").clicked()
+        {
+            actions.push(Action::MoveToNewWindow(index));
+            ui.close();
+        }
+        if placement == Placement::Popped && ui.button("Move Tab to Main Window").clicked() {
+            actions.push(Action::MoveToMainWindow(index));
+            ui.close();
+        }
+        if ui.button("Close Tab").clicked() {
+            actions.push(Action::Close(index));
+            ui.close();
+        }
+    });
+}
+
+/// Draws the scroll chevrons at `rects` (left, then right) and scrolls the tabs when one is
+/// clicked. Returns where the New Tab button starts.
+fn paint_chevrons(
+    ui: &mut egui::Ui,
+    rects: [Rect; 2],
+    state: &mut State,
+    fit: &Fit,
+    tab_count: usize,
+) -> f32 {
+    let p: &Palette = theme::palette(ui.ctx());
+    let width = fit.tab_width;
+    let [left, right] = rects;
+    let can_left = state.scroll > 0.0;
+    let can_right = state.scroll < fit.max_scroll(tab_count);
+    for (rect, label, flip, can) in [
+        (left, "Scroll tabs left", true, can_left),
+        (right, "Scroll tabs right", false, can_right),
+    ] {
+        let response = flat_button(ui, rect, label, label);
+        let tint = if can {
+            p.text_secondary
+        } else {
+            p.text_tertiary
+        };
+        icons::paint_flipped(ui, rect, Icon::ChevronRight, icons::GRID, tint, flip);
+        if response.clicked() {
+            let step = if flip { -width } else { width };
+            state.scroll = (state.scroll + step).clamp(0.0, fit.max_scroll(tab_count));
+        }
+    }
+    right.max.x
 }
 
 #[cfg(test)]
