@@ -9,7 +9,9 @@ fi
 
 cd "$CLAUDE_PROJECT_DIR"
 
-# The pinned toolchain from rust-toolchain.toml, with rustfmt and clippy. Same step as CI.
+# The pinned toolchain from rust-toolchain.toml, with rustfmt, clippy and rust-analyzer (the LSP
+# plugin in .claude/settings.json runs it). `rustup show` adds a component the toolchain is
+# missing. Same step as CI.
 rustup show active-toolchain || rustup toolchain install
 
 cargo fetch --locked
