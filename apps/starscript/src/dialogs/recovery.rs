@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::document::Document;
 
 /// How long applied Ops may wait before they are written: "within about a second".
-pub(crate) const FLUSH_DELAY: Duration = Duration::from_millis(500);
+const FLUSH_DELAY: Duration = Duration::from_millis(500);
 
 /// The extension of journal files.
 const EXTENSION: &str = "recovery";

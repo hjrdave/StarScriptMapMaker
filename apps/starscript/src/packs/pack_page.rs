@@ -41,7 +41,7 @@ pub(crate) enum Action {
 }
 
 /// "Built in" or "Added by you".
-pub(crate) fn origin_label(pack: &Pack) -> &'static str {
+fn origin_label(pack: &Pack) -> &'static str {
     if pack.is_built_in() {
         "Built in"
     } else {
@@ -50,7 +50,7 @@ pub(crate) fn origin_label(pack: &Pack) -> &'static str {
 }
 
 /// "1 Asset" or "12 Assets".
-pub(crate) fn asset_count_label(pack: &Pack) -> String {
+fn asset_count_label(pack: &Pack) -> String {
     match pack.asset_count() {
         1 => "1 Asset".into(),
         n => format!("{n} Assets"),
@@ -67,14 +67,14 @@ pub(crate) fn stamp_usage_label(stamps: usize) -> String {
 }
 
 /// Why a card's Delete is unavailable, or `None` when the pack can be deleted.
-pub(crate) fn delete_blocked_reason(pack: &Pack) -> Option<&'static str> {
+fn delete_blocked_reason(pack: &Pack) -> Option<&'static str> {
     pack.is_built_in()
         .then_some("Built-in packs ship with the app and can’t be deleted")
 }
 
 /// The authors of a pack's Assets, sorted and without repeats: "A", "A and B" or "A, B and 3
 /// more". "Unknown author" when none is given.
-pub(crate) fn author_label(pack: &Pack) -> String {
+fn author_label(pack: &Pack) -> String {
     let mut authors: Vec<&str> = pack
         .assets
         .iter()

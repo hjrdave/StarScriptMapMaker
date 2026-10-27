@@ -58,7 +58,7 @@ impl Roughness {
     }
 
     /// Whether these settings leave an outline unchanged.
-    pub(crate) fn is_smooth(&self) -> bool {
+    fn is_smooth(&self) -> bool {
         !(self.amount > 0.0
             && self.scale > 0.0
             && self.amount.is_finite()

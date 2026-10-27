@@ -28,7 +28,7 @@ pub(crate) enum Zoom {
 
 /// Sets the zoom to `target` (physical pixels per Canvas unit, clamped), keeping the Canvas
 /// point under `pixel` where it is.
-pub(crate) fn zoom_about(view: &mut View, pixel: [f64; 2], target: f64) {
+fn zoom_about(view: &mut View, pixel: [f64; 2], target: f64) {
     let target = target.clamp(MIN_ZOOM, MAX_ZOOM);
     view.zoom_at(pixel, target / view.zoom);
 }

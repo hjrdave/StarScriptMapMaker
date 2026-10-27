@@ -89,7 +89,7 @@ pub(crate) fn categories<'a>(packs: impl Iterator<Item = &'a Pack>) -> Vec<&'a s
 
 /// What a thumbnail says to a screen reader (and on hover): the name and reference, the
 /// size of its Variant group and whether its pack must be credited.
-pub(crate) fn thumbnail_label(
+fn thumbnail_label(
     reference: &AssetRef,
     asset: &Asset,
     variants: usize,

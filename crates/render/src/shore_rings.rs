@@ -73,7 +73,7 @@ fn same(a: f64, b: f64) -> bool {
 }
 
 /// The offset rings of one Object's roughened outline, kept between builds.
-pub(crate) struct ShoreRings {
+struct ShoreRings {
     /// The outline `rings` were made from.
     outline: Arc<MultiPolygon>,
     rings: Vec<OffsetRing>,
@@ -84,7 +84,7 @@ pub(crate) struct ShoreRings {
 }
 
 #[derive(Clone)]
-pub(crate) struct OffsetRing {
+struct OffsetRing {
     distance: f64,
     ring: Arc<MultiPolygon>,
     /// Whether the build in progress has drawn it.

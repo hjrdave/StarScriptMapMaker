@@ -145,7 +145,7 @@ fn tessellate_halo(path: &Path, width: f32, tolerance: f32) -> VertexBuffers<[f3
 }
 
 /// A name for a copy that no style has yet: "Name copy", then "Name copy 2", and so on.
-pub(crate) fn free_name(taken: &[&str], base: &str) -> String {
+fn free_name(taken: &[&str], base: &str) -> String {
     let first = format!("{base} copy");
     if !taken.contains(&first.as_str()) {
         return first;
@@ -161,7 +161,7 @@ pub(crate) fn free_name(taken: &[&str], base: &str) -> String {
 }
 
 /// The notice after deleting a style that `count` Labels used.
-pub(crate) fn deleted_notice(name: &str, count: usize, default_name: &str) -> String {
+fn deleted_notice(name: &str, count: usize, default_name: &str) -> String {
     let labels = if count == 1 {
         "1 Label".to_owned()
     } else {
