@@ -179,6 +179,7 @@ impl MapMakerApp {
             delete_prompt: None,
             pack_delete_prompt: None,
             pack_trash: self.win.pack_trash,
+            template_prompt: None,
             paste_prompt: None,
             close: CloseFlow::new(Leaving::Window),
             window_hidden: false,

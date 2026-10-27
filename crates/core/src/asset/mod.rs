@@ -48,6 +48,7 @@ use std::str::FromStr;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub use credits::{AttributedAsset, PackCredit, credit_lines};
+pub(crate) use install::user_data_dir;
 pub use install::{PACK_MANIFEST, assets_dir};
 pub use library::{LoadProblem, PackLibrary, PackRoots};
 pub use manage::{DeleteError, InstallError, InstallProgress, TrashError};

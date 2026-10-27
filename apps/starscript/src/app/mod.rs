@@ -12,6 +12,7 @@ mod menus;
 mod packs;
 mod panels;
 mod tabs;
+mod templates;
 mod unsaved_offer;
 
 use eframe::{egui, egui_wgpu};
@@ -158,6 +159,8 @@ struct WindowState {
     pack_delete_prompt: Option<String>,
     /// Moves a pack folder to the Trash; tests swap it for one that touches nothing.
     pack_trash: fn(&Path) -> Result<(), TrashError>,
+    /// The name being typed in the Save as Template dialog, while it is open.
+    template_prompt: Option<String>,
     /// A Paste into a Map that lacks something the copied layers need: the popup asks first.
     paste_prompt: Option<PastePrompt>,
     /// This window's close or quit in progress.
@@ -344,6 +347,7 @@ impl MapMakerApp {
             delete_prompt: None,
             pack_delete_prompt: None,
             pack_trash: file_actions::move_to_trash,
+            template_prompt: None,
             paste_prompt: None,
             shell: shell::Shell::load(cc.storage),
             drop_focus: false,

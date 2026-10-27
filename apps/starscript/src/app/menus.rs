@@ -224,6 +224,7 @@ impl MapMakerApp {
                 self.save();
             }
             C::SaveAs => self.show_save_dialog(),
+            C::SaveAsTemplate => self.win.template_prompt = Some(String::new()),
             C::ExportPng => self.open_export_dialog(),
             C::ReExport => self.re_export(),
             _ => {}

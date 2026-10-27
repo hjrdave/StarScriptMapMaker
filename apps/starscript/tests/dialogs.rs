@@ -182,6 +182,95 @@ fn picking_a_template_card_updates_the_preview_and_the_map() {
     }
 }
 
+/// A dialog on a user templates folder holding one template called "Moonlit Atlas".
+#[allow(
+    clippy::unwrap_used,
+    reason = "a test helper; a failure fails the test"
+)]
+fn user_template_dialog(user: &Path) -> Harness<'static, NewMapDialog> {
+    let parchment = ssmap_core::MapTemplate::load_all()
+        .0
+        .into_iter()
+        .find(|t| t.id() == "parchment")
+        .unwrap();
+    let map = parchment.new_map(canvas());
+    ssmap_core::MapTemplate::from_map("Moonlit Atlas", &map, parchment.default_layers())
+        .save_to(user)
+        .unwrap();
+    let mut dialog = NewMapDialog::with_user_dir(Some(user.to_path_buf()));
+    dialog.open = true;
+    dialog_harness(
+        |ui, dialog: &mut NewMapDialog| {
+            dialog.show(ui.ctx());
+        },
+        dialog,
+    )
+}
+
+#[test]
+fn new_map_lists_a_user_template_beside_the_built_in_ones() {
+    let user = tempfile::tempdir().unwrap();
+    let mut harness = user_template_dialog(user.path());
+    harness.run();
+    assert!(harness.state().problems().is_empty());
+    harness.get_by_label("Parchment");
+    harness.get_by_label("Moonlit Atlas").click();
+    harness.run();
+    harness.get_by_label("Preview: Moonlit Atlas");
+
+    let template = harness.state().chosen_template().unwrap();
+    assert!(!template.is_built_in());
+    let (map, _, problem) = ssmap_app::new_map::start_map_from(Ok(template), canvas());
+    assert_eq!(problem, None);
+    let parchment = ssmap_core::MapTemplate::load_all().0;
+    let parchment = parchment.iter().find(|t| t.id() == "parchment").unwrap();
+    assert_eq!(map.canvas().background, *parchment.background());
+    assert_eq!(map.defaults(), parchment.defaults());
+}
+
+#[test]
+fn a_broken_user_template_shows_a_message_and_the_rest_still_load() {
+    let user = tempfile::tempdir().unwrap();
+    std::fs::write(user.path().join("broken.json"), "{}").unwrap();
+    let mut harness = user_template_dialog(user.path());
+    harness.run();
+    assert_eq!(harness.state().problems().len(), 1);
+    let message = harness.state().problems()[0].clone();
+    harness.get_by_label(&message);
+    harness.get_by_label("Moonlit Atlas");
+    harness.get_by_label("Parchment");
+}
+
+#[test]
+fn a_user_template_is_deleted_after_confirming_and_built_in_ones_have_no_delete() {
+    fn trash(path: &Path) -> Result<(), ssmap_core::asset::TrashError> {
+        std::fs::remove_file(path).map_err(Into::into)
+    }
+    let user = tempfile::tempdir().unwrap();
+    let mut harness = user_template_dialog(user.path());
+    harness.state_mut().set_trash(trash);
+    harness.run();
+    assert!(harness.query_by_label("Delete…").is_none());
+
+    harness.get_by_label("Moonlit Atlas").click();
+    harness.run();
+    harness.get_by_label("Delete…").click();
+    harness.run();
+    assert!(harness.state().delete_prompt_open());
+    // The New Map dialog's own Cancel is under the confirmation's.
+    harness.get_all_by_label("Cancel").last().unwrap().click();
+    harness.run();
+    assert!(user.path().join("moonlit-atlas.json").exists());
+
+    harness.get_by_label("Delete…").click();
+    harness.run();
+    harness.get_all_by_label("Delete").last().unwrap().click();
+    harness.run();
+    assert!(!user.path().join("moonlit-atlas.json").exists());
+    assert!(harness.query_by_label("Moonlit Atlas").is_none());
+    assert!(harness.state().problems().is_empty());
+}
+
 #[test]
 fn creating_from_each_template_opens_a_map_with_its_background() {
     let dir = tempfile::tempdir().unwrap();
