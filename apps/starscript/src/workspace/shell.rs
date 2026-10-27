@@ -1,11 +1,6 @@
 //! The window shell around a Map tab: the Layers and Properties columns, their widths and
 //! collapse state (the same for every tab, kept across launches), and the text of the status
 //! bar.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use eframe::egui;
 use serde::{Deserialize, Serialize};
@@ -184,6 +179,7 @@ impl Shell {
             .clamped()
     }
 
+    #[allow(clippy::expect_used, reason = "shell state serialises")]
     pub fn store(&self, storage: &mut dyn eframe::Storage) {
         let json = serde_json::to_string(self).expect("shell state serialises");
         storage.set_string(STORAGE_KEY, json);

@@ -1,15 +1,10 @@
 //! The rings ripples and shading follow, offset from roughened outlines. Offsetting a rough
 //! outline is slow, so rings are kept between builds, and the editor can have them computed
 //! on a thread of its own while it draws the rings it had (see [`RingWorker`]).
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 
 use ssmap_core::{Affine, Id, MultiPolygon, ShoreStyle, land};
 
@@ -317,7 +312,7 @@ struct Shared {
 
 impl Shared {
     fn queue(&self) -> MutexGuard<'_, Queue> {
-        self.queue.lock().expect("shore ring queue lock")
+        self.queue.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -328,6 +323,7 @@ struct RingWorker {
 }
 
 impl RingWorker {
+    #[allow(clippy::expect_used, reason = "the shore ring thread starts")]
     fn spawn(repaint: Box<dyn Fn() + Send + Sync>) -> Self {
         let shared = Arc::new(Shared {
             queue: Mutex::new(Queue::default()),
@@ -427,12 +423,16 @@ fn run(shared: &Shared) {
                 if queue.stop {
                     return;
                 }
-                if let Some(&id) = queue.waiting.keys().next() {
-                    let job = queue.waiting.remove(&id).expect("just found");
+                if let Some(&id) = queue.waiting.keys().next()
+                    && let Some(job) = queue.waiting.remove(&id)
+                {
                     queue.running = Some((id, job.outline.clone()));
                     break (id, job);
                 }
-                queue = shared.wake.wait(queue).expect("shore ring queue lock");
+                queue = shared
+                    .wake
+                    .wait(queue)
+                    .unwrap_or_else(PoisonError::into_inner);
             }
         };
         let rings = grow_all(&job.outline, &job.distances);

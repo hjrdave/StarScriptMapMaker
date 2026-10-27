@@ -9,11 +9,6 @@
 //! midpoint displacement along the edge's normal, halving the amplitude at every level. Stored
 //! vertices never move, so every node stays on the coast. An edge's detail depends only on its two
 //! end points and the seed, so moving one node changes only its two edges.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -271,7 +266,7 @@ struct CacheEntry {
 
 impl Shared {
     fn entries(&self) -> MutexGuard<'_, HashMap<Id, CacheEntry>> {
-        self.entries.lock().expect("roughness cache lock")
+        self.entries.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn store(
@@ -379,13 +374,17 @@ impl RoughnessCache {
     /// roughened one, not a stored placeholder. Export calls this before it builds its scene.
     /// A rebuild that is neither run nor dropped on another thread would wait forever.
     pub fn wait_until_ready(&self) {
-        let mut guard = self.shared.ended.lock().expect("roughness wait lock");
+        let mut guard = self
+            .shared
+            .ended
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         while self.is_rebuilding() {
             guard = self
                 .shared
                 .ended_signal
                 .wait(guard)
-                .expect("roughness wait lock");
+                .unwrap_or_else(PoisonError::into_inner);
         }
     }
 

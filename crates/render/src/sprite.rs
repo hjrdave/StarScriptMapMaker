@@ -8,14 +8,9 @@
 //! Rasterising an SVG is slow, so [`SpriteStore::poll`] builds sprites on background threads
 //! and reports one that is not done yet as [`SpriteState::Pending`], which is not the same as
 //! missing and is never cached as such.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Condvar, Mutex, RwLock, Weak};
+use std::sync::{Arc, Condvar, Mutex, PoisonError, RwLock, Weak};
 
 use ssmap_core::asset::{AssetRef, PackLibrary};
 use ssmap_core::{Embedded, SpriteShape};
@@ -258,7 +253,11 @@ impl SpriteStore {
     /// The installed packs as of now. A later [`SpriteStore::set_library`] does not change the
     /// returned library.
     pub fn library(&self) -> Arc<PackLibrary> {
-        self.inner.library.read().expect("library lock").clone()
+        self.inner
+            .library
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     /// Swaps the installed packs, for after one is installed or deleted. Installed art is
@@ -266,13 +265,22 @@ impl SpriteStore {
     /// [`SpriteStore::generation`] moves on, so renderers upload again.
     pub fn set_library(&self, library: Arc<PackLibrary>) {
         let mut state = self.state();
-        *self.inner.library.write().expect("library lock") = library;
+        *self
+            .inner
+            .library
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = library;
         // Jobs still running for the old library see the generation move and drop their result.
         state.installed_sprites.clear();
         state.library_generation += 1;
         drop(state);
         self.inner.finished.notify_all();
-        let repaint = self.inner.repaint.lock().expect("repaint lock").clone();
+        let repaint = self
+            .inner
+            .repaint
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
         if let Some(repaint) = repaint {
             repaint();
         }
@@ -280,7 +288,11 @@ impl SpriteStore {
 
     /// Sets what to call each time a raster finishes, from the thread that built it.
     pub fn set_repaint(&self, repaint: impl Fn() + Send + Sync + 'static) {
-        *self.inner.repaint.lock().expect("repaint lock") = Some(Arc::new(repaint));
+        *self
+            .inner
+            .repaint
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(Arc::new(repaint));
     }
 
     /// Sets the Assets the open Map embeds. Returns whether they changed, in which case
@@ -409,7 +421,11 @@ impl SpriteStore {
                 return;
             }
             // The lock is held from the look to the wait, so the wake-up is not missed.
-            state = self.inner.finished.wait(state).expect("sprite cache lock");
+            state = self
+                .inner
+                .finished
+                .wait(state)
+                .unwrap_or_else(PoisonError::into_inner);
         }
     }
 
@@ -443,7 +459,12 @@ impl SpriteStore {
                 Slot::Ready(sprite) => return sprite.ok(),
                 // Another thread is building it: sleep until a job ends, then look again.
                 // The lock is held from the look to the wait, so the wake-up is not missed.
-                Slot::Pending => drop(self.inner.finished.wait(state).expect("sprite cache lock")),
+                Slot::Pending => drop(
+                    self.inner
+                        .finished
+                        .wait(state)
+                        .unwrap_or_else(PoisonError::into_inner),
+                ),
             }
         }
     }
@@ -479,7 +500,10 @@ impl SpriteStore {
     }
 
     fn state(&self) -> std::sync::MutexGuard<'_, State> {
-        self.inner.state.lock().expect("sprite cache lock")
+        self.inner
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     pub fn shape(&self, asset: &AssetRef) -> Option<SpriteShape> {
@@ -528,7 +552,12 @@ impl Claimed {
             }
         }
         store.inner.finished.notify_all();
-        let repaint = store.inner.repaint.lock().expect("repaint lock").clone();
+        let repaint = store
+            .inner
+            .repaint
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
         if let Some(repaint) = repaint {
             repaint();
         }

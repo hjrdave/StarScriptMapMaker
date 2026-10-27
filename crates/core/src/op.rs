@@ -3,11 +3,6 @@
 //! Commands compile into Ops. Applying an Op returns its inverse, so undo is the reversed list
 //! of inverses. Ops check only the tree's structural rules; Commands do the user-level
 //! validation, such as Lock.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -190,6 +185,10 @@ impl Map {
     }
 
     /// The Op applier behind [`Map::apply`], for `core` itself.
+    #[allow(
+        clippy::expect_used,
+        reason = "Map::check verified the id exists; Map::check verified the Object has geometry"
+    )]
     pub(crate) fn apply_op(&mut self, op: Op) -> Result<Op, OpError> {
         self.check(&op)?;
         self.revision += 1;
@@ -387,6 +386,7 @@ impl Map {
     }
 }
 
+#[allow(clippy::expect_used, reason = "a node is listed by its parent")]
 fn position(siblings: &[Id], id: Id) -> usize {
     siblings
         .iter()
@@ -443,6 +443,10 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
 }
 
 /// Sets a property `check_property` accepted and returns its old value.
+#[allow(
+    clippy::expect_used,
+    reason = "Map::check verified the Object has a fill; Map::check verified the Object has roughness; Map::check verified the Object has a shore"
+)]
 fn set_property(node: &mut Node, property: Property) -> Property {
     match (node, property) {
         (Node::Layer(layer), Property::Name(name)) => {

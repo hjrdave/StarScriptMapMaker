@@ -4,11 +4,6 @@
 //!
 //! A style has no Align or Rotation (those belong to each Label and are set in its
 //! Properties), so the editor has today's fields and no more.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::collections::HashMap;
 
@@ -155,10 +150,14 @@ pub(crate) fn free_name(taken: &[&str], base: &str) -> String {
     if !taken.contains(&first.as_str()) {
         return first;
     }
-    (2..)
-        .map(|n| format!("{first} {n}"))
-        .find(|name| !taken.contains(&name.as_str()))
-        .expect("an unbounded range")
+    let mut n = 2;
+    loop {
+        let name = format!("{first} {n}");
+        if !taken.contains(&name.as_str()) {
+            return name;
+        }
+        n += 1;
+    }
 }
 
 /// The notice after deleting a style that `count` Labels used.
@@ -199,18 +198,15 @@ impl LabelStylesPanel {
         let styles: Vec<LabelStyle> = editor.map().label_styles().iter().cloned().collect();
         self.previews
             .retain(|id, _| styles.iter().any(|style| style.id == *id));
-        if self
-            .selected
-            .is_none_or(|id| !styles.iter().any(|style| style.id == id))
-        {
-            self.selected = Some(LabelStyle::DEFAULT_ID);
-        }
-        let selected = self.selected.expect("set above");
-        let current = styles
-            .iter()
-            .find(|style| style.id == selected)
-            .expect("selected exists")
-            .clone();
+        let selected = match self.selected {
+            Some(id) if styles.iter().any(|style| style.id == id) => id,
+            _ => LabelStyle::DEFAULT_ID,
+        };
+        self.selected = Some(selected);
+        // The default style is always there, so this finds one.
+        let Some(current) = styles.iter().find(|style| style.id == selected).cloned() else {
+            return;
+        };
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(LIST_WIDTH);
@@ -272,6 +268,18 @@ impl LabelStylesPanel {
         }
     }
 
+    /// The text of the rename box for `current`, starting from its name when another style was
+    /// being renamed before.
+    fn rename_text(&mut self, current: &LabelStyle) -> &mut String {
+        if self.rename.as_ref().is_none_or(|(id, _)| *id != current.id) {
+            self.rename = Some((current.id, current.name.clone()));
+        }
+        &mut self
+            .rename
+            .get_or_insert_with(|| (current.id, current.name.clone()))
+            .1
+    }
+
     fn editor_pane(
         &mut self,
         ui: &mut egui::Ui,
@@ -319,10 +327,7 @@ impl LabelStylesPanel {
         });
         ui.add_space(6.0);
 
-        if self.rename.as_ref().is_none_or(|(id, _)| *id != current.id) {
-            self.rename = Some((current.id, current.name.clone()));
-        }
-        let name = &mut self.rename.as_mut().expect("set above").1;
+        let name = self.rename_text(current);
         let name_field = ui
             .horizontal(|ui| {
                 ui.label("Name");

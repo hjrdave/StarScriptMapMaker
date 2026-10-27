@@ -1,8 +1,3 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 use crate::map::Map;
 use crate::op::Op;
 
@@ -52,6 +47,7 @@ impl Map {
     }
 
     /// The reverter behind [`Map::revert`], for `core` itself.
+    #[allow(clippy::expect_used, reason = "an inverse always applies")]
     pub(crate) fn revert_ops(&mut self, inverses: Vec<Op>) -> Vec<Op> {
         inverses
             .into_iter()

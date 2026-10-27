@@ -1,9 +1,4 @@
 //! Duplicating and pasting nodes, with their Links, Clips and names.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::collections::{HashMap, HashSet};
 
@@ -32,10 +27,14 @@ fn copy_name(name: &str, taken: &HashSet<String>) -> String {
     if !taken.contains(&first) {
         return first;
     }
-    (2..)
-        .map(|n| format!("{base} copy {n}"))
-        .find(|candidate| !taken.contains(candidate))
-        .expect("an unused number exists")
+    let mut n = 2;
+    loop {
+        let candidate = format!("{base} copy {n}");
+        if !taken.contains(&candidate) {
+            return candidate;
+        }
+        n += 1;
+    }
 }
 
 /// The name a node shows in its Layer, if it has one.
@@ -115,7 +114,7 @@ pub(super) fn duplicate(
         let position = children
             .iter()
             .position(|&id| id == source)
-            .expect("a node is listed by its parent");
+            .ok_or(CommandError::NotFound(source))?;
         let mut subtree = copied_subtree(map, source, &renamed, &translate, offset)?;
         match &mut subtree.node {
             Node::Layer(layer) => {
@@ -312,7 +311,7 @@ fn copied_subtree(
     translate: &Affine,
     offset: [f64; 2],
 ) -> Result<Subtree, CommandError> {
-    let mut node = map.node(id).expect("listed ids exist").clone();
+    let mut node = map.node(id).ok_or(CommandError::NotFound(id))?.clone();
     // A copy joins a Link set only when the whole set is copied, and then links to the copies.
     node.set_link(
         map.link_members(id)

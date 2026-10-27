@@ -3,11 +3,6 @@
 //! A tool opens a transaction, executes Commands live as a gesture goes on, and commits them
 //! as one Undo step; rollback cancels the gesture. History lives in memory under a budget and
 //! is never saved.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::collections::VecDeque;
 
@@ -283,6 +278,7 @@ impl History {
     }
 
     /// Drops the oldest steps until history fits the budget, always keeping the newest.
+    #[allow(clippy::expect_used, reason = "more than one step")]
     fn enforce_budget(&mut self) {
         while self.used > self.budget && self.undo.len() > 1 {
             let oldest = self.undo.pop_front().expect("more than one step");

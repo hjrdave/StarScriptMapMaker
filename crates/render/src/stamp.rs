@@ -1,10 +1,5 @@
 //! Drawing Stamps: instanced quads sampling atlas pages (ADR 0003). The Silhouette is filled
 //! under the line art, so overlapping Stamps hide each other's lines.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -263,6 +258,7 @@ impl StampRenderer {
     /// Uploads any art `stamps` need and builds their instances. Stamps whose Asset has no
     /// usable art draw nothing, and neither do those whose art is still being rasterised: they
     /// appear when [`StampRenderer::refresh_store`] next asks for them to be prepared again.
+    #[allow(clippy::expect_used, reason = "pushed above")]
     pub(crate) fn prepare(
         &mut self,
         device: &wgpu::Device,

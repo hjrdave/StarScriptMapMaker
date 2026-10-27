@@ -3,11 +3,6 @@
 //! All numbers are little-endian. A blob is a `u32` Polygon count, then for each Polygon a
 //! `u32` ring count (the exterior first, then its holes), then for each ring a `u32` point
 //! count followed by that many `f64` `x, y` pairs.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use thiserror::Error;
 
@@ -58,7 +53,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<MultiPolygon, BlobError> {
             return Err(BlobError::NoExteriorRing);
         }
         let mut rings = (0..rings).map(|_| reader.ring());
-        let exterior = rings.next().expect("at least one ring")?;
+        let exterior = rings.next().ok_or(BlobError::NoExteriorRing)??;
         let holes = rings.collect::<Result<_, _>>()?;
         geometry.push(Polygon { exterior, holes });
     }
@@ -68,6 +63,10 @@ pub(super) fn decode(bytes: &[u8]) -> Result<MultiPolygon, BlobError> {
     Ok(MultiPolygon(geometry))
 }
 
+#[allow(
+    clippy::expect_used,
+    reason = "a Map with 2^32 parts, rings or points would not fit in memory"
+)]
 fn push_len(out: &mut Vec<u8>, len: usize) {
     let len = u32::try_from(len).expect("fewer than 2^32 parts, rings or points");
     out.extend_from_slice(&len.to_le_bytes());

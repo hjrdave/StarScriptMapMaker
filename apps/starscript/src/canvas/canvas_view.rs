@@ -1,10 +1,5 @@
 //! The Canvas panel: hosts `render`'s offscreen Canvas inside egui's frame, with pan and
 //! zoom-at-cursor.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
@@ -463,6 +458,7 @@ impl CanvasView {
 
     /// The box a Label's text is typed in, just below the Label so its real render shows
     /// live above. Clicking away or Escape commits; emptying it deletes the Label.
+    #[allow(clippy::expect_used, reason = "four corners")]
     fn text_box(
         &mut self,
         ui: &mut egui::Ui,
@@ -601,6 +597,7 @@ struct CanvasCallback {
 }
 
 impl egui_wgpu::CallbackTrait for CanvasCallback {
+    #[allow(clippy::expect_used, reason = "installed at startup")]
     fn prepare(
         &self,
         device: &wgpu::Device,
@@ -626,6 +623,7 @@ impl egui_wgpu::CallbackTrait for CanvasCallback {
         Vec::new()
     }
 
+    #[allow(clippy::expect_used, reason = "installed at startup")]
     fn paint(
         &self,
         _info: egui::PaintCallbackInfo,

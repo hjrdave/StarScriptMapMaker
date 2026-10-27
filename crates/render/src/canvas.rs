@@ -1,10 +1,5 @@
 //! The Canvas renderer: an offscreen, multisampled target holding the backdrop and the Map's
 //! Objects.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -367,6 +362,7 @@ impl CanvasRenderer {
 
     /// Records the Canvas render into `encoder` and returns the resolved target, which holds
     /// the result once the encoder is submitted.
+    #[allow(clippy::expect_used, reason = "ensured above")]
     pub fn render(
         &mut self,
         device: &wgpu::Device,

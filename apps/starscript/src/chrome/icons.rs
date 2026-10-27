@@ -10,11 +10,6 @@
 //! Where a 1.5 pt stroke blurs at 1x, put a hand-hinted `name@1x.svg` next to the icon and
 //! list it in `TABLE`; it replaces the 1x raster. Without one the 1x raster is the same
 //! SVG with its 1.5 stroke thinned to 1 px.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::sync::Arc;
 
@@ -181,6 +176,7 @@ impl Atlas {
     }
 
     /// The icon's cell as `[x, y]` of its top-left pixel; the cell is `scale.cell()` square.
+    #[allow(clippy::expect_used, reason = "every icon is in ALL")]
     pub(crate) fn cell_origin(&self, icon: Icon) -> [u32; 2] {
         let index = Icon::ALL
             .iter()
@@ -222,6 +218,7 @@ impl Atlas {
     }
 }
 
+#[allow(clippy::expect_used, reason = "embedded icons are valid SVG")]
 fn rasterise(icon: Icon, scale: Scale) -> ssmap_render::raster::Raster {
     let svg = match scale {
         Scale::X1 => match icon.one_x_override() {

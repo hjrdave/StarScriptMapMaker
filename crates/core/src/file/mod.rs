@@ -30,11 +30,6 @@
 //! Rows, meta keys, columns and tables this version doesn't know are left alone, and unknown
 //! JSON fields ride along in each object's [`Extra`](crate::Extra), so a file from a newer
 //! minor format version round-trips without loss.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 mod blob;
 mod embed;
@@ -306,6 +301,10 @@ impl MapFile {
     /// Writes what changed in `map` since the last save, as one transaction, and stamps a new
     /// save generation. A `preview` PNG replaces the stored one; without one, the stale
     /// preview is removed.
+    #[allow(
+        clippy::expect_used,
+        reason = "a Canvas serialises; settings serialise; defaults serialise"
+    )]
     pub fn save(&mut self, map: &Map, preview: Option<&[u8]>) -> Result<SaveStats, FileError> {
         let generation = Uuid::now_v7();
         let tx = self
@@ -562,6 +561,7 @@ fn write_meta(
 
 /// Writes rows for new and changed nodes, moves rows whose place changed, deletes rows of
 /// removed nodes, and returns the new saved state.
+#[allow(clippy::expect_used, reason = "a listed node exists")]
 fn write_nodes(
     tx: &Transaction<'_>,
     map: &Map,
@@ -620,6 +620,7 @@ fn write_nodes(
 }
 
 /// The `kind`, `props` and `geometry` columns of a node.
+#[allow(clippy::expect_used, reason = "a node serialises")]
 fn encode_node(node: &Node) -> (&'static str, String, Option<Vec<u8>>) {
     let to_json = |node: &Node| serde_json::to_string(node).expect("a node serialises");
     match node {

@@ -1,8 +1,3 @@
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 use super::*;
 
 impl Editor {
@@ -24,8 +19,7 @@ impl Editor {
                     .map
                     .children(parent)
                     .iter()
-                    .position(|&id| id == active)
-                    .expect("a node is listed by its parent");
+                    .position(|&id| id == active)?;
                 (parent, Some(position + 1))
             }
             None => (None, None),

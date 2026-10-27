@@ -5,11 +5,6 @@
 //! the Map file format its shape follows. Starting a Map from it replaces the template's
 //! Canvas size and scale with the ones the user chose; the template's background stays, and the
 //! Map remembers the template's name.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::path::{Path, PathBuf};
 
@@ -197,6 +192,7 @@ impl MapTemplate {
 
     /// A new Map from the template with the given Canvas, which takes on the template's
     /// background.
+    #[allow(clippy::expect_used, reason = "the template was checked when loaded")]
     pub fn new_map(&self, mut canvas: Canvas) -> Map {
         canvas.background = self.view.canvas.background.clone();
         canvas.template = Some(self.name.clone());

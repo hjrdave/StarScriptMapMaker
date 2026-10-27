@@ -5,11 +5,6 @@
 //! interaction chosen with `--script`, see [`scripts`]), prints frame-time statistics with the
 //! adapter, backend, OS and driver, and exits. It is run by hand per OS on a real GPU; CI only
 //! checks it works on a software adapter. `docs/design/performance.md` explains how to read it.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 mod baseline;
 mod scripts;
@@ -143,6 +138,7 @@ fn parse(args: &[OsString]) -> Result<Options, String> {
 }
 
 /// Runs the measurement, prints the report to stdout and returns the process exit code.
+#[allow(clippy::expect_used, reason = "a valid reference")]
 pub fn run(args: &[OsString]) -> i32 {
     let options = match parse(args) {
         Ok(options) => options,
@@ -252,6 +248,7 @@ fn check_baseline(options: &Options, results: &BTreeMap<String, baseline::Script
     }
 }
 
+#[allow(clippy::expect_used, reason = "the baseline serialises")]
 fn write_baseline(options: &Options, scripts: BTreeMap<String, baseline::ScriptBaseline>) -> i32 {
     let new = baseline::Baseline {
         note: format!(
@@ -289,6 +286,10 @@ struct Measured {
     stages: Vec<StageTimes>,
 }
 
+#[allow(
+    clippy::expect_used,
+    reason = "the bench harness panics on purpose if the device is lost mid-frame"
+)]
 fn measure(
     gpu: &Headless,
     capabilities: GpuCapabilities,

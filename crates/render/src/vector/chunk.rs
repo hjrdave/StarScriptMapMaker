@@ -1,9 +1,4 @@
 //! Tessellation of groups, merged into draws and split into chunks that are rebuilt one by one.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -356,6 +351,7 @@ impl<P> Chunked<P> {
 
 /// Like [`resolve`] for the groups in `range` only. Looks an Object up by all its groups,
 /// wherever they are, so chunk edges never split what the cache keeps whole.
+#[allow(clippy::expect_used, reason = "indexed above")]
 fn resolve_chunk(
     groups: &[VectorGroup],
     objects: &HashMap<Id, Vec<usize>>,

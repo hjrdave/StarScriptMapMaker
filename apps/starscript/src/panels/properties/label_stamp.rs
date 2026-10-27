@@ -1,9 +1,4 @@
 //! The Label and Stamp sections of the properties panel.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use eframe::egui;
 use ssmap_core::{Align, Command, Id, Label, LabelStyles, Landmass, ResolvedLabel, Stamp};
@@ -99,13 +94,17 @@ impl PropertiesPanel {
     /// The Label's text box. Edits to it are one Undo step when it loses focus.
     fn label_text_field(&mut self, ui: &mut egui::Ui, editor: &mut Editor, id: Id, label: &Label) {
         ui.label("Text");
-        let text = match &mut self.text_edit {
-            Some((editing, text)) if *editing == id => text,
-            _ => {
-                self.text_edit = Some((id, label.text.clone()));
-                &mut self.text_edit.as_mut().expect("just set").1
-            }
-        };
+        if self
+            .text_edit
+            .as_ref()
+            .is_none_or(|(editing, _)| *editing != id)
+        {
+            self.text_edit = Some((id, label.text.clone()));
+        }
+        let text = &mut self
+            .text_edit
+            .get_or_insert_with(|| (id, label.text.clone()))
+            .1;
         let field = ui.add(
             egui::TextEdit::multiline(text)
                 .desired_rows(2)

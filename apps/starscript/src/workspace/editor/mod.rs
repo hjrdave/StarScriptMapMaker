@@ -1,10 +1,5 @@
 //! Editor state around one Map: history, Selection, the active Layer and tool, and the
 //! message bar. Every change to the Map goes through a Command here.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 mod caches;
 mod clipboard;
@@ -422,14 +417,16 @@ impl Editor {
         }
         match self.history.execute(&mut self.map, &command) {
             Ok(()) => {
-                self.history
-                    .commit(selection.clone())
-                    .expect("opened above");
+                if let Err(err) = self.history.commit(selection.clone()) {
+                    self.error(err.to_string());
+                    return Err(err.into());
+                }
                 self.restore(selection);
                 Ok(())
             }
             Err(err) => {
-                self.history.rollback(&mut self.map).expect("opened above");
+                // Rolling back fails only when no Undo step is open, and one was opened above.
+                let _ = self.history.rollback(&mut self.map);
                 self.refused(&err);
                 Err(err)
             }

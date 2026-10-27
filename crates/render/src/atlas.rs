@@ -2,11 +2,6 @@
 //!
 //! Each page is a square texture. The rectangle allocator (`etagere`) is private to this
 //! module, so it can be swapped without touching callers.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use crate::raster::Raster;
 
@@ -102,6 +97,7 @@ impl Packer {
 
     /// Finds room for `width` x `height` pixels plus the gutter, opening a page if none has
     /// room. Returns the entry and whether a page was opened.
+    #[allow(clippy::expect_used, reason = "an empty page fits the entry")]
     fn allocate(&mut self, width: u32, height: u32) -> Result<(AtlasEntry, bool), AtlasError> {
         let (padded_width, padded_height) = (width + 2 * GUTTER, height + 2 * GUTTER);
         if width == 0

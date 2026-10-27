@@ -1,13 +1,8 @@
 //! The tessellation cache, which a worker thread can fill while the editor keeps drawing.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 
 use ssmap_core::Id;
 
@@ -63,7 +58,10 @@ impl TessellationCache {
     }
 
     fn inner(&self) -> MutexGuard<'_, TessellationInner> {
-        self.shared.inner.lock().expect("tessellation cache lock")
+        self.shared
+            .inner
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     pub(super) fn note_version(&self, id: Id, version: u64) {
@@ -175,13 +173,17 @@ impl TessellationCache {
     /// out no Object. Export calls this before it renders. A rebuild that is neither run nor
     /// dropped on another thread would wait forever.
     pub fn wait_until_ready(&self) {
-        let mut guard = self.shared.ended.lock().expect("tessellation wait lock");
+        let mut guard = self
+            .shared
+            .ended
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         while self.is_building() {
             guard = self
                 .shared
                 .ended_signal
                 .wait(guard)
-                .expect("tessellation wait lock");
+                .unwrap_or_else(PoisonError::into_inner);
         }
     }
 

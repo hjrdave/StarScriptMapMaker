@@ -3,11 +3,6 @@
 //!
 //! Everything this module returns is a valid stored outline: parts never overlap, exteriors
 //! are counter-clockwise and holes clockwise (positive and negative shoelace area).
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use geo::orient::Direction;
 use geo::{
@@ -59,8 +54,10 @@ pub fn brush_region(points: &[Point], radius: f64, tolerance: f64) -> MultiPolyg
             kept.push(point);
         }
     }
-    if let (Some(&last), true) = (points.last(), kept.len() > 1) {
-        *kept.last_mut().expect("not empty") = last;
+    if kept.len() > 1
+        && let (Some(&last), Some(end)) = (points.last(), kept.last_mut())
+    {
+        *end = last;
     }
     let line = centreline(&kept).chaikin_smoothing(SMOOTHING_PASSES);
     let stroked = line.buffer_with_style(BufferStyle::new(radius));
@@ -146,9 +143,10 @@ pub fn brush_command(
                 .iter()
                 .copied()
                 .filter(|&id| match map.node(id) {
-                    Some(Node::Object(o)) if is_landmass(&o.kind) => {
-                        intersects(o.kind.geometry().expect("a Landmass"), &region)
-                    }
+                    Some(Node::Object(o)) if is_landmass(&o.kind) => o
+                        .kind
+                        .geometry()
+                        .is_some_and(|geometry| intersects(geometry, &region)),
                     _ => false,
                 })
                 .collect()
@@ -218,7 +216,7 @@ pub fn water_command(
                 .filter(|&id| {
                     matches!(map.node(id), Some(Node::Object(o))
                         if matches!(o.kind, ObjectKind::Lake(_))
-                            && intersects(o.kind.geometry().expect("a Lake"), &region))
+                            && o.kind.geometry().is_some_and(|geometry| intersects(geometry, &region)))
                 })
                 .collect();
         }

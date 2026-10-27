@@ -4,11 +4,6 @@
 //!
 //! Each frame stands for one burst of input: one stretch of a brush stroke, one step of a drag
 //! or one slider value. The harness times the edit, the scene rebuild and the GPU work apart.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::f64::consts::TAU;
 
@@ -24,6 +19,10 @@ use super::{LANDMASSES, PHASE_FRAMES, TARGET};
 
 /// Runs `command` on `map` as its own Undo step, the way the editor does. `what` says why it
 /// cannot fail.
+#[allow(
+    clippy::expect_used,
+    reason = "the harness aborts on a Command that should always apply"
+)]
 pub(super) fn run(map: &mut Map, command: &Command, what: &str) {
     History::default()
         .execute_step(map, command, Selection::default())
@@ -210,6 +209,7 @@ pub(super) fn frames(script: Script) -> usize {
 
 /// The edit of frame `frame` (counted from 0), applied to the Map. Pan and zoom changes
 /// nothing, and the marquee only queries.
+#[allow(clippy::expect_used, reason = "the layer exists")]
 pub(super) fn edit(script: Script, frame: usize, world: &mut World) {
     let t = frame as f64 / EDIT_FRAMES as f64;
     let centre = work_centre();

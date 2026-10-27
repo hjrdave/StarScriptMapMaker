@@ -78,7 +78,7 @@ Say which of these a change touches, so they get checked on a machine with a GPU
 
 `[workspace.lints.clippy]` in `Cargo.toml` warns on `unwrap_used`, `expect_used`, `too_many_lines` and `cognitive_complexity`, and `[workspace.lints.rust]` on `unreachable_pub`; CI's `-D warnings` makes them errors. Thresholds and the test exemptions are in `clippy.toml`. `apps/starscript` has its own lint table (it needs `unsafe_code = "deny"`), so keep it in step with the workspace one.
 
-- Existing hits carry `#[allow(..., reason = "...")]`, many at file level. Remove an allow when you clean up the code under it; don't add one to new code.
+- Source files have no blanket allows. A function that must `expect` carries `#[allow(clippy::expect_used, reason = "...")]` saying why it can't fail; don't add one to new code if a `Result` or `Option` will do. Lock guards recover from poisoning with `unwrap_or_else(PoisonError::into_inner)`.
 - A `pub` item that no other crate uses is `pub(crate)`; `unreachable_pub` flags the rest.
 - `crates/core` also warns on `missing_docs`: every public item gets a one-line `///` comment.
 - Integration tests and benches may panic, so their files allow the two lints at the top.

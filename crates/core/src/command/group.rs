@@ -1,9 +1,4 @@
 //! Grouping Layers and dissolving Groups.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::collections::{HashMap, HashSet};
 
@@ -49,7 +44,7 @@ pub(super) fn create_group(
         .children(parent)
         .iter()
         .rposition(|child| seen.contains(child))
-        .expect("a member is among its parent's children");
+        .ok_or(CommandError::NothingToGroup)?;
     let mut ops = vec![Op::Insert {
         parent,
         index: top + 1,
@@ -99,7 +94,7 @@ pub(super) fn ungroup(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
         let index = siblings
             .iter()
             .position(|&s| s == id)
-            .expect("a node is listed by its parent");
+            .ok_or(CommandError::NotFound(id))?;
         siblings.splice(index..=index, contents.iter().copied());
         for (offset, child) in contents.into_iter().enumerate() {
             ops.push(Op::Move {

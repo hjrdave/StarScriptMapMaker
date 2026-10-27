@@ -1,9 +1,4 @@
 //! Editing the outlines of Landmasses and Lakes: regions, boolean operations, node edits.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::collections::HashSet;
 
@@ -91,7 +86,9 @@ fn landmasses_topmost_first(
 
 pub(super) fn union_landmasses(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
     let ids = landmasses_topmost_first(map, ids, "Union")?;
-    let (&keeper, others) = ids.split_first().expect("two or more");
+    let Some((&keeper, others)) = ids.split_first() else {
+        return Err(CommandError::NeedsTwoLandmasses { command: "Union" });
+    };
     let mut geometry = outline(map, keeper).clone();
     for &other in others {
         geometry = land::union(&geometry, outline(map, other));
@@ -121,7 +118,11 @@ pub(super) fn union_landmasses(map: &Map, ids: &[Id]) -> Result<Vec<Op>, Command
 
 pub(super) fn subtract_landmasses(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
     let ids = landmasses_topmost_first(map, ids, "Subtract")?;
-    let (&cutter, targets) = ids.split_first().expect("two or more");
+    let Some((&cutter, targets)) = ids.split_first() else {
+        return Err(CommandError::NeedsTwoLandmasses {
+            command: "Subtract",
+        });
+    };
     let region = outline(map, cutter).clone();
     let mut ops = Vec::new();
     let mut gone = vec![cutter];
@@ -167,12 +168,12 @@ pub(super) fn split_apart(map: &Map, id: Id, new_ids: &[Id]) -> Result<Vec<Op>, 
             return Err(CommandError::IdInUse(new));
         }
     }
-    let parent = map.parent(id).expect("Objects live in Layers");
+    let parent = map.parent(id).ok_or(CommandError::NotFound(id))?;
     let position = map
         .children(Some(parent))
         .iter()
         .position(|&c| c == id)
-        .expect("a node is listed by its parent");
+        .ok_or(CommandError::NotFound(id))?;
     let mut ops = vec![Op::ReplaceGeometry {
         id,
         geometry: MultiPolygon(vec![parts[0].clone()]),
@@ -232,6 +233,10 @@ pub(super) fn outlined(map: &Map, ids: &[Id]) -> Result<Vec<Id>, CommandError> {
 }
 
 /// The outline of an id `outlined` accepted.
+#[allow(
+    clippy::expect_used,
+    reason = "`outlined` verified the Object has an outline"
+)]
 pub(super) fn outline(map: &Map, id: Id) -> &MultiPolygon {
     match map.node(id) {
         Some(Node::Object(object)) => object

@@ -4,11 +4,6 @@
 //! Ops reach the journal within [`FLUSH_DELAY`] of being applied. A Map file's journal sits
 //! beside it as `<map>.recovery`; a Map never saved journals under the platform data
 //! directory instead, starting from a snapshot of the Map at its first flush.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
@@ -234,17 +229,19 @@ pub(crate) fn recovered_copy_path(path: &Path) -> PathBuf {
         .to_string_lossy()
         .into_owned();
     let extension = crate::document::EXTENSION;
-    (1..)
-        .map(|n| {
-            let suffix = if n == 1 {
-                String::new()
-            } else {
-                format!(" {n}")
-            };
-            path.with_file_name(format!("{stem} (recovered{suffix}).{extension}"))
-        })
-        .find(|candidate| !candidate.exists())
-        .expect("some numbered name is free")
+    let mut n = 1;
+    loop {
+        let suffix = if n == 1 {
+            String::new()
+        } else {
+            format!(" {n}")
+        };
+        let candidate = path.with_file_name(format!("{stem} (recovered{suffix}).{extension}"));
+        if !candidate.exists() {
+            return candidate;
+        }
+        n += 1;
+    }
 }
 
 #[cfg(test)]

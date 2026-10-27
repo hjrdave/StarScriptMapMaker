@@ -1,10 +1,5 @@
 //! The app itself: [`MapMakerApp`], its state, and the `eframe::App` impl. The methods are
 //! spread over the sibling modules by what they do.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 mod close_flow;
 mod closing;
@@ -377,6 +372,7 @@ impl MapMakerApp {
     /// # Panics
     ///
     /// Panics while no Map is open (Home showing with no tabs).
+    #[allow(clippy::expect_used, reason = "no Map is open")]
     pub fn editor(&self) -> &Editor {
         self.tab().expect("no Map is open").editor()
     }
@@ -391,6 +387,7 @@ impl MapMakerApp {
     /// # Panics
     ///
     /// Panics while no Map is open (Home showing with no tabs).
+    #[allow(clippy::expect_used, reason = "no Map is open")]
     pub fn document(&self) -> &Document {
         self.tab().expect("no Map is open").document()
     }

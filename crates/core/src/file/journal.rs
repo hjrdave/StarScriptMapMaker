@@ -8,11 +8,6 @@
 //!
 //! The writer holds an exclusive lock on the file while the Map is open, so another window
 //! never mistakes a live journal for a crashed one.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{BufRead, BufReader, Write};
@@ -90,6 +85,7 @@ impl Journal {
     /// Starts a journal at `path` holding `ops`, replacing any journal there that is not in
     /// use. It is written beside `path` and renamed over it, so a crash never leaves a
     /// journal without its header.
+    #[allow(clippy::expect_used, reason = "a header serialises")]
     pub fn create(path: &Path, base: &JournalBase, ops: &[Op]) -> Result<Self, JournalError> {
         if let Some(existing) = open_existing(path)? {
             lock_shared(&existing)?;
@@ -150,6 +146,7 @@ impl Journal {
     }
 }
 
+#[allow(clippy::expect_used, reason = "Ops serialise")]
 fn ops_line(ops: &[Op]) -> String {
     let mut line = serde_json::to_string(ops).expect("Ops serialise");
     line.push('\n');

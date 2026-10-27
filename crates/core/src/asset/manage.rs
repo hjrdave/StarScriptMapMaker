@@ -1,10 +1,5 @@
 //! Managing installed packs: installing a pack folder, deleting a user pack, and counting how
 //! many Stamps in a Map use a pack. Built-in packs are protected here, not only in the UI.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -190,7 +185,8 @@ impl PackLibrary {
             return Err(DeleteError::BuiltIn(id.to_owned()));
         }
         trash(&pack.dir).map_err(DeleteError::Trash)?;
-        Ok(self.remove(id).expect("the pack was just found"))
+        self.remove(id)
+            .ok_or_else(|| DeleteError::NotFound(id.to_owned()))
     }
 }
 

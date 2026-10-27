@@ -2,11 +2,6 @@
 //!
 //! The image is written to a temporary file beside the destination and renamed on
 //! [`PngWriter::finish`], so dropping the writer (Cancel, or any error) leaves no partial file.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -108,6 +103,7 @@ impl PngWriter {
     }
 
     /// Appends one row of `width * 4` RGBA bytes.
+    #[allow(clippy::expect_used, reason = "stream is open until finish")]
     pub fn write_row(&mut self, row: &[u8]) -> Result<(), PngWriteError> {
         let expected = self.width as usize * 4;
         if row.len() != expected {
@@ -129,6 +125,7 @@ impl PngWriter {
     }
 
     /// Completes the image and moves it into place. Fails if rows are missing.
+    #[allow(clippy::expect_used, reason = "stream is open until finish")]
     pub fn finish(mut self) -> Result<(), PngWriteError> {
         if self.rows != self.height {
             return Err(PngWriteError::RowCount {

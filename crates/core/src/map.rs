@@ -1,9 +1,4 @@
 //! The Map: a Canvas and one ordered tree of Layers and Objects.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::collections::{HashMap, HashSet};
 
@@ -612,9 +607,10 @@ impl Map {
             }
             stack.extend(entry.children.iter().map(|&child| (Some(id), child)));
         }
-        if seen.len() != self.entries.len() {
-            let orphan = self.entries.keys().find(|id| !seen.contains(id));
-            return Err(InvariantError::Orphan(*orphan.expect("an unseen entry")));
+        if seen.len() != self.entries.len()
+            && let Some(&orphan) = self.entries.keys().find(|id| !seen.contains(id))
+        {
+            return Err(InvariantError::Orphan(orphan));
         }
         Ok(())
     }
@@ -668,6 +664,7 @@ impl Map {
     }
 
     /// Removes the entries of `id` and its descendants, returning them as a Subtree.
+    #[allow(clippy::expect_used, reason = "a known id")]
     pub(crate) fn remove_entries(&mut self, id: Id) -> Subtree {
         let entry = self.entries.remove(&id).expect("a known id");
         self.relink(id, entry.node.link(), None);
@@ -682,6 +679,7 @@ impl Map {
         }
     }
 
+    #[allow(clippy::expect_used, reason = "a known id")]
     pub(crate) fn children_mut(&mut self, parent: Option<Id>) -> &mut Vec<Id> {
         match parent {
             None => &mut self.root,

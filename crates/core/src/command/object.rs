@@ -1,9 +1,4 @@
 //! Creating, deleting and transforming Objects and the Layers that hold them.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::collections::HashSet;
 
@@ -65,7 +60,7 @@ pub(super) fn create_object(
     }
     layer(map, parent)?;
     unlocked(map, parent)?;
-    let geometry = kind.geometry().expect("Landmasses and Lakes have outlines");
+    let geometry = kind.geometry().ok_or(CommandError::NoOutline(id))?;
     if let Some(problem) = geometry.problem() {
         return Err(CommandError::InvalidGeometry { id, problem });
     }

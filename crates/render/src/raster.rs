@@ -1,10 +1,5 @@
 //! Turning Asset art into pixels (ADR 0003): SVG through resvg at whatever width is needed,
 //! PNG at its native resolution.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::path::{Path, PathBuf};
 
@@ -32,6 +27,7 @@ impl Raster {
         }
     }
 
+    #[allow(clippy::expect_used, reason = "four channels")]
     pub fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
         let i = ((y * self.width + x) * 4) as usize;
         self.pixels[i..i + 4].try_into().expect("four channels")
@@ -152,6 +148,7 @@ impl Art {
 
     /// Rasterises an SVG `width` pixels wide, with the height following its aspect ratio,
     /// both capped at [`MAX_RASTER_SIZE`]. A PNG ignores `width` and keeps its own pixels.
+    #[allow(clippy::expect_used, reason = "a non-empty size")]
     pub fn rasterise(&self, width: u32) -> Raster {
         let tree = match self {
             Art::Png(raster) => return raster.clone(),

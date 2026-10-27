@@ -2,11 +2,6 @@
 //!
 //! The manifest is read field by field rather than through serde derives, so every problem can
 //! name the file, the Asset and the field, and one pass reports all of them.
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
@@ -190,16 +185,19 @@ pub fn parse_manifest(file: &Path, text: &str, source: PackSource) -> Result<Pac
         assets.extend(asset);
     }
 
-    if !errors.list.is_empty() {
+    // Each of these is `None` only if an error says why.
+    let (Some(id), Some(name), Some(licence), Some(credits), true) =
+        (id, name, licence, credits, errors.list.is_empty())
+    else {
         return Err(errors.finish());
-    }
+    };
     Ok(Pack {
-        id: id.expect("no errors"),
-        name: name.expect("no errors"),
+        id,
+        name,
         dir: file.parent().map(Path::to_path_buf).unwrap_or_default(),
-        licence: licence.expect("no errors"),
+        licence,
         licence_url,
-        credits: credits.expect("no errors"),
+        credits,
         attribution_required,
         default,
         source,

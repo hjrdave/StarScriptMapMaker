@@ -1,9 +1,4 @@
 //! Labels and the named Label styles they follow (ADR 0006).
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    reason = "existing invariant panics; replace with error handling over time (#351)"
-)]
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -380,6 +375,7 @@ impl LabelStyles {
     }
 
     /// The default style.
+    #[allow(clippy::expect_used, reason = "the default style is always present")]
     pub fn default_style(&self) -> &LabelStyle {
         self.get(LabelStyle::DEFAULT_ID)
             .expect("the default style is always present")
