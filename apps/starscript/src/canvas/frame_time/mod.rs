@@ -20,8 +20,8 @@ use std::time::{Duration, Instant};
 use scripts::{Script, World};
 use ssmap_core::asset::{PackLibrary, PackRoots};
 use ssmap_core::{
-    AssetRef, Canvas, Command, DistanceUnit, Id, Landmass, Layer, Map, MultiPolygon, Node, Object,
-    ObjectKind, Op, PlacedStamp, Polygon, Scale, Stamp, Subtree,
+    AssetRef, Canvas, Command, DistanceUnit, Id, Map, MultiPolygon, PlacedStamp, Polygon, Scale,
+    Stamp,
 };
 use ssmap_render::profile::{self, Stage, StageTimes};
 use ssmap_render::{
@@ -511,17 +511,33 @@ fn large_map(scale: f64, asset: AssetRef) -> (Map, Id) {
         16_384,
         Scale::new(1.0, DistanceUnit::Miles),
     ));
-    let layer = insert(&mut map, None, Node::Layer(Layer::new("Bench")));
+    let layer = Id::new();
+    scripts::run(
+        &mut map,
+        &Command::CreateLayer {
+            id: layer,
+            parent: None,
+            index: None,
+            name: "Bench".to_owned(),
+        },
+        "the top level takes a Layer",
+    );
     for i in 0..LANDMASSES {
         let geometry = coastline(
             scripts::centre_of(i),
             ((VERTICES_PER_LANDMASS as f64 * scale) as usize).max(3),
         );
-        let object = Object::new(ObjectKind::Landmass(Landmass {
-            geometry,
-            ..Default::default()
-        }));
-        insert(&mut map, Some(layer), Node::Object(object));
+        scripts::run(
+            &mut map,
+            &Command::CreateLandmass {
+                id: Id::new(),
+                parent: layer,
+                index: None,
+                geometry,
+                fill: None,
+            },
+            "the Layer was just created, so it takes a Landmass",
+        );
     }
     let stamps = (0..(STAMPS as f64 * scale) as usize)
         .map(|i| PlacedStamp {
@@ -532,11 +548,14 @@ fn large_map(scale: f64, asset: AssetRef) -> (Map, Id) {
             ),
         })
         .collect();
-    map.execute(&Command::PlaceStamps {
-        parent: layer,
-        stamps,
-    })
-    .expect("the Layer was just inserted into this Map, so placing Stamps on it cannot fail");
+    scripts::run(
+        &mut map,
+        &Command::PlaceStamps {
+            parent: layer,
+            stamps,
+        },
+        "the Layer was just created in this Map, so placing Stamps on it cannot fail",
+    );
     (map, layer)
 }
 
@@ -552,22 +571,6 @@ fn coastline(centre: [f64; 2], vertices: usize) -> MultiPolygon {
         exterior: ring,
         holes: Vec::new(),
     }])
-}
-
-fn insert(map: &mut Map, parent: Option<Id>, node: Node) -> Id {
-    let id = Id::new();
-    let index = map.children(parent).len();
-    map.apply(Op::Insert {
-        parent,
-        index,
-        subtree: Subtree {
-            id,
-            node,
-            children: Vec::new(),
-        },
-    })
-    .expect("the index is the current child count, so it is in range");
-    id
 }
 
 #[cfg(test)]

@@ -41,6 +41,7 @@ Run, in this order:
 cargo fmt --all
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ./scripts/check-core-deps.sh
+./scripts/check-command-rule.sh
 cargo test --workspace --locked
 ```
 
@@ -67,7 +68,7 @@ Say which of these a change touches, so they get checked on a machine with a GPU
 
 ## Rules
 
-- Edits to a Map go through a `Command`, which compiles to `Op`s (ADR 0004). Never mutate a Map directly from UI or render code.
+- Edits to a Map go through a `Command`, which compiles to `Op`s (ADR 0004). Never mutate a Map directly from UI or render code. `Map::apply`, `execute` and `revert` exist only with core's `test-support` feature, which tests and benches enable; production code edits through `History`. `scripts/check-command-rule.sh` builds without the feature to prove it.
 - Every change to `crates/core` comes with tests.
 - Avoid `unwrap()` and `expect()` outside tests; return or handle the error.
 - Keep changes focused: no unrelated refactors or dependency changes.

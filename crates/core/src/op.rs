@@ -132,8 +132,15 @@ pub enum OpError {
 }
 
 impl Map {
-    /// Applies `op` and returns its inverse. On error the Map is unchanged.
+    /// Applies `op` and returns its inverse. On error the Map is unchanged. Outside the
+    /// `test-support` feature, only Commands reach this (ADR 0004).
+    #[cfg(any(test, feature = "test-support"))]
     pub fn apply(&mut self, op: Op) -> Result<Op, OpError> {
+        self.apply_op(op)
+    }
+
+    /// The Op applier behind [`Map::apply`], for `core` itself.
+    pub(crate) fn apply_op(&mut self, op: Op) -> Result<Op, OpError> {
         self.check(&op)?;
         self.revision += 1;
         Ok(match op {

@@ -158,7 +158,7 @@ impl History {
     /// Cancels the transaction, undoing everything it applied.
     pub fn rollback(&mut self, map: &mut Map) -> Result<(), HistoryError> {
         let transaction = self.open.take().ok_or(HistoryError::NoTransaction)?;
-        map.revert(transaction.inverses);
+        map.revert_ops(transaction.inverses);
         Ok(())
     }
 
@@ -167,7 +167,7 @@ impl History {
     /// holds one Command's worth of inverses and nothing drifts from repeated small edits.
     pub fn rewind(&mut self, map: &mut Map) -> Result<(), HistoryError> {
         let transaction = self.open.as_mut().ok_or(HistoryError::NoTransaction)?;
-        map.revert(std::mem::take(&mut transaction.inverses));
+        map.revert_ops(std::mem::take(&mut transaction.inverses));
         // The journal never sees what was rewound, as it never sees a rollback.
         transaction.applied.clear();
         Ok(())
@@ -197,7 +197,7 @@ impl History {
             return Ok(None);
         };
         self.record_revert(&step);
-        step.inverses = map.revert(std::mem::take(&mut step.inverses));
+        step.inverses = map.revert_ops(std::mem::take(&mut step.inverses));
         let selection = step.selection_before.clone();
         self.redo.push(step);
         Ok(Some(selection))
@@ -210,7 +210,7 @@ impl History {
             return Ok(None);
         };
         self.record_revert(&step);
-        step.inverses = map.revert(std::mem::take(&mut step.inverses));
+        step.inverses = map.revert_ops(std::mem::take(&mut step.inverses));
         let selection = step.selection_after.clone();
         self.undo.push_back(step);
         Ok(Some(selection))

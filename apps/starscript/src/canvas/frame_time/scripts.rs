@@ -10,12 +10,20 @@ use std::f64::consts::TAU;
 use ssmap_core::land::{self, BrushStroke};
 use ssmap_core::scatter::{ScatterBrush, ScatterStroke, Terrain, scatter_command};
 use ssmap_core::{
-    Command, Id, Map, Node, ObjectKind, PickIndex, Point, Rect, Roughness, RoughnessCache,
-    ShoreKind, ShoreStyle, Stamp,
+    Command, History, Id, Map, Node, ObjectKind, PickIndex, Point, Rect, Roughness, RoughnessCache,
+    Selection, ShoreKind, ShoreStyle, Stamp,
 };
 use ssmap_render::View;
 
 use super::{LANDMASSES, PHASE_FRAMES, TARGET};
+
+/// Runs `command` on `map` as its own Undo step, the way the editor does. `what` says why it
+/// cannot fail.
+pub(super) fn run(map: &mut Map, command: &Command, what: &str) {
+    History::default()
+        .execute_step(map, command, Selection::default())
+        .expect(what);
+}
 
 /// Frames of an interaction script, about a second and a half of dragging at 60 fps.
 pub const EDIT_FRAMES: usize = 90;
@@ -114,10 +122,13 @@ impl World {
         let (land, stamps) = (land.to_vec(), stamps.to_vec());
         if script.rough() {
             let (amount, scale, seed) = ROUGHNESS;
-            map.execute(&Command::SetDefaultRoughness {
-                roughness: Roughness::new(amount, scale, seed),
-            })
-            .expect("a valid Roughness");
+            run(
+                &mut map,
+                &Command::SetDefaultRoughness {
+                    roughness: Roughness::new(amount, scale, seed),
+                },
+                "a valid Roughness",
+            );
         }
         let base_stamp = stamps
             .first()
@@ -229,17 +240,18 @@ pub fn edit(script: Script, frame: usize, world: &mut World) {
             )
             .expect("the layer exists");
             if let Some(command) = command {
-                world.map.execute(&command).expect("the stroke applies");
+                run(&mut world.map, &command, "the stroke applies");
             }
         }
         Script::DragLandmass => {
-            world
-                .map
-                .execute(&Command::Translate {
+            run(
+                &mut world.map,
+                &Command::Translate {
                     ids: vec![target],
                     offset: [6.0, 4.0],
-                })
-                .expect("the landmass moves");
+                },
+                "the landmass moves",
+            );
         }
         Script::DragStamps => {
             for &id in world.stamps.iter().take(DRAGGED_STAMPS) {
@@ -247,13 +259,14 @@ pub fn edit(script: Script, frame: usize, world: &mut World) {
                     continue;
                 };
                 stamp.position = [stamp.position[0] + 3.0, stamp.position[1] + 2.0];
-                world
-                    .map
-                    .execute(&Command::SetStamp {
+                run(
+                    &mut world.map,
+                    &Command::SetStamp {
                         id,
                         stamp: Box::new(stamp),
-                    })
-                    .expect("the Stamp moves");
+                    },
+                    "the Stamp moves",
+                );
             }
         }
         Script::Scatter => {
@@ -284,7 +297,7 @@ pub fn edit(script: Script, frame: usize, world: &mut World) {
                 Id::new,
             );
             if let Some(command) = command {
-                world.map.execute(&command).expect("the Stamps place");
+                run(&mut world.map, &command, "the Stamps place");
             }
         }
         Script::SliderAmount | Script::SliderScale => {
@@ -294,23 +307,25 @@ pub fn edit(script: Script, frame: usize, world: &mut World) {
             } else {
                 Roughness::new(amount, scale * (0.5 + 1.5 * t), seed)
             };
-            world
-                .map
-                .execute(&Command::SetDefaultRoughness { roughness })
-                .expect("a valid Roughness");
+            run(
+                &mut world.map,
+                &Command::SetDefaultRoughness { roughness },
+                "a valid Roughness",
+            );
         }
         Script::SliderShore => {
             let mut shore = ShoreStyle::landmass_default();
             shore.outline.width = 1.0 + 20.0 * t;
             shore.ripples.spacing = 8.0 + 40.0 * t;
             shore.shading.width = 10.0 + 120.0 * t;
-            world
-                .map
-                .execute(&Command::SetDefaultShore {
+            run(
+                &mut world.map,
+                &Command::SetDefaultShore {
                     kind: ShoreKind::Landmass,
                     shore,
-                })
-                .expect("a valid Shore style");
+                },
+                "a valid Shore style",
+            );
         }
         Script::Marquee => {
             let Some(pick) = &world.pick else { return };

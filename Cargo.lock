@@ -4179,6 +4179,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "ssmap-core",
  "tempfile",
  "thiserror 2.0.21",
  "toml",

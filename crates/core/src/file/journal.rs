@@ -200,10 +200,10 @@ impl Recovered {
     pub fn replay(self, map: &mut Map) -> Result<(), OpError> {
         let mut inverses = Vec::with_capacity(self.ops.len());
         for op in self.ops {
-            match map.apply(op) {
+            match map.apply_op(op) {
                 Ok(inverse) => inverses.push(inverse),
                 Err(err) => {
-                    map.revert(inverses);
+                    map.revert_ops(inverses);
                     return Err(err);
                 }
             }
@@ -216,7 +216,7 @@ impl Recovered {
     pub fn replay_lenient(self, map: &mut Map) -> usize {
         self.ops
             .into_iter()
-            .filter(|op| map.apply(op.clone()).is_err())
+            .filter(|op| map.apply_op(op.clone()).is_err())
             .count()
     }
 }
