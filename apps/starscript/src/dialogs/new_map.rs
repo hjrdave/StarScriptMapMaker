@@ -1,12 +1,15 @@
 //! The New Map dialog: the Canvas size and real-world scale a new Map starts with. The Map
 //! itself comes from the starter template (see [`start_map`]).
 
+use std::path::{Path, PathBuf};
+
 use eframe::egui;
+use ssmap_core::asset::TrashError;
 use ssmap_core::{
     Canvas, DefaultLayers, DistanceUnit, LabelStyles, Map, MapTemplate, Scale, TemplateError,
 };
 
-use crate::{dialog, theme};
+use crate::{dialog, file_actions, theme};
 
 /// The smallest and largest side of a Canvas, in nominal pixels.
 pub const SIDE_RANGE: std::ops::RangeInclusive<u32> = 256..=16384;
@@ -50,27 +53,93 @@ pub struct NewMapDialog {
     height: u32,
     distance: f64,
     unit: DistanceUnit,
-    /// Every template that could be loaded, the starter first.
+    /// Every template that could be loaded, the built-in ones first.
     templates: Vec<MapTemplate>,
+    /// What went wrong with the template files that could not be loaded.
+    problems: Vec<String>,
     /// The index in `templates` of the one the Map will start from.
     selected: usize,
+    /// The folder user templates are read from.
+    user_dir: Option<PathBuf>,
+    /// The index in `templates` of the user template a Delete asked about; the dialog
+    /// confirms before it is trashed.
+    delete_prompt: Option<usize>,
+    /// Moves a template file to the Trash; tests swap it for one that touches nothing.
+    trash: fn(&Path) -> Result<(), TrashError>,
 }
 
 impl Default for NewMapDialog {
     fn default() -> Self {
-        Self {
+        Self::with_user_dir(MapTemplate::user_dir())
+    }
+}
+
+impl NewMapDialog {
+    /// A dialog that lists the user templates found in `user_dir` beside the built-in ones.
+    pub fn with_user_dir(user_dir: Option<PathBuf>) -> Self {
+        let mut dialog = Self {
             open: false,
             width: DEFAULT_SIDES.0,
             height: DEFAULT_SIDES.1,
             distance: DEFAULT_DISTANCE,
             unit: DistanceUnit::Miles,
-            templates: MapTemplate::load_all().0,
+            templates: Vec::new(),
+            problems: Vec::new(),
             selected: 0,
+            user_dir,
+            delete_prompt: None,
+            trash: file_actions::move_to_trash,
+        };
+        dialog.reload();
+        dialog
+    }
+
+    /// The folder user templates are read from and saved to.
+    pub fn user_dir(&self) -> Option<&Path> {
+        self.user_dir.as_deref()
+    }
+
+    /// Reads the templates again, keeping the selected one selected if it is still there.
+    pub fn reload(&mut self) {
+        let kept = self
+            .templates
+            .get(self.selected)
+            .map(|t| t.name().to_owned());
+        let (templates, problems) = MapTemplate::load_all_with_user(self.user_dir.as_deref());
+        self.templates = templates;
+        self.problems = problems.iter().map(ToString::to_string).collect();
+        self.selected = kept
+            .and_then(|name| self.templates.iter().position(|t| t.name() == name))
+            .unwrap_or(0);
+    }
+
+    /// Selects the template with the given name, as after saving one. Returns whether there
+    /// is one.
+    pub fn select_named(&mut self, name: &str) -> bool {
+        match self.templates.iter().position(|t| t.name() == name) {
+            Some(index) => {
+                self.selected = index;
+                true
+            }
+            None => false,
         }
     }
-}
 
-impl NewMapDialog {
+    /// Why some template files were left out of the list, one message each.
+    pub fn problems(&self) -> &[String] {
+        &self.problems
+    }
+
+    /// Sets what moves a template to the Trash, for tests.
+    pub fn set_trash(&mut self, trash: fn(&Path) -> Result<(), TrashError>) {
+        self.trash = trash;
+    }
+
+    /// Whether the delete-template confirmation is showing, for tests.
+    pub fn delete_prompt_open(&self) -> bool {
+        self.delete_prompt.is_some()
+    }
+
     /// The templates on offer, the starter first.
     pub fn templates(&self) -> &[MapTemplate] {
         &self.templates
@@ -144,6 +213,13 @@ impl NewMapDialog {
                 self.template_picker(ui, width);
                 ui.add_space(12.0);
             }
+            if !self.problems.is_empty() {
+                let danger = theme::palette(ui.ctx()).danger;
+                for problem in &self.problems {
+                    ui.colored_label(danger, problem);
+                }
+                ui.add_space(12.0);
+            }
             egui::Grid::new("new map settings")
                 .num_columns(2)
                 .spacing([12.0, 8.0])
@@ -199,7 +275,8 @@ impl NewMapDialog {
                 }
             });
         });
-        if created.is_none() && dialog::enter_confirms(ctx) {
+        self.delete_dialog(ctx);
+        if created.is_none() && self.delete_prompt.is_none() && dialog::enter_confirms(ctx) {
             created = self.canvas();
         }
         if created.is_some() || cancelled || shown.cancelled {
@@ -210,6 +287,58 @@ impl NewMapDialog {
 }
 
 impl NewMapDialog {
+    /// The confirmation before a user template is moved to the Trash.
+    fn delete_dialog(&mut self, ctx: &egui::Context) {
+        let Some(index) = self.delete_prompt else {
+            return;
+        };
+        let Some(template) = self.templates.get(index).cloned() else {
+            self.delete_prompt = None;
+            return;
+        };
+        let name = template.name().to_owned();
+        let (mut delete, mut cancel) = (false, false);
+        let shown = dialog::show(
+            ctx,
+            "delete_template",
+            &format!("Delete “{name}”?"),
+            380.0,
+            |ui| {
+                ui.label(format!(
+                    "The template is moved to the {}, so you can put it back from there. \
+                     Maps made from it are not changed.",
+                    file_actions::TRASH_NAME
+                ));
+                dialog::buttons(ui, |ui| {
+                    let danger = theme::palette(ui.ctx()).danger;
+                    let button =
+                        egui::Button::new(egui::RichText::new("Delete").strong()).fill(danger);
+                    if ui.add(button).clicked() {
+                        delete = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                });
+            },
+        );
+        if shown.cancelled {
+            cancel = true;
+        }
+        if delete {
+            self.delete_prompt = None;
+            // The template refuses to be deleted if it is built in.
+            match template.delete(self.trash) {
+                Ok(()) => self.reload(),
+                Err(err) => self
+                    .problems
+                    .push(format!("Couldn’t delete “{name}”: {err}")),
+            }
+        } else if cancel {
+            self.delete_prompt = None;
+        }
+    }
+
     /// The live preview of the selected template and a card for each template.
     fn template_picker(&mut self, ui: &mut egui::Ui, width: f32) {
         let p = theme::palette(ui.ctx());
@@ -231,7 +360,16 @@ impl NewMapDialog {
             Some(name) => format!("Preview: {name}"),
             None => String::new(),
         };
-        ui.label(egui::RichText::new(caption).color(p.text_secondary));
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(caption).color(p.text_secondary));
+            let user = self
+                .templates
+                .get(self.selected)
+                .is_some_and(|t| !t.is_built_in());
+            if user && ui.small_button("Delete…").clicked() {
+                self.delete_prompt = Some(self.selected);
+            }
+        });
         ui.add_space(8.0);
         ui.spacing_mut().item_spacing = egui::vec2(CARD_GAP, CARD_GAP);
         let mut chosen = self.selected;

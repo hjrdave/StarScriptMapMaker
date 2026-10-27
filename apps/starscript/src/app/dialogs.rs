@@ -55,6 +55,7 @@ impl MapMakerApp {
         self.unsaved_dialog(ctx);
         self.delete_dialog(ctx);
         self.pack_delete_dialog(ctx);
+        self.template_dialog(ctx);
         self.paste_dialog(ctx);
     }
 

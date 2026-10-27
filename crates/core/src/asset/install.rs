@@ -39,7 +39,12 @@ pub(crate) fn built_in_packs_dir() -> PathBuf {
 /// The per-user packs folder, such as `~/.local/share/starscriptmapmaker/packs` on Linux.
 /// Unsupported in v1, but packs there load. `None` when the platform reports no home folder.
 pub(crate) fn user_packs_dir() -> Option<PathBuf> {
-    directories::ProjectDirs::from("", "", APP_NAME).map(|dirs| dirs.data_dir().join("packs"))
+    user_data_dir().map(|dir| dir.join("packs"))
+}
+
+/// The per-user data folder, which holds the user packs and templates.
+pub(crate) fn user_data_dir() -> Option<PathBuf> {
+    directories::ProjectDirs::from("", "", APP_NAME).map(|dirs| dirs.data_dir().to_path_buf())
 }
 
 fn resolve_assets_dir(

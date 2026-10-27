@@ -139,6 +139,7 @@ impl MapMakerApp {
             || self.app.unsaved.is_asking()
             || self.win.delete_prompt.is_some()
             || self.win.pack_delete_prompt.is_some()
+            || self.win.template_prompt.is_some()
             || self.win.paste_prompt.is_some()
             || self.win.new_map_dialog.open
             || self.win.export.is_busy()

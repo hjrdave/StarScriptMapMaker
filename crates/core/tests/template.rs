@@ -273,3 +273,108 @@ fn the_default_flag_must_be_a_boolean() {
     .unwrap_err();
     assert!(err.to_string().contains("pack.default"), "{err}");
 }
+
+fn built_in_dir() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/templates")
+}
+
+#[test]
+fn a_saved_map_reads_back_as_a_template_with_the_same_look() {
+    let templates = MapTemplate::load_all().0;
+    let parchment = templates.iter().find(|t| t.id() == "parchment").unwrap();
+    let mut map = parchment.new_map(canvas());
+    let land = map.children(None)[1];
+    let id = Id::new();
+    let square = ssmap_core::Polygon {
+        exterior: vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+        holes: Vec::new(),
+    };
+    map.execute(&Command::CreateLandmass {
+        id,
+        parent: land,
+        index: None,
+        geometry: MultiPolygon(vec![square]),
+        fill: None,
+    })
+    .unwrap();
+
+    let layers = parchment.default_layers();
+    let saved = MapTemplate::from_map("  My Parchment ", &map, layers);
+    let dir = tempfile::tempdir().unwrap();
+    let written = saved.save_to(dir.path()).unwrap();
+    assert_eq!(written.id(), "my-parchment");
+    assert!(!written.is_built_in());
+
+    let (loaded, problems) = MapTemplate::load_dir(dir.path());
+    assert!(problems.is_empty(), "{problems:?}");
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].name(), "My Parchment");
+    assert_eq!(loaded[0].default_layers(), layers);
+
+    let fresh = loaded[0].new_map(canvas());
+    fresh.validate().unwrap();
+    assert_eq!(fresh.canvas().background, map.canvas().background);
+    assert_eq!(fresh.canvas().template.as_deref(), Some("My Parchment"));
+    assert_eq!(fresh.defaults(), map.defaults());
+    assert_eq!(fresh.children(None), map.children(None));
+    assert!(
+        fresh.node(id).is_none(),
+        "Objects are not part of a template"
+    );
+}
+
+#[test]
+fn saving_never_replaces_a_template_with_the_same_name() {
+    let map = MapTemplate::starter().unwrap().new_map(canvas());
+    let template = MapTemplate::from_map("Mine", &map, Default::default());
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("templates");
+    let first = template.save_to(&folder).unwrap();
+    let second = template.save_to(&folder).unwrap();
+    assert_eq!((first.id(), second.id()), ("mine", "mine-2"));
+}
+
+#[test]
+fn user_templates_follow_the_built_in_ones_and_a_broken_one_is_reported() {
+    let map = MapTemplate::starter().unwrap().new_map(canvas());
+    let user = tempfile::tempdir().unwrap();
+    MapTemplate::from_map("Mine", &map, Default::default())
+        .save_to(user.path())
+        .unwrap();
+    std::fs::write(user.path().join("broken.json"), "{}").unwrap();
+
+    let (templates, problems) = MapTemplate::load_all_from(&built_in_dir(), Some(user.path()));
+    assert_eq!(problems.len(), 1);
+    let names: Vec<&str> = templates.iter().map(|t| t.name()).collect();
+    assert_eq!(names.len(), 7);
+    assert_eq!(names.last(), Some(&"Mine"));
+    assert!(templates[0].is_built_in());
+    assert!(!templates[6].is_built_in());
+
+    // A user folder that doesn't exist yet is not a problem.
+    let missing = user.path().join("nope");
+    let (templates, problems) = MapTemplate::load_all_from(&built_in_dir(), Some(&missing));
+    assert_eq!((templates.len(), problems.len()), (6, 0));
+}
+
+#[test]
+fn user_templates_are_trashed_and_built_in_ones_are_refused() {
+    let map = MapTemplate::starter().unwrap().new_map(canvas());
+    let user = tempfile::tempdir().unwrap();
+    MapTemplate::from_map("Mine", &map, Default::default())
+        .save_to(user.path())
+        .unwrap();
+    let (templates, _) = MapTemplate::load_all_from(&built_in_dir(), Some(user.path()));
+
+    let refused = templates[0].delete(|_| panic!("a built-in template was trashed"));
+    assert!(matches!(refused, Err(TemplateError::BuiltIn(_))));
+
+    let mine = templates.last().unwrap();
+    let mut trashed = None;
+    mine.delete(|path| {
+        trashed = Some(path.to_path_buf());
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(trashed, Some(user.path().join("mine.json")));
+}
