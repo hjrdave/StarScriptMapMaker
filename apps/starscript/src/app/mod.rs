@@ -45,21 +45,18 @@ pub(crate) use self::close_flow::Pending;
 pub(crate) use self::files::RecoveryPrompt;
 
 use self::close_flow::{CloseFlow, Leaving, QuitState};
-use self::drag_drop::{PayloadDrop, TabDrop};
 use self::export_flow::ExportFlow;
 use self::files::after_trash;
 use self::panels::layers_panel;
 use self::unsaved_offer::UnsavedOffer;
 
-/// What every window shares: settings, recent Maps, the installed Asset packs, crash recovery
-/// and the native menu. Not tied to one window's Maps.
+/// What is not tied to the window's Maps: settings, recent Maps, the installed Asset packs,
+/// crash recovery and the native menu.
 struct AppState {
     /// Where journals of Maps never saved go; `None` turns them off.
     recovery_dir: Option<PathBuf>,
     /// Whether the Canvas renderer is installed, so new tabs get a tessellation cache.
     gpu: bool,
-    /// Shows the Open, Save and folder dialogs; tests swap it for one that shows nothing.
-    launch_dialog: native_dialog::Launch,
     /// The installed Asset packs' art, shared with the Canvas renderer and picking.
     sprites: SpriteStore,
     credits: Credits,
@@ -82,22 +79,6 @@ struct AppState {
     shortcuts_off: HashSet<menu::Command>,
     /// What Copy or Cut last took in any tab, so Paste works in another tab or Map.
     clipboard: Option<clipboard::Clipboard>,
-    /// Tabs sent back to the main window from a popped-out one, taken in once that window's
-    /// frame is over.
-    returning: Vec<MapTab>,
-    /// Tabs dragged and dropped this frame, settled once every window's frame is over.
-    tab_drops: Vec<TabDrop>,
-    /// Assets and Layers let go this frame, settled like `tab_drops`.
-    payload_drops: Vec<PayloadDrop>,
-    /// Where on the screen the pointer is while an Asset or Layer is dragged: windows under it
-    /// show a drop highlight.
-    drag_hover: Option<egui::Pos2>,
-    /// The window and tab index whose Layers panel a Layer is being dragged out of.
-    drag_source: Option<(egui::ViewportId, usize)>,
-    /// Some window showed a drop highlight last frame, so the drag shows the copy cursor.
-    drag_copy: bool,
-    /// Some window shows a drop highlight this frame.
-    drag_over_target: bool,
     /// The native menu bar, on macOS; `None` elsewhere and in UI tests, which use the egui bar.
     #[cfg(target_os = "macos")]
     native_menu: Option<native_menu::mac::MacMenu>,
@@ -111,8 +92,7 @@ struct PastePrompt {
     at: [f64; 2],
 }
 
-/// What belongs to one window: its tabs, panels and the dialogs modal to it. The Home tab
-/// lives only in the main window.
+/// What belongs to the window: its tabs, panels and the dialogs modal to it.
 struct WindowState {
     /// The open Maps, one per tab, in the order of the tab row. May be empty.
     tabs: Vec<MapTab>,
@@ -127,17 +107,9 @@ struct WindowState {
     home_active: bool,
     /// The tab strip's scroll position and the like.
     strip: tab_strip::State,
-    /// Where this window's content starts on the screen, to tell which window a dropped tab
-    /// is over.
-    screen_origin: egui::Pos2,
-    /// The size of this window's content, to tell whether a dropped tab is over the window at
-    /// all.
-    content_size: egui::Vec2,
-    /// Where the Canvas and the Layers panel were drawn (in the window's own coordinates), which
-    /// an Asset or Layer dragged from another window can be dropped on. `None` while the window
-    /// shows no Map.
+    /// Where the Canvas was drawn, which an Asset dragged out of the browser can be dropped on.
+    /// `None` while the window shows no Map.
     canvas_zone: Option<egui::Rect>,
-    layers_zone: Option<egui::Rect>,
     /// The Home tab's list, search and thumbnails.
     home: home::Home,
     /// Panel widths and collapse state, the same for every tab in the window.
@@ -166,66 +138,11 @@ struct WindowState {
     window_hidden: bool,
     /// The window title last sent, so it is only sent when it changes.
     title: String,
-    /// The main window, as opposed to one a tab was popped out into.
-    main: bool,
-    /// The viewport this window is shown in.
-    viewport: egui::ViewportId,
 }
 
 pub struct MapMakerApp {
     app: AppState,
-    /// The main window.
     win: WindowState,
-    /// The windows tabs were popped out into, each with its own tabs and dialogs. While one of
-    /// them is shown its state is swapped into `win`, so everything that acts on "the window"
-    /// acts on it.
-    popped: Vec<WindowState>,
-    /// How many windows were popped out so far, for their viewport ids.
-    popped_count: u64,
-}
-
-impl WindowState {
-    /// Where the Canvas is on the screen.
-    fn canvas_on_screen(&self) -> Option<egui::Rect> {
-        self.canvas_zone
-            .map(|zone| zone.translate(self.screen_origin.to_vec2()))
-    }
-
-    /// Where the Layers panel is on the screen.
-    fn layers_on_screen(&self) -> Option<egui::Rect> {
-        self.layers_zone
-            .map(|zone| zone.translate(self.screen_origin.to_vec2()))
-    }
-
-    /// Takes tab `index` out with its Recovery journal and everything else, and keeps the same
-    /// tab active if it can.
-    fn take_tab(&mut self, index: usize) -> MapTab {
-        let tab = self.tabs.remove(index);
-        if index < self.active || self.active >= self.tabs.len() {
-            self.active = self.active.saturating_sub(1);
-        }
-        tab
-    }
-
-    /// Whether tab `index` can leave: not a start page or a tab being saved.
-    fn can_release(&self, index: usize) -> bool {
-        self.tabs
-            .get(index)
-            .is_some_and(|tab| !tab.is_blank() && tab.pending.is_none())
-    }
-
-    /// The whole window content on the screen.
-    fn content_on_screen(&self) -> egui::Rect {
-        egui::Rect::from_min_size(self.screen_origin, self.content_size)
-    }
-
-    /// The strip on the screen.
-    fn strip_on_screen(&self) -> egui::Rect {
-        self.strip
-            .geometry
-            .strip
-            .translate(self.screen_origin.to_vec2())
-    }
 }
 
 impl MapMakerApp {
@@ -302,7 +219,6 @@ impl MapMakerApp {
         let app = AppState {
             recovery_dir,
             gpu,
-            launch_dialog,
             sprites,
             credits,
             pack_roots: PackRoots::installed(),
@@ -322,13 +238,6 @@ impl MapMakerApp {
             quit: QuitState::new(cfg!(target_os = "macos")),
             overlay: overlay::Overlay::default(),
             clipboard: None,
-            returning: Vec::new(),
-            tab_drops: Vec::new(),
-            payload_drops: Vec::new(),
-            drag_hover: None,
-            drag_source: None,
-            drag_copy: false,
-            drag_over_target: false,
         };
         let win = WindowState {
             home_active: tabs.is_empty(),
@@ -336,10 +245,7 @@ impl MapMakerApp {
             active: 0,
             notices,
             strip: tab_strip::State::default(),
-            screen_origin: egui::Pos2::ZERO,
-            content_size: egui::Vec2::ZERO,
             canvas_zone: None,
-            layers_zone: None,
             home: home::Home::default(),
             delete_prompt: None,
             pack_delete_prompt: None,
@@ -356,15 +262,8 @@ impl MapMakerApp {
             close: CloseFlow::new(Leaving::Quit),
             window_hidden: false,
             title: String::new(),
-            main: true,
-            viewport: egui::ViewportId::ROOT,
         };
-        Self {
-            app,
-            win,
-            popped: Vec::new(),
-            popped_count: 0,
-        }
+        Self { app, win }
     }
 
     /// The active tab's Editor.
@@ -442,7 +341,7 @@ impl MapMakerApp {
 
     /// Whether the Home tab is showing: chosen, or because no Map is open.
     pub fn home_active(&self) -> bool {
-        self.win.main && (self.win.home_active || self.win.tabs.is_empty())
+        self.win.home_active || self.win.tabs.is_empty()
     }
 
     /// The active tab: the one whose Map the window shows and every command acts on. `None`
@@ -467,9 +366,7 @@ impl eframe::App for MapMakerApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
         self.native_menu_actions(ui.ctx());
-        self.app.drag_copy = std::mem::take(&mut self.app.drag_over_target);
         self.show(ui);
-        self.show_popped(ui.ctx());
         // After the frame, so the menu shows what this frame changed.
         #[cfg(target_os = "macos")]
         self.native_menu_sync(ui.ctx());

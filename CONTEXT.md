@@ -133,12 +133,8 @@ _Avoid_: Focus, active objects
 ### Tabs
 
 **Tab**:
-One open Map in the window, with its own editor, unsaved-changes state and view. Asset packs, Recent files and the export dialog are shared by all tabs and act on the active one.
+One open Map in the window, with its own editor, unsaved-changes state and view. Asset packs, Recent files and the export dialog are shared by all tabs and act on the active one. A Tab can be dragged along the strip to reorder it; tabs do not pop out into windows of their own. An Asset dragged from the Asset browser onto the Canvas is placed there, as one Undo step.
 _Avoid_: Window, project
-
-**Popped-out window**:
-A window a Tab was moved into, with its own tab strip, panels and dialogs. Asset packs, Recent files and crash recovery stay shared; the Home tab lives only in the main window. A Tab can be dragged onto another window's tab strip (it lands at the drop position, keeping its undo history and unsaved changes) or dropped outside every window to pop out. An Asset dragged from any window's Asset browser onto a Canvas is placed there, and a Layer dragged onto another window's Canvas or Layers panel is copied into that Map (the source is unchanged); each drop is one Undo step in the target Map only. Copy and Paste work across windows through the shared clipboard.
-_Avoid_: Detached window, second window
 
 **Home tab**:
 The tab that shows the map browser, also called the Home page or start page in the new-tab flow. It is not a Map and has no Canvas.

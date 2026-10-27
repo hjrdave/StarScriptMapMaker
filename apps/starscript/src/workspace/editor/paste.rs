@@ -98,20 +98,6 @@ impl Editor {
         true
     }
 
-    /// What dragging the Layer or Object `id` out of this Map would copy: the whole Selection
-    /// when `id` is part of it, else `id` alone. `None` when `id` is not in this Map.
-    pub fn drag_clipboard(&mut self, id: Id) -> Option<Clipboard> {
-        if !self.map.contains(id) {
-            return None;
-        }
-        let roots = if self.selection.contains(&id) {
-            self.selected_roots()
-        } else {
-            vec![id]
-        };
-        Some(self.clipboard_of(&roots))
-    }
-
     /// The branches `roots` as a clipboard, with the middle of their Objects as its centre.
     pub(super) fn clipboard_of(&mut self, roots: &[Id]) -> Clipboard {
         let mut objects = Vec::new();
