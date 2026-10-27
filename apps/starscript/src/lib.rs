@@ -10,13 +10,19 @@ mod packs;
 mod panels;
 mod workspace;
 
-pub use canvas::{frame_time, handles, overlay, zoom};
-pub use chrome::{icons, menu, native_menu, tab, theme, toast};
-pub use dialogs::{dialog, native_dialog, new_map, paste_dialog, recovery};
-pub use export::{export_dialog, export_region, export_run};
+pub use canvas::{frame_time, overlay};
+pub use chrome::{menu, theme};
+pub use dialogs::{new_map, paste_dialog};
+pub use export::{export_dialog, export_run};
 pub use packs::pack_install;
 pub use panels::prop_widgets;
-pub use workspace::{clipboard, credits, document, editor, home, shell, tools, update};
+pub use workspace::{editor, shell, tools};
+
+use canvas::{handles, zoom};
+use chrome::{icons, native_menu, tab, toast};
+use dialogs::{dialog, native_dialog, recovery};
+use export::export_region;
+use workspace::{clipboard, credits, document, home, update};
 
 use canvas::{canvas_controls, canvas_resize, canvas_view, tessellation};
 use chrome::{tab_strip, tool_dock, tool_section};

@@ -211,7 +211,7 @@ fn merge(meshes: &[Option<Arc<GroupMesh>>], cuts: &[usize]) -> Built {
 
 /// What a frame may spend applying finished background results to the drawn geometry. Anything
 /// over carries to the next frame, so input is never held up for more than about one frame.
-pub const APPLY_BUDGET: Duration = Duration::from_millis(4);
+pub(crate) const APPLY_BUDGET: Duration = Duration::from_millis(4);
 
 /// Groups per chunk. An Object that lands marks only the chunks holding its groups dirty.
 const CHUNK_GROUPS: usize = 64;

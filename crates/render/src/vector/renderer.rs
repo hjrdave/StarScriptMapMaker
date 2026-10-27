@@ -11,7 +11,7 @@ use super::{DrawFilter, VectorGroup, overlaps};
 use crate::canvas::{CLIP_INSIDE, StencilUse};
 
 /// lyon tessellation drawn as plain triangles; antialiasing comes from the target's MSAA.
-pub struct LyonRenderer {
+pub(crate) struct LyonRenderer {
     /// Draws without touching the stencil.
     plain: wgpu::RenderPipeline,
     /// Draws only inside the active Clip.

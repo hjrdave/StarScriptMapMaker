@@ -12,7 +12,7 @@ use crate::view::View;
 
 /// Pixels rendered around each tile and then cropped, wide enough for halos, outlines and
 /// ripples that reach across a tile edge.
-pub const TILE_MARGIN: u32 = 64;
+pub(crate) const TILE_MARGIN: u32 = 64;
 
 /// Where an export stands, for the export dialog.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -36,7 +36,7 @@ pub enum TiledExportError<E: std::error::Error + 'static> {
 
 /// A region of the output image, in pixels.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Tile {
+pub(crate) struct Tile {
     pub x: u32,
     pub y: u32,
     pub width: u32,
@@ -46,7 +46,7 @@ pub struct Tile {
 /// How an image of `size` is cut into tiles for a device whose textures are at most `max_side`
 /// pixels wide.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct TilePlan {
+pub(crate) struct TilePlan {
     pub size: [u32; 2],
     /// The overlap margin on every side of a rendered tile.
     pub margin: u32,
@@ -55,7 +55,7 @@ pub struct TilePlan {
 }
 
 impl TilePlan {
-    pub fn new(size: [u32; 2], max_side: u32) -> Self {
+    pub(crate) fn new(size: [u32; 2], max_side: u32) -> Self {
         // A quarter of the limit at most, so the tile core keeps at least half of it.
         let margin = TILE_MARGIN.min(max_side.saturating_sub(1) / 4);
         let core = size.map(|side| side.min(max_side - 2 * margin).max(1));
@@ -63,19 +63,19 @@ impl TilePlan {
     }
 
     /// The size every tile is rendered at, margin included.
-    pub fn render_size(&self) -> [u32; 2] {
+    pub(crate) fn render_size(&self) -> [u32; 2] {
         self.core.map(|side| side + 2 * self.margin)
     }
 
-    pub fn columns(&self) -> u32 {
+    pub(crate) fn columns(&self) -> u32 {
         self.size[0].div_ceil(self.core[0])
     }
 
-    pub fn rows(&self) -> u32 {
+    pub(crate) fn rows(&self) -> u32 {
         self.size[1].div_ceil(self.core[1])
     }
 
-    pub fn tile(&self, column: u32, row: u32) -> Tile {
+    pub(crate) fn tile(&self, column: u32, row: u32) -> Tile {
         let (x, y) = (column * self.core[0], row * self.core[1]);
         Tile {
             x,

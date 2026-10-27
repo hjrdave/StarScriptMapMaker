@@ -175,11 +175,7 @@ impl Atlas {
         }
     }
 
-    pub fn scale(&self) -> Scale {
-        self.scale
-    }
-
-    /// The icon's cell as `[x, y]` of its top-left pixel; the cell is `scale().cell()` square.
+    /// The icon's cell as `[x, y]` of its top-left pixel; the cell is `scale.cell()` square.
     pub fn cell_origin(&self, icon: Icon) -> [u32; 2] {
         let index = Icon::ALL
             .iter()
@@ -190,6 +186,7 @@ impl Atlas {
     }
 
     /// The icon's cell as premultiplied RGBA8 rows.
+    #[cfg(test)]
     pub fn cell_pixels(&self, icon: Icon) -> Vec<u8> {
         let cell = self.scale.cell();
         let [x0, y0] = self.cell_origin(icon);

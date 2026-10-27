@@ -14,10 +14,10 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use ssmap_core::{Affine, Id, MultiPolygon, ShoreStyle, land};
 
 /// How many bands approximate the inward glow.
-pub const SHADING_BANDS: u32 = 6;
+pub(crate) const SHADING_BANDS: u32 = 6;
 
 /// How far out each ripple line runs, nearest first. Empty when ripples draw nothing.
-pub fn ripple_distances(shore: &ShoreStyle) -> Vec<f64> {
+pub(crate) fn ripple_distances(shore: &ShoreStyle) -> Vec<f64> {
     let ripples = &shore.ripples;
     if ripples.count == 0 || ripples.width <= 0.0 {
         return Vec::new();
@@ -29,7 +29,7 @@ pub fn ripple_distances(shore: &ShoreStyle) -> Vec<f64> {
 
 /// How far in each shading band runs (negative), nearest the coast first. Empty when shading
 /// draws nothing.
-pub fn shading_distances(shore: &ShoreStyle) -> Vec<f64> {
+pub(crate) fn shading_distances(shore: &ShoreStyle) -> Vec<f64> {
     let shading = &shore.shading;
     if shading.width <= 0.0 || shading.color.a == 0 {
         return Vec::new();
@@ -78,7 +78,7 @@ fn same(a: f64, b: f64) -> bool {
 }
 
 /// The offset rings of one Object's roughened outline, kept between builds.
-pub struct ShoreRings {
+pub(crate) struct ShoreRings {
     /// The outline `rings` were made from.
     outline: Arc<MultiPolygon>,
     rings: Vec<OffsetRing>,
@@ -89,7 +89,7 @@ pub struct ShoreRings {
 }
 
 #[derive(Clone)]
-pub struct OffsetRing {
+pub(crate) struct OffsetRing {
     distance: f64,
     ring: Arc<MultiPolygon>,
     /// Whether the build in progress has drawn it.
@@ -183,7 +183,7 @@ impl ShoreRings {
 
 /// Every Object's kept rings, and the worker computing new ones, if there is one.
 #[derive(Default)]
-pub struct RingStore {
+pub(crate) struct RingStore {
     objects: HashMap<Id, ShoreRings>,
     worker: Option<RingWorker>,
 }
@@ -191,19 +191,19 @@ pub struct RingStore {
 impl RingStore {
     /// Computes rings on a thread of its own from now on. `repaint` is called from it as each
     /// Object's rings land.
-    pub fn compute_in_background(&mut self, repaint: impl Fn() + Send + Sync + 'static) {
+    pub(crate) fn compute_in_background(&mut self, repaint: impl Fn() + Send + Sync + 'static) {
         self.worker = Some(RingWorker::spawn(Box::new(repaint)));
     }
 
     /// Changes whenever background rings land, which is when what was drawn is out of date.
-    pub fn generation(&self) -> u64 {
+    pub(crate) fn generation(&self) -> u64 {
         self.worker.as_ref().map_or(0, RingWorker::generation)
     }
 
     /// Makes sure `id` has every ring `shore` draws around `outline`. Without a worker, or when
     /// `complete`, missing rings are computed now; otherwise they are queued, and until they
     /// land the Object draws the rings it had.
-    pub fn prepare(
+    pub(crate) fn prepare(
         &mut self,
         id: Id,
         outline: &Arc<MultiPolygon>,
@@ -257,19 +257,19 @@ impl RingStore {
 
     /// The ring at `distance` around `id`'s outline, after [`RingStore::prepare`]. `None` while
     /// it is being computed and no earlier ring can stand in.
-    pub fn ring(&mut self, id: Id, distance: f64) -> Option<Arc<MultiPolygon>> {
+    pub(crate) fn ring(&mut self, id: Id, distance: f64) -> Option<Arc<MultiPolygon>> {
         self.objects.get_mut(&id)?.ring(distance)
     }
 
     /// Ends a build: forgets the rings of Objects and distances it did not draw.
-    pub fn end_build(&mut self) {
+    pub(crate) fn end_build(&mut self) {
         self.objects.retain(|_, entry| entry.end_build());
         if let Some(worker) = &self.worker {
             worker.retain(|id| self.objects.contains_key(&id));
         }
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.objects.clear();
         if let Some(worker) = &self.worker {
             worker.retain(|_| false);
@@ -277,7 +277,7 @@ impl RingStore {
     }
 
     #[cfg(test)]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.objects.len()
     }
 }

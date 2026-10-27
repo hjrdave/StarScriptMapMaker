@@ -151,6 +151,7 @@ impl UpdateCheck {
     }
 
     /// The version a finished check found, if newer than this one.
+    #[cfg(test)]
     pub fn available(&self) -> Option<&Feed> {
         match &self.notice {
             Some(Notice::Available(feed)) => Some(feed),

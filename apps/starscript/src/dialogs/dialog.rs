@@ -8,6 +8,10 @@ use crate::theme::{self, RADIUS_DIALOG};
 /// What a frame of a dialog came to.
 pub struct Shown<R> {
     /// What the contents returned.
+    #[allow(
+        dead_code,
+        reason = "no caller reads it yet; kept with the contents' return value"
+    )]
     pub inner: R,
     /// Esc (or a click on the scrim) asked to cancel.
     pub cancelled: bool,

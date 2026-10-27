@@ -56,6 +56,7 @@ impl NativeMenu {
         })
     }
 
+    #[cfg(test)]
     pub fn item(&self, command: Command) -> Option<&NativeItem> {
         self.items().find(|item| item.command == command)
     }
@@ -139,6 +140,7 @@ pub fn menus(state: &State, text_focus: bool) -> Vec<NativeMenu> {
 
 /// The items at the top of the StarScript Map Maker app menu, ahead of the standard Hide and
 /// Quit items. They run the same commands as their twins in the Help menu.
+#[cfg(any(test, target_os = "macos"))]
 pub fn app_items(state: &State) -> Vec<NativeItem> {
     vec![
         NativeItem {
