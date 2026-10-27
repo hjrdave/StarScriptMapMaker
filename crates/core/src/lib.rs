@@ -43,7 +43,9 @@ pub use geometry::{Affine, MultiPolygon, NodeRef, Point, Polygon, Rect};
 pub use history::{DEFAULT_BUDGET_BYTES, ExecuteError, History, HistoryError, Selection, UndoStep};
 pub use id::Id;
 pub use label::{Label, LabelStyle, LabelStyles, ResolvedLabel};
-pub use map::{Canvas, DistanceUnit, InvariantError, Map, MapDefaults, MapView, Scale, Subtree};
+pub use map::{
+    Board, Canvas, DistanceUnit, InvariantError, Map, MapDefaults, MapView, Scale, Subtree,
+};
 pub use node::{
     Align, FontFace, Halo, Lake, Landmass, Layer, Membership, Node, Object, ObjectKind, Stamp,
 };

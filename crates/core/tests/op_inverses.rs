@@ -130,6 +130,8 @@ fn map() -> impl Strategy<Value = Map> {
     (prop::collection::vec(layer_subtree(), 0..4), roughness()).prop_map(|(layers, roughness)| {
         Map::from_view(MapView {
             canvas: canvas(),
+            boards: Vec::new(),
+            primary: None,
             defaults: MapDefaults {
                 roughness,
                 ..Default::default()

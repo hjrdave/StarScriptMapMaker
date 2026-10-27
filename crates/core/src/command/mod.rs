@@ -4,6 +4,7 @@
 //! primitive Ops, and applies them all or none. This file holds the `Command` enum and the
 //! `compile` dispatch; the checks and Ops for each concern live in the submodules.
 
+mod board;
 mod check;
 mod defaults;
 mod embed;
@@ -275,6 +276,62 @@ pub enum Command {
         /// The new height, in Canvas units.
         height: u32,
     },
+    /// Creates an Art board with the given id, at `origin`, `width` by `height`, with the
+    /// default background. `index` counts from the first board; omitted, it goes last.
+    CreateBoard {
+        /// The id the new board gets.
+        id: Id,
+        /// Its name; `None` shows as "Art board N".
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        /// Where its top-left corner sits, in workspace units.
+        origin: Point,
+        /// Its width, in Canvas units.
+        width: u32,
+        /// Its height, in Canvas units.
+        height: u32,
+        /// Where it goes among the boards.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<usize>,
+    },
+    /// Moves and resizes a board (the Canvas or an Art board). No Object changes position or
+    /// membership, even when it ends up entirely outside the board.
+    ResizeBoard {
+        /// The board to change.
+        id: Id,
+        /// Where its top-left corner sits, in workspace units.
+        origin: Point,
+        /// The new width, in Canvas units.
+        width: u32,
+        /// The new height, in Canvas units.
+        height: u32,
+    },
+    /// Renames a board, or with `None` returns it to its default name. Names need not be
+    /// unique.
+    RenameBoard {
+        /// The board to rename.
+        id: Id,
+        /// The new name.
+        name: Option<String>,
+    },
+    /// Deletes an Art board. Its Objects are kept and go off-board. The Canvas is refused.
+    DeleteBoard {
+        /// The board to delete.
+        id: Id,
+    },
+    /// Moves a board to `index` among the boards, counted after it leaves its old place.
+    ReorderBoard {
+        /// The board to move.
+        id: Id,
+        /// The new place among the boards.
+        index: usize,
+    },
+    /// Makes a board the Canvas. The old Canvas becomes an Art board, and every Object stays on
+    /// the board it was on.
+    SetPrimaryBoard {
+        /// The new primary board.
+        id: Id,
+    },
     /// Sets whether Objects belong to the Canvas or sit off it. Only a drag
     /// changes membership; resizing the Canvas never does.
     SetMembership {
@@ -498,6 +555,12 @@ impl Command {
             Command::Subtract { .. } => "Subtract",
             Command::SplitApart { .. } => "Split Apart",
             Command::ResizeCanvas { .. } => "Resize Canvas",
+            Command::CreateBoard { .. } => "Add Art Board",
+            Command::ResizeBoard { .. } => "Resize Board",
+            Command::RenameBoard { .. } => "Rename Board",
+            Command::DeleteBoard { .. } => "Delete Board",
+            Command::ReorderBoard { .. } => "Reorder Boards",
+            Command::SetPrimaryBoard { .. } => "Change Canvas",
             Command::SetMembership { .. } => "Move On or Off Canvas",
             Command::SetFill { .. } => "Change Fill",
             Command::SetRoughness { .. } => "Change Roughness",
@@ -594,6 +657,24 @@ impl Command {
                 width,
                 height,
             } => layer::resize_canvas(*origin, *width, *height),
+            Command::CreateBoard {
+                id,
+                name,
+                origin,
+                width,
+                height,
+                index,
+            } => board::create_board(map, *id, name.as_deref(), *origin, *width, *height, *index),
+            Command::ResizeBoard {
+                id,
+                origin,
+                width,
+                height,
+            } => board::resize_board(map, *id, *origin, *width, *height),
+            Command::RenameBoard { id, name } => board::rename_board(map, *id, name.as_deref()),
+            Command::DeleteBoard { id } => board::delete_board(map, *id),
+            Command::ReorderBoard { id, index } => board::reorder_board(map, *id, *index),
+            Command::SetPrimaryBoard { id } => board::set_primary_board(map, *id),
             Command::SetMembership { ids, membership } => {
                 object::set_membership(map, ids, *membership)
             }

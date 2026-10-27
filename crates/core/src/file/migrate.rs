@@ -85,7 +85,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = old_file(dir.path());
         let (file, map) = MapFile::open_with(&path, &[FROM_ZERO]).unwrap();
-        assert_eq!(map.canvas.width, 300);
+        assert_eq!(map.canvas().width, 300);
         assert_eq!(file.format_version(), FORMAT_VERSION);
 
         let backup = dir.path().join("world.v0.3.bak");

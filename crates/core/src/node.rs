@@ -16,6 +16,10 @@ use crate::shore::{ShoreKind, ShoreStyle};
 /// A Layer or an Object.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "nodes live inline in the entry map and are never moved in bulk; boxing every Object costs an allocation per Object"
+)]
 pub enum Node {
     /// A Layer.
     Layer(Layer),
@@ -131,14 +135,20 @@ impl Object {
     }
 }
 
-/// Whether an Object belongs to the Canvas or sits off it. A member is clipped at the Canvas edge
-/// and exported; an off-Canvas Object shows in full around the Canvas and is not exported.
+/// Which board an Object belongs to, or none. A member is clipped at its board's edge; an
+/// off-Canvas Object shows in full around the boards and is not exported.
+///
+/// The Canvas is the primary board, so `Canvas` always means the current primary board, and
+/// `Board` names an Art board. Setting a new primary board rewrites the members of both.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Membership {
-    /// Belongs to the Canvas. Files saved before membership existed get this.
+    /// Belongs to the primary board, the Canvas. Files saved before membership or Art boards
+    /// existed get this.
     #[default]
     Canvas,
+    /// Belongs to the Art board with this id.
+    Board(Id),
     /// Sits off the Canvas. Saved as `pasteboard`, the name files and journals already use.
     #[serde(rename = "pasteboard")]
     OffCanvas,
@@ -497,5 +507,18 @@ mod tests {
         assert_eq!(json, "\"pasteboard\"");
         let back: Membership = serde_json::from_str("\"pasteboard\"").unwrap();
         assert_eq!(back, Membership::OffCanvas);
+    }
+
+    #[test]
+    fn a_saved_canvas_member_stays_a_canvas_member() {
+        let back: Membership = serde_json::from_str("\"canvas\"").unwrap();
+        assert_eq!(back, Membership::Canvas);
+    }
+
+    #[test]
+    fn an_art_board_member_round_trips() {
+        let member = Membership::Board(Id::new());
+        let json = serde_json::to_string(&member).unwrap();
+        assert_eq!(serde_json::from_str::<Membership>(&json).unwrap(), member);
     }
 }

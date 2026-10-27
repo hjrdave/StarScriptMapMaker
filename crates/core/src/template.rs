@@ -198,6 +198,9 @@ impl MapTemplate {
         canvas.template = Some(self.name.clone());
         let view = MapView {
             canvas,
+            // A new Map starts with one board, the Canvas the user chose.
+            boards: Vec::new(),
+            primary: None,
             ..self.view.clone()
         };
         Map::from_view(view).expect("the template was checked when loaded")

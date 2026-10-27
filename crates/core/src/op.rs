@@ -15,7 +15,7 @@ use crate::embedded::{Blob, ContentHash, EmbeddedAsset, EmbeddedFont};
 use crate::geometry::{MultiPolygon, Point};
 use crate::id::Id;
 use crate::label::Label;
-use crate::map::{InvariantError, Map, MapDefaults, Subtree};
+use crate::map::{Board, InvariantError, Map, MapDefaults, Subtree};
 use crate::node::{Membership, Node, ObjectKind, Stamp};
 use crate::roughness::Roughness;
 use crate::shore::ShoreStyle;
@@ -71,6 +71,49 @@ pub enum Op {
         width: u32,
         /// The new height, in Canvas units.
         height: u32,
+    },
+    /// Inserts a board at `index` among the boards. Its id must be new.
+    InsertBoard {
+        /// Where to insert among the boards.
+        index: usize,
+        /// The board.
+        board: Board,
+    },
+    /// Removes a board other than the primary. Objects are not touched.
+    RemoveBoard {
+        /// The board to remove.
+        id: Id,
+    },
+    /// Sets the size and origin of a board. No node changes.
+    SetBoardRect {
+        /// The board to change.
+        id: Id,
+        /// Where its top-left corner sits, in workspace units.
+        origin: Point,
+        /// The new width, in Canvas units.
+        width: u32,
+        /// The new height, in Canvas units.
+        height: u32,
+    },
+    /// Sets the name of a board, or with `None` returns it to its default name.
+    SetBoardName {
+        /// The board to change.
+        id: Id,
+        /// Its new name.
+        name: Option<String>,
+    },
+    /// Moves a board to `index` among the boards, counted after it leaves its old place.
+    MoveBoard {
+        /// The board to move.
+        id: Id,
+        /// The new place among the boards.
+        index: usize,
+    },
+    /// Makes a board the primary one, the Canvas. No node changes; Commands rewrite the
+    /// members with their own Ops.
+    SetPrimary {
+        /// The new primary board.
+        id: Id,
     },
     /// Replaces the Canvas's background.
     SetBackground {
@@ -159,6 +202,12 @@ pub enum OpError {
         /// How many children the parent has.
         len: usize,
     },
+    /// No board has this id.
+    #[error("no board has id {0}")]
+    NoSuchBoard(Id),
+    /// The primary board, the Canvas, cannot be removed.
+    #[error("the primary board {0} cannot be removed")]
+    RemovePrimaryBoard(Id),
     /// The node was moved into itself or one of its own descendants.
     #[error("cannot move {0} into itself or its own descendant")]
     MoveIntoSelf(Id),
@@ -274,7 +323,7 @@ impl Map {
                 width,
                 height,
             } => {
-                let canvas = &mut self.canvas;
+                let canvas = self.canvas_mut();
                 let old = Op::ResizeCanvas {
                     origin: canvas.origin,
                     width: canvas.width,
@@ -285,8 +334,14 @@ impl Map {
                 canvas.height = height;
                 old
             }
+            op @ (Op::InsertBoard { .. }
+            | Op::RemoveBoard { .. }
+            | Op::SetBoardRect { .. }
+            | Op::SetBoardName { .. }
+            | Op::MoveBoard { .. }
+            | Op::SetPrimary { .. }) => self.apply_board_op(op),
             Op::SetBackground { background } => Op::SetBackground {
-                background: std::mem::replace(&mut self.canvas.background, background),
+                background: std::mem::replace(&mut self.canvas_mut().background, background),
             },
             Op::SetDefaults { defaults } => Op::SetDefaults {
                 defaults: std::mem::replace(&mut self.defaults, defaults),
@@ -319,6 +374,65 @@ impl Map {
                 }
             }
         })
+    }
+
+    /// Applies one of the board Ops, which `check` has already passed, and returns its inverse.
+    #[allow(clippy::expect_used, reason = "Map::check verified the board exists")]
+    fn apply_board_op(&mut self, op: Op) -> Op {
+        match op {
+            Op::InsertBoard { index, board } => {
+                let id = board.id;
+                self.boards.insert(index, board);
+                Op::RemoveBoard { id }
+            }
+            Op::RemoveBoard { id } => {
+                let index = board_position(&self.boards, id);
+                Op::InsertBoard {
+                    index,
+                    board: self.boards.remove(index),
+                }
+            }
+            Op::SetBoardRect {
+                id,
+                origin,
+                width,
+                height,
+            } => {
+                let canvas = &mut self
+                    .board_mut(id)
+                    .expect("Map::check verified the board exists")
+                    .canvas;
+                let old = Op::SetBoardRect {
+                    id,
+                    origin: canvas.origin,
+                    width: canvas.width,
+                    height: canvas.height,
+                };
+                canvas.origin = origin;
+                canvas.width = width;
+                canvas.height = height;
+                old
+            }
+            Op::SetBoardName { id, name } => {
+                let board = self
+                    .board_mut(id)
+                    .expect("Map::check verified the board exists");
+                Op::SetBoardName {
+                    id,
+                    name: std::mem::replace(&mut board.name, name),
+                }
+            }
+            Op::MoveBoard { id, index } => {
+                let old = board_position(&self.boards, id);
+                let board = self.boards.remove(old);
+                self.boards.insert(index, board);
+                Op::MoveBoard { id, index: old }
+            }
+            Op::SetPrimary { id } => Op::SetPrimary {
+                id: std::mem::replace(&mut self.primary, id),
+            },
+            other => unreachable!("{other:?} is not a board Op"),
+        }
     }
 
     /// Checks everything that could make `op` fail, so `apply` never changes the Map halfway.
@@ -362,6 +476,25 @@ impl Map {
                 hash,
                 data: Some(data),
             } if data.hash() != *hash => return Err(OpError::BlobHashMismatch(*hash)),
+            Op::InsertBoard { index, board } => {
+                if self.board(board.id).is_some() {
+                    return Err(InvariantError::DuplicateBoard(board.id).into());
+                }
+                check_index(*index, self.boards.len())?;
+            }
+            Op::RemoveBoard { id } => {
+                self.existing_board(*id)?;
+                if *id == self.primary {
+                    return Err(OpError::RemovePrimaryBoard(*id));
+                }
+            }
+            Op::SetBoardRect { id, .. } | Op::SetBoardName { id, .. } | Op::SetPrimary { id } => {
+                self.existing_board(*id)?;
+            }
+            Op::MoveBoard { id, index } => {
+                self.existing_board(*id)?;
+                check_index(*index, self.boards.len() - 1)?;
+            }
             Op::SetDefaults { .. }
             | Op::SetBackground { .. }
             | Op::ResizeCanvas { .. }
@@ -370,6 +503,10 @@ impl Map {
             | Op::SetEmbeddedFont { .. } => {}
         }
         Ok(())
+    }
+
+    fn existing_board(&self, id: Id) -> Result<&Board, OpError> {
+        self.board(id).ok_or(OpError::NoSuchBoard(id))
     }
 
     fn existing(&self, id: Id) -> Result<&Node, OpError> {
@@ -392,6 +529,14 @@ fn position(siblings: &[Id], id: Id) -> usize {
         .iter()
         .position(|&sibling| sibling == id)
         .expect("a node is listed by its parent")
+}
+
+#[allow(clippy::expect_used, reason = "Map::check verified the board exists")]
+fn board_position(boards: &[Board], id: Id) -> usize {
+    boards
+        .iter()
+        .position(|board| board.id == id)
+        .expect("Map::check verified the board exists")
 }
 
 fn check_index(index: usize, len: usize) -> Result<(), OpError> {
