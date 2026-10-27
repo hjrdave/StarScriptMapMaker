@@ -132,7 +132,7 @@ impl PropertiesPanel {
 
     /// The Map: Canvas, Scale and the Map-wide defaults. Collapsed until opened.
     pub(super) fn map_properties(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
-        let canvas = editor.map.canvas.clone();
+        let canvas = editor.map().canvas().clone();
         let header = SectionHeader {
             kind: "map",
             title: "Map",
@@ -155,7 +155,7 @@ impl PropertiesPanel {
             self.background_fields(ui, editor, &canvas);
 
             caption(ui, "Default Roughness");
-            let current = [editor.map.defaults().roughness.clone()];
+            let current = [editor.map().defaults().roughness.clone()];
             let set = |_, roughness| Command::SetDefaultRoughness { roughness };
             let group = Inherit {
                 members: &current,
@@ -181,7 +181,7 @@ impl PropertiesPanel {
                 ),
             ] {
                 caption(ui, title);
-                let current = [editor.map.defaults().shore_for(kind).clone()];
+                let current = [editor.map().defaults().shore_for(kind).clone()];
                 let set = move |_, shore| Command::SetDefaultShore { kind, shore };
                 let group = Inherit {
                     members: &current,

@@ -71,7 +71,7 @@ pub fn render_whole_canvas(
     if let Some(cache) = cache {
         resources.renderer.use_tessellation_cache(cache);
     }
-    let mut scene = CanvasScene::new(&editor.map.canvas).with_content(editor.scene_content());
+    let mut scene = CanvasScene::new(editor.map().canvas()).with_content(editor.scene_content());
     // The preview is of the Canvas alone, so off-Canvas Objects stay out of it.
     scene.off_canvas_objects = false;
     let view = View::whole_canvas_at(scene.canvas_origin, scene.canvas_size, longest_side);
@@ -232,9 +232,9 @@ impl CanvasView {
             (f64::from(rect.height()) * ppp).round().max(1.0) as u32,
         ];
         let view = self.view.get_or_insert_with(|| {
-            let canvas = &editor.map.canvas;
+            let canvas = &editor.map().canvas();
             let canvas = [f64::from(canvas.width), f64::from(canvas.height)];
-            View::fit_at(editor.map.canvas.origin, canvas, size, FIT_MARGIN * ppp)
+            View::fit_at(editor.map().canvas().origin, canvas, size, FIT_MARGIN * ppp)
         });
         resize_keeping_centre(view, size);
 
@@ -248,7 +248,7 @@ impl CanvasView {
         )
         .or(self.pending_zoom.take());
         if let Some(requested) = requested {
-            let canvas = &editor.map.canvas;
+            let canvas = &editor.map().canvas();
             let canvas = [f64::from(canvas.width), f64::from(canvas.height)];
             let bounds = if requested == Zoom::Selection {
                 Bounds::of_selection(editor)
@@ -292,7 +292,7 @@ impl CanvasView {
             Quality::Full
         };
         // After input, so this frame shows this frame's edits.
-        let scene = CanvasScene::new(&editor.map.canvas)
+        let scene = CanvasScene::new(editor.map().canvas())
             .with_content(editor.scene_content())
             .with_quality(quality);
         let painter = ui.painter_at(rect);

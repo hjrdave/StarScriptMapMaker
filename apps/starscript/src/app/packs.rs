@@ -83,7 +83,7 @@ impl MapMakerApp {
         self.win
             .tabs
             .iter()
-            .map(|tab| library.pack_usage(&tab.editor.map, id))
+            .map(|tab| library.pack_usage(tab.editor.map(), id))
             .sum()
     }
 

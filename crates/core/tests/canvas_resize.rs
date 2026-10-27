@@ -70,8 +70,8 @@ fn resizing_from_any_edge_never_changes_objects() {
 
     // Grow past the left and top edges: the origin moves, the Object does not.
     resize(&mut map, [-50.0, -40.0], 150, 120);
-    assert_eq!(map.canvas.rect().min, [-50.0, -40.0]);
-    assert_eq!(map.canvas.rect().max, [100.0, 80.0]);
+    assert_eq!(map.canvas().rect().min, [-50.0, -40.0]);
+    assert_eq!(map.canvas().rect().max, [100.0, 80.0]);
     assert_eq!(map.view().layers, before);
 
     // Shrink past the Object from the left/top, and then to nothing around it.
@@ -147,7 +147,7 @@ fn rejects_an_empty_or_non_finite_canvas() {
         map.execute(&bad([f64::NAN, 0.0], 10, 10)),
         Err(CommandError::InvalidCanvasOrigin(_))
     ));
-    assert_eq!((map.canvas.width, map.canvas.height), (100, 80));
+    assert_eq!((map.canvas().width, map.canvas().height), (100, 80));
 }
 
 #[test]
@@ -232,6 +232,6 @@ fn old_files_without_origin_or_membership_load_with_defaults() {
     let json = serde_json::to_string(&map.view()).unwrap();
     assert!(!json.contains("origin") && !json.contains("membership"));
     let back = Map::from_view(serde_json::from_str(&json).unwrap()).unwrap();
-    assert_eq!(back.canvas.origin, [0.0, 0.0]);
+    assert_eq!(back.canvas().origin, [0.0, 0.0]);
     assert_eq!(membership(&back, id), Membership::Canvas);
 }

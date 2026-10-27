@@ -108,7 +108,7 @@ fn drag_corner(
 }
 
 fn canvas(harness: &Harness<'static, MapMakerApp>) -> (f64, u32, u32) {
-    let canvas = &harness.state().editor().map.canvas;
+    let canvas = &harness.state().editor().map().canvas();
     (canvas.origin[0], canvas.width, canvas.height)
 }
 
@@ -150,7 +150,7 @@ fn the_canvas_shows_its_width_and_height_in_properties() {
 #[test]
 fn dragging_a_handle_resizes_the_canvas_and_shows_the_hud() {
     let (mut harness, label) = app();
-    let before = format!("{:?}", harness.state().editor().map.node(label));
+    let before = format!("{:?}", harness.state().editor().map().node(label));
     select_canvas(&mut harness);
     let from = screen(&harness, [WIDTH, HEIGHT]);
     let target = screen(&harness, [WIDTH - 500.0, HEIGHT - 400.0]);
@@ -169,7 +169,7 @@ fn dragging_a_handle_resizes_the_canvas_and_shows_the_hud() {
     assert!(near(height, HEIGHT - 400.0), "{height}");
     assert!(harness.query_by_label_contains("Canvas · ").is_none());
     assert_eq!(
-        format!("{:?}", harness.state().editor().map.node(label)),
+        format!("{:?}", harness.state().editor().map().node(label)),
         before
     );
 }
@@ -191,7 +191,7 @@ fn shift_keeps_the_aspect_ratio() {
 #[test]
 fn alt_resizes_from_the_centre() {
     let (mut harness, label) = app();
-    let before = format!("{:?}", harness.state().editor().map.node(label));
+    let before = format!("{:?}", harness.state().editor().map().node(label));
     drag_corner(
         &mut harness,
         [WIDTH - 500.0, HEIGHT - 400.0],
@@ -202,7 +202,7 @@ fn alt_resizes_from_the_centre() {
     assert!(near(height, HEIGHT - 800.0), "{height}");
     assert!((origin - 500.0).abs() <= 3.0, "{origin}");
     assert_eq!(
-        format!("{:?}", harness.state().editor().map.node(label)),
+        format!("{:?}", harness.state().editor().map().node(label)),
         before
     );
 }

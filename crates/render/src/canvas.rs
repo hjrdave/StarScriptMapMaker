@@ -177,7 +177,7 @@ pub struct CanvasScene {
     /// Drawn over the backdrop.
     pub content: Content,
     pub quality: Quality,
-    /// Whether Objects on the off-Canvas are drawn. Export turns it off.
+    /// Whether Objects off the Canvas are drawn. Export turns it off.
     pub off_canvas_objects: bool,
 }
 

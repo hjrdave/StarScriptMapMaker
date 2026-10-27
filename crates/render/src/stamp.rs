@@ -42,7 +42,7 @@ pub struct PlacedStamp {
     pub after: usize,
     /// The index of the content's Clip scope it shows inside, if any.
     pub clip: Option<usize>,
-    /// The Stamp is on the off-Canvas: drawn in full, not clipped at the Canvas edge.
+    /// The Stamp sits off the Canvas: drawn in full, not clipped at the Canvas edge.
     pub off_canvas: bool,
     pub draw: StampDraw,
 }
@@ -351,7 +351,7 @@ impl StampRenderer {
     }
 
     /// The Stamps placed after `after` vector groups, in draw order: for each Clip scope
-    /// they show inside, whether they are on the off-Canvas, and its batches.
+    /// they show inside, whether they sit off the Canvas, and its batches.
     pub(crate) fn runs_after(
         &self,
         after: usize,

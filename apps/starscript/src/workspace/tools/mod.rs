@@ -252,7 +252,7 @@ impl ToolState {
     /// The cursor HUD while the Canvas is being resized, such as "Canvas · 4096 × 2560".
     pub fn canvas_hud(&self, editor: &Editor) -> Option<String> {
         self.canvas_drag?;
-        let canvas = &editor.map.canvas;
+        let canvas = &editor.map().canvas();
         Some(crate::canvas_resize::hud_text(canvas.width, canvas.height))
     }
 }

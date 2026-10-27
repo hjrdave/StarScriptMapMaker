@@ -99,7 +99,7 @@ impl PropertiesPanel {
             *text = label.text.clone();
         }
 
-        let styles = editor.map.label_styles().clone();
+        let styles = editor.map().label_styles().clone();
         let mut restyled = None;
         prop_widgets::field_row(ui, "Label style", Provenance::Plain, |ui| {
             let current = styles
@@ -543,7 +543,7 @@ mod tests {
     fn a_label_edit_writes_the_resolved_value_as_an_override() {
         let (mut editor, layer) = editor_with_layer();
         let id = add_label(&mut editor, layer, Label::default());
-        let styles = editor.map.label_styles().clone();
+        let styles = editor.map().label_styles().clone();
         let label = editor.label(id).expect("a Label").clone();
         let mut next = label.resolve(&styles);
         next.size += 10.0;
@@ -567,7 +567,7 @@ mod tests {
         };
         let id = add_label(&mut editor, layer, label);
         let label = editor.label(id).expect("a Label").clone();
-        let styles = editor.map.label_styles().clone();
+        let styles = editor.map().label_styles().clone();
         let next = label.resolve(&styles);
         let ctx = LabelEdit {
             id,

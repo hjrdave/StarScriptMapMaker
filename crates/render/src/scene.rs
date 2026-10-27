@@ -279,7 +279,7 @@ fn mark_object(map: &Map, id: Id, groups: &mut [VectorGroup]) {
     }
 }
 
-/// Whether `id` is an Object that belongs to the off-Canvas rather than the Canvas.
+/// Whether `id` is an Object that sits off the Canvas rather than belonging to it.
 fn is_off_canvas(map: &Map, id: Id) -> bool {
     matches!(map.node(id), Some(Node::Object(object)) if object.membership == Membership::OffCanvas)
 }

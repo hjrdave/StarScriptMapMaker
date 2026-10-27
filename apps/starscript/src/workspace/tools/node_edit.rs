@@ -411,7 +411,7 @@ mod tests {
     /// An Editor in node-edit mode on a Landmass shaped like `outline()`.
     fn node_editor() -> Editor {
         let mut editor = land_editor();
-        let layer = editor.map.children(None).first().copied();
+        let layer = editor.map().children(None).first().copied();
         let id = Id::new();
         assert!(
             editor

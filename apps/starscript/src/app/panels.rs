@@ -94,7 +94,10 @@ impl MapMakerApp {
             .map(|tab| home::OpenTab {
                 path: tab.document.path().map(Path::to_path_buf),
                 name: tab.document.name(),
-                canvas: (tab.editor.map.canvas.width, tab.editor.map.canvas.height),
+                canvas: (
+                    tab.editor.map().canvas().width,
+                    tab.editor.map().canvas().height,
+                ),
                 blank: tab.is_blank(),
             })
             .collect();
@@ -185,13 +188,13 @@ impl MapMakerApp {
                 ui.separator();
                 let real_world = self.win.shell.current_layout().real_world_coordinates;
                 ui.label(text(shell::cursor_text(
-                    &tab.editor.map.canvas,
+                    tab.editor.map().canvas(),
                     point,
                     real_world,
                 )));
             }
             let summary = shell::selection_summary(
-                &tab.editor.map,
+                tab.editor.map(),
                 tab.editor.selection(),
                 tab.editor.active_layer(),
             );

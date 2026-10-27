@@ -37,14 +37,14 @@ impl MapMakerApp {
             self.new_map_from(template, canvas);
         }
         if let Some(tab) = self.win.tabs.get_mut(self.win.active) {
-            match self.win.export.show_dialog(ctx, &tab.editor.map.canvas) {
-                Some(DialogAction::Save(settings)) => tab.editor.map.export_settings = settings,
+            match self.win.export.show_dialog(ctx, tab.editor.map().canvas()) {
+                Some(DialogAction::Save(settings)) => *tab.editor.export_settings_mut() = settings,
                 Some(DialogAction::Export(settings)) => {
-                    tab.editor.map.export_settings = settings;
+                    *tab.editor.export_settings_mut() = settings;
                     self.export_from_dialog();
                 }
                 Some(DialogAction::DrawRegion(settings)) => {
-                    tab.editor.map.export_settings = settings;
+                    *tab.editor.export_settings_mut() = settings;
                     tab.editor.active_tool = tools::ToolId::ExportRegion;
                 }
                 None => {}
@@ -142,7 +142,7 @@ impl MapMakerApp {
         };
         let directory = tab.document.path().and_then(Path::parent);
         self.win.export.open_dialog(
-            &tab.editor.map.export_settings,
+            &tab.editor.map().export_settings,
             directory.map(Path::to_path_buf),
         );
     }
@@ -158,7 +158,7 @@ impl MapMakerApp {
         let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
             return;
         };
-        let settings = &mut tab.editor.map.export_settings;
+        let settings = tab.editor.export_settings_mut();
         if settings.file_name.as_deref().is_none_or(str::is_empty) {
             settings.file_name = Some(format!("{}.png", tab.document.name()));
         }
@@ -181,7 +181,7 @@ impl MapMakerApp {
             .export_directory
             .clone()
             .or_else(|| self.document_directory())?;
-        export_run::export_path(&tab.editor.map.export_settings, &directory)
+        export_run::export_path(&tab.editor.map().export_settings, &directory)
     }
 
     /// Runs an export of the active tab from the stored settings without opening the dialog.
@@ -221,14 +221,14 @@ impl MapMakerApp {
         let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
             return;
         };
-        let settings = tab.editor.map.export_settings.clone();
+        let settings = tab.editor.map().export_settings.clone();
         let output = settings.credits.output(&tab.editor.credit_lines());
         let mut meta =
             PngMeta::default().with_software("StarScript Map Maker", env!("CARGO_PKG_VERSION"));
         if let Some(chunk) = &output.chunk {
             meta = meta.with_credits(CREDITS_CHUNK_KEYWORD, chunk);
         }
-        match ExportJob::new(&tab.editor.map, &settings, meta, &dest) {
+        match ExportJob::new(tab.editor.map(), &settings, meta, &dest) {
             Ok(job) => self
                 .win
                 .export

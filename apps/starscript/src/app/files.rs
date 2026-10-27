@@ -55,11 +55,11 @@ impl MapMakerApp {
             return;
         };
         let ops = found.recovered.ops.clone();
-        match found.recovered.clone().replay(&mut tab.editor.map) {
+        match tab.editor.replay(found.recovered.clone()) {
             Ok(()) => {
                 if let Err(err) =
                     tab.recovery
-                        .resume(&tab.document, &tab.editor.map, &found.path, &ops)
+                        .resume(&tab.document, tab.editor.map(), &found.path, &ops)
                 {
                     tab.editor
                         .error(format!("Couldn’t write the Recovery journal: {err}"));
@@ -88,7 +88,7 @@ impl MapMakerApp {
         let Some(path) = tab.document.path().map(Path::to_path_buf) else {
             return;
         };
-        let mut copy = tab.editor.map.clone();
+        let mut copy = tab.editor.map().clone();
         let skipped = found.recovered.replay_lenient(&mut copy);
         let copy_path = recovery::recovered_copy_path(&path);
         let copy_name = copy_path.file_name().unwrap_or_default().to_string_lossy();
@@ -131,7 +131,7 @@ impl MapMakerApp {
         let mut tab = self.new_tab(map, Document::recovered());
         if let Err(err) = tab
             .recovery
-            .resume(&tab.document, &tab.editor.map, &found.path, &[])
+            .resume(&tab.document, tab.editor.map(), &found.path, &[])
         {
             tab.editor
                 .error(format!("Couldn’t write the Recovery journal: {err}"));
@@ -150,9 +150,9 @@ impl MapMakerApp {
         let frame = Duration::from_secs_f32(ctx.input(|input| input.predicted_dt));
         for tab in &mut self.win.tabs {
             tab.recovery.record(tab.editor.take_applied(), now);
-            if let Err(err) = tab
-                .recovery
-                .flush_if_due(now + frame, &tab.document, &tab.editor.map)
+            if let Err(err) =
+                tab.recovery
+                    .flush_if_due(now + frame, &tab.document, tab.editor.map())
             {
                 tab.editor
                     .error(format!("Couldn’t write the Recovery journal: {err}"));
@@ -189,7 +189,7 @@ impl MapMakerApp {
         let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
             return false;
         };
-        match tab.document.save(&tab.editor.map, preview.as_deref()) {
+        match tab.document.save(tab.editor.map(), preview.as_deref()) {
             Some(result) => self.saved(result),
             None => {
                 self.show_save_dialog();
@@ -212,7 +212,7 @@ impl MapMakerApp {
         };
         let result = tab
             .document
-            .save_as(&path, &tab.editor.map, preview.as_deref());
+            .save_as(&path, tab.editor.map(), preview.as_deref());
         self.saved(result)
     }
 

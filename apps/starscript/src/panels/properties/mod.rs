@@ -123,23 +123,25 @@ impl PropertiesPanel {
     fn selection(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         match editor.selection() {
             [] if editor.canvas_selected() => {
-                let canvas = editor.map.canvas.clone();
+                let canvas = editor.map().canvas().clone();
                 heading(ui, "Canvas");
                 self.canvas_fields(ui, editor, &canvas);
             }
             [] => {
-                if let Some(layer) = editor.active_layer().filter(|&id| editor.map.contains(id))
-                    && let Some(Node::Layer(data)) = editor.map.node(layer).cloned()
+                if let Some(layer) = editor
+                    .active_layer()
+                    .filter(|&id| editor.map().contains(id))
+                    && let Some(Node::Layer(data)) = editor.map().node(layer).cloned()
                 {
-                    breadcrumb(ui, &editor.map, layer);
+                    breadcrumb(ui, editor.map(), layer);
                     self.layer_properties(ui, editor, layer, &data);
                 }
                 self.map_properties(ui, editor);
             }
             [id] => {
                 let id = *id;
-                breadcrumb(ui, &editor.map, id);
-                match editor.map.node(id).cloned() {
+                breadcrumb(ui, editor.map(), id);
+                match editor.map().node(id).cloned() {
                     Some(Node::Layer(layer)) => self.layer_properties(ui, editor, id, &layer),
                     Some(Node::Object(object)) if matches!(object.kind, ObjectKind::Label(_)) => {
                         let ObjectKind::Label(label) = object.kind else {
@@ -160,7 +162,7 @@ impl PropertiesPanel {
                 }
             }
             many => {
-                heading(ui, &selection_summary(&editor.map, many));
+                heading(ui, &selection_summary(editor.map(), many));
                 // Landmasses and Lakes share Roughness and Shore style; a setting that differs
                 // between them shows "Mixed", and an edit sets all of them.
                 let many = many.to_vec();
@@ -180,7 +182,7 @@ impl PropertiesPanel {
         id: Id,
         object: &ssmap_core::Object,
     ) {
-        let title = node_name(&editor.map, id);
+        let title = node_name(editor.map(), id);
         let header = SectionHeader {
             kind: "object",
             title: &title,
@@ -429,7 +431,7 @@ mod tests {
     #[test]
     fn an_overridden_roughness_resets_to_the_map_default() {
         let (mut fixture, _, island) = fixture();
-        let default = fixture.editor.map.defaults().roughness.clone();
+        let default = fixture.editor.map().defaults().roughness.clone();
         let own = Roughness::new(default.amount + 5.0, default.scale, default.seed);
         assert!(
             fixture
@@ -446,7 +448,7 @@ mod tests {
         harness.get_by_label("Reset Amount").click();
         harness.run();
         let editor = &harness.state().editor;
-        let Some(Node::Object(object)) = editor.map.node(island) else {
+        let Some(Node::Object(object)) = editor.map().node(island) else {
             panic!("an Object")
         };
         assert_eq!(object.kind.roughness(), None);
@@ -463,8 +465,8 @@ mod tests {
         harness.get_by_label("Re-roll").click();
         harness.run();
         let editor = &harness.state().editor;
-        let default = editor.map.defaults().roughness.clone();
-        let Some(Node::Object(object)) = editor.map.node(island) else {
+        let default = editor.map().defaults().roughness.clone();
+        let Some(Node::Object(object)) = editor.map().node(island) else {
             panic!("an Object")
         };
         let own = object.kind.roughness().expect("an override");
@@ -522,7 +524,7 @@ mod tests {
     fn an_overridden_label_size_resets_to_the_styles_size() {
         let (mut fixture, layer, _) = fixture();
         let style_size = Label::default()
-            .resolve(fixture.editor.map.label_styles())
+            .resolve(fixture.editor.map().label_styles())
             .size;
         let label = Id::new();
         assert!(
@@ -545,14 +547,14 @@ mod tests {
         harness.get_by_label("Reset Size").click();
         harness.run();
         let editor = &harness.state().editor;
-        let Some(Node::Object(object)) = editor.map.node(label) else {
+        let Some(Node::Object(object)) = editor.map().node(label) else {
             panic!("an Object")
         };
         let ObjectKind::Label(stored) = &object.kind else {
             panic!("a Label")
         };
         assert_eq!(stored.size, None);
-        assert_eq!(stored.resolve(editor.map.label_styles()).size, style_size);
+        assert_eq!(stored.resolve(editor.map().label_styles()).size, style_size);
         // Inherited again: no reset arrow.
         assert!(harness.query_by_label("Reset Size").is_none());
     }
@@ -799,7 +801,7 @@ mod tests {
     #[test]
     fn the_summary_counts_each_kind() {
         let (fixture, layer, island) = fixture();
-        let map = &fixture.editor.map;
+        let map = &fixture.editor.map();
         assert_eq!(selection_summary(map, &[island]), "1 Landmass");
         assert_eq!(
             selection_summary(map, &[island, layer]),
@@ -819,7 +821,7 @@ mod tests {
     }
 
     fn geometry_of(fixture: &Fixture, id: Id) -> String {
-        format!("{:?}", fixture.editor.map.node(id))
+        format!("{:?}", fixture.editor.map().node(id))
     }
 
     #[test]
@@ -834,7 +836,7 @@ mod tests {
                 click(&mut harness, "Decrease Canvas width");
                 click(&mut harness, "Increase Canvas height");
                 let state = harness.state();
-                let canvas = &state.editor.map.canvas;
+                let canvas = &state.editor.map().canvas();
                 assert_eq!((canvas.width, canvas.height), (90, 110));
                 let expected = [f64::from(x) * 10.0 / 2.0, f64::from(y) * -10.0 / 2.0];
                 assert_eq!(canvas.origin, expected, "anchor {x},{y}");
@@ -855,30 +857,30 @@ mod tests {
             click(&mut harness, "Decrease Canvas width");
         }
         let state = harness.state();
-        assert_eq!(state.editor.map.canvas.width, 30);
-        assert_eq!(state.editor.map.canvas.origin[0], 70.0);
+        assert_eq!(state.editor.map().canvas().width, 30);
+        assert_eq!(state.editor.map().canvas().origin[0], 70.0);
         assert_eq!(geometry_of(state, island), before);
         for _ in 0..7 {
             click(&mut harness, "Increase Canvas width");
         }
         let state = harness.state();
-        assert_eq!(state.editor.map.canvas.width, 100);
-        assert_eq!(state.editor.map.canvas.origin[0], 0.0);
+        assert_eq!(state.editor.map().canvas().width, 100);
+        assert_eq!(state.editor.map().canvas().origin[0], 0.0);
         assert_eq!(geometry_of(state, island), before);
 
         // Each click was one undo step, and undo only moves the Canvas.
         harness.state_mut().editor.undo();
-        assert_eq!(harness.state().editor.map.canvas.width, 90);
+        assert_eq!(harness.state().editor.map().canvas().width, 90);
         for _ in 0..13 {
             harness.state_mut().editor.undo();
             assert_eq!(geometry_of(harness.state(), island), before);
         }
-        assert_eq!(harness.state().editor.map.canvas.width, 100);
+        assert_eq!(harness.state().editor.map().canvas().width, 100);
         for _ in 0..14 {
             harness.state_mut().editor.redo();
             assert_eq!(geometry_of(harness.state(), island), before);
         }
-        assert_eq!(harness.state().editor.map.canvas.width, 100);
+        assert_eq!(harness.state().editor.map().canvas().width, 100);
     }
 
     /// Types `text` into the number box that shows `shown`.
@@ -896,7 +898,9 @@ mod tests {
 
     fn ocean_fixture() -> Fixture {
         let (mut fixture, _, _) = fixture();
-        fixture.editor.map.canvas.template = Some("Ocean".to_owned());
+        let mut canvas = fixture.editor.map().canvas().clone();
+        canvas.template = Some("Ocean".to_owned());
+        fixture.editor.map_mut().set_canvas(canvas);
         fixture
     }
 
@@ -917,18 +921,21 @@ mod tests {
     #[test]
     fn taking_another_templates_look_is_one_undo_step_and_keeps_the_template() {
         let fixture = ocean_fixture();
-        let original = fixture.editor.map.canvas.background.clone();
+        let original = fixture.editor.map().canvas().background.clone();
         let mut harness = harness(fixture);
         open_map_section(&mut harness);
         click(&mut harness, "Parchment look");
         let state = harness.state();
-        assert_eq!(state.editor.map.canvas.background, look_of("Parchment"));
-        assert_eq!(state.editor.map.canvas.template.as_deref(), Some("Ocean"));
+        assert_eq!(state.editor.map().canvas().background, look_of("Parchment"));
+        assert_eq!(
+            state.editor.map().canvas().template.as_deref(),
+            Some("Ocean")
+        );
         assert_eq!(state.editor.undo_label(), Some("Change Background"));
 
         // One undo step puts the whole look back.
         harness.state_mut().editor.undo();
-        let canvas = &harness.state().editor.map.canvas;
+        let canvas = &harness.state().editor.map().canvas();
         assert_eq!(canvas.background, original);
         assert_eq!(canvas.template.as_deref(), Some("Ocean"));
     }
@@ -936,22 +943,32 @@ mod tests {
     #[test]
     fn changing_one_background_field_leaves_the_rest_and_is_one_undo_step() {
         let fixture = ocean_fixture();
-        let original = fixture.editor.map.canvas.background.clone();
+        let original = fixture.editor.map().canvas().background.clone();
         let mut harness = harness(fixture);
         open_map_section(&mut harness);
         type_into(&mut harness, "1.0", "2.5");
         let state = harness.state();
-        let background = &state.editor.map.canvas.background;
+        let background = &state.editor.map().canvas().background;
         assert_eq!(background.texture.scale, 2.5);
         assert_eq!(background.water, original.water);
         assert_eq!(background.texture.strength, original.texture.strength);
-        assert_eq!(state.editor.map.canvas.template.as_deref(), Some("Ocean"));
+        assert_eq!(
+            state.editor.map().canvas().template.as_deref(),
+            Some("Ocean")
+        );
 
         // One undo step puts the whole background back.
         harness.state_mut().editor.undo();
-        assert_eq!(harness.state().editor.map.canvas.background, original);
+        assert_eq!(harness.state().editor.map().canvas().background, original);
         harness.state_mut().editor.redo();
-        let scale = harness.state().editor.map.canvas.background.texture.scale;
+        let scale = harness
+            .state()
+            .editor
+            .map()
+            .canvas()
+            .background
+            .texture
+            .scale;
         assert_eq!(scale, 2.5);
     }
 
@@ -962,14 +979,14 @@ mod tests {
         click(&mut harness, "Winter look");
         let shown = format!("{:.1}", look_of("Winter").texture.scale);
         type_into(&mut harness, &shown, "2.5");
-        let map = &harness.state().editor.map;
+        let map = &harness.state().editor.map();
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("changed.ssmap");
         ssmap_core::file::MapFile::create(&path, map, None).unwrap();
         let (_, reopened) = ssmap_core::file::MapFile::open(&path).unwrap();
-        assert_eq!(reopened.canvas.background, map.canvas.background);
-        assert_ne!(reopened.canvas.background, look_of("Ocean"));
-        assert_eq!(reopened.canvas.template.as_deref(), Some("Ocean"));
+        assert_eq!(reopened.canvas().background, map.canvas().background);
+        assert_ne!(reopened.canvas().background, look_of("Ocean"));
+        assert_eq!(reopened.canvas().template.as_deref(), Some("Ocean"));
     }
 }

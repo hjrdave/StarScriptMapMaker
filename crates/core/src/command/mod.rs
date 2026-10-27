@@ -212,7 +212,7 @@ pub enum Command {
         width: u32,
         height: u32,
     },
-    /// Sets whether Objects belong to the Canvas or sit on the off-Canvas. Only a drag
+    /// Sets whether Objects belong to the Canvas or sit off it. Only a drag
     /// changes membership; resizing the Canvas never does.
     SetMembership {
         ids: Vec<Id>,

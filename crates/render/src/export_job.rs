@@ -88,7 +88,7 @@ impl ExportJob {
         meta: PngMeta,
         dest: &Path,
     ) -> Result<Self, ExportError> {
-        let output = settings.output_size(&map.canvas)?;
+        let output = settings.output_size(map.canvas())?;
         Ok(Self {
             settings: settings.clone(),
             output,
@@ -141,13 +141,13 @@ impl ExportJob {
                 if !cx.renderer.is_ready(content) {
                     return Ok(ExportStep::Working(ExportStatus::WaitingForDerivedData));
                 }
-                let mut scene = CanvasScene::new(&cx.map.canvas).with_content(content.clone());
+                let mut scene = CanvasScene::new(cx.map.canvas()).with_content(content.clone());
                 // A region reaching past the Canvas shows water, not the editor's off-Canvas.
                 scene.off_canvas = scene.backdrop.water;
                 // Only the Canvas is exported: its members are clipped at the edge and
                 // off-Canvas Objects are left out.
                 scene.off_canvas_objects = false;
-                let region = self.settings.region_rect(&cx.map.canvas);
+                let region = self.settings.region_rect(cx.map.canvas());
                 let max_side = self
                     .max_tile_side
                     .unwrap_or(cx.renderer.capabilities().limits.max_texture_dimension_2d);

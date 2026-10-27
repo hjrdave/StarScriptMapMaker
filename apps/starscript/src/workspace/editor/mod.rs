@@ -19,12 +19,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use ssmap_core::asset::{AssetRef, credit_lines};
+use ssmap_core::file::Recovered;
 use ssmap_core::land::{self, BrushStroke};
 use ssmap_core::scatter::{self, ScatterBrush, ScatterStroke, Terrain};
 use ssmap_core::{
     Align, Blob, Command, CommandError, DefaultLayers, EmbedAsset, EmbedFont, ExecuteError,
-    History, Id, Label, Map, MultiPolygon, Node, NodeRef, ObjectKind, Op, PasteGaps, Point, Rect,
-    ResolvedLabel, Selection, Stamp, Subtree,
+    ExportSettings, History, Id, Label, Map, MultiPolygon, Node, NodeRef, ObjectKind, Op, OpError,
+    PasteGaps, Point, Rect, ResolvedLabel, Selection, Stamp, Subtree,
 };
 use ssmap_fonts::FALLBACK_FAMILY;
 use ssmap_render::wgpu;
@@ -50,7 +51,8 @@ pub const DEFAULT_BRUSH_SIZE: f64 = 48.0;
 pub const WATER_LAYER: &str = "Water";
 
 pub struct Editor {
-    pub map: Map,
+    /// Read through [`Editor::map`]. Only Commands change it, through History (ADR 0004).
+    map: Map,
     /// What the Canvas draws, derived from the Map, and the Label layouts that picking and
     /// handles share with it.
     pub scene: MapScene,
@@ -164,6 +166,28 @@ impl Editor {
             caches: Caches::new(),
             selected_asset: None,
         }
+    }
+
+    /// The Map. Read-only: edits go through Commands.
+    pub fn map(&self) -> &Map {
+        &self.map
+    }
+
+    /// The Map for a test to build up with raw Ops. Not for production code (ADR 0004).
+    #[cfg(test)]
+    pub(crate) fn map_mut(&mut self) -> &mut Map {
+        &mut self.map
+    }
+
+    /// The Map's export settings, which the export dialog and the export-region tool write
+    /// outside Commands (ADR 0011).
+    pub fn export_settings_mut(&mut self) -> &mut ExportSettings {
+        &mut self.map.export_settings
+    }
+
+    /// Applies a Recovery journal's Ops to the Map, all or nothing.
+    pub fn replay(&mut self, recovered: Recovered) -> Result<(), OpError> {
+        recovered.replay(&mut self.map)
     }
 
     /// Where Stamp art comes from: it sizes Stamps for picking and handles.

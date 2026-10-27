@@ -82,7 +82,7 @@ fn map_with_block(
 
 fn render(headless: &Headless, map: &Map, view: &View) -> RgbaImage {
     let content = MapScene::new(Fonts::bundled()).content(map, &mut RoughnessCache::new());
-    let scene = CanvasScene::new(&map.canvas).with_content(content);
+    let scene = CanvasScene::new(map.canvas()).with_content(content);
     let mut renderer =
         CanvasRenderer::new(&headless.device, GpuCapabilities::query(&headless.adapter));
     render_to_image(

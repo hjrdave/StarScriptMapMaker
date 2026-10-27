@@ -111,7 +111,7 @@ impl TiledExport<'_> {
         mut status: impl FnMut(ExportStatus),
         mut row: impl FnMut(&[u8]) -> Result<(), E>,
     ) -> Result<ExportSize, TiledExportError<E>> {
-        let output = self.settings.output_size(&self.map.canvas)?;
+        let output = self.settings.output_size(self.map.canvas())?;
 
         status(ExportStatus::WaitingForDerivedData);
         self.roughness.wait_until_ready();
@@ -120,13 +120,13 @@ impl TiledExport<'_> {
         let content = self.scene.complete_content(self.map, self.roughness);
         self.renderer.wait_until_ready(&content);
 
-        let mut scene = CanvasScene::new(&self.map.canvas).with_content(content);
+        let mut scene = CanvasScene::new(self.map.canvas()).with_content(content);
         // A region reaching past the Canvas shows water, not the editor's off-Canvas.
         scene.off_canvas = scene.backdrop.water;
         // Only the Canvas is exported: its members are clipped at the edge and off-Canvas
         // Objects are left out.
         scene.off_canvas_objects = false;
-        let region = self.settings.region_rect(&self.map.canvas);
+        let region = self.settings.region_rect(self.map.canvas());
         let zoom = f64::from(output.width) / region.width();
         let max_side = self
             .max_tile_side

@@ -41,7 +41,7 @@ fn saved_map(dir: &Path, name: &str) -> PathBuf {
 fn layers(harness: &Harness<'_, MapMakerApp>, tab: usize) -> usize {
     harness.state().tabs()[tab]
         .editor()
-        .map
+        .map()
         .children(None)
         .len()
 }

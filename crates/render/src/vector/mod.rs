@@ -53,7 +53,7 @@ pub struct VectorGroup {
     /// The Object the group draws, whose tessellation is cached as a whole. Groups of no
     /// Object (Clip masks, the backdrop) are tessellated afresh every time.
     pub object: Option<ObjectRef>,
-    /// The group draws an Object on the off-Canvas, which shows in full around the Canvas
+    /// The group draws an Object off the Canvas, which shows in full around the Canvas
     /// where other Objects are clipped at its edge, and is left out of export.
     pub off_canvas: bool,
 }

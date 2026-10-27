@@ -175,7 +175,7 @@ fn main() {
     // Tessellation of every Object goes on in the background while frames are drawn.
     let rebuild = renderer.start_tessellation(&content);
     let worker = std::thread::spawn(move || rebuild.run(|| {}));
-    let scene = CanvasScene::new(&map.canvas).with_content(content);
+    let scene = CanvasScene::new(map.canvas()).with_content(content);
     let view = View {
         origin: [1_000.0, 1_000.0],
         zoom: 0.5,

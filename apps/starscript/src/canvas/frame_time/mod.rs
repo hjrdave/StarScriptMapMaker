@@ -301,14 +301,14 @@ fn measure(
     // As in the editor, shore rings are computed off the frame.
     scene.compute_rings_in_background(|| {});
     let canvas_size = [
-        f64::from(world.map.canvas.width),
-        f64::from(world.map.canvas.height),
+        f64::from(world.map.canvas().width),
+        f64::from(world.map.canvas().height),
     ];
     let views = scripts::views(script, canvas_size);
     let mut draw = |world: &mut World, view: &View| -> (Duration, Duration) {
         let started = Instant::now();
         let content = scene.content(&world.map, &mut world.cache);
-        let canvas = CanvasScene::new(&world.map.canvas).with_content(content);
+        let canvas = CanvasScene::new(world.map.canvas()).with_content(content);
         let built = started.elapsed();
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         renderer.render(&gpu.device, &gpu.queue, &mut encoder, &canvas, view);

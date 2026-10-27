@@ -79,7 +79,7 @@ fn amounts(harness: &Harness<'static, MapMakerApp>, ids: [Id; 2]) -> [f64; 2] {
         harness
             .state()
             .editor()
-            .map
+            .map()
             .roughness(id)
             .expect("a Landmass")
             .amount
@@ -91,7 +91,7 @@ fn counts(harness: &Harness<'static, MapMakerApp>, ids: [Id; 2]) -> [u32; 2] {
         harness
             .state()
             .editor()
-            .map
+            .map()
             .shore(id)
             .expect("a Landmass")
             .ripples

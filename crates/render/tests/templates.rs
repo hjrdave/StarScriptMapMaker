@@ -41,7 +41,7 @@ fn every_template_renders_and_screen_and_export_match() {
             CanvasRenderer::new(&headless.device, GpuCapabilities::query(&headless.adapter));
 
         let content = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
-        let scene = CanvasScene::new(&map.canvas).with_content(content);
+        let scene = CanvasScene::new(map.canvas()).with_content(content);
         let view = View::whole_canvas(scene.canvas_size, SIDES[0]);
         let screen = render_to_image(
             &headless.device,
@@ -104,7 +104,7 @@ fn every_template_renders_and_screen_and_export_match() {
             template.name()
         );
 
-        // The Canvas is the template's water, not the off-Canvas or the default ocean.
+        // The Canvas is the template's water, not the area off the Canvas or the default ocean.
         let centre = pixel(&screen, SIDES[0] / 2, SIDES[1] / 2);
         assert_eq!(centre[3], 0xff);
         waters.push((template.name().to_owned(), centre));

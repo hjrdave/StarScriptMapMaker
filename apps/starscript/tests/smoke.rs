@@ -30,10 +30,10 @@ fn app() -> Harness<'static, MapMakerApp> {
 fn launches_and_creates_a_layer() {
     let mut harness = app();
     // A new Map starts with the template's four Layers.
-    assert_eq!(harness.state().editor().map.children(None).len(), 4);
+    assert_eq!(harness.state().editor().map().children(None).len(), 4);
 
     common::new_layer(&mut harness);
-    let map = &harness.state().editor().map;
+    let map = &harness.state().editor().map();
     assert_eq!(map.children(None).len(), 5);
     // The new Layer shows in the tree (and in the Properties breadcrumb) and is selected.
     assert!(harness.query_all_by_label("Layer 5").next().is_some());
@@ -44,19 +44,19 @@ fn launches_and_creates_a_layer() {
 
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
     harness.run();
-    assert_eq!(harness.state().editor().map.children(None).len(), 4);
+    assert_eq!(harness.state().editor().map().children(None).len(), 4);
     harness.key_press_modifiers(
         egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
         egui::Key::Z,
     );
     harness.run();
-    assert_eq!(harness.state().editor().map.children(None).len(), 5);
+    assert_eq!(harness.state().editor().map().children(None).len(), 5);
 }
 
 #[test]
 fn a_new_map_opens_with_the_starter_layers_and_label_styles() {
     let harness = app();
-    let map = &harness.state().editor().map;
+    let map = &harness.state().editor().map();
     let layers: Vec<String> = map
         .children(None)
         .iter()
@@ -105,8 +105,14 @@ fn a_locked_layer_refuses_edits_with_a_visible_message() {
     harness.run();
     harness.query_all_by_label("Lock").next().unwrap().click();
     harness.run();
-    let layer = *harness.state().editor().map.children(None).last().unwrap();
-    assert!(harness.state().editor().map.node(layer).unwrap().locked());
+    let layer = *harness
+        .state()
+        .editor()
+        .map()
+        .children(None)
+        .last()
+        .unwrap();
+    assert!(harness.state().editor().map().node(layer).unwrap().locked());
 
     // The hide toggle is refused, and the reason shows as a toast.
     layers_row(&harness, "Layer 5").hover();
@@ -118,7 +124,7 @@ fn a_locked_layer_refuses_edits_with_a_visible_message() {
     assert_eq!(editor.notice().map(|n| n.text.as_str()), Some(message));
     harness.get_by_label(&format!("Error: {message}"));
     assert!(matches!(
-        editor.map.node(layer),
+        editor.map().node(layer),
         Some(ssmap_core::Node::Layer(l)) if l.visible
     ));
 }
@@ -188,17 +194,17 @@ fn save_as_then_open_round_trips_the_map() {
         harness.state().title(),
         "world.ssmap — StarScript Map Maker"
     );
-    let saved_view = editor.map.view();
+    let saved_view = editor.map().view();
 
     // More edits, then open the saved file again: it is already open, so its tab is shown as
     // it was left, edits and all.
     common::new_layer(&mut harness);
     assert!(harness.state().title().starts_with("world.ssmap •"));
-    let edited_view = harness.state().editor().map.view();
+    let edited_view = harness.state().editor().map().view();
     assert!(harness.state_mut().open_path(&saved));
     harness.run();
     assert_eq!(harness.state().tabs().len(), 1);
-    assert_eq!(harness.state().editor().map.view(), edited_view);
+    assert_eq!(harness.state().editor().map().view(), edited_view);
     assert!(harness.state().editor().can_undo());
     assert_ne!(edited_view, saved_view);
     assert!(harness.query_all_by_label("Layer 5").next().is_some());
@@ -283,9 +289,9 @@ fn the_label_tool_places_a_label_and_types_its_text_in_one_undo_step() {
     assert_eq!(editor.label(id).map(|l| l.text.as_str()), Some("Ærendál"));
     assert_eq!(editor.undo_label(), Some("Add Label"));
     // With no Layer chosen, it went into the template's Labels Layer.
-    let parent = editor.map.parent(id).unwrap();
+    let parent = editor.map().parent(id).unwrap();
     assert!(matches!(
-        editor.map.node(parent),
+        editor.map().node(parent),
         Some(ssmap_core::Node::Layer(layer)) if layer.name == "Labels"
     ));
     // Its first line names it in the Layers panel.
@@ -332,7 +338,7 @@ fn the_label_tool_places_a_label_and_types_its_text_in_one_undo_step() {
         harness.run();
     }
     let editor = harness.state().editor();
-    assert!(editor.map.children(Some(parent)).is_empty());
+    assert!(editor.map().children(Some(parent)).is_empty());
 }
 
 /// One Layer holding an island with a hole (0..400) and a Lake (100..200) above it.
@@ -386,7 +392,7 @@ fn island_map() -> (ssmap_core::Map, ssmap_core::Id, ssmap_core::Id) {
 }
 
 fn outline_start(harness: &Harness<'_, MapMakerApp>, id: ssmap_core::Id) -> [f64; 2] {
-    match harness.state().editor().map.node(id) {
+    match harness.state().editor().map().node(id) {
         Some(ssmap_core::Node::Object(object)) => object.kind.geometry().unwrap().0[0].exterior[0],
         _ => panic!("an Object"),
     }
@@ -464,7 +470,7 @@ fn select_move_and_resize_landmasses_and_lakes() {
     drag(&mut harness, corner, far, true);
     let editor = harness.state().editor();
     assert_eq!(editor.undo_label(), Some("Resize"));
-    let bounds = match editor.map.node(island) {
+    let bounds = match editor.map().node(island) {
         Some(ssmap_core::Node::Object(o)) => o.kind.geometry().unwrap().bounds().unwrap(),
         _ => unreachable!(),
     };
@@ -472,17 +478,17 @@ fn select_move_and_resize_landmasses_and_lakes() {
     assert!((bounds.min[0] - 100.0).abs() < 2.0, "{bounds:?}");
 
     // Escape mid-drag puts everything back and records nothing.
-    let before = harness.state().editor().map.view();
+    let before = harness.state().editor().map().view();
     let undo_steps = harness.state().editor().undo_label().map(str::to_owned);
     let body = screen(&harness, [200.0, 600.0]);
     let away = screen(&harness, [300.0, 700.0]);
     drag(&mut harness, body, away, false);
-    assert_ne!(harness.state().editor().map.view(), before);
+    assert_ne!(harness.state().editor().map().view(), before);
     harness.key_press(egui::Key::Escape);
     harness.run();
     harness.drop_at(body);
     harness.run();
-    assert_eq!(harness.state().editor().map.view(), before);
+    assert_eq!(harness.state().editor().map().view(), before);
     assert_eq!(
         harness.state().editor().undo_label().map(str::to_owned),
         undo_steps
@@ -501,7 +507,7 @@ fn select_move_and_resize_landmasses_and_lakes() {
 }
 
 fn membership(harness: &Harness<'_, MapMakerApp>, id: ssmap_core::Id) -> ssmap_core::Membership {
-    match harness.state().editor().map.node(id) {
+    match harness.state().editor().map().node(id) {
         Some(ssmap_core::Node::Object(object)) => object.membership,
         _ => panic!("an Object"),
     }
@@ -567,7 +573,7 @@ fn a_landmass_gets_its_own_roughness_in_one_undo_step() {
         .build_eframe(|cc| MapMakerApp::with_map(cc, map, None));
     harness.run();
     let roughness =
-        |harness: &Harness<'_, MapMakerApp>| match harness.state().editor().map.node(island) {
+        |harness: &Harness<'_, MapMakerApp>| match harness.state().editor().map().node(island) {
             Some(ssmap_core::Node::Object(object)) => object.kind.roughness().cloned(),
             _ => panic!("an Object"),
         };
@@ -584,7 +590,7 @@ fn a_landmass_gets_its_own_roughness_in_one_undo_step() {
     // Re-rolling gives the island its own copy of the default, with another seed.
     harness.get_by_label("Re-roll").click();
     harness.run();
-    let default = harness.state().editor().map.defaults().roughness.clone();
+    let default = harness.state().editor().map().defaults().roughness.clone();
     let own = roughness(&harness).expect("an override");
     assert_eq!((own.amount, own.scale), (default.amount, default.scale));
     assert_ne!(own.seed, default.seed);
@@ -610,7 +616,7 @@ fn the_land_brush_paints_merges_and_erases_one_undo_step_per_stroke() {
         harness.state().canvas_to_screen(point).unwrap()
     };
     let landmasses = |harness: &Harness<'_, MapMakerApp>| {
-        let map = &harness.state().editor().map;
+        let map = &harness.state().editor().map();
         map.draw_order()
             .into_iter()
             .filter(|&id| {
@@ -619,7 +625,7 @@ fn the_land_brush_paints_merges_and_erases_one_undo_step_per_stroke() {
             .collect::<Vec<_>>()
     };
     let outline =
-        |harness: &Harness<'_, MapMakerApp>, id| match harness.state().editor().map.node(id) {
+        |harness: &Harness<'_, MapMakerApp>, id| match harness.state().editor().map().node(id) {
             Some(Node::Object(o)) => o.kind.geometry().unwrap().clone(),
             _ => panic!("an Object"),
         };
@@ -679,7 +685,7 @@ fn the_land_brush_paints_merges_and_erases_one_undo_step_per_stroke() {
     assert!(outline(&harness, island).contains([180.0, 50.0]));
 
     // Escape drops a stroke in progress and records nothing.
-    let before = harness.state().editor().map.view();
+    let before = harness.state().editor().map().view();
     let (from, to) = (
         screen(&harness, [700.0, 700.0]),
         screen(&harness, [900.0, 900.0]),
@@ -689,7 +695,7 @@ fn the_land_brush_paints_merges_and_erases_one_undo_step_per_stroke() {
     harness.run();
     harness.drop_at(to);
     harness.run();
-    assert_eq!(harness.state().editor().map.view(), before);
+    assert_eq!(harness.state().editor().map().view(), before);
     assert_eq!(harness.state().editor().undo_label(), Some("Paint Land"));
 }
 
@@ -700,11 +706,11 @@ fn a_landmass_gets_its_own_shore_style_in_one_undo_step() {
         .with_size(egui::vec2(1280.0, 800.0))
         .build_eframe(|cc| MapMakerApp::with_map(cc, map, None));
     harness.run();
-    let shore = |harness: &Harness<'_, MapMakerApp>| match harness.state().editor().map.node(island)
-    {
-        Some(ssmap_core::Node::Object(object)) => object.kind.shore().cloned(),
-        _ => panic!("an Object"),
-    };
+    let shore =
+        |harness: &Harness<'_, MapMakerApp>| match harness.state().editor().map().node(island) {
+            Some(ssmap_core::Node::Object(object)) => object.kind.shore().cloned(),
+            _ => panic!("an Object"),
+        };
 
     let at = harness.state().canvas_to_screen([50.0, 300.0]).unwrap();
     harness.hover_at(at);
@@ -716,7 +722,7 @@ fn a_landmass_gets_its_own_shore_style_in_one_undo_step() {
     assert_eq!(shore(&harness), None);
 
     // Typing a new outline width gives the island its own copy of the default style.
-    let default = harness.state().editor().map.defaults().shore.clone();
+    let default = harness.state().editor().map().defaults().shore.clone();
     let shown = format!("{:.1} u", default.outline.width);
     harness
         .get_all_by_value(&shown)

@@ -220,7 +220,7 @@ fn removing_a_layer_returns_its_whole_branch() {
 fn from_view_rejects_duplicate_ids() {
     let layer = layer("Land");
     let view = MapView {
-        canvas: empty_map().canvas,
+        canvas: empty_map().canvas().clone(),
         defaults: Default::default(),
         layers: vec![layer.clone(), layer],
         embedded: Default::default(),
@@ -235,4 +235,21 @@ fn the_read_view_has_a_json_schema() {
     assert_eq!(schema["title"], "MapView");
     let op_schema = serde_json::to_value(schemars::schema_for!(Op)).unwrap();
     assert_eq!(op_schema["title"], "Op");
+}
+
+#[test]
+fn the_canvas_is_read_through_a_getter_and_changes_only_by_command() {
+    use ssmap_core::{Command, Point};
+    let mut map = empty_map();
+    assert_eq!((map.canvas().width, map.canvas().height), (1024, 768));
+    map.execute(&Command::ResizeCanvas {
+        origin: Point::default(),
+        width: 2000,
+        height: 1000,
+    })
+    .unwrap();
+    assert_eq!((map.canvas().width, map.canvas().height), (2000, 1000));
+    let before = map.canvas().clone();
+    map.set_canvas(Canvas::new(10, 10, Scale::new(1.0, DistanceUnit::Miles)));
+    assert_ne!(map.canvas(), &before);
 }

@@ -191,7 +191,7 @@ impl LabelStylesPanel {
     }
 
     fn contents(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
-        let styles: Vec<LabelStyle> = editor.map.label_styles().iter().cloned().collect();
+        let styles: Vec<LabelStyle> = editor.map().label_styles().iter().cloned().collect();
         self.previews
             .retain(|id, _| styles.iter().any(|style| style.id == *id));
         if self
@@ -221,7 +221,7 @@ impl LabelStylesPanel {
     fn list(&mut self, ui: &mut egui::Ui, editor: &Editor, styles: &[LabelStyle], selected: Id) {
         let palette = theme::palette(ui.ctx());
         for style in styles {
-            let used = editor.map.labels_using(style.id).len();
+            let used = editor.map().labels_using(style.id).len();
             let (rect, response) =
                 ui.allocate_exact_size(Vec2::new(LIST_WIDTH, ROW_HEIGHT), Sense::click());
             let is_selected = selected == style.id;
@@ -302,12 +302,12 @@ impl LabelStylesPanel {
                 .on_disabled_hover_text("The default style can't be deleted")
                 .clicked()
             {
-                let count = editor.map.labels_using(current.id).len();
+                let count = editor.map().labels_using(current.id).len();
                 if editor
                     .run(Command::DeleteLabelStyle { id: current.id })
                     .is_ok()
                 {
-                    let default = editor.map.label_styles().default_style().name.clone();
+                    let default = editor.map().label_styles().default_style().name.clone();
                     editor.info(deleted_notice(&current.name, count, &default));
                 }
             }
@@ -543,11 +543,11 @@ mod tests {
 
         let editor = &harness.state().editor;
         assert_eq!(
-            editor.map.label_styles().get(style_id).unwrap().name,
+            editor.map().label_styles().get(style_id).unwrap().name,
             "Kingdom"
         );
         assert_eq!(editor.label(label_id).unwrap().style, style_id);
-        assert_eq!(editor.map.labels_using(style_id), vec![label_id]);
+        assert_eq!(editor.map().labels_using(style_id), vec![label_id]);
         harness.get_by_label("Kingdom");
     }
 
@@ -565,7 +565,7 @@ mod tests {
 
         harness.get_by_label("New").click();
         harness.run();
-        let styles = &harness.state().editor.map;
+        let styles = &harness.state().editor.map();
         assert_eq!(styles.label_styles().len(), 3);
         assert!(styles.label_styles().get(style_id).is_some());
     }

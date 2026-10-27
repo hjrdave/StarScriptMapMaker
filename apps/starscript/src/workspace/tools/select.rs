@@ -179,10 +179,10 @@ fn objects_in_box(editor: &mut Editor, a: Point, b: Point) -> Vec<Id> {
         [a[0].max(b[0]), a[1].max(b[1])],
     );
     let candidates: Vec<Id> = editor
-        .map
+        .map()
         .draw_order()
         .into_iter()
-        .filter(|&id| !editor.map.is_locked(id))
+        .filter(|&id| !editor.map().is_locked(id))
         .collect();
     candidates
         .into_iter()

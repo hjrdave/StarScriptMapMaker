@@ -142,7 +142,7 @@ fn pixel(image: &RgbaImage, x: u32, y: u32) -> [u8; 4] {
     image.pixels[i..i + 4].try_into().unwrap()
 }
 
-/// A small Canvas fitted with a margin, so the image shows the off-Canvas, the Canvas edge
+/// A small Canvas fitted with a margin, so the image shows the area off the Canvas, the Canvas edge
 /// and the ocean texture.
 fn backdrop_scene() -> (CanvasScene, View) {
     let scene = CanvasScene::new(&Canvas::new(800, 600, Scale::new(1.0, DistanceUnit::Miles)));
@@ -218,7 +218,7 @@ fn whole_canvas_preview_shows_no_off_canvas() {
 /// Everything `map` draws, as the editor and export build it.
 fn scene_of(map: &Map) -> CanvasScene {
     let content = MapScene::new(Fonts::bundled()).content(map, &mut RoughnessCache::new());
-    CanvasScene::new(&map.canvas).with_content(content)
+    CanvasScene::new(map.canvas()).with_content(content)
 }
 
 fn land_and_water() -> Map {
@@ -540,8 +540,8 @@ fn render_labels(headless: &Headless, size: [u32; 2], labels: Vec<Label>) -> Rgb
         .unwrap();
     }
     let mut scene = MapScene::new(Fonts::bundled());
-    let canvas =
-        CanvasScene::new(&map.canvas).with_content(scene.content(&map, &mut RoughnessCache::new()));
+    let canvas = CanvasScene::new(map.canvas())
+        .with_content(scene.content(&map, &mut RoughnessCache::new()));
     let view = View::whole_canvas(canvas.canvas_size, size[0].max(size[1]) / 2);
     render(headless, &canvas, &view)
 }
@@ -693,7 +693,7 @@ fn deleting_a_style_in_use_changes_nothing_visually() {
     }
     let draw = |map: &Map| {
         let mut scene = MapScene::new(Fonts::bundled());
-        let canvas = CanvasScene::new(&map.canvas)
+        let canvas = CanvasScene::new(map.canvas())
             .with_content(scene.content(map, &mut RoughnessCache::new()));
         let view = View::whole_canvas(canvas.canvas_size, 600);
         render(headless, &canvas, &view)

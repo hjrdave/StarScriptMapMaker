@@ -104,8 +104,8 @@ impl Editor {
             return None;
         }
         let (width, height) = (
-            f64::from(self.map.canvas.width),
-            f64::from(self.map.canvas.height),
+            f64::from(self.map.canvas().width),
+            f64::from(self.map.canvas().height),
         );
         let size = (width.min(height) / 80.0).max(8.0);
         let line_height = 1.3;

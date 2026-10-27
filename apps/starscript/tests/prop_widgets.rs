@@ -15,7 +15,7 @@ struct Fixture {
 }
 
 fn opacity(fixture: &Fixture) -> f32 {
-    match fixture.editor.map.node(fixture.layer) {
+    match fixture.editor.map().node(fixture.layer) {
         Some(Node::Layer(layer)) => layer.opacity,
         _ => panic!("the Layer is gone"),
     }

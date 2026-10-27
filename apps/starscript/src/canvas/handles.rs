@@ -110,7 +110,7 @@ impl Bounds {
                 points.extend([bounds.min, bounds.max]);
                 continue;
             }
-            let Some(Node::Object(object)) = editor.map.node(id) else {
+            let Some(Node::Object(object)) = editor.map().node(id) else {
                 continue;
             };
             let Some(geometry) = object.kind.geometry() else {

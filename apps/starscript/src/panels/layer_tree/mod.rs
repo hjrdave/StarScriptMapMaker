@@ -129,15 +129,15 @@ impl LayerTree {
     /// `footer_shown` shows the Object and Layer counts in the bar under the list. The bar
     /// always holds the collapse control; returns true when it was clicked.
     pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor, footer_shown: bool) -> bool {
-        let revision = editor.map.revision();
+        let revision = editor.map().revision();
         let rows = match self.cache.take() {
             Some((r, g, rows)) if r == revision && g == self.collapse_generation => rows,
-            _ => rows(&editor.map, &self.collapsed),
+            _ => rows(editor.map(), &self.collapsed),
         };
         let (objects, layers) = match self.counts {
             Some((r, counts)) if r == revision => counts,
             _ => {
-                let counts = counts(&editor.map);
+                let counts = counts(editor.map());
                 self.counts = Some((revision, counts));
                 counts
             }
@@ -179,7 +179,7 @@ impl LayerTree {
                             selection
                         }
                         Pick::Range => {
-                            let from = self.anchor.filter(|&a| editor.map.contains(a));
+                            let from = self.anchor.filter(|&a| editor.map().contains(a));
                             self.anchor.get_or_insert(id);
                             range(&rows, from.unwrap_or(id), id)
                         }
@@ -218,9 +218,9 @@ impl LayerTree {
                     if !editor.is_selected(id) {
                         editor.select(vec![id]);
                     }
-                    match filled_group(&editor.map, editor.selection()) {
+                    match filled_group(editor.map(), editor.selection()) {
                         Some(group) => {
-                            let inside = contents(&editor.map, editor.selection());
+                            let inside = contents(editor.map(), editor.selection());
                             self.confirm_delete = Some((group, inside));
                         }
                         None => editor.delete_selection(),
@@ -239,13 +239,13 @@ impl LayerTree {
                     editor.unlink_selection();
                 }
                 Action::StartRename(id) => {
-                    self.renaming = Some((id, node_name(&editor.map, id)));
+                    self.renaming = Some((id, node_name(editor.map(), id)));
                 }
                 Action::FinishRename => {
                     if let Some((id, name)) = self.renaming.take()
-                        && name != node_name(&editor.map, id)
+                        && name != node_name(editor.map(), id)
                     {
-                        let command = match editor.map.node(id) {
+                        let command = match editor.map().node(id) {
                             Some(Node::Object(_)) => Command::RenameObject { id, name },
                             _ => Command::RenameLayer { id, name },
                         };
@@ -272,7 +272,7 @@ impl LayerTree {
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
-                ui.label(delete_message(&node_name(&editor.map, group), inside));
+                ui.label(delete_message(&node_name(editor.map(), group), inside));
                 ui.horizontal(|ui| {
                     if ui.button("Delete").clicked() {
                         choice = Some(true);
@@ -288,7 +288,7 @@ impl LayerTree {
         match choice {
             Some(true) => {
                 self.confirm_delete = None;
-                if editor.map.contains(group) {
+                if editor.map().contains(group) {
                     editor.delete_selection();
                 }
             }
@@ -298,7 +298,7 @@ impl LayerTree {
     }
 
     fn row(&mut self, ui: &mut egui::Ui, editor: &Editor, row: Row, actions: &mut Vec<Action>) {
-        let map = &editor.map;
+        let map = &editor.map();
         let Some(node) = map.node(row.id) else { return };
         let (rect, response) = ui.allocate_exact_size(
             egui::vec2(ui.available_width(), ROW_HEIGHT),

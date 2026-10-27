@@ -10,7 +10,7 @@ use crate::handles::{self, Bounds, Grip};
 
 /// The Canvas's box in screen points.
 fn canvas_screen_rect(editor: &Editor, view: &View, origin: egui::Pos2, ppp: f64) -> egui::Rect {
-    let rect = editor.map.canvas.rect();
+    let rect = editor.map().canvas().rect();
     egui::Rect::from_two_pos(
         handles::to_screen(view, origin, ppp, rect.min),
         handles::to_screen(view, origin, ppp, rect.max),
@@ -28,7 +28,7 @@ pub(super) fn canvas_tool(
     input: &CanvasFrame,
 ) -> Option<egui::CursorIcon> {
     let ppp = input.pixels_per_point;
-    let canvas = editor.map.canvas.clone();
+    let canvas = editor.map().canvas().clone();
     let bounds = Bounds {
         min: canvas.origin,
         max: canvas.rect().max,
@@ -127,8 +127,8 @@ pub(super) fn paint_canvas(
     state.canvas_label = Some(text.expand(3.0));
     if selected {
         let bounds = Bounds {
-            min: editor.map.canvas.origin,
-            max: editor.map.canvas.rect().max,
+            min: editor.map().canvas().origin,
+            max: editor.map().canvas().rect().max,
         };
         handles::paint(painter, &bounds, view, origin, ppp, false, palette.select);
     }
@@ -163,7 +163,7 @@ mod tests {
         assert!(state.canvas_drag.is_some());
         canvas_tool(&mut editor, &view, &mut state, &drag_to(600.0, 560.0));
         assert_eq!(
-            (editor.map.canvas.width, editor.map.canvas.height),
+            (editor.map().canvas().width, editor.map().canvas().height),
             (600, 560)
         );
         canvas_tool(&mut editor, &view, &mut state, &release(600.0, 560.0));
@@ -177,12 +177,12 @@ mod tests {
         editor.select_canvas(true);
         canvas_tool(&mut editor, &view, &mut state, &press(500.0, 500.0));
         canvas_tool(&mut editor, &view, &mut state, &drag_to(600.0, 560.0));
-        assert_eq!(editor.map.canvas.width, 600);
+        assert_eq!(editor.map().canvas().width, 600);
         assert!(editor.cancel_open_gesture());
         canvas_tool(&mut editor, &view, &mut state, &drag_to(620.0, 580.0));
         assert!(state.canvas_drag.is_none() && state.held.is_none());
         assert_eq!(
-            (editor.map.canvas.width, editor.map.canvas.height),
+            (editor.map().canvas().width, editor.map().canvas().height),
             (500, 500)
         );
         assert!(!editor.gesture_open());
@@ -195,13 +195,13 @@ mod tests {
         editor.active_tool = ToolId::Canvas;
         canvas_tool(&mut editor, &view, &mut state, &press(500.0, 500.0));
         canvas_tool(&mut editor, &view, &mut state, &drag_to(600.0, 560.0));
-        assert_eq!(editor.map.canvas.width, 600);
+        assert_eq!(editor.map().canvas().width, 600);
         editor.active_tool = ToolId::Select;
         state.drop_held_for_other_tool(&mut editor);
         assert!(state.canvas_drag.is_none() && state.held.is_none());
         assert!(!editor.gesture_open());
         assert_eq!(
-            (editor.map.canvas.width, editor.map.canvas.height),
+            (editor.map().canvas().width, editor.map().canvas().height),
             (500, 500)
         );
         assert_eq!(editor.undo_label(), None);

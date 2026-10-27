@@ -56,7 +56,7 @@ impl MapMakerApp {
         state.can_select_all = !editor.active_layer_objects().is_empty();
         state.has_active_layer = editor
             .active_layer()
-            .is_some_and(|id| editor.map.contains(id));
+            .is_some_and(|id| editor.map().contains(id));
         state.can_combine = editor.can_combine();
         state.can_split = editor.can_split();
         state.can_shuffle = editor.can_shuffle();

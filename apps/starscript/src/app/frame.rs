@@ -149,7 +149,7 @@ impl MapMakerApp {
                     .resizable(false)
                     .exact_size(layout.layers.width())
                     .show(ui, |ui| {
-                        let path = shell::selection_path(&tab.editor.map, tab.editor.selection());
+                        let path = shell::selection_path(tab.editor.map(), tab.editor.selection());
                         let current = self.win.shell.sidebar_section();
                         if let Some(click) = shell::layers_rail(ui, &path, current) {
                             self.win.shell.click_layers_rail(click);

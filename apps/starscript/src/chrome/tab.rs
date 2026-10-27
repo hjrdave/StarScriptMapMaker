@@ -116,7 +116,7 @@ impl MapTab {
     }
 
     pub fn has_unsaved_changes(&self) -> bool {
-        !self.blank && self.document.has_unsaved_changes(&self.editor.map)
+        !self.blank && self.document.has_unsaved_changes(self.editor.map())
     }
 
     /// The Recovery journal being written for this tab's Map, once there is one.
@@ -142,12 +142,12 @@ mod tests {
         let path = dir.join("Isle.ssmap");
         let canvas = Canvas::new(400, 300, Scale::new(1.0, DistanceUnit::Miles));
         let mut tab = MapTab::new(Map::new(canvas), None, Recovery::new(None));
-        tab.document.save_as(&path, &tab.editor.map, None).unwrap();
+        tab.document.save_as(&path, tab.editor.map(), None).unwrap();
 
         let mut tab = MapTab::open(&path, None, Recovery::new(None)).unwrap();
         assert_eq!(tab.document().name(), "Isle.ssmap");
         assert!(!tab.has_unsaved_changes());
-        let layers = tab.editor().map.children(None).len();
+        let layers = tab.editor().map().children(None).len();
         assert!(
             tab.editor
                 .run(Command::CreateLayer {
@@ -158,7 +158,7 @@ mod tests {
                 })
                 .is_ok()
         );
-        assert_eq!(tab.editor().map.children(None).len(), layers + 1);
+        assert_eq!(tab.editor().map().children(None).len(), layers + 1);
         assert!(tab.has_unsaved_changes());
         let _ = std::fs::remove_dir_all(&dir);
     }

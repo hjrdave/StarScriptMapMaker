@@ -200,7 +200,8 @@ pub(crate) struct Entry {
 /// One Map document. It is changed only by applying [`Op`](crate::Op)s.
 #[derive(Clone, Debug)]
 pub struct Map {
-    pub canvas: Canvas,
+    /// Changed only by the Canvas Ops.
+    pub(crate) canvas: Canvas,
     /// Changed only by [`Op::SetDefaults`](crate::Op::SetDefaults).
     pub(crate) defaults: MapDefaults,
     /// Changed only by the embed Ops.
@@ -264,6 +265,18 @@ impl Map {
     /// The Assets and fonts embedded in the Map.
     pub fn embedded(&self) -> &Embedded {
         &self.embedded
+    }
+
+    /// The Canvas: its size, scale and background.
+    pub fn canvas(&self) -> &Canvas {
+        &self.canvas
+    }
+
+    /// Replaces the Canvas without a Command, so a test can set one up. Not for production code
+    /// (ADR 0004).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_canvas(&mut self, canvas: Canvas) {
+        self.canvas = canvas;
     }
 
     pub fn defaults(&self) -> &MapDefaults {

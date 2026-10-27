@@ -230,7 +230,7 @@ fn main() {
     let started = Instant::now();
     let content = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
     println!("scene build: {:?}", started.elapsed());
-    let scene = CanvasScene::new(&map.canvas).with_content(content);
+    let scene = CanvasScene::new(map.canvas()).with_content(content);
 
     let mut renderer = CanvasRenderer::new(&gpu.device, capabilities);
     renderer.set_sprites(sprites());
