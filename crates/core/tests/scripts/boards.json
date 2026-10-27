@@ -1,0 +1,21 @@
+{
+  "steps": [
+    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000010", "parent": null, "name": "Land"}},
+    {"step": {"command": "create_landmass", "id": "00000000-0000-7000-8000-000000000011", "parent": "00000000-0000-7000-8000-000000000010", "geometry": [{"exterior": [[10.0, 10.0], [90.0, 10.0], [90.0, 90.0], [10.0, 90.0]]}]}},
+    {"step": {"command": "create_landmass", "id": "00000000-0000-7000-8000-000000000012", "parent": "00000000-0000-7000-8000-000000000010", "geometry": [{"exterior": [[1210.0, 10.0], [1290.0, 10.0], [1290.0, 90.0], [1210.0, 90.0]]}]}},
+    {"step": {"command": "create_board", "id": "00000000-0000-7000-8000-000000000021", "origin": [1200.0, 0.0], "width": 400, "height": 300}},
+    {"step": {"command": "create_board", "id": "00000000-0000-7000-8000-000000000022", "name": "Dungeon", "origin": [0.0, 1200.0], "width": 200, "height": 200}},
+    {"step": {"command": "create_board", "id": "00000000-0000-7000-8000-000000000023", "origin": [1200.0, 1200.0], "width": 200, "height": 200}},
+    {"step": {"command": "set_membership", "ids": ["00000000-0000-7000-8000-000000000012"], "membership": {"board": "00000000-0000-7000-8000-000000000021"}}},
+    {"step": {"command": "resize_board", "id": "00000000-0000-7000-8000-000000000021", "origin": [1100.0, 0.0], "width": 500, "height": 300}},
+    {"step": {"command": "reorder_board", "id": "00000000-0000-7000-8000-000000000023", "index": 0}},
+    {"step": {"command": "rename_board", "id": "00000000-0000-7000-8000-000000000022", "name": "Dungeon"}},
+    "snapshot",
+    {"step": {"command": "delete_board", "id": "00000000-0000-0000-0000-000000000001"}},
+    {"step": {"command": "set_primary_board", "id": "00000000-0000-7000-8000-000000000021"}},
+    "snapshot",
+    {"step": {"command": "delete_board", "id": "00000000-0000-7000-8000-000000000021"}},
+    "undo",
+    "undo"
+  ]
+}

@@ -42,6 +42,17 @@ input_file: crates/core/tests/scripts/stamps.json
     {
       "outcome": {
         "view": {
+          "boards": [
+            {
+              "height": 1000,
+              "id": "00000000-0000-0000-0000-000000000001",
+              "scale": {
+                "distance_per_unit": 1.0,
+                "unit": "miles"
+              },
+              "width": 1000
+            }
+          ],
           "canvas": {
             "height": 1000,
             "scale": {
@@ -143,7 +154,8 @@ input_file: crates/core/tests/scripts/stamps.json
               "type": "layer",
               "visible": true
             }
-          ]
+          ],
+          "primary": "00000000-0000-0000-0000-000000000001"
         }
       },
       "step": "snapshot"
@@ -315,6 +327,17 @@ input_file: crates/core/tests/scripts/stamps.json
     {
       "outcome": {
         "view": {
+          "boards": [
+            {
+              "height": 1000,
+              "id": "00000000-0000-0000-0000-000000000001",
+              "scale": {
+                "distance_per_unit": 1.0,
+                "unit": "miles"
+              },
+              "width": 1000
+            }
+          ],
           "canvas": {
             "height": 1000,
             "scale": {
@@ -416,7 +439,8 @@ input_file: crates/core/tests/scripts/stamps.json
               "type": "layer",
               "visible": true
             }
-          ]
+          ],
+          "primary": "00000000-0000-0000-0000-000000000001"
         }
       },
       "step": "snapshot"
@@ -433,6 +457,17 @@ input_file: crates/core/tests/scripts/stamps.json
   "redo_steps": 3,
   "undo_steps": 2,
   "view": {
+    "boards": [
+      {
+        "height": 1000,
+        "id": "00000000-0000-0000-0000-000000000001",
+        "scale": {
+          "distance_per_unit": 1.0,
+          "unit": "miles"
+        },
+        "width": 1000
+      }
+    ],
     "canvas": {
       "height": 1000,
       "scale": {
@@ -534,6 +569,7 @@ input_file: crates/core/tests/scripts/stamps.json
         "type": "layer",
         "visible": true
       }
-    ]
+    ],
+    "primary": "00000000-0000-0000-0000-000000000001"
   }
 }

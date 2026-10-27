@@ -143,6 +143,15 @@ pub enum CommandError {
     /// The node is a Layer where an Object is needed.
     #[error("{0} is not an Object")]
     NotAnObject(Id),
+    /// No board has this id.
+    #[error("no board has id {0}")]
+    NoSuchBoard(Id),
+    /// A board with this id exists already.
+    #[error("board id {0} is already in use")]
+    BoardIdInUse(Id),
+    /// The primary board, the Canvas, cannot be deleted.
+    #[error("the Canvas cannot be deleted; make another board primary first")]
+    DeletePrimaryBoard(Id),
     /// The Canvas would be smaller than 1 by 1.
     #[error("the Canvas needs a width and height of at least 1, not {width} by {height}")]
     InvalidCanvasSize {

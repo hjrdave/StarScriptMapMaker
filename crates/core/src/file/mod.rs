@@ -17,6 +17,9 @@
 //!   Format 1.4 adds the optional `arch` to Labels and Label styles; older files get no arch.
 //!   Format 1.5 adds the optional `background` block to the Canvas; older files get the default.
 //!   Format 1.9 adds the optional `template` (the name of the template the Map was made from) to the Canvas.
+//!   Format 1.10 adds the `boards` meta key (JSON): the primary board's id and every board in
+//!   order, each with its id, name, size, origin and background. `canvas` keeps a copy of the
+//!   primary board for readers that know only one; a file without `boards` opens as one board.
 //!   Format 1.6 stores Groups: Layers nested inside Layers, with `parent` pointing at the
 //!   enclosing Layer. There is no compatibility with older files.
 //!
@@ -44,17 +47,39 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
 use crate::export::ExportSettings;
 use crate::id::Id;
-use crate::map::{Canvas, Map, MapDefaults, MapView, Subtree};
+use crate::map::{Board, Canvas, Map, MapDefaults, MapView, Subtree};
 use crate::node::{Node, Object};
 
 /// The format this version writes. A minor bump only adds optional fields; a major bump is
 /// anything else, and needs a migration.
-pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 9 };
+pub const FORMAT_VERSION: FormatVersion = FormatVersion {
+    major: 1,
+    minor: 10,
+};
+
+/// What the `boards` meta key holds.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+struct BoardsMeta {
+    /// The id of the primary board.
+    primary: Id,
+    /// Every board in order, the primary included.
+    boards: Vec<Board>,
+}
+
+impl BoardsMeta {
+    fn of(map: &Map) -> Self {
+        Self {
+            primary: map.primary_board(),
+            boards: map.boards().to_vec(),
+        }
+    }
+}
 
 /// The longer side of the preview image stored in every save, in pixels.
 pub const PREVIEW_SIZE: u32 = 512;
@@ -197,6 +222,7 @@ pub struct MapFile {
     generation: Uuid,
     saved: HashMap<Id, SavedRow>,
     saved_canvas: Option<Canvas>,
+    saved_boards: Option<BoardsMeta>,
     saved_defaults: Option<MapDefaults>,
     saved_export: Option<ExportSettings>,
     saved_embedded: embed::SavedEmbedded,
@@ -223,6 +249,7 @@ impl MapFile {
                 generation: Uuid::nil(),
                 saved: HashMap::new(),
                 saved_canvas: None,
+                saved_boards: None,
                 saved_defaults: None,
                 saved_export: None,
                 saved_embedded: Default::default(),
@@ -258,6 +285,14 @@ impl MapFile {
             .ok_or_else(|| FileError::Damaged("the Canvas is missing".into()))?;
         let canvas: Canvas = serde_json::from_str(&canvas_json)
             .map_err(|err| FileError::Damaged(format!("the Canvas: {err}")))?;
+        // Absent from files saved before format 1.10: they have one board, the Canvas.
+        let boards: Option<BoardsMeta> = match read_meta::<String>(&conn, "boards")? {
+            Some(json) => Some(
+                serde_json::from_str(&json)
+                    .map_err(|err| FileError::Damaged(format!("the boards: {err}")))?,
+            ),
+            None => None,
+        };
         // Absent from files saved before the Map had defaults.
         let defaults: MapDefaults = match read_meta::<String>(&conn, "defaults")? {
             Some(json) => serde_json::from_str(&json)
@@ -277,6 +312,8 @@ impl MapFile {
         let (embedded, saved_embedded) = embed::read(&conn)?;
         let map = Map::from_view(MapView {
             canvas: canvas.clone(),
+            boards: boards.iter().flat_map(|b| b.boards.clone()).collect(),
+            primary: boards.as_ref().map(|b| b.primary),
             defaults: defaults.clone(),
             layers,
             embedded,
@@ -290,6 +327,7 @@ impl MapFile {
             generation,
             saved,
             saved_canvas: Some(canvas),
+            saved_boards: boards,
             saved_defaults: Some(defaults),
             saved_export: Some(export_settings),
             saved_embedded,
@@ -311,9 +349,14 @@ impl MapFile {
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let (stats, saved) = write_nodes(&tx, map, &self.saved)?;
-        if self.saved_canvas.as_ref() != Some(&map.canvas) {
-            let canvas = serde_json::to_string(&map.canvas).expect("a Canvas serialises");
+        if self.saved_canvas.as_ref() != Some(map.canvas()) {
+            let canvas = serde_json::to_string(map.canvas()).expect("a Canvas serialises");
             write_meta(&tx, "canvas", &canvas)?;
+        }
+        let boards = BoardsMeta::of(map);
+        if self.saved_boards.as_ref() != Some(&boards) {
+            let json = serde_json::to_string(&boards).expect("boards serialise");
+            write_meta(&tx, "boards", &json)?;
         }
         if self.saved_export.as_ref() != Some(&map.export_settings) {
             let json = serde_json::to_string(&map.export_settings).expect("settings serialise");
@@ -335,7 +378,8 @@ impl MapFile {
         tx.commit()?;
 
         self.saved = saved;
-        self.saved_canvas = Some(map.canvas.clone());
+        self.saved_canvas = Some(map.canvas().clone());
+        self.saved_boards = Some(boards);
         self.saved_defaults = Some(map.defaults().clone());
         self.saved_export = Some(map.export_settings.clone());
         self.saved_embedded = saved_embedded;
@@ -369,6 +413,7 @@ impl MapFile {
                 generation: self.generation,
                 saved: self.saved.clone(),
                 saved_canvas: self.saved_canvas.clone(),
+                saved_boards: self.saved_boards.clone(),
                 saved_defaults: self.saved_defaults.clone(),
                 saved_export: self.saved_export.clone(),
                 saved_embedded: self.saved_embedded.clone(),
@@ -450,6 +495,7 @@ fn save_via_temp(
         generation,
         saved,
         saved_canvas,
+        saved_boards,
         saved_defaults,
         saved_export,
         saved_embedded,
@@ -468,6 +514,7 @@ fn save_via_temp(
         generation,
         saved,
         saved_canvas,
+        saved_boards,
         saved_defaults,
         saved_export,
         saved_embedded,

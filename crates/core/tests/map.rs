@@ -221,6 +221,8 @@ fn from_view_rejects_duplicate_ids() {
     let layer = layer("Land");
     let view = MapView {
         canvas: empty_map().canvas().clone(),
+        boards: Vec::new(),
+        primary: None,
         defaults: Default::default(),
         layers: vec![layer.clone(), layer],
         embedded: Default::default(),

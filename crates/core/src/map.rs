@@ -76,6 +76,28 @@ impl Canvas {
     }
 }
 
+/// One drawing area of a Map: the Canvas, or an Art board. It has its own size, origin and
+/// background. The real-world scale is one Map-wide setting, so the `scale` inside a board's
+/// [`Canvas`] only mirrors the primary board's and is never read for an Art board.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct Board {
+    /// The board's identity. Duplicate names are allowed, so this is what Objects refer to.
+    pub id: Id,
+    /// The name the user gave it. `None` shows as "Art board N"; the primary board always
+    /// shows as "Canvas" (see [`Map::board_label`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Its size, origin and background.
+    #[serde(flatten)]
+    pub canvas: Canvas,
+}
+
+impl Board {
+    /// The id of the primary board of a Map made with [`Map::new`] and of one migrated from a
+    /// file saved before Art boards existed, so those load the same every time.
+    pub const FIRST_ID: Id = Id::from_uuid(uuid::Uuid::from_u128(1));
+}
+
 /// How much real-world distance one Canvas unit stands for.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Scale {
@@ -185,8 +207,15 @@ pub struct Subtree {
 /// A serialisable snapshot of a whole Map, for agents, tests and debugging.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct MapView {
-    /// The Canvas.
+    /// The Canvas: the primary board.
     pub canvas: Canvas,
+    /// Every board in order, the primary included. Empty means one board, `canvas`; when it is
+    /// not empty it replaces `canvas`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub boards: Vec<Board>,
+    /// The id of the primary board; `None` means [`Board::FIRST_ID`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary: Option<Id>,
     /// The Map-wide defaults.
     #[serde(default)]
     pub defaults: MapDefaults,
@@ -211,8 +240,10 @@ pub(crate) struct Entry {
 /// One Map document. It is changed only by applying [`Op`](crate::Op)s.
 #[derive(Clone, Debug)]
 pub struct Map {
-    /// Changed only by the Canvas Ops.
-    pub(crate) canvas: Canvas,
+    /// The boards in order, the primary included. Never empty. Changed only by the board Ops.
+    pub(crate) boards: Vec<Board>,
+    /// The id of the primary board, which is the Canvas. Always one of `boards`.
+    pub(crate) primary: Id,
     /// Changed only by [`Op::SetDefaults`](crate::Op::SetDefaults).
     pub(crate) defaults: MapDefaults,
     /// Changed only by the embed Ops.
@@ -231,7 +262,12 @@ impl Map {
     /// An empty Map on `canvas`, with the default settings.
     pub fn new(canvas: Canvas) -> Self {
         Self {
-            canvas,
+            boards: vec![Board {
+                id: Board::FIRST_ID,
+                name: None,
+                canvas,
+            }],
+            primary: Board::FIRST_ID,
             defaults: MapDefaults::default(),
             embedded: Embedded::default(),
             export_settings: ExportSettings::default(),
@@ -251,6 +287,20 @@ impl Map {
     /// Builds a Map from a read view, as when loading.
     pub fn from_view(view: MapView) -> Result<Self, InvariantError> {
         let mut map = Self::new(view.canvas);
+        let primary = view.primary.unwrap_or(Board::FIRST_ID);
+        if view.boards.is_empty() {
+            map.boards[0].id = primary;
+        } else {
+            let mut seen = HashSet::new();
+            if let Some(dup) = view.boards.iter().find(|board| !seen.insert(board.id)) {
+                return Err(InvariantError::DuplicateBoard(dup.id));
+            }
+            if !seen.contains(&primary) {
+                return Err(InvariantError::NoPrimaryBoard(primary));
+            }
+            map.boards = view.boards;
+        }
+        map.primary = primary;
         map.defaults = view.defaults;
         map.embedded = view.embedded;
         map.export_settings = view.export_settings;
@@ -267,7 +317,9 @@ impl Map {
     /// A snapshot of the whole Map, for agents, tests and debugging.
     pub fn view(&self) -> MapView {
         MapView {
-            canvas: self.canvas.clone(),
+            canvas: self.canvas().clone(),
+            boards: self.boards.clone(),
+            primary: Some(self.primary),
             defaults: self.defaults.clone(),
             layers: self.root.iter().map(|&id| self.subtree(id)).collect(),
             embedded: self.embedded.clone(),
@@ -280,16 +332,72 @@ impl Map {
         &self.embedded
     }
 
-    /// The Canvas: its size, scale and background.
+    /// The Canvas: the primary board's size, scale and background.
+    #[allow(
+        clippy::expect_used,
+        reason = "the primary id is always one of the boards"
+    )]
     pub fn canvas(&self) -> &Canvas {
-        &self.canvas
+        &self
+            .board(self.primary)
+            .expect("the primary board exists")
+            .canvas
+    }
+
+    #[allow(
+        clippy::expect_used,
+        reason = "the primary id is always one of the boards"
+    )]
+    pub(crate) fn canvas_mut(&mut self) -> &mut Canvas {
+        let primary = self.primary;
+        &mut self
+            .board_mut(primary)
+            .expect("the primary board exists")
+            .canvas
+    }
+
+    /// Every board in order, the primary (the Canvas) included.
+    pub fn boards(&self) -> &[Board] {
+        &self.boards
+    }
+
+    /// The id of the primary board, which is the Canvas.
+    pub fn primary_board(&self) -> Id {
+        self.primary
+    }
+
+    /// The board with id `id`, if it exists.
+    pub fn board(&self, id: Id) -> Option<&Board> {
+        self.boards.iter().find(|board| board.id == id)
+    }
+
+    pub(crate) fn board_mut(&mut self, id: Id) -> Option<&mut Board> {
+        self.boards.iter_mut().find(|board| board.id == id)
+    }
+
+    /// The name a board shows under: "Canvas" for the primary, otherwise its own name or
+    /// "Art board N", N counting the Art boards in order from 1. `None` for an unknown id.
+    pub fn board_label(&self, id: Id) -> Option<String> {
+        let board = self.board(id)?;
+        if id == self.primary {
+            return Some("Canvas".to_owned());
+        }
+        if let Some(name) = &board.name {
+            return Some(name.clone());
+        }
+        let n = self
+            .boards
+            .iter()
+            .filter(|b| b.id != self.primary)
+            .position(|b| b.id == id)?;
+        Some(format!("Art board {}", n + 1))
     }
 
     /// Replaces the Canvas without a Command, so a test can set one up. Not for production code
     /// (ADR 0004).
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_canvas(&mut self, canvas: Canvas) {
-        self.canvas = canvas;
+        *self.canvas_mut() = canvas;
     }
 
     /// The Map-wide defaults.
@@ -730,4 +838,10 @@ pub enum InvariantError {
     /// The node cannot be reached from the top level.
     #[error("node {0} is not reachable from the top level")]
     Orphan(Id),
+    /// Two boards share an id.
+    #[error("board id {0} appears more than once")]
+    DuplicateBoard(Id),
+    /// The primary board is not one of the boards.
+    #[error("the primary board {0} does not exist")]
+    NoPrimaryBoard(Id),
 }
