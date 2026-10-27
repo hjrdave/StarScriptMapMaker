@@ -11,15 +11,15 @@ use std::fmt::Write as _;
 use serde::{Deserialize, Serialize};
 
 /// Where the baseline lives, relative to the repository root.
-pub const DEFAULT_PATH: &str = "docs/perf-baseline.json";
+pub(super) const DEFAULT_PATH: &str = "docs/perf-baseline.json";
 
 /// A current number regresses when it is above `baseline * RATIO` and `baseline + SLACK_MS`.
-pub const RATIO: f64 = 3.0;
-pub const SLACK_MS: f64 = 5.0;
+pub(super) const RATIO: f64 = 3.0;
+pub(super) const SLACK_MS: f64 = 5.0;
 
 /// Percentiles of a series of frames, in milliseconds.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Percentiles {
+pub(super) struct Percentiles {
     pub p50: f64,
     pub p95: f64,
     pub p99: f64,
@@ -27,7 +27,7 @@ pub struct Percentiles {
 
 /// One script: its whole-frame percentiles and those of each stage (`edit`, `scene`, `render`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct ScriptBaseline {
+pub(super) struct ScriptBaseline {
     pub frame: Percentiles,
     #[serde(default)]
     pub stages: BTreeMap<String, Percentiles>,
@@ -35,7 +35,7 @@ pub struct ScriptBaseline {
 
 /// The contents of the baseline file.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Baseline {
+pub(super) struct Baseline {
     /// What the numbers were measured with, for the reader. Not compared.
     pub note: String,
     /// The fraction of the large Map the reduced scripts run on.
@@ -47,7 +47,7 @@ pub struct Baseline {
 
 /// One number that is outside the margin.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Regression {
+pub(super) struct Regression {
     pub script: String,
     pub metric: String,
     pub baseline: f64,
@@ -55,13 +55,16 @@ pub struct Regression {
 }
 
 /// Whether `current` is a regression from `baseline` (both in ms).
-pub fn exceeds(baseline: f64, current: f64) -> bool {
+pub(super) fn exceeds(baseline: f64, current: f64) -> bool {
     current > baseline * RATIO && current > baseline + SLACK_MS
 }
 
 /// Compares the whole-frame percentiles of every script in `baseline` with `current`.
 /// A script that is in the baseline but was not measured is reported too.
-pub fn compare(baseline: &Baseline, current: &BTreeMap<String, ScriptBaseline>) -> Vec<Regression> {
+pub(super) fn compare(
+    baseline: &Baseline,
+    current: &BTreeMap<String, ScriptBaseline>,
+) -> Vec<Regression> {
     let mut found = Vec::new();
     for (script, expected) in &baseline.scripts {
         let Some(actual) = current.get(script) else {
@@ -92,7 +95,7 @@ pub fn compare(baseline: &Baseline, current: &BTreeMap<String, ScriptBaseline>) 
 }
 
 /// A readable table of every script: baseline against current, with the regressions marked.
-pub fn diff(baseline: &Baseline, current: &BTreeMap<String, ScriptBaseline>) -> String {
+pub(super) fn diff(baseline: &Baseline, current: &BTreeMap<String, ScriptBaseline>) -> String {
     let regressions = compare(baseline, current);
     let mut text = String::new();
     let _ = writeln!(

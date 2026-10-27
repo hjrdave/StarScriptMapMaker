@@ -19,10 +19,10 @@ type Show = Box<dyn FnOnce() -> Option<PathBuf> + Send>;
 
 /// Puts a dialog on the screen and sends its answer. What it returns is kept until the dialog
 /// is answered; `None` means the dialog could not open.
-pub type Launch = fn(&egui::Context, Sender<Option<PathBuf>>, Show) -> Option<Box<dyn Any>>;
+pub(crate) type Launch = fn(&egui::Context, Sender<Option<PathBuf>>, Show) -> Option<Box<dyn Any>>;
 
 /// A native dialog that is open, or has just been answered.
-pub struct Pick {
+pub(crate) struct Pick {
     answer: Option<Receiver<Option<PathBuf>>>,
     /// Whatever the launcher needs kept alive while the dialog is open.
     keep: Option<Box<dyn Any>>,
@@ -31,7 +31,7 @@ pub struct Pick {
 
 /// What a poll of a [`Pick`] found.
 #[derive(Debug, PartialEq, Eq)]
-pub enum Polled {
+pub(crate) enum Polled {
     /// No dialog is open.
     Idle,
     /// The dialog is still showing.
@@ -44,7 +44,7 @@ pub enum Polled {
 
 /// The launcher for the real thing: the system's dialog, on a thread of its own. The window
 /// repaints when it answers.
-pub fn launch_native(
+pub(crate) fn launch_native(
     ctx: &egui::Context,
     sender: Sender<Option<PathBuf>>,
     show: Show,
@@ -63,7 +63,7 @@ pub fn launch_native(
 
 /// A launcher for tests without a window to put a system dialog on: the dialog counts as open
 /// and never answers. The sender is kept so it doesn't read as cancelled.
-pub fn launch_headless(
+pub(crate) fn launch_headless(
     _ctx: &egui::Context,
     sender: Sender<Option<PathBuf>>,
     _show: Show,
@@ -73,7 +73,7 @@ pub fn launch_headless(
 
 impl Pick {
     /// A picker that shows its dialogs through `launch`.
-    pub fn new(launch: Launch) -> Self {
+    pub(crate) fn new(launch: Launch) -> Self {
         Self {
             answer: None,
             keep: None,
@@ -82,7 +82,7 @@ impl Pick {
     }
 
     /// Whether a dialog is showing.
-    pub fn is_open(&self) -> bool {
+    pub(crate) fn is_open(&self) -> bool {
         self.answer.is_some()
     }
 
@@ -103,20 +103,25 @@ impl Pick {
     }
 
     /// Asks for a Map file to open, starting in `directory`.
-    pub fn open_map(&mut self, ctx: &egui::Context, directory: Option<&Path>) {
+    pub(crate) fn open_map(&mut self, ctx: &egui::Context, directory: Option<&Path>) {
         let dialog = map_files(FileDialog::new().set_title("Open Map"), directory);
         self.start(ctx, move || dialog.pick_file());
     }
 
     /// Asks where to save a Map, offering `file_name` in `directory`.
-    pub fn save_map(&mut self, ctx: &egui::Context, directory: Option<&Path>, file_name: &str) {
+    pub(crate) fn save_map(
+        &mut self,
+        ctx: &egui::Context,
+        directory: Option<&Path>,
+        file_name: &str,
+    ) {
         let dialog = map_files(FileDialog::new().set_title("Save Map As"), directory)
             .set_file_name(document::with_extension(file_name.into()).to_string_lossy());
         self.start(ctx, move || dialog.save_file());
     }
 
     /// Asks for a folder, starting in `directory`.
-    pub fn folder(&mut self, ctx: &egui::Context, title: &str, directory: Option<&Path>) {
+    pub(crate) fn folder(&mut self, ctx: &egui::Context, title: &str, directory: Option<&Path>) {
         let mut dialog = FileDialog::new().set_title(title);
         if let Some(directory) = directory.filter(|directory| directory.is_dir()) {
             dialog = dialog.set_directory(directory);
@@ -125,7 +130,7 @@ impl Pick {
     }
 
     /// Takes the answer if the dialog has given one.
-    pub fn poll(&mut self) -> Polled {
+    pub(crate) fn poll(&mut self) -> Polled {
         let Some(answer) = &self.answer else {
             return Polled::Idle;
         };

@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::document::Document;
 
 /// How long applied Ops may wait before they are written: "within about a second".
-pub const FLUSH_DELAY: Duration = Duration::from_millis(500);
+pub(crate) const FLUSH_DELAY: Duration = Duration::from_millis(500);
 
 /// The extension of journal files.
 const EXTENSION: &str = "recovery";
@@ -222,7 +222,7 @@ impl Recovery {
 
 /// A free path for a recovered copy of the Map file at `path`: `<name> (recovered).ssmap`,
 /// numbered if that exists.
-pub fn recovered_copy_path(path: &Path) -> PathBuf {
+pub(crate) fn recovered_copy_path(path: &Path) -> PathBuf {
     let stem = path
         .file_stem()
         .unwrap_or_default()

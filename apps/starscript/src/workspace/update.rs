@@ -20,7 +20,7 @@ use eframe::egui;
 use serde::{Deserialize, Serialize};
 
 /// The `latest.json` of the newest release.
-pub const FEED_URL: &str =
+pub(crate) const FEED_URL: &str =
     "https://github.com/hjrdave/StarScriptMapMaker/releases/latest/download/latest.json";
 const STORAGE_KEY: &str = "check_for_updates";
 /// The feed is a few lines; anything bigger is not ours.
@@ -29,7 +29,7 @@ const TIMEOUT: Duration = Duration::from_secs(15);
 
 /// One release as published in `latest.json`.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
-pub struct Feed {
+pub(crate) struct Feed {
     pub version: String,
     pub url: String,
     #[serde(default)]
@@ -38,7 +38,7 @@ pub struct Feed {
 
 /// `X.Y.Z` as numbers, so `1.10.0` sorts after `1.9.0`. A leading `v` is dropped; anything
 /// else (pre-release suffixes, a missing part) is not a version we offer.
-pub fn parse_version(text: &str) -> Option<[u64; 3]> {
+pub(crate) fn parse_version(text: &str) -> Option<[u64; 3]> {
     let mut parts = text.trim().trim_start_matches('v').split('.');
     let mut version = [0; 3];
     for slot in &mut version {
@@ -48,7 +48,7 @@ pub fn parse_version(text: &str) -> Option<[u64; 3]> {
 }
 
 /// Whether `feed` names a version after `current`.
-pub fn is_newer(feed: &Feed, current: &str) -> bool {
+pub(crate) fn is_newer(feed: &Feed, current: &str) -> bool {
     match (parse_version(&feed.version), parse_version(current)) {
         (Some(latest), Some(current)) => latest > current,
         _ => false,
@@ -61,7 +61,7 @@ fn is_web_link(url: &str) -> bool {
 }
 
 /// Fetches and parses the feed at `url`.
-pub fn fetch(url: &str) -> Result<Feed, String> {
+pub(crate) fn fetch(url: &str) -> Result<Feed, String> {
     let roots: Vec<_> = rustls_native_certs::load_native_certs()
         .certs
         .iter()
@@ -97,7 +97,7 @@ enum Notice {
 
 type Fetched = Result<Feed, String>;
 
-pub struct UpdateCheck {
+pub(crate) struct UpdateCheck {
     /// `None` until the user has been asked.
     enabled: Option<bool>,
     feed_url: String,
@@ -114,7 +114,7 @@ pub struct UpdateCheck {
 impl UpdateCheck {
     /// Reads the setting from `storage`. Without storage the choice could not be kept, so
     /// nothing is asked and nothing is checked (UI tests run this way).
-    pub fn load(storage: Option<&dyn eframe::Storage>) -> Self {
+    pub(crate) fn load(storage: Option<&dyn eframe::Storage>) -> Self {
         let enabled = match storage {
             Some(storage) => storage
                 .get_string(STORAGE_KEY)
@@ -124,7 +124,7 @@ impl UpdateCheck {
         Self::new(enabled, FEED_URL, env!("CARGO_PKG_VERSION"))
     }
 
-    pub fn new(enabled: Option<bool>, feed_url: &str, current: &str) -> Self {
+    pub(crate) fn new(enabled: Option<bool>, feed_url: &str, current: &str) -> Self {
         Self {
             enabled,
             feed_url: feed_url.into(),
@@ -136,35 +136,35 @@ impl UpdateCheck {
         }
     }
 
-    pub fn store(&self, storage: &mut dyn eframe::Storage) {
+    pub(crate) fn store(&self, storage: &mut dyn eframe::Storage) {
         if let Some(enabled) = self.enabled {
             storage.set_string(STORAGE_KEY, enabled.to_string());
         }
     }
 
-    pub fn enabled(&self) -> Option<bool> {
+    pub(crate) fn enabled(&self) -> Option<bool> {
         self.enabled
     }
 
-    pub fn set_enabled(&mut self, enabled: bool) {
+    pub(crate) fn set_enabled(&mut self, enabled: bool) {
         self.enabled = Some(enabled);
     }
 
     /// The version a finished check found, if newer than this one.
     #[cfg(test)]
-    pub fn available(&self) -> Option<&Feed> {
+    pub(crate) fn available(&self) -> Option<&Feed> {
         match &self.notice {
             Some(Notice::Available(feed)) => Some(feed),
             _ => None,
         }
     }
 
-    pub fn is_checking(&self) -> bool {
+    pub(crate) fn is_checking(&self) -> bool {
         self.pending.is_some()
     }
 
     /// Starts a check in the background, unless one is running.
-    pub fn start(&mut self, manual: bool) {
+    pub(crate) fn start(&mut self, manual: bool) {
         if self.pending.is_some() {
             return;
         }
@@ -183,7 +183,7 @@ impl UpdateCheck {
     }
 
     /// Takes in a finished check. Returns whether one finished.
-    pub fn poll(&mut self) -> bool {
+    pub(crate) fn poll(&mut self) -> bool {
         let Some(receiver) = &self.pending else {
             return false;
         };
@@ -207,7 +207,7 @@ impl UpdateCheck {
     }
 
     /// The first-launch question, the running check and the result window.
-    pub fn show(&mut self, ctx: &egui::Context) {
+    pub(crate) fn show(&mut self, ctx: &egui::Context) {
         // While undecided nothing is checked; the Home tab asks (see [`Self::banner`]).
         if self.enabled == Some(true) && !self.started {
             self.started = true;
@@ -225,7 +225,7 @@ impl UpdateCheck {
 
     /// The first-launch question, as a banner at the bottom of the Home tab. Answering sets
     /// the choice, which the banner then no longer shows for.
-    pub fn banner(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn banner(&mut self, ui: &mut egui::Ui) {
         let p = crate::theme::palette(ui.ctx());
         let mut choice = None;
         egui::Frame::NONE

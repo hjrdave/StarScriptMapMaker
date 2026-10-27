@@ -13,11 +13,11 @@ use crate::icons::{self, Icon};
 use crate::theme;
 
 /// How long an info toast stays after it was last shown or hovered.
-pub const NOTICE_DURATION: Duration = Duration::from_secs(5);
+pub(crate) const NOTICE_DURATION: Duration = Duration::from_secs(5);
 /// How long an error toast stays: a few seconds longer than an info one.
-pub const ERROR_DURATION: Duration = Duration::from_secs(10);
+pub(crate) const ERROR_DURATION: Duration = Duration::from_secs(10);
 /// The most toasts shown at once; the oldest give way.
-pub const MAX_TOASTS: usize = 4;
+pub(crate) const MAX_TOASTS: usize = 4;
 /// The toast width, from the mockup.
 const WIDTH: f32 = 420.0;
 /// Gap between the Canvas's top edge (just under the menu bar) and the highest toast.
@@ -72,13 +72,13 @@ impl Toast {
 
 /// The toasts of one tab, oldest first.
 #[derive(Clone, Debug, Default)]
-pub struct Toasts {
+pub(crate) struct Toasts {
     items: Vec<Toast>,
     next_id: u64,
 }
 
 impl Toasts {
-    pub fn push(
+    pub(crate) fn push(
         &mut self,
         text: impl Into<String>,
         kind: ToastKind,
@@ -102,23 +102,23 @@ impl Toasts {
     }
 
     /// Drops the toasts whose time is up.
-    pub fn expire(&mut self, now: Instant) {
+    pub(crate) fn expire(&mut self, now: Instant) {
         self.items.retain(|toast| toast.expires > now);
     }
 
     /// Gives toast `id` its full time again: it is under the pointer.
-    pub fn hold(&mut self, id: ToastId, now: Instant) {
+    pub(crate) fn hold(&mut self, id: ToastId, now: Instant) {
         if let Some(toast) = self.items.iter_mut().find(|toast| toast.id == id) {
             toast.expires = now + toast.duration();
         }
     }
 
-    pub fn dismiss(&mut self, id: ToastId) {
+    pub(crate) fn dismiss(&mut self, id: ToastId) {
         self.items.retain(|toast| toast.id != id);
     }
 
     /// Strips the action from every toast whose action `keep` rejects; the text stays.
-    pub fn retain_actions(&mut self, mut keep: impl FnMut(ToastAction) -> bool) {
+    pub(crate) fn retain_actions(&mut self, mut keep: impl FnMut(ToastAction) -> bool) {
         for toast in &mut self.items {
             if toast.action.is_some_and(|action| !keep(action)) {
                 toast.action = None;
@@ -127,19 +127,23 @@ impl Toasts {
     }
 
     /// The toasts to show, oldest first (the newest is drawn lowest).
-    pub fn items(&self) -> &[Toast] {
+    pub(crate) fn items(&self) -> &[Toast] {
         &self.items
     }
 
     /// When the next toast runs out, for scheduling a repaint.
-    pub fn next_expiry(&self) -> Option<Instant> {
+    pub(crate) fn next_expiry(&self) -> Option<Instant> {
         self.items.iter().map(|toast| toast.expires).min()
     }
 }
 
 /// Draws `toasts` top-centre over `canvas` and returns the action clicked, if any. Removes
 /// expired toasts first, keeps hovered ones, and schedules the repaint that expires the rest.
-pub fn show(ctx: &egui::Context, canvas: egui::Rect, toasts: &mut Toasts) -> Option<ToastAction> {
+pub(crate) fn show(
+    ctx: &egui::Context,
+    canvas: egui::Rect,
+    toasts: &mut Toasts,
+) -> Option<ToastAction> {
     let now = Instant::now();
     toasts.expire(now);
     let palette = theme::palette(ctx);

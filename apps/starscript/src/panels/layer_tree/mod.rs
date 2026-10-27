@@ -20,11 +20,11 @@ const ROW_GLYPH: f32 = 14.0;
 pub(crate) const FOOTER_HEIGHT: f32 = 24.0;
 
 /// Why a Depth-sorted Layer's Stamps can't be reordered by hand.
-pub const DEPTH_SORT_HINT: &str = "Depth sort is on for this Layer: Stamps are listed in the order they draw, by Anchor height. Move a Stamp to re-sort it.";
+pub(crate) const DEPTH_SORT_HINT: &str = "Depth sort is on for this Layer: Stamps are listed in the order they draw, by Anchor height. Move a Stamp to re-sort it.";
 
 mod model;
 use model::kind_icon;
-pub use model::{
+pub(crate) use model::{
     DropTarget, Row, RowState, counts, footer_text, is_depth_sorted_stamp, landmass_name,
     landmasses, move_command, node_name, rows, selected_landmass,
 };
@@ -32,7 +32,7 @@ pub use model::{
 mod tests;
 
 #[derive(Default)]
-pub struct LayerTree {
+pub(crate) struct LayerTree {
     collapsed: HashSet<Id>,
     /// The row being renamed and its text so far.
     renaming: Option<(Id, String)>,
@@ -54,7 +54,7 @@ pub struct LayerTree {
 
 /// How a click on a row changes the Selection.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Pick {
+pub(crate) enum Pick {
     /// Selects only this row.
     Only,
     /// ⌘-click: adds the row, or removes it if it was selected.
@@ -120,7 +120,7 @@ fn contents(map: &Map, selection: &[Id]) -> usize {
 }
 
 /// The confirmation text for deleting the Group `name` and the `inside` nodes it holds.
-pub fn delete_message(name: &str, inside: usize) -> String {
+pub(crate) fn delete_message(name: &str, inside: usize) -> String {
     let items = if inside == 1 { "item" } else { "items" };
     format!("Delete the Group \"{name}\"? Its {inside} {items} will be deleted too.")
 }
@@ -128,7 +128,12 @@ pub fn delete_message(name: &str, inside: usize) -> String {
 impl LayerTree {
     /// `footer_shown` shows the Object and Layer counts in the bar under the list. The bar
     /// always holds the collapse control; returns true when it was clicked.
-    pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor, footer_shown: bool) -> bool {
+    pub(crate) fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        footer_shown: bool,
+    ) -> bool {
         let revision = editor.map().revision();
         let rows = match self.cache.take() {
             Some((r, g, rows)) if r == revision && g == self.collapse_generation => rows,

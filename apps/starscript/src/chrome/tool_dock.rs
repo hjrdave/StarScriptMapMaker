@@ -27,12 +27,12 @@ const GROUPS: [&[ToolId]; 4] = [
 ];
 
 /// The accessible name of a tool's button, which is also its tooltip text.
-pub fn button_label(tool: ToolId) -> String {
+pub(crate) fn button_label(tool: ToolId) -> String {
     format!("{} ({})", tool.label(), tool.shortcut_text())
 }
 
 /// Draws the dock centred in `canvas` and sets `active` to the tool the user clicks.
-pub fn show(ctx: &egui::Context, canvas: egui::Rect, active: &mut ToolId) {
+pub(crate) fn show(ctx: &egui::Context, canvas: egui::Rect, active: &mut ToolId) {
     let palette = theme::palette(ctx);
     let anchor = egui::pos2(
         canvas.center().x,

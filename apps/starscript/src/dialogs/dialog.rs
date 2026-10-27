@@ -6,7 +6,7 @@ use eframe::egui::{self, Align, Frame, Layout, Margin, RichText, Stroke};
 use crate::theme::{self, RADIUS_DIALOG};
 
 /// What a frame of a dialog came to.
-pub struct Shown<R> {
+pub(crate) struct Shown<R> {
     /// What the contents returned.
     #[allow(
         dead_code,
@@ -18,7 +18,7 @@ pub struct Shown<R> {
 }
 
 /// Shows a modal dialog `title`, `width` points wide, with `contents` below the title.
-pub fn show<R>(
+pub(crate) fn show<R>(
     ctx: &egui::Context,
     id: &str,
     title: &str,
@@ -55,20 +55,20 @@ pub fn show<R>(
 
 /// Whether Enter was pressed with no text field or other widget holding the keyboard, which
 /// is when it is safe to take it as "confirm".
-pub fn enter_confirms(ctx: &egui::Context) -> bool {
+pub(crate) fn enter_confirms(ctx: &egui::Context) -> bool {
     !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Enter))
 }
 
 /// The button row: `contents` is laid out right to left, so add the primary button first and
 /// the dismissing ones after it.
-pub fn buttons<R>(ui: &mut egui::Ui, contents: impl FnOnce(&mut egui::Ui) -> R) -> R {
+pub(crate) fn buttons<R>(ui: &mut egui::Ui, contents: impl FnOnce(&mut egui::Ui) -> R) -> R {
     ui.add_space(12.0);
     ui.with_layout(Layout::right_to_left(Align::Center), contents)
         .inner
 }
 
 /// The dialog's main action: gold, and on the right.
-pub fn primary_button(ui: &mut egui::Ui, enabled: bool, text: &str) -> egui::Response {
+pub(crate) fn primary_button(ui: &mut egui::Ui, enabled: bool, text: &str) -> egui::Response {
     let p = theme::palette(ui.ctx());
     ui.add_enabled(
         enabled,
@@ -77,7 +77,7 @@ pub fn primary_button(ui: &mut egui::Ui, enabled: bool, text: &str) -> egui::Res
 }
 
 /// The primary button with a shortcut hint beside its label ("Save ⌘S").
-pub fn primary_button_with_shortcut(
+pub(crate) fn primary_button_with_shortcut(
     ui: &mut egui::Ui,
     text: &str,
     shortcut: &egui::KeyboardShortcut,

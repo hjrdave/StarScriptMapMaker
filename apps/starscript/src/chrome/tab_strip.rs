@@ -19,21 +19,21 @@ const ACTIVE_LINE: f32 = 2.0;
 
 /// A place the window can show: the Home tab or the Map in tab `n`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Slot {
+pub(crate) enum Slot {
     Home,
     Map(usize),
 }
 
 impl Slot {
     /// Home is always first and cannot be closed; a Map tab can.
-    pub fn can_close(self) -> bool {
+    pub(crate) fn can_close(self) -> bool {
         matches!(self, Slot::Map(_))
     }
 }
 
 /// The tab ⌘`n` (Ctrl+`n`) reaches, `n` being 1 to 9 and `maps` the number of open Maps.
 /// 1 is Home, 2 to 8 the Maps in order, and 9 the last tab whatever the count, as in browsers.
-pub fn slot_for_number(n: u8, maps: usize) -> Option<Slot> {
+pub(crate) fn slot_for_number(n: u8, maps: usize) -> Option<Slot> {
     match n {
         1 => Some(Slot::Home),
         2..=8 => {
@@ -46,7 +46,7 @@ pub fn slot_for_number(n: u8, maps: usize) -> Option<Slot> {
 }
 
 /// The tab after (or before) `current`, wrapping round Home and the Maps.
-pub fn cycle(current: Slot, maps: usize, forward: bool) -> Slot {
+pub(crate) fn cycle(current: Slot, maps: usize, forward: bool) -> Slot {
     let total = maps + 1;
     let position = match current {
         Slot::Home => 0,
@@ -65,7 +65,7 @@ pub fn cycle(current: Slot, maps: usize, forward: bool) -> Slot {
 
 /// What sits where a Map tab's × is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Indicator {
+pub(crate) enum Indicator {
     Nothing,
     /// The gold dot of a Map with unsaved changes.
     Dot,
@@ -74,7 +74,7 @@ pub enum Indicator {
 
 /// A hovered tab always offers ×, which replaces the unsaved dot. Otherwise the dot shows for
 /// unsaved changes, and the active tab keeps its ×.
-pub fn indicator(unsaved: bool, hovered: bool, active: bool) -> Indicator {
+pub(crate) fn indicator(unsaved: bool, hovered: bool, active: bool) -> Indicator {
     if hovered {
         Indicator::Close
     } else if unsaved {
@@ -88,7 +88,7 @@ pub fn indicator(unsaved: bool, hovered: bool, active: bool) -> Indicator {
 
 /// How the Map tabs fit the room the strip has for them.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Fit {
+pub(crate) struct Fit {
     /// Width of each Map tab.
     pub tab_width: f32,
     /// Whether the tabs do not fit even at the least width, so the strip scrolls with chevrons.
@@ -99,14 +99,14 @@ pub struct Fit {
 
 impl Fit {
     /// The furthest the tabs can scroll.
-    pub fn max_scroll(&self, count: usize) -> f32 {
+    pub(crate) fn max_scroll(&self, count: usize) -> f32 {
         (count as f32 * self.tab_width - self.viewport).max(0.0)
     }
 }
 
 /// Fits `count` Map tabs in `room` points: they share it, shrinking from 220 to 120, and
 /// beyond that stay at 120 and scroll.
-pub fn fit(room: f32, count: usize) -> Fit {
+pub(crate) fn fit(room: f32, count: usize) -> Fit {
     let room = room.max(0.0);
     if count == 0 {
         return Fit {
@@ -131,7 +131,7 @@ pub fn fit(room: f32, count: usize) -> Fit {
 
 /// The scroll offset that shows the tab at `[left, left + width]` (relative to the first tab)
 /// in a viewport `viewport` wide, moving as little as it can from `offset`.
-pub fn scroll_into_view(offset: f32, viewport: f32, left: f32, width: f32) -> f32 {
+pub(crate) fn scroll_into_view(offset: f32, viewport: f32, left: f32, width: f32) -> f32 {
     if left < offset {
         left
     } else if left + width > offset + viewport {
@@ -142,7 +142,7 @@ pub fn scroll_into_view(offset: f32, viewport: f32, left: f32, width: f32) -> f3
 }
 
 /// One Map tab as the strip shows it.
-pub struct TabInfo {
+pub(crate) struct TabInfo {
     pub name: String,
     /// The file path for the tooltip; `None` for a Map never saved.
     pub path: Option<String>,
@@ -151,7 +151,7 @@ pub struct TabInfo {
 
 /// What the user did in the strip.
 #[derive(Debug, PartialEq)]
-pub enum Action {
+pub(crate) enum Action {
     Show(Slot),
     Close(usize),
     NewMap,
@@ -168,7 +168,7 @@ pub enum Action {
 
 /// Which window a strip belongs to, which decides what its tabs' context menu offers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Placement {
+pub(crate) enum Placement {
     /// The main window, which also has the Home tab.
     Main,
     /// A window a tab was popped out into.
@@ -178,7 +178,7 @@ pub enum Placement {
 /// Where the strip and its Map tabs were last drawn, in the window's own points, so a tab
 /// dropped on it lands at the right place.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Geometry {
+pub(crate) struct Geometry {
     pub strip: Rect,
     /// Left edge of the first Map tab when not scrolled.
     pub tabs_left: f32,
@@ -189,7 +189,7 @@ pub struct Geometry {
 impl Geometry {
     /// The position among the `count` Map tabs a tab dropped at `x` lands in: before the tab
     /// whose left half `x` is in, or at the end.
-    pub fn drop_index(&self, x: f32, count: usize) -> usize {
+    pub(crate) fn drop_index(&self, x: f32, count: usize) -> usize {
         if self.tab_width <= 0.0 {
             return count;
         }
@@ -211,7 +211,7 @@ impl Default for Geometry {
 
 /// The strip's own memory between frames.
 #[derive(Default)]
-pub struct State {
+pub(crate) struct State {
     scroll: f32,
     revealed: Option<(Slot, usize)>,
     pub geometry: Geometry,
@@ -239,7 +239,7 @@ fn fill(ui: &egui::Ui, rect: Rect, color: Color32) {
 /// Draws the strip in the panel `ui` and returns what the user did. `inset` is the room left
 /// clear at the left for the native window buttons; `custom_chrome` makes the empty part drag
 /// the window and a double-click zoom it.
-pub fn show(
+pub(crate) fn show(
     ui: &mut egui::Ui,
     tabs: &[TabInfo],
     current: Slot,

@@ -26,7 +26,7 @@ pub(super) fn run(map: &mut Map, command: &Command, what: &str) {
 }
 
 /// Frames of an interaction script, about a second and a half of dragging at 60 fps.
-pub const EDIT_FRAMES: usize = 90;
+pub(super) const EDIT_FRAMES: usize = 90;
 
 /// The Map-wide Roughness (amount, scale, seed) of the generated Map: rough enough to be a
 /// worst case.
@@ -39,7 +39,7 @@ const DRAGGED_STAMPS: usize = 2_000;
 const TARGET_LANDMASS: usize = 12;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Script {
+pub(super) enum Script {
     PanZoom,
     Paint,
     Erase,
@@ -53,7 +53,7 @@ pub enum Script {
 }
 
 impl Script {
-    pub const ALL: [Script; 10] = [
+    pub(super) const ALL: [Script; 10] = [
         Script::PanZoom,
         Script::Paint,
         Script::Erase,
@@ -66,7 +66,7 @@ impl Script {
         Script::Marquee,
     ];
 
-    pub fn name(self) -> &'static str {
+    pub(super) fn name(self) -> &'static str {
         match self {
             Script::PanZoom => "pan-zoom",
             Script::Paint => "paint",
@@ -81,7 +81,7 @@ impl Script {
         }
     }
 
-    pub fn parse(name: &str) -> Option<Script> {
+    pub(super) fn parse(name: &str) -> Option<Script> {
         Script::ALL.into_iter().find(|script| script.name() == name)
     }
 
@@ -93,7 +93,7 @@ impl Script {
 }
 
 /// The names of all scripts, for messages.
-pub fn names() -> String {
+pub(super) fn names() -> String {
     Script::ALL
         .iter()
         .map(|script| script.name())
@@ -102,7 +102,7 @@ pub fn names() -> String {
 }
 
 /// The Map a script runs on, with what the edits need to find.
-pub struct World {
+pub(super) struct World {
     pub map: Map,
     pub cache: RoughnessCache,
     layer: Id,
@@ -116,7 +116,7 @@ pub struct World {
 impl World {
     /// Wraps a generated Map: `layer` holds its `landmasses`, then its Stamps. For a script
     /// that needs it, the Map gets a high Map-wide Roughness first.
-    pub fn new(mut map: Map, layer: Id, landmasses: usize, script: Script) -> Self {
+    pub(super) fn new(mut map: Map, layer: Id, landmasses: usize, script: Script) -> Self {
         let children = map.children(Some(layer)).to_vec();
         let (land, stamps) = children.split_at(landmasses.min(children.len()));
         let (land, stamps) = (land.to_vec(), stamps.to_vec());
@@ -165,7 +165,7 @@ fn stamp_of(map: &Map, id: Id) -> Option<Stamp> {
 }
 
 /// Where landmass `i` of the generated Map sits.
-pub fn centre_of(i: usize) -> Point {
+pub(super) fn centre_of(i: usize) -> Point {
     [(i % 5) as f64 * 3_000.0, (i / 5) as f64 * 3_000.0]
 }
 
@@ -176,7 +176,7 @@ fn work_centre() -> Point {
 
 /// The views a script renders, the first being the warm-up. Pan and zoom moves; the rest hold
 /// one view framing the edited landmass (or, for the marquee, the whole Canvas).
-pub fn views(script: Script, canvas: [f64; 2]) -> Vec<View> {
+pub(super) fn views(script: Script, canvas: [f64; 2]) -> Vec<View> {
     match script {
         Script::PanZoom => super::path(canvas),
         Script::Marquee => vec![View::fit(canvas, TARGET, 20.0)],
@@ -196,7 +196,7 @@ pub fn views(script: Script, canvas: [f64; 2]) -> Vec<View> {
 }
 
 /// How many frames the script measures.
-pub fn frames(script: Script) -> usize {
+pub(super) fn frames(script: Script) -> usize {
     match script {
         Script::PanZoom => 3 * PHASE_FRAMES,
         _ => EDIT_FRAMES,
@@ -205,7 +205,7 @@ pub fn frames(script: Script) -> usize {
 
 /// The edit of frame `frame` (counted from 0), applied to the Map. Pan and zoom changes
 /// nothing, and the marquee only queries.
-pub fn edit(script: Script, frame: usize, world: &mut World) {
+pub(super) fn edit(script: Script, frame: usize, world: &mut World) {
     let t = frame as f64 / EDIT_FRAMES as f64;
     let centre = work_centre();
     let target = world.target();

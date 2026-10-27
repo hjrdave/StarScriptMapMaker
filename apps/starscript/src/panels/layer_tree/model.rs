@@ -9,14 +9,14 @@ use crate::icons::Icon;
 
 /// One visible row: a node and how deep it sits.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Row {
+pub(crate) struct Row {
     pub id: Id,
     pub depth: usize,
 }
 
 /// Where a dragged row would land, relative to the row under the pointer.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum DropTarget {
+pub(crate) enum DropTarget {
     /// Just above the row in the list, which is just above it in the Stacking order.
     Above(Id),
     Below(Id),
@@ -25,7 +25,7 @@ pub enum DropTarget {
 }
 
 /// The visible rows, top of the Stacking order first, skipping collapsed Layers' contents.
-pub fn rows(map: &Map, collapsed: &HashSet<Id>) -> Vec<Row> {
+pub(crate) fn rows(map: &Map, collapsed: &HashSet<Id>) -> Vec<Row> {
     fn walk(
         map: &Map,
         parent: Option<Id>,
@@ -51,7 +51,7 @@ pub fn rows(map: &Map, collapsed: &HashSet<Id>) -> Vec<Row> {
 
 /// The Move Command for dropping `dragged` on `target`, or `None` if it would do nothing
 /// or move a Layer into itself.
-pub fn move_command(map: &Map, dragged: Id, target: DropTarget) -> Option<Command> {
+pub(crate) fn move_command(map: &Map, dragged: Id, target: DropTarget) -> Option<Command> {
     let position = |id: Id| {
         map.children(map.parent(id))
             .iter()
@@ -88,7 +88,7 @@ pub fn move_command(map: &Map, dragged: Id, target: DropTarget) -> Option<Comman
 }
 
 /// A Stamp inside a Layer with Depth sort on, whose place among its siblings is not its to pick.
-pub fn is_depth_sorted_stamp(map: &Map, id: Id) -> bool {
+pub(crate) fn is_depth_sorted_stamp(map: &Map, id: Id) -> bool {
     matches!(
         map.node(id),
         Some(Node::Object(Object {
@@ -102,7 +102,7 @@ pub fn is_depth_sorted_stamp(map: &Map, id: Id) -> bool {
 }
 
 /// Every Landmass, topmost first as the tree lists them.
-pub fn landmasses(map: &Map) -> Vec<Id> {
+pub(crate) fn landmasses(map: &Map) -> Vec<Id> {
     rows(map, &HashSet::new())
         .into_iter()
         .map(|row| row.id)
@@ -119,7 +119,7 @@ fn is_landmass(map: &Map, id: Id) -> bool {
 
 /// The Landmass a Layer should be clipped to: the one Object `selection` holds, if it is a
 /// Landmass.
-pub fn selected_landmass(map: &Map, selection: &[Id]) -> Option<Id> {
+pub(crate) fn selected_landmass(map: &Map, selection: &[Id]) -> Option<Id> {
     match selection {
         &[id] if is_landmass(map, id) => Some(id),
         _ => None,
@@ -128,14 +128,14 @@ pub fn selected_landmass(map: &Map, selection: &[Id]) -> Option<Id> {
 
 /// A Landmass as a Clip target is named by its place in [`landmasses`], as Landmasses have no
 /// names of their own.
-pub fn landmass_name(map: &Map, id: Id) -> String {
+pub(crate) fn landmass_name(map: &Map, id: Id) -> String {
     match landmasses(map).iter().position(|&l| l == id) {
         Some(index) => format!("Landmass {}", index + 1),
         None => "Missing Landmass".to_owned(),
     }
 }
 
-pub fn node_name(map: &Map, id: Id) -> String {
+pub(crate) fn node_name(map: &Map, id: Id) -> String {
     match map.node(id) {
         Some(Node::Layer(layer)) if layer.name.trim().is_empty() => "Layer".to_owned(),
         Some(Node::Layer(layer)) => layer.name.clone(),
@@ -155,7 +155,7 @@ pub fn node_name(map: &Map, id: Id) -> String {
 
 /// How a row looks, apart from selection and hover.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct RowState {
+pub(crate) struct RowState {
     /// A hidden Layer: slashed eye, name italic and dim.
     pub hidden: bool,
     /// Locked itself: filled padlock.
@@ -165,7 +165,7 @@ pub struct RowState {
 }
 
 impl RowState {
-    pub fn of(map: &Map, id: Id) -> Self {
+    pub(crate) fn of(map: &Map, id: Id) -> Self {
         let Some(node) = map.node(id) else {
             return Self {
                 hidden: false,
@@ -182,7 +182,7 @@ impl RowState {
     }
 
     /// Hidden names go italic, so the state is never colour alone.
-    pub fn italic(self) -> bool {
+    pub(crate) fn italic(self) -> bool {
         self.hidden
     }
 
@@ -192,7 +192,7 @@ impl RowState {
 }
 
 /// How many Objects and Layers the Map holds.
-pub fn counts(map: &Map) -> (usize, usize) {
+pub(crate) fn counts(map: &Map) -> (usize, usize) {
     let layers = map
         .ids()
         .filter(|&id| map.node(id).is_some_and(Node::is_layer))
@@ -201,7 +201,7 @@ pub fn counts(map: &Map) -> (usize, usize) {
 }
 
 /// "3 Objects · 2 Layers".
-pub fn footer_text(objects: usize, layers: usize) -> String {
+pub(crate) fn footer_text(objects: usize, layers: usize) -> String {
     let plural =
         |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
     format!(

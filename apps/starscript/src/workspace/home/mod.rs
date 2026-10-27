@@ -24,14 +24,14 @@ use crate::theme;
 use crate::update::UpdateCheck;
 use cards::{map_card, new_map_card, rail_row, section_label};
 
-pub use entries::{
+pub(crate) use entries::{
     Counts, Entry, Info, OpenTab, Sort, View, counts, edited_ago, known_entries, open_entries,
     read_info, select, size_label,
 };
 
 /// What the user did on Home this frame.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum Action {
+pub(crate) enum Action {
     NewMap,
     /// The Open… dialog.
     OpenDialog,
@@ -59,7 +59,7 @@ pub enum Action {
 }
 
 /// What the screen draws besides its own state.
-pub struct Data<'a> {
+pub(crate) struct Data<'a> {
     pub known: &'a [Entry],
     pub open: &'a [Entry],
     /// The installed Asset pack count.
@@ -81,7 +81,7 @@ struct Loaded {
 /// The Home screen's state: the chosen list, search and sort, and the cache of what was read
 /// from each Map file.
 #[derive(Default)]
-pub struct Home {
+pub(crate) struct Home {
     pub view: View,
     pub query: String,
     pub sort: Sort,
@@ -99,12 +99,12 @@ pub struct Home {
 
 impl Home {
     /// What is known of the file at `path` so far; nothing until the worker has read it.
-    pub fn info(&self, path: &Path) -> Info {
+    pub(crate) fn info(&self, path: &Path) -> Info {
         self.infos.get(path).copied().unwrap_or_default()
     }
 
     /// Drops what was read from `path`, so it is read again (after a save, say).
-    pub fn forget(&mut self, path: &Path) {
+    pub(crate) fn forget(&mut self, path: &Path) {
         self.infos.remove(path);
         self.thumbnails.remove(path);
         self.requested.remove(path);
@@ -113,7 +113,7 @@ impl Home {
     /// Called each frame Home is drawn. The first frame after another tab was shown reads
     /// every file again, so times and previews are not stale. What was read stays on screen
     /// until the new reading arrives.
-    pub fn entered(&mut self) {
+    pub(crate) fn entered(&mut self) {
         if !self.visible {
             self.visible = true;
             self.requested.clear();
@@ -121,12 +121,12 @@ impl Home {
     }
 
     /// Called each frame another tab is drawn.
-    pub fn left(&mut self) {
+    pub(crate) fn left(&mut self) {
         self.visible = false;
     }
 
     /// Asks the worker to read each of `paths` not read yet.
-    pub fn request<'a>(&mut self, paths: impl IntoIterator<Item = &'a Path>) {
+    pub(crate) fn request<'a>(&mut self, paths: impl IntoIterator<Item = &'a Path>) {
         for path in paths {
             if self.requested.contains(path) {
                 continue;
@@ -164,7 +164,7 @@ impl Home {
     }
 
     /// Takes in what the worker has read. Returns whether anything arrived.
-    pub fn poll(&mut self, ctx: &egui::Context) -> bool {
+    pub(crate) fn poll(&mut self, ctx: &egui::Context) -> bool {
         let Some(results) = &self.results else {
             return false;
         };
@@ -195,12 +195,12 @@ impl Home {
     }
 
     /// Whether reads are still outstanding.
-    pub fn loading(&self) -> bool {
+    pub(crate) fn loading(&self) -> bool {
         self.outstanding > 0
     }
 
     /// Draws the screen and returns what the user did.
-    pub fn show(
+    pub(crate) fn show(
         &mut self,
         ui: &mut egui::Ui,
         data: &Data<'_>,
@@ -255,7 +255,7 @@ impl Home {
 
     /// Draws a new tab's start page: the New Map card, the latest of the known Maps and an
     /// Open… button. A lighter Home, without the rail, search or sorting.
-    pub fn start_page(&mut self, ui: &mut egui::Ui, data: &Data<'_>) -> Vec<Action> {
+    pub(crate) fn start_page(&mut self, ui: &mut egui::Ui, data: &Data<'_>) -> Vec<Action> {
         let mut out = Vec::new();
         let p = theme::palette(ui.ctx());
         let now = SystemTime::now();

@@ -30,7 +30,7 @@ struct CanvasResources {
 /// egui's callback resources. Returns false, leaving the Canvas as a placeholder, when the
 /// adapter is below the hardware floor. Called once per run, so a software-adapter warning
 /// shows once.
-pub fn install(render_state: &egui_wgpu::RenderState, sprites: SpriteStore) -> bool {
+pub(crate) fn install(render_state: &egui_wgpu::RenderState, sprites: SpriteStore) -> bool {
     let capabilities = GpuCapabilities::query(&render_state.adapter);
     match capabilities.suitability() {
         Suitability::Ok => {}
@@ -58,7 +58,7 @@ pub fn install(render_state: &egui_wgpu::RenderState, sprites: SpriteStore) -> b
 
 /// Renders the whole Canvas, `longest_side` pixels on its longer side, as for the preview
 /// stored in a Map file. Uses the same renderer as the screen.
-pub fn render_whole_canvas(
+pub(crate) fn render_whole_canvas(
     render_state: &egui_wgpu::RenderState,
     editor: &mut Editor,
     cache: Option<&TessellationCache>,
@@ -87,7 +87,7 @@ pub fn render_whole_canvas(
 }
 
 /// Advances `job` by one step on the same renderer as the screen. `None` without a GPU.
-pub fn step_export(
+pub(crate) fn step_export(
     render_state: &egui_wgpu::RenderState,
     editor: &mut Editor,
     cache: Option<&TessellationCache>,
@@ -122,7 +122,7 @@ fn resize_keeping_centre(view: &mut View, size: [u32; 2]) {
     ];
 }
 
-pub struct CanvasView {
+pub(crate) struct CanvasView {
     /// `None` until the first frame, which fits the Canvas to the panel.
     view: Option<View>,
     /// False without a wgpu device (as in UI tests); the Canvas is then a flat placeholder.
@@ -149,7 +149,7 @@ pub struct CanvasView {
 
 impl CanvasView {
     /// `cache` is this tab's tessellation cache; `None` without a wgpu device.
-    pub fn new(cache: Option<TessellationCache>) -> Self {
+    pub(crate) fn new(cache: Option<TessellationCache>) -> Self {
         Self {
             view: None,
             gpu: cache.is_some(),
@@ -166,22 +166,22 @@ impl CanvasView {
     }
 
     /// Zooms on the next frame, as from a shortcut.
-    pub fn request_zoom(&mut self, zoom: Zoom) {
+    pub(crate) fn request_zoom(&mut self, zoom: Zoom) {
         self.pending_zoom = Some(zoom);
     }
 
     /// This tab's tessellation cache; `None` without a wgpu device.
-    pub fn cache(&self) -> Option<&TessellationCache> {
+    pub(crate) fn cache(&self) -> Option<&TessellationCache> {
         self.cache.as_ref()
     }
 
     /// Whether a Label's text box is open.
-    pub fn editing_text(&self) -> bool {
+    pub(crate) fn editing_text(&self) -> bool {
         self.tools.editing.is_some()
     }
 
     /// The screen position of a Canvas point, as last drawn.
-    pub fn to_screen(&self, point: [f64; 2]) -> Option<egui::Pos2> {
+    pub(crate) fn to_screen(&self, point: [f64; 2]) -> Option<egui::Pos2> {
         let (rect, ppp) = self.panel?;
         Some(handles::to_screen(
             self.view.as_ref()?,
@@ -193,7 +193,7 @@ impl CanvasView {
 
     /// The Canvas point under `pointer` (screen points), when it is over the Canvas as last
     /// drawn.
-    pub fn canvas_point(&self, pointer: egui::Pos2) -> Option<[f64; 2]> {
+    pub(crate) fn canvas_point(&self, pointer: egui::Pos2) -> Option<[f64; 2]> {
         let (rect, ppp) = self.panel?;
         if !rect.contains(pointer) {
             return None;
@@ -208,7 +208,7 @@ impl CanvasView {
     /// Where Paste puts the middle of what it pastes: the Canvas point under `pointer` (the
     /// last cursor position) when it is over the Canvas, else the middle of what is visible.
     /// Uses this tab's own zoom and pan.
-    pub fn paste_point(&self, pointer: Option<egui::Pos2>) -> Option<[f64; 2]> {
+    pub(crate) fn paste_point(&self, pointer: Option<egui::Pos2>) -> Option<[f64; 2]> {
         pointer
             .and_then(|pointer| self.canvas_point(pointer))
             .or_else(|| {
@@ -219,11 +219,11 @@ impl CanvasView {
     }
 
     /// Zoom as a share of 1:1, in points rather than physical pixels.
-    pub fn zoom(&self, pixels_per_point: f64) -> Option<f64> {
+    pub(crate) fn zoom(&self, pixels_per_point: f64) -> Option<f64> {
         self.view.map(|view| view.zoom / pixels_per_point)
     }
 
-    pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+    pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         let ppp = f64::from(ui.ctx().pixels_per_point());

@@ -1,10 +1,10 @@
-pub mod clipboard;
-pub mod credits;
-pub mod document;
+pub(crate) mod clipboard;
+pub(crate) mod credits;
+pub(crate) mod document;
 pub mod editor;
 pub(crate) mod file_actions;
-pub mod home;
+pub(crate) mod home;
 pub(crate) mod recent;
 pub mod shell;
 pub mod tools;
-pub mod update;
+pub(crate) mod update;

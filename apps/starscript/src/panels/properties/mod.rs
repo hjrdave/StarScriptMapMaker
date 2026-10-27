@@ -15,7 +15,7 @@ use crate::theme;
 use crate::tool_section::ToolSection;
 
 #[derive(Default)]
-pub struct PropertiesPanel {
+pub(crate) struct PropertiesPanel {
     /// The text being typed for a Label, committed when the field loses focus.
     text_edit: Option<(Id, String)>,
     /// Turns the scrubs, sliders and swatches into one Undo step each.
@@ -78,12 +78,12 @@ impl<T: Clone> Inherit<'_, T> {
 
 impl PropertiesPanel {
     /// Whether "Manage Label styles…" was clicked since the last call.
-    pub fn take_manage_label_styles(&mut self) -> bool {
+    pub(crate) fn take_manage_label_styles(&mut self) -> bool {
         std::mem::take(&mut self.manage_label_styles)
     }
 
     /// Returns true when the collapse control at the bottom was clicked.
-    pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) -> bool {
+    pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) -> bool {
         // A change ends when the pointer is released, or when Escape cancelled it.
         self.live.apply(editor, Edit::default(), "", || {
             unreachable!("nothing changed")

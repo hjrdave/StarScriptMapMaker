@@ -13,12 +13,12 @@ use crate::theme;
 use crate::tools::{self, ToolId};
 
 #[derive(Default)]
-pub struct ToolSection {
+pub(crate) struct ToolSection {
     browser: AssetBrowser,
 }
 
 /// The icon of a tool.
-pub fn icon(tool: ToolId) -> Icon {
+pub(crate) fn icon(tool: ToolId) -> Icon {
     match tool {
         ToolId::Select => Icon::Select,
         ToolId::Pan => Icon::Pan,
@@ -33,7 +33,7 @@ pub fn icon(tool: ToolId) -> Icon {
 }
 
 /// Whether the tool has settings to show.
-pub fn has_section(tool: ToolId) -> bool {
+pub(crate) fn has_section(tool: ToolId) -> bool {
     matches!(
         tool,
         ToolId::LandBrush | ToolId::WaterBrush | ToolId::Stamp | ToolId::StampEraser
@@ -46,7 +46,7 @@ fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> bool {
 }
 
 impl ToolSection {
-    pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+    pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         let tool = editor.active_tool;
         if !has_section(tool) {
             return;

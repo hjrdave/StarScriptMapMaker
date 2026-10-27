@@ -10,7 +10,7 @@ const MIN_SIDE: f64 = 1.0;
 /// A handle drag on the Canvas, remembering the Canvas as it was when the drag began so that
 /// every frame works from the start and nothing drifts.
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub struct CanvasDrag {
+pub(crate) struct CanvasDrag {
     pub handle: Handle,
     pub start: [f64; 2],
     pub origin: [f64; 2],
@@ -19,7 +19,12 @@ pub struct CanvasDrag {
 
 impl CanvasDrag {
     /// The Canvas's origin and size with the pointer at `pointer`.
-    pub fn resized(&self, pointer: [f64; 2], shift: bool, alt: bool) -> ([f64; 2], u32, u32) {
+    pub(crate) fn resized(
+        &self,
+        pointer: [f64; 2],
+        shift: bool,
+        alt: bool,
+    ) -> ([f64; 2], u32, u32) {
         resized(
             self.origin,
             self.size,
@@ -34,7 +39,7 @@ impl CanvasDrag {
 /// The Canvas after dragging `handle` by `delta`. The side opposite the handle stays put, or
 /// with `alt` the centre does. With `shift` the aspect ratio is kept: a corner follows the
 /// larger change, and an edge scales the other axis about the middle.
-pub fn resized(
+pub(crate) fn resized(
     origin: [f64; 2],
     size: [u32; 2],
     handle: Handle,
@@ -86,7 +91,7 @@ pub fn resized(
 }
 
 /// The text of the cursor HUD while the Canvas is being resized.
-pub fn hud_text(width: u32, height: u32) -> String {
+pub(crate) fn hud_text(width: u32, height: u32) -> String {
     format!("Canvas · {width} × {height}")
 }
 

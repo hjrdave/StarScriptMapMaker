@@ -27,7 +27,7 @@ const CARD_FOOTER: f32 = 92.0;
 
 /// What the user did on the page this frame.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum Action {
+pub(crate) enum Action {
     /// Open the Credits & licences view.
     Credits,
     /// Open the folder dialog to add a pack.
@@ -41,7 +41,7 @@ pub enum Action {
 }
 
 /// "Built in" or "Added by you".
-pub fn origin_label(pack: &Pack) -> &'static str {
+pub(crate) fn origin_label(pack: &Pack) -> &'static str {
     if pack.is_built_in() {
         "Built in"
     } else {
@@ -50,7 +50,7 @@ pub fn origin_label(pack: &Pack) -> &'static str {
 }
 
 /// "1 Asset" or "12 Assets".
-pub fn asset_count_label(pack: &Pack) -> String {
+pub(crate) fn asset_count_label(pack: &Pack) -> String {
     match pack.asset_count() {
         1 => "1 Asset".into(),
         n => format!("{n} Assets"),
@@ -58,7 +58,7 @@ pub fn asset_count_label(pack: &Pack) -> String {
 }
 
 /// What the delete confirmation says about the Stamps that use the pack.
-pub fn stamp_usage_label(stamps: usize) -> String {
+pub(crate) fn stamp_usage_label(stamps: usize) -> String {
     match stamps {
         0 => "No Stamps in the open Maps use it.".into(),
         1 => "1 Stamp in the open Maps uses it; it will show as a placeholder.".into(),
@@ -67,14 +67,14 @@ pub fn stamp_usage_label(stamps: usize) -> String {
 }
 
 /// Why a card's Delete is unavailable, or `None` when the pack can be deleted.
-pub fn delete_blocked_reason(pack: &Pack) -> Option<&'static str> {
+pub(crate) fn delete_blocked_reason(pack: &Pack) -> Option<&'static str> {
     pack.is_built_in()
         .then_some("Built-in packs ship with the app and can’t be deleted")
 }
 
 /// The authors of a pack's Assets, sorted and without repeats: "A", "A and B" or "A, B and 3
 /// more". "Unknown author" when none is given.
-pub fn author_label(pack: &Pack) -> String {
+pub(crate) fn author_label(pack: &Pack) -> String {
     let mut authors: Vec<&str> = pack
         .assets
         .iter()
@@ -92,7 +92,7 @@ pub fn author_label(pack: &Pack) -> String {
 }
 
 /// The Assets of `pack` that pass the filters, in manifest order.
-pub fn filtered<'a>(pack: &'a Pack, category: Option<&str>, search: &str) -> Vec<&'a Asset> {
+pub(crate) fn filtered<'a>(pack: &'a Pack, category: Option<&str>, search: &str) -> Vec<&'a Asset> {
     pack.assets
         .iter()
         .filter(|asset| asset_browser::matches(asset, category, search))
@@ -101,7 +101,7 @@ pub fn filtered<'a>(pack: &'a Pack, category: Option<&str>, search: &str) -> Vec
 
 /// The page's state: the opened pack, its filters and the thumbnails made so far.
 #[derive(Default)]
-pub struct PackPage {
+pub(crate) struct PackPage {
     /// The id of the opened pack, or the list of packs.
     open: Option<String>,
     category: Option<String>,
@@ -112,7 +112,7 @@ pub struct PackPage {
 
 impl PackPage {
     /// Draws the page and returns what the user did.
-    pub fn show(
+    pub(crate) fn show(
         &mut self,
         ui: &mut egui::Ui,
         sprites: Option<&SpriteStore>,

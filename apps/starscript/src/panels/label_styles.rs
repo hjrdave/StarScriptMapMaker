@@ -30,7 +30,7 @@ const ROW_HEIGHT: f32 = 40.0;
 const LIST_WIDTH: f32 = 220.0;
 
 #[derive(Default)]
-pub struct LabelStylesPanel {
+pub(crate) struct LabelStylesPanel {
     pub open: bool,
     /// The style listed as being edited.
     selected: Option<Id>,
@@ -145,7 +145,7 @@ fn tessellate_halo(path: &Path, width: f32, tolerance: f32) -> VertexBuffers<[f3
 }
 
 /// A name for a copy that no style has yet: "Name copy", then "Name copy 2", and so on.
-pub fn free_name(taken: &[&str], base: &str) -> String {
+pub(crate) fn free_name(taken: &[&str], base: &str) -> String {
     let first = format!("{base} copy");
     if !taken.contains(&first.as_str()) {
         return first;
@@ -157,7 +157,7 @@ pub fn free_name(taken: &[&str], base: &str) -> String {
 }
 
 /// The notice after deleting a style that `count` Labels used.
-pub fn deleted_notice(name: &str, count: usize, default_name: &str) -> String {
+pub(crate) fn deleted_notice(name: &str, count: usize, default_name: &str) -> String {
     let labels = if count == 1 {
         "1 Label".to_owned()
     } else {
@@ -167,7 +167,7 @@ pub fn deleted_notice(name: &str, count: usize, default_name: &str) -> String {
 }
 
 impl LabelStylesPanel {
-    pub fn show(&mut self, ctx: &egui::Context, editor: &mut Editor) {
+    pub(crate) fn show(&mut self, ctx: &egui::Context, editor: &mut Editor) {
         let mut open = self.open;
         egui::Window::new("Label styles")
             .open(&mut open)

@@ -8,7 +8,7 @@ use ssmap_core::{ExportSettings, Map};
 use uuid::Uuid;
 
 /// File extension of Map files.
-pub const EXTENSION: &str = "ssmap";
+pub(crate) const EXTENSION: &str = "ssmap";
 
 #[derive(Default)]
 pub struct Document {
@@ -92,7 +92,7 @@ impl Document {
 }
 
 /// Adds the Map file extension unless the path already ends in it.
-pub fn with_extension(path: PathBuf) -> PathBuf {
+pub(crate) fn with_extension(path: PathBuf) -> PathBuf {
     if path.extension().is_some_and(|ext| ext == EXTENSION) {
         path
     } else {
