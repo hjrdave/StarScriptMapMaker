@@ -10,6 +10,11 @@
 //! off below 1.0. `SSMAP_BENCH_ALLOW_HARDWARE=1` falls back to a real GPU.
 //!
 //! Run with `cargo bench -p ssmap-render --bench open_to_frame`.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::f64::consts::TAU;
 use std::path::PathBuf;

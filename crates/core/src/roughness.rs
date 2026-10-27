@@ -9,6 +9,11 @@
 //! midpoint displacement along the edge's normal, halving the amplitude at every level. Stored
 //! vertices never move, so every node stays on the coast. An edge's detail depends only on its two
 //! end points and the seed, so moving one node changes only its two edges.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};

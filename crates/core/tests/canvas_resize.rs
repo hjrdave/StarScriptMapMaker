@@ -1,5 +1,10 @@
 //! Canvas resize and Object membership: resizing never moves, resizes, removes or re-homes an
 //! Object, and only an explicit membership change does the last.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use ssmap_core::file::MapFile;
 use ssmap_core::{

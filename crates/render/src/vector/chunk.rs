@@ -1,4 +1,9 @@
 //! Tessellation of groups, merged into draws and split into chunks that are rebuilt one by one.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::collections::HashMap;
 use std::ops::Range;

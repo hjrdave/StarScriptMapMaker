@@ -1,3 +1,8 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 use ssmap_core::{
     Canvas, DistanceUnit, Id, Landmass, Layer, Map, MapView, MultiPolygon, Node, Object,
     ObjectKind, Op, OpError, Polygon, Property, Scale, Stamp, Subtree,

@@ -1,5 +1,10 @@
 //! Managing installed packs: installing a pack folder, deleting a user pack, and counting how
 //! many Stamps in a Map use a pack. Built-in packs are protected here, not only in the UI.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

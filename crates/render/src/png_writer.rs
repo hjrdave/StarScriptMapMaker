@@ -2,6 +2,11 @@
 //!
 //! The image is written to a temporary file beside the destination and renamed on
 //! [`PngWriter::finish`], so dropping the writer (Cancel, or any error) leaves no partial file.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::fs::File;
 use std::io::{BufWriter, Write};

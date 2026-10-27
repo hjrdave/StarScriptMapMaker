@@ -1,4 +1,9 @@
 //! Assets and fonts embedded in a Map: the Ops, the Command, and the Map file.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::path::{Path, PathBuf};
 

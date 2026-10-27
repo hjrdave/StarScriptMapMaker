@@ -2,6 +2,11 @@
 //!
 //! The manifest is read field by field rather than through serde derives, so every problem can
 //! name the file, the Asset and the field, and one pass reports all of them.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};

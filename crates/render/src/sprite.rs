@@ -8,6 +8,11 @@
 //! Rasterising an SVG is slow, so [`SpriteStore::poll`] builds sprites on background threads
 //! and reports one that is not done yet as [`SpriteState::Pending`], which is not the same as
 //! missing and is never cached as such.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Condvar, Mutex, RwLock, Weak};

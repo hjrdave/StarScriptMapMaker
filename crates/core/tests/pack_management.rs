@@ -1,4 +1,9 @@
 //! Installing and deleting user packs, built-in protection, and usage counts.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};

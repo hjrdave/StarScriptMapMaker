@@ -1,5 +1,10 @@
 //! Sprites rasterise on background threads: a sprite that is not done reads as pending, never
 //! as missing, and a repaint is requested as each one finishes. CPU only.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::path::Path;
 use std::sync::Arc;

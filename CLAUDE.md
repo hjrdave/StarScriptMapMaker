@@ -73,6 +73,13 @@ Say which of these a change touches, so they get checked on a machine with a GPU
 - Keep changes focused: no unrelated refactors or dependency changes.
 - Match the surrounding code's style, naming and comment density.
 
+## Lint policy
+
+`[workspace.lints.clippy]` in `Cargo.toml` warns on `unwrap_used`, `expect_used`, `too_many_lines` and `cognitive_complexity`; CI's `-D warnings` makes them errors. Thresholds and the test exemptions are in `clippy.toml`.
+
+- Existing hits carry `#[allow(..., reason = "...")]`, many at file level. Remove an allow when you clean up the code under it; don't add one to new code.
+- Integration tests and benches may panic, so their files allow the two lints at the top.
+
 ## Conventions
 
 These apply to new and touched code. Do not rewrite existing code only to fit them.

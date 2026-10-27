@@ -1,5 +1,10 @@
 //! Drawing Stamps: instanced quads sampling atlas pages (ADR 0003). The Silhouette is filled
 //! under the line art, so overlapping Stamps hide each other's lines.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::collections::HashMap;
 use std::ops::Range;

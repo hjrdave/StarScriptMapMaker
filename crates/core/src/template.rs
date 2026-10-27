@@ -5,6 +5,11 @@
 //! the Map file format its shape follows. Starting a Map from it replaces the template's
 //! Canvas size and scale with the ones the user chose; the template's background stays, and the
 //! Map remembers the template's name.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::path::{Path, PathBuf};
 

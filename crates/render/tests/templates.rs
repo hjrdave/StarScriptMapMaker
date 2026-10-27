@@ -1,6 +1,11 @@
 //! Every bundled Map template renders, and the screen and the export draw the same pixels.
 //!
 //! Needs a GPU adapter; without one each test returns early, as the golden tests do.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::convert::Infallible;
 

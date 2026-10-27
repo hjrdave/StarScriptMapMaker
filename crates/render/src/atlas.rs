@@ -2,6 +2,11 @@
 //!
 //! Each page is a square texture. The rectangle allocator (`etagere`) is private to this
 //! module, so it can be swapped without touching callers.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use crate::raster::Raster;
 

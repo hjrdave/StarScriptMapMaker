@@ -1,4 +1,9 @@
 //! Links: Layers and Objects that move and transform together (issue #263).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use ssmap_core::file::MapFile;
 use ssmap_core::{

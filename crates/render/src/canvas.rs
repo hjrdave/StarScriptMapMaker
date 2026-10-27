@@ -1,5 +1,10 @@
 //! The Canvas renderer: an offscreen, multisampled target holding the backdrop and the Map's
 //! Objects.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::ops::Range;
 use std::sync::Arc;

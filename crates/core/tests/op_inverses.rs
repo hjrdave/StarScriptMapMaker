@@ -1,4 +1,9 @@
 //! "Apply an Op, then its inverse, restores the Map" for random trees and random Ops (ADR 0004).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use proptest::prelude::*;
 use ssmap_core::{

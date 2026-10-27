@@ -1,5 +1,10 @@
 //! Writes a blank Map file, for checking that installed packages open one:
 //! `cargo run -p ssmap-core --example new_map -- <path>.ssmap`
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::path::PathBuf;
 

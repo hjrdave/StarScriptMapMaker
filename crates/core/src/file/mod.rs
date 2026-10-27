@@ -30,6 +30,11 @@
 //! Rows, meta keys, columns and tables this version doesn't know are left alone, and unknown
 //! JSON fields ride along in each object's [`Extra`](crate::Extra), so a file from a newer
 //! minor format version round-trips without loss.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 mod blob;
 mod embed;

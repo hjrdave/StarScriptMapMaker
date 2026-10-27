@@ -1,4 +1,9 @@
 //! Creating, deleting and transforming Objects and the Layers that hold them.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::collections::HashSet;
 

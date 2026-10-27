@@ -3,6 +3,11 @@
 //! All numbers are little-endian. A blob is a `u32` Polygon count, then for each Polygon a
 //! `u32` ring count (the exterior first, then its holes), then for each ring a `u32` point
 //! count followed by that many `f64` `x, y` pairs.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use thiserror::Error;
 

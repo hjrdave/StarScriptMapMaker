@@ -6,6 +6,11 @@
 //!
 //! Both tables are created by the first save of this version, so a format 1.0 file gains them
 //! when it is next saved.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::collections::{BTreeMap, HashSet};
 

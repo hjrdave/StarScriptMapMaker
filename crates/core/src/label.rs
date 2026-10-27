@@ -1,4 +1,9 @@
 //! Labels and the named Label styles they follow (ADR 0006).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

@@ -1,5 +1,10 @@
 //! Rendering a Map from its embedded Assets and fonts (ADR 0005): without the packs, with
 //! the packs changed, and with font files of its own. CPU only.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

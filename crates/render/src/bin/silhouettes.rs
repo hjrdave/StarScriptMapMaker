@@ -9,6 +9,11 @@
 //! edge, writes `silhouettes/<asset-id>.png`, and sets the Asset's `silhouette` field in
 //! `pack.toml`, keeping the rest of the file as written. A `silhouette` naming any other file
 //! is hand-authored and left alone. Existing generated files are kept unless `--force` is given.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;

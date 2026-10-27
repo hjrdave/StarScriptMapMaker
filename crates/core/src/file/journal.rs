@@ -8,6 +8,11 @@
 //!
 //! The writer holds an exclusive lock on the file while the Map is open, so another window
 //! never mistakes a live journal for a crashed one.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{BufRead, BufReader, Write};

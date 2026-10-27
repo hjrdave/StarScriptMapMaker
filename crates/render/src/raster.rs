@@ -1,5 +1,10 @@
 //! Turning Asset art into pixels (ADR 0003): SVG through resvg at whatever width is needed,
 //! PNG at its native resolution.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::path::{Path, PathBuf};
 

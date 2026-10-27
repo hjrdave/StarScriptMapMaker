@@ -1,5 +1,10 @@
 //! The live preview of a land brush stroke: the rough shore shown while painting is the one the
 //! stroke commits.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use ssmap_core::land::{BrushStroke, brush_command, difference, preview_area, signed_area};
 use ssmap_core::{

@@ -3,6 +3,11 @@
 //! Commands compile into Ops. Applying an Op returns its inverse, so undo is the reversed list
 //! of inverses. Ops check only the tree's structural rules; Commands do the user-level
 //! validation, such as Lock.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

@@ -1,4 +1,9 @@
 //! Coastline Roughness (ADR 0002).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::sync::Arc;
 

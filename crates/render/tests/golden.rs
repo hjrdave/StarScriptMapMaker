@@ -7,6 +7,11 @@
 //! - `SSMAP_GOLDEN_UPDATE=1` rewrites the golden PNGs from the current renders.
 //! - `SSMAP_REQUIRE_SOFTWARE_GPU=1` fails instead of falling back when there is no software
 //!   adapter. CI sets it on Linux and Windows.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::path::PathBuf;
 

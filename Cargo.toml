@@ -68,3 +68,7 @@ unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+too_many_lines = "warn"
+cognitive_complexity = "warn"

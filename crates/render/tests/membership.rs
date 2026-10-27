@@ -1,5 +1,10 @@
 //! Canvas members clip at the Canvas edge, pasteboard Objects draw in full, and export covers
 //! only the Canvas, wherever its origin is.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::convert::Infallible;
 

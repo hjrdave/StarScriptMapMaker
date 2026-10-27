@@ -1,4 +1,9 @@
 //! Map file save and open (ADR 0005).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::path::{Path, PathBuf};
 

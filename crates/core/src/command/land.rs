@@ -1,4 +1,9 @@
 //! Editing the outlines of Landmasses and Lakes: regions, boolean operations, node edits.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::collections::HashSet;
 

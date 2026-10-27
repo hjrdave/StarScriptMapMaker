@@ -3,6 +3,11 @@
 //! A tool opens a transaction, executes Commands live as a gesture goes on, and commits them
 //! as one Undo step; rollback cancels the gesture. History lives in memory under a budget and
 //! is never saved.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::collections::VecDeque;
 

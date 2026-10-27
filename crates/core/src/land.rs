@@ -3,6 +3,11 @@
 //!
 //! Everything this module returns is a valid stored outline: parts never overlap, exteriors
 //! are counter-clockwise and holes clockwise (positive and negative shoelace area).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use geo::orient::Direction;
 use geo::{

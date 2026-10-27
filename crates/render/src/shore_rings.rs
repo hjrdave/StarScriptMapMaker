@@ -1,6 +1,11 @@
 //! The rings ripples and shading follow, offset from roughened outlines. Offsetting a rough
 //! outline is slow, so rings are kept between builds, and the editor can have them computed
 //! on a thread of its own while it draws the rings it had (see [`RingWorker`]).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};

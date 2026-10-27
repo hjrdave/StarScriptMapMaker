@@ -1,4 +1,9 @@
 //! Asset pack manifests and the pack loader.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::path::{Path, PathBuf};
 
