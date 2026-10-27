@@ -169,7 +169,6 @@ impl LayerTree {
         // A Depth-sorted Layer orders its own Stamps; they can still be dragged to another Layer.
         if response.dragged() {
             response.dnd_set_drag_payload(row.id);
-            self.dragging = true;
         }
         if is_depth_sorted_stamp(map, row.id) {
             response.clone().on_hover_text(DEPTH_SORT_HINT);

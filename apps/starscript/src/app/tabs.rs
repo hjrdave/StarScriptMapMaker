@@ -1,4 +1,4 @@
-//! Tabs and windows: which tab shows, opening, closing and moving tabs between windows.
+//! Tabs: which tab shows, opening and closing them.
 
 use super::*;
 
@@ -14,178 +14,45 @@ impl MapMakerApp {
 
     pub(super) fn show_slot(&mut self, slot: tab_strip::Slot) {
         match slot {
-            // Home lives only in the main window.
-            tab_strip::Slot::Home => self.win.home_active = self.win.main,
+            tab_strip::Slot::Home => self.win.home_active = true,
             tab_strip::Slot::Map(index) => self.focus_tab(index),
         }
     }
 
-    pub(super) fn placement(&self) -> tab_strip::Placement {
-        if self.win.main {
-            tab_strip::Placement::Main
-        } else {
-            tab_strip::Placement::Popped
-        }
-    }
-
-    /// How many windows are open: the main one and those tabs were popped out into.
-    pub fn window_count(&self) -> usize {
-        1 + self.popped.len()
-    }
-
-    /// The tabs of popped-out window `window` (0 is the first one popped out).
-    /// Empty when there is no such window.
-    pub fn popped_tabs(&self, window: usize) -> &[MapTab] {
-        self.popped
-            .get(window)
-            .map_or(&[], |state| state.tabs.as_slice())
-    }
-
-    /// Runs `f` with popped-out window `window` standing in for the main one, so it acts on
-    /// that window's tabs as the menus and keys of that window do. `None`, without running
-    /// `f`, when there is no such window.
-    pub fn in_popped_window<R>(
-        &mut self,
-        window: usize,
-        f: impl FnOnce(&mut Self) -> R,
-    ) -> Option<R> {
-        std::mem::swap(&mut self.win, self.popped.get_mut(window)?);
-        let result = f(self);
-        // `f` may close or add windows, so look the window up again before swapping back.
-        if let Some(state) = self.popped.get_mut(window) {
-            std::mem::swap(&mut self.win, state);
-        }
-        Some(result)
-    }
-
-    /// Pops tab `index` out of this window into a new window of its own. Does nothing for a
-    /// tab that is still a start page, or the only tab of a popped-out window.
-    pub fn move_tab_to_new_window(&mut self, index: usize) {
+    /// Settles a tab let go at `at` after a drag: dropped on the strip it moves to that place
+    /// in the row, anywhere else it stays where it is. A start page or a tab being saved
+    /// stays too.
+    pub fn drop_tab(&mut self, index: usize, at: egui::Pos2) {
         let movable = self
             .win
             .tabs
             .get(index)
-            .is_some_and(|tab| !tab.is_blank() && tab.pending.is_none())
-            && (self.win.main || self.win.tabs.len() > 1);
-        if !movable {
+            .is_some_and(|tab| !tab.is_blank() && tab.pending.is_none());
+        if !movable || !self.win.strip.geometry.strip.contains(at) {
             return;
         }
-        let tab = self.take_tab(index);
-        self.popped_count += 1;
-        let mut win = self.new_window_state(egui::ViewportId::from_hash_of((
-            "popped window",
-            self.popped_count,
-        )));
-        win.shell = self.win.shell.clone();
-        win.tabs.push(tab);
-        self.popped.push(win);
-        self.app.egui_ctx.request_repaint();
-    }
-
-    /// Puts tab `index` of a popped-out window back in the main window, once this window's
-    /// frame is over. Does nothing in the main window.
-    pub fn move_tab_to_main_window(&mut self, index: usize) {
-        if self.win.main
-            || self
-                .win
-                .tabs
-                .get(index)
-                .is_none_or(|tab| tab.pending.is_some())
-        {
-            return;
+        let mut to = self
+            .win
+            .strip
+            .geometry
+            .drop_index(at.x, self.win.tabs.len());
+        if to > index {
+            to -= 1;
         }
-        let tab = self.take_tab(index);
-        self.app.returning.push(tab);
-        self.app.egui_ctx.request_repaint();
+        if to != index {
+            let tab = self.win.tabs.remove(index);
+            self.win.tabs.insert(to, tab);
+            self.win.active = to;
+            self.win.home_active = false;
+        }
     }
 
-    /// Takes tab `index` out of this window with its Recovery journal and everything else, and
-    /// keeps the same tab active if it can.
-    pub(super) fn take_tab(&mut self, index: usize) -> MapTab {
-        self.win.take_tab(index)
-    }
-
-    /// Test hook: lets go of tab `index` of window `window` (0 is the main one, then the popped
-    /// out ones) with the pointer at `at` on the screen, as the end of a drag does.
-    ///
-    /// # Panics
-    ///
-    /// Panics if there is no window `window`.
-    pub fn drop_tab(&mut self, window: usize, index: usize, at: egui::Pos2) {
-        let from = if window == 0 {
-            self.win.viewport
-        } else {
-            self.popped[window - 1].viewport
-        };
-        self.app.tab_drops.push(TabDrop { from, index, at });
-        self.app.egui_ctx.request_repaint();
-    }
-
-    /// Test hook: where window `window`'s tab strip is on the screen (0 is the main window).
-    ///
-    /// # Panics
-    ///
-    /// Panics if there is no window `window`.
+    /// Test hook: where the tab strip is in the window, and where the Map tabs start and how
+    /// wide each is.
     #[doc(hidden)]
-    pub fn strip_rect(&self, window: usize) -> egui::Rect {
-        if window == 0 {
-            self.win.strip_on_screen()
-        } else {
-            self.popped[window - 1].strip_on_screen()
-        }
-    }
-
-    /// Test hook: where the Map tabs of window `window` start, and how wide each is.
-    ///
-    /// # Panics
-    ///
-    /// Panics if there is no window `window`.
-    #[doc(hidden)]
-    pub fn tab_layout(&self, window: usize) -> (f32, f32) {
-        let state = if window == 0 {
-            &self.win
-        } else {
-            &self.popped[window - 1]
-        };
-        let geometry = state.strip.geometry;
-        (
-            geometry.tabs_left + state.screen_origin.x,
-            geometry.tab_width,
-        )
-    }
-
-    /// A window with no tabs and no dialogs open.
-    pub(super) fn new_window_state(&self, viewport: egui::ViewportId) -> WindowState {
-        let pick = || Pick::new(self.app.launch_dialog);
-        WindowState {
-            tabs: Vec::new(),
-            active: 0,
-            notices: Vec::new(),
-            home_active: false,
-            strip: tab_strip::State::default(),
-            screen_origin: egui::Pos2::ZERO,
-            content_size: egui::Vec2::ZERO,
-            canvas_zone: None,
-            layers_zone: None,
-            home: home::Home::default(),
-            shell: shell::Shell::default(),
-            drop_focus: false,
-            new_map_dialog: NewMapDialog::default(),
-            export: ExportFlow::new(self.app.launch_dialog),
-            open_dialog: pick(),
-            save_dialog: pick(),
-            pack_dialog: pick(),
-            pack_install: pack_install::PackInstall::default(),
-            delete_prompt: None,
-            pack_delete_prompt: None,
-            pack_trash: self.win.pack_trash,
-            paste_prompt: None,
-            close: CloseFlow::new(Leaving::Window),
-            window_hidden: false,
-            title: String::new(),
-            main: false,
-            viewport,
-        }
+    pub fn tab_layout(&self) -> (egui::Rect, f32, f32) {
+        let geometry = self.win.strip.geometry;
+        (geometry.strip, geometry.tabs_left, geometry.tab_width)
     }
 
     /// Asks to close this window, as its close button does: unsaved Maps are asked about first.
