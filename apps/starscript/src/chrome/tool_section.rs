@@ -28,7 +28,7 @@ pub fn icon(tool: ToolId) -> Icon {
         ToolId::Label => Icon::Label,
         ToolId::Stamp => Icon::Stamp,
         ToolId::StampEraser => Icon::StampEraser,
-        ToolId::ArtBoard | ToolId::ExportRegion => Icon::ExportRegion,
+        ToolId::Canvas | ToolId::ExportRegion => Icon::ExportRegion,
     }
 }
 

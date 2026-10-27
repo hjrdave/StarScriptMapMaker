@@ -1,4 +1,4 @@
-//! Canvas members clip at the Canvas edge, pasteboard Objects draw in full, and export covers
+//! Canvas members clip at the Canvas edge, off-Canvas Objects draw in full, and export covers
 //! only the Canvas, wherever its origin is.
 #![allow(
     clippy::unwrap_used,
@@ -105,7 +105,7 @@ fn view() -> View {
     }
 }
 
-fn pasteboard_colour(image: &RgbaImage) -> [u8; 4] {
+fn off_canvas_colour(image: &RgbaImage) -> [u8; 4] {
     pixel(image, 5, 5)
 }
 
@@ -119,7 +119,7 @@ fn a_member_overflowing_the_edge_is_clipped() {
         Membership::Canvas,
     );
     let image = render(&headless, &map, &view());
-    let outside = pasteboard_colour(&image);
+    let outside = off_canvas_colour(&image);
     assert!(!is(outside, LAND) && !is(outside, WATER));
     assert!(is(pixel(&image, 250, 200), LAND), "inside the Canvas");
     assert!(is(pixel(&image, 150, 200), WATER), "left of the block");
@@ -128,13 +128,13 @@ fn a_member_overflowing_the_edge_is_clipped() {
 }
 
 #[test]
-fn a_pasteboard_object_is_drawn_in_full() {
+fn an_off_canvas_object_is_drawn_in_full() {
     let Some(headless) = gpu() else { return };
     let map = map_with_block(
         [0.0, 0.0],
         [100.0, 300.0],
         [50.0, 150.0],
-        Membership::Pasteboard,
+        Membership::OffCanvas,
     );
     let image = render(&headless, &map, &view());
     assert!(is(pixel(&image, 250, 200), LAND), "over the Canvas");
@@ -162,7 +162,7 @@ fn a_canvas_with_an_origin_renders_where_it_sits() {
         size: [400, 400],
     };
     let image = render(&headless, &map, &view);
-    let outside = pasteboard_colour(&image);
+    let outside = off_canvas_colour(&image);
     assert!(!is(outside, LAND) && !is(outside, WATER));
     assert_eq!(pixel(&image, 75, 75), outside, "the block is clipped");
     assert_eq!(pixel(&image, 150, 50), outside, "above the Canvas");
@@ -234,13 +234,13 @@ fn export_holds_only_the_clipped_canvas() {
 }
 
 #[test]
-fn export_leaves_out_pasteboard_objects() {
+fn export_leaves_out_off_canvas_objects() {
     let Some(headless) = gpu() else { return };
     let map = map_with_block(
         [0.0, 0.0],
         [50.0, 150.0],
         [50.0, 150.0],
-        Membership::Pasteboard,
+        Membership::OffCanvas,
     );
     let image = export(&headless, &map, None);
     assert!(

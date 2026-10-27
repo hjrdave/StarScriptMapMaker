@@ -42,8 +42,8 @@ pub struct PlacedStamp {
     pub after: usize,
     /// The index of the content's Clip scope it shows inside, if any.
     pub clip: Option<usize>,
-    /// The Stamp is on the pasteboard: drawn in full, not clipped at the Canvas edge.
-    pub pasteboard: bool,
+    /// The Stamp is on the off-Canvas: drawn in full, not clipped at the Canvas edge.
+    pub off_canvas: bool,
     pub draw: StampDraw,
 }
 
@@ -107,7 +107,7 @@ pub(crate) struct Batch {
 struct Run {
     after: usize,
     clip: Option<usize>,
-    pasteboard: bool,
+    off_canvas: bool,
     batches: Vec<Batch>,
 }
 
@@ -314,13 +314,13 @@ impl StampRenderer {
             let index = instances.len() as u32 - 1;
             let pages = (uploaded.art.page, uploaded.silhouette.page);
             if runs.last().is_none_or(|run| {
-                (run.after, run.clip, run.pasteboard)
-                    != (placed.after, placed.clip, placed.pasteboard)
+                (run.after, run.clip, run.off_canvas)
+                    != (placed.after, placed.clip, placed.off_canvas)
             }) {
                 runs.push(Run {
                     after: placed.after,
                     clip: placed.clip,
-                    pasteboard: placed.pasteboard,
+                    off_canvas: placed.off_canvas,
                     batches: Vec::new(),
                 });
             }
@@ -351,7 +351,7 @@ impl StampRenderer {
     }
 
     /// The Stamps placed after `after` vector groups, in draw order: for each Clip scope
-    /// they show inside, whether they are on the pasteboard, and its batches.
+    /// they show inside, whether they are on the off-Canvas, and its batches.
     pub(crate) fn runs_after(
         &self,
         after: usize,
@@ -359,7 +359,7 @@ impl StampRenderer {
         self.runs
             .iter()
             .filter(move |run| run.after == after)
-            .map(|run| (run.clip, run.pasteboard, run.batches.as_slice()))
+            .map(|run| (run.clip, run.off_canvas, run.batches.as_slice()))
     }
 
     /// Draws batches from [`StampRenderer::runs_after`], only inside the active Clip if

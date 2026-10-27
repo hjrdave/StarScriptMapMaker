@@ -94,7 +94,7 @@ pub struct Object {
     pub name: Option<String>,
     pub locked: bool,
     /// Whether the Object belongs to the Canvas (and is clipped at its edge) or sits on the
-    /// pasteboard. Changed only by dragging, never by resizing the Canvas.
+    /// off-Canvas. Changed only by dragging, never by resizing the Canvas.
     #[serde(default, skip_serializing_if = "Membership::is_default")]
     pub membership: Membership,
     pub kind: ObjectKind,
@@ -118,16 +118,17 @@ impl Object {
     }
 }
 
-/// Which board an Object belongs to. A member is clipped at the Canvas edge and exported;
-/// a pasteboard Object shows in full around the Canvas and is not exported.
+/// Whether an Object belongs to the Canvas or sits off it. A member is clipped at the Canvas edge
+/// and exported; an off-Canvas Object shows in full around the Canvas and is not exported.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Membership {
     /// Belongs to the Canvas. Files saved before membership existed get this.
     #[default]
     Canvas,
-    /// Belongs to no board.
-    Pasteboard,
+    /// Sits off the Canvas. Saved as `pasteboard`, the name files and journals already use.
+    #[serde(rename = "pasteboard")]
+    OffCanvas,
 }
 
 impl Membership {
@@ -450,5 +451,18 @@ impl Default for Halo {
             color: Color::rgb(0xf4, 0xec, 0xd8),
             extra: Extra::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn off_canvas_keeps_its_saved_name() {
+        let json = serde_json::to_string(&Membership::OffCanvas).unwrap();
+        assert_eq!(json, "\"pasteboard\"");
+        let back: Membership = serde_json::from_str("\"pasteboard\"").unwrap();
+        assert_eq!(back, Membership::OffCanvas);
     }
 }

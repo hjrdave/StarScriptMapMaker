@@ -405,7 +405,7 @@ impl LabelLayout {
             shapes,
             effect: false,
             object: None,
-            pasteboard: false,
+            off_canvas: false,
         }
     }
 }

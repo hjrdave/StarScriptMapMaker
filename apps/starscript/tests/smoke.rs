@@ -508,7 +508,7 @@ fn membership(harness: &Harness<'_, MapMakerApp>, id: ssmap_core::Id) -> ssmap_c
 }
 
 #[test]
-fn dragging_an_object_on_and_off_the_canvas_changes_its_board_in_one_undo_step() {
+fn dragging_an_object_on_and_off_the_canvas_changes_its_membership_in_one_undo_step() {
     use ssmap_core::Membership;
     let (map, island, _) = island_map();
     let mut harness = Harness::builder()
@@ -537,11 +537,11 @@ fn dragging_an_object_on_and_off_the_canvas_changes_its_board_in_one_undo_step()
     );
     assert_eq!(membership(&harness, island), Membership::Canvas);
 
-    // The pointer off the Canvas: it becomes a pasteboard object, in one undo step.
+    // The pointer off the Canvas: it becomes an off-Canvas object, in one undo step.
     let from = screen(&harness, [10.0, 300.0]);
     let off = screen(&harness, [-30.0, 300.0]);
     drag(&mut harness, from, off, true);
-    assert_eq!(membership(&harness, island), Membership::Pasteboard);
+    assert_eq!(membership(&harness, island), Membership::OffCanvas);
     assert_eq!(harness.state().editor().undo_label(), Some("Move"));
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
     harness.run();
@@ -552,7 +552,7 @@ fn dragging_an_object_on_and_off_the_canvas_changes_its_board_in_one_undo_step()
     let from = screen(&harness, [10.0, 300.0]);
     let off = screen(&harness, [-30.0, 300.0]);
     drag(&mut harness, from, off, true);
-    assert_eq!(membership(&harness, island), Membership::Pasteboard);
+    assert_eq!(membership(&harness, island), Membership::OffCanvas);
     let from = screen(&harness, [-30.0, 300.0]);
     let on = screen(&harness, [60.0, 300.0]);
     drag(&mut harness, from, on, true);

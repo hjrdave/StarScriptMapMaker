@@ -487,7 +487,7 @@ mod tests {
             }],
             effect: false,
             object: Some(object),
-            pasteboard: false,
+            off_canvas: false,
         }
     }
 

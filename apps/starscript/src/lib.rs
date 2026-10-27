@@ -18,7 +18,7 @@ pub use packs::pack_install;
 pub use panels::prop_widgets;
 pub use workspace::{clipboard, credits, document, editor, home, shell, tools, update};
 
-use canvas::{art_board, canvas_controls, canvas_view, tessellation};
+use canvas::{canvas_controls, canvas_resize, canvas_view, tessellation};
 use chrome::{tab_strip, tool_dock, tool_section};
 use packs::pack_page;
 use panels::{asset_browser, label_styles, layer_tree, properties};

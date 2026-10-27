@@ -98,13 +98,13 @@ fn membership_changes_only_when_asked() {
     let (mut map, id) = map_with_landmass(square(10.0, 10.0, 20.0));
     map.execute(&Command::SetMembership {
         ids: vec![id],
-        membership: Membership::Pasteboard,
+        membership: Membership::OffCanvas,
     })
     .unwrap();
-    assert_eq!(membership(&map, id), Membership::Pasteboard);
+    assert_eq!(membership(&map, id), Membership::OffCanvas);
     // Resizing to cover the Object does not adopt it.
     resize(&mut map, [-100.0, -100.0], 400, 400);
-    assert_eq!(membership(&map, id), Membership::Pasteboard);
+    assert_eq!(membership(&map, id), Membership::OffCanvas);
 }
 
 #[test]
@@ -114,7 +114,7 @@ fn membership_needs_an_unlocked_object() {
     assert!(matches!(
         map.execute(&Command::SetMembership {
             ids: vec![layer],
-            membership: Membership::Pasteboard,
+            membership: Membership::OffCanvas,
         }),
         Err(CommandError::NotAnObject(_))
     ));
@@ -123,7 +123,7 @@ fn membership_needs_an_unlocked_object() {
     assert!(matches!(
         map.execute(&Command::SetMembership {
             ids: vec![id],
-            membership: Membership::Pasteboard,
+            membership: Membership::OffCanvas,
         }),
         Err(CommandError::Locked(_))
     ));
@@ -185,7 +185,7 @@ fn undo_restores_membership() {
             &mut map,
             &Command::SetMembership {
                 ids: vec![id],
-                membership: Membership::Pasteboard,
+                membership: Membership::OffCanvas,
             },
             vec![],
         )
@@ -193,7 +193,7 @@ fn undo_restores_membership() {
     history.undo(&mut map).unwrap();
     assert_eq!(membership(&map, id), Membership::Canvas);
     history.redo(&mut map).unwrap();
-    assert_eq!(membership(&map, id), Membership::Pasteboard);
+    assert_eq!(membership(&map, id), Membership::OffCanvas);
 }
 
 #[test]
@@ -202,7 +202,7 @@ fn origin_and_membership_round_trip_through_json() {
     resize(&mut map, [-5.5, 7.0], 30, 30);
     map.execute(&Command::SetMembership {
         ids: vec![id],
-        membership: Membership::Pasteboard,
+        membership: Membership::OffCanvas,
     })
     .unwrap();
     let json = serde_json::to_string(&map.view()).unwrap();
@@ -216,7 +216,7 @@ fn origin_and_membership_survive_a_save_and_reopen() {
     resize(&mut map, [-5.5, 7.0], 30, 30);
     map.execute(&Command::SetMembership {
         ids: vec![id],
-        membership: Membership::Pasteboard,
+        membership: Membership::OffCanvas,
     })
     .unwrap();
     let dir = tempfile::tempdir().unwrap();

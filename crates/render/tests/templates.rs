@@ -104,7 +104,7 @@ fn every_template_renders_and_screen_and_export_match() {
             template.name()
         );
 
-        // The Canvas is the template's water, not the pasteboard or the default ocean.
+        // The Canvas is the template's water, not the off-Canvas or the default ocean.
         let centre = pixel(&screen, SIDES[0] / 2, SIDES[1] / 2);
         assert_eq!(centre[3], 0xff);
         waters.push((template.name().to_owned(), centre));

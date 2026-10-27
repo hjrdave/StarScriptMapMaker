@@ -126,8 +126,8 @@ pub(super) fn start_drag(
 }
 
 /// The `SetMembership` Command a move drag ends each frame with: the pointer at `point`
-/// decides the board the dragged Objects belong to, inside the Canvas or off it, as in Figma.
-/// `None` when nothing changes board, or for a resize or rotation.
+/// decides whether the dragged Objects belong to the Canvas or sit off it, as in Figma.
+/// `None` when nothing changes membership, or for a resize or rotation.
 pub(super) fn membership_command(editor: &Editor, drag: &Drag, point: [f64; 2]) -> Option<Command> {
     if drag.grip.is_some() {
         return None;
@@ -140,7 +140,7 @@ pub(super) fn membership_command(editor: &Editor, drag: &Drag, point: [f64; 2]) 
     let target = if inside {
         Membership::Canvas
     } else {
-        Membership::Pasteboard
+        Membership::OffCanvas
     };
     let moved: Vec<Id> = match &drag.copies {
         Some((_, new_ids)) => new_ids.clone(),

@@ -8,7 +8,7 @@ use ssmap_app::MapMakerApp;
 use ssmap_core::{Canvas, DistanceUnit, Id, Scale};
 
 /// Canvas points of the three Labels: two near each other, one far off, and a spot on the
-/// pasteboard outside the Canvas.
+/// off-Canvas outside the Canvas.
 const A: [f64; 2] = [1000.0, 1000.0];
 const B: [f64; 2] = [2000.0, 1000.0];
 const C: [f64; 2] = [3000.0, 2500.0];
@@ -156,7 +156,7 @@ fn a_box_drag_selects_what_it_touches() {
 }
 
 #[test]
-fn a_box_drag_can_start_on_the_pasteboard() {
+fn a_box_drag_can_start_on_the_off_canvas() {
     let (mut harness, [a, b, _]) = app();
     // Starting outside the Canvas edge, up and to the left of everything.
     let origin = screen(&harness, [0.0, 0.0]) - egui::vec2(20.0, 20.0);

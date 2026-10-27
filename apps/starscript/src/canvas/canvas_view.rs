@@ -72,8 +72,8 @@ pub fn render_whole_canvas(
         resources.renderer.use_tessellation_cache(cache);
     }
     let mut scene = CanvasScene::new(&editor.map.canvas).with_content(editor.scene_content());
-    // The preview is of the Canvas alone, so pasteboard Objects stay out of it.
-    scene.pasteboard_objects = false;
+    // The preview is of the Canvas alone, so off-Canvas Objects stay out of it.
+    scene.off_canvas_objects = false;
     let view = View::whole_canvas_at(scene.canvas_origin, scene.canvas_size, longest_side);
     // A failed readback leaves the Map without a preview rather than crashing.
     render_to_image(
@@ -333,11 +333,11 @@ impl CanvasView {
             response.hover_pos(),
             ppp,
         );
-        if let Some(text) = self.tools.board_hud(editor)
+        if let Some(text) = self.tools.canvas_hud(editor)
             && let Some(pointer) = ui.input(|i| i.pointer.latest_pos())
         {
             let palette = crate::theme::palette(ui.ctx());
-            egui::Area::new(egui::Id::new("board_hud"))
+            egui::Area::new(egui::Id::new("canvas_hud"))
                 .order(egui::Order::Tooltip)
                 .interactable(false)
                 .fixed_pos(pointer + egui::vec2(14.0, 14.0))
@@ -559,7 +559,7 @@ fn paint_missing_names(
     }
 }
 
-/// The pasteboard and a flat Canvas, for when there is no GPU to render with.
+/// The off-Canvas and a flat Canvas, for when there is no GPU to render with.
 fn paint_placeholder(
     painter: &egui::Painter,
     rect: egui::Rect,
@@ -568,7 +568,7 @@ fn paint_placeholder(
     ppp: f64,
 ) {
     let color = |c: ssmap_render::Color| egui::Color32::from_rgb(c.r, c.g, c.b);
-    painter.rect_filled(rect, 0.0, color(scene.pasteboard));
+    painter.rect_filled(rect, 0.0, color(scene.off_canvas));
     let corner = |p: [f64; 2]| {
         rect.min
             + egui::vec2(

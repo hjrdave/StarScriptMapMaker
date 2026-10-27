@@ -24,7 +24,7 @@ wherever the file lives. A new module goes in its group's `mod.rs` and gets a re
 - `app/`: `MapMakerApp`, the eframe app that ties the groups together
 - `workspace/`: Map documents and app state: `document`, `editor`, `shell`, `home`, `tools`,
   `clipboard`, `credits`, `recent`, `file_actions`, `update`
-- `canvas/`: the Map view: `canvas_view`, `canvas_controls`, `art_board`, `overlay`, `handles`,
+- `canvas/`: the Map view: `canvas_view`, `canvas_controls`, `canvas_resize`, `overlay`, `handles`,
   `zoom`, `tessellation`, `frame_time`
 - `panels/`: side panels: `layer_tree`, `properties`, `prop_widgets`, `asset_browser`, `label_styles`
 - `chrome/`: window chrome: `menu`, `native_menu`, `tab`, `tab_strip`, `tool_dock`,

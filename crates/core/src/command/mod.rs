@@ -212,7 +212,7 @@ pub enum Command {
         width: u32,
         height: u32,
     },
-    /// Sets whether Objects belong to the Canvas or sit on the pasteboard. Only a drag
+    /// Sets whether Objects belong to the Canvas or sit on the off-Canvas. Only a drag
     /// changes membership; resizing the Canvas never does.
     SetMembership {
         ids: Vec<Id>,
@@ -391,7 +391,7 @@ impl Command {
             Command::Subtract { .. } => "Subtract",
             Command::SplitApart { .. } => "Split Apart",
             Command::ResizeCanvas { .. } => "Resize Canvas",
-            Command::SetMembership { .. } => "Change Board",
+            Command::SetMembership { .. } => "Move On or Off Canvas",
             Command::SetFill { .. } => "Change Fill",
             Command::SetRoughness { .. } => "Change Roughness",
             Command::SetBackground { .. } => "Change Background",

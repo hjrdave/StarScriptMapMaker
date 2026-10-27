@@ -1,24 +1,24 @@
-//! The maths behind the Art board tool's resize: dragging a handle of the Canvas, with Shift
+//! The maths behind the Canvas tool's resize: dragging a handle of the Canvas, with Shift
 //! keeping the aspect ratio and Alt resizing from the centre. Kept in Canvas units and free
 //! of any window so it can be tested headlessly.
 
 use crate::handles::Handle;
 
-/// The smallest side, in Canvas units, the board may be dragged to.
+/// The smallest side, in Canvas units, the Canvas may be dragged to.
 const MIN_SIDE: f64 = 1.0;
 
-/// A handle drag on the board, remembering the board as it was when the drag began so that
+/// A handle drag on the Canvas, remembering the Canvas as it was when the drag began so that
 /// every frame works from the start and nothing drifts.
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub struct BoardDrag {
+pub struct CanvasDrag {
     pub handle: Handle,
     pub start: [f64; 2],
     pub origin: [f64; 2],
     pub size: [u32; 2],
 }
 
-impl BoardDrag {
-    /// The board's origin and size with the pointer at `pointer`.
+impl CanvasDrag {
+    /// The Canvas's origin and size with the pointer at `pointer`.
     pub fn resized(&self, pointer: [f64; 2], shift: bool, alt: bool) -> ([f64; 2], u32, u32) {
         resized(
             self.origin,
@@ -31,7 +31,7 @@ impl BoardDrag {
     }
 }
 
-/// The board after dragging `handle` by `delta`. The side opposite the handle stays put, or
+/// The Canvas after dragging `handle` by `delta`. The side opposite the handle stays put, or
 /// with `alt` the centre does. With `shift` the aspect ratio is kept: a corner follows the
 /// larger change, and an edge scales the other axis about the middle.
 pub fn resized(
@@ -73,7 +73,7 @@ pub fn resized(
     let new = [f64::from(width), f64::from(height)];
     let origin = [0, 1].map(|axis| {
         if alt || sign[axis] == 0.0 {
-            // Centred: about the board's centre.
+            // Centred: about the Canvas's centre.
             origin[axis] + (old[axis] - new[axis]) / 2.0
         } else if sign[axis] < 0.0 {
             // The far side stays put.
@@ -85,9 +85,9 @@ pub fn resized(
     (origin, width, height)
 }
 
-/// The text of the cursor HUD while the board is being resized.
+/// The text of the cursor HUD while the Canvas is being resized.
 pub fn hud_text(width: u32, height: u32) -> String {
-    format!("Board · {width} × {height}")
+    format!("Canvas · {width} × {height}")
 }
 
 #[cfg(test)]
@@ -145,13 +145,13 @@ mod tests {
     }
 
     #[test]
-    fn dragging_past_the_far_side_stops_at_the_smallest_board() {
+    fn dragging_past_the_far_side_stops_at_the_smallest_canvas() {
         let (origin, w, h) = resized(ORIGIN, SIZE, Handle::Right, [-900.0, 0.0], false, false);
         assert_eq!((origin, w, h), (ORIGIN, 1, 200));
     }
 
     #[test]
-    fn the_hud_names_the_board_and_its_size() {
-        assert_eq!(hud_text(4096, 2560), "Board · 4096 × 2560");
+    fn the_hud_names_the_canvas_and_its_size() {
+        assert_eq!(hud_text(4096, 2560), "Canvas · 4096 × 2560");
     }
 }

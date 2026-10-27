@@ -122,9 +122,9 @@ impl PropertiesPanel {
 
     fn selection(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         match editor.selection() {
-            [] if editor.board_selected() => {
+            [] if editor.canvas_selected() => {
                 let canvas = editor.map.canvas.clone();
-                heading(ui, "Board");
+                heading(ui, "Canvas");
                 self.canvas_fields(ui, editor, &canvas);
             }
             [] => {
