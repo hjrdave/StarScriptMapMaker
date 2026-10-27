@@ -43,63 +43,10 @@ impl MapMakerApp {
     }
 
     /// One frame of the editor.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "existing long function; split over time (#351)"
-    )]
     pub(super) fn show(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        if self.win.main {
-            self.app.overlay.begin_frame(&ctx);
-            self.app.overlay.show(&ctx);
-            // ⌘+ and ⌘− zoom the Canvas only: keep egui's whole-UI zoom off and the scale at 1.
-            ctx.options_mut(|o| o.zoom_with_keyboard = false);
-            if ctx.zoom_factor() != 1.0 {
-                ctx.set_zoom_factor(1.0);
-            }
-        }
-        // What Copy or Cut took last frame goes to the system clipboard as text.
-        if let Some(text) = self
-            .win
-            .tabs
-            .get_mut(self.win.active)
-            .and_then(|tab| tab.editor.take_clipboard_text())
-        {
-            self.app.clipboard = clipboard::Clipboard::from_text(&text);
-            ctx.copy_text(text);
-        }
-        // Dialogs take the keyboard while they are open.
-        self.handle_close(&ctx);
-        let dialog_open = self.dialog_open();
-        if std::mem::take(&mut self.win.drop_focus) {
-            // The ⇥ that toggled the panels also moved keyboard focus into one of them.
-            ctx.memory_mut(|memory| {
-                if let Some(id) = memory.focused() {
-                    memory.surrender_focus(id);
-                }
-            });
-        }
-        let window_width = if self.win.main {
-            ctx.content_rect().width()
-        } else {
-            ui.max_rect().width()
-        };
-        self.win.shell.set_window_width(window_width);
-        let panels_were_hidden = self.win.shell.panels_hidden();
-        if !dialog_open && self.win.shell.overlay_open() {
-            // Esc closes an open panel overlay before anything else sees it.
-            if ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
-                self.win.shell.close_overlays();
-            }
-        }
-        if !dialog_open {
-            let _input = ssmap_render::profile::stage(ssmap_render::profile::Stage::Input);
-            self.open_dropped_files(&ctx);
-            self.shortcuts(&ctx);
-        }
-        self.win.drop_focus = self.win.shell.panels_hidden() != panels_were_hidden;
-        self.dialogs(&ctx);
-        self.update_title(&ctx);
+        self.begin_frame(&ctx);
+        let dialog_open = self.handle_input(ui, &ctx);
         let strip = egui::Frame::NONE.fill(theme::palette(&ctx).bg_chrome);
         egui::Panel::top("tabs")
             .exact_size(theme::metrics::TITLE_BAR_WITH_TABS)
@@ -214,10 +161,88 @@ impl MapMakerApp {
                 shell::divider(ui, &mut self.win.shell, side, rect);
             }
         }
+        self.show_overlays(&ctx, canvas.response.rect, [layers_rail, properties_rail]);
+        self.track_drag(&ctx);
+        self.journal(&ctx);
+    }
+
+    /// The start of a frame: the in-app overlay, egui's zoom held at 1, and what Copy or Cut
+    /// took last frame, which goes to the system clipboard as text.
+    fn begin_frame(&mut self, ctx: &egui::Context) {
+        if self.win.main {
+            self.app.overlay.begin_frame(ctx);
+            self.app.overlay.show(ctx);
+            // ⌘+ and ⌘− zoom the Canvas only: keep egui's whole-UI zoom off and the scale at 1.
+            ctx.options_mut(|o| o.zoom_with_keyboard = false);
+            if ctx.zoom_factor() != 1.0 {
+                ctx.set_zoom_factor(1.0);
+            }
+        }
+        // What Copy or Cut took last frame goes to the system clipboard as text.
+        if let Some(text) = self
+            .win
+            .tabs
+            .get_mut(self.win.active)
+            .and_then(|tab| tab.editor.take_clipboard_text())
+        {
+            self.app.clipboard = clipboard::Clipboard::from_text(&text);
+            ctx.copy_text(text);
+        }
+    }
+
+    /// Handles close requests, drops, the Escape that closes a panel overlay and the shortcuts,
+    /// then shows the dialogs and sets the window title. Returns whether a dialog is open.
+    fn handle_input(&mut self, ui: &egui::Ui, ctx: &egui::Context) -> bool {
+        // Dialogs take the keyboard while they are open.
+        self.handle_close(ctx);
+        let dialog_open = self.dialog_open();
+        if std::mem::take(&mut self.win.drop_focus) {
+            // The ⇥ that toggled the panels also moved keyboard focus into one of them.
+            ctx.memory_mut(|memory| {
+                if let Some(id) = memory.focused() {
+                    memory.surrender_focus(id);
+                }
+            });
+        }
+        let window_width = if self.win.main {
+            ctx.content_rect().width()
+        } else {
+            ui.max_rect().width()
+        };
+        self.win.shell.set_window_width(window_width);
+        let panels_were_hidden = self.win.shell.panels_hidden();
+        if !dialog_open && self.win.shell.overlay_open() {
+            // Esc closes an open panel overlay before anything else sees it.
+            if ctx.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+                self.win.shell.close_overlays();
+            }
+        }
+        if !dialog_open {
+            let _input = ssmap_render::profile::stage(ssmap_render::profile::Stage::Input);
+            self.open_dropped_files(ctx);
+            self.shortcuts(ctx);
+        }
+        self.win.drop_focus = self.win.shell.panels_hidden() != panels_were_hidden;
+        self.dialogs(ctx);
+        self.update_title(ctx);
+        dialog_open
+    }
+
+    /// A rail's panel opened over the Canvas, which a press anywhere else closes. `rails` are the
+    /// Layers and Properties rails, left out of that because they toggle it.
+    fn show_overlays(
+        &mut self,
+        ctx: &egui::Context,
+        canvas_rect: egui::Rect,
+        rails: [Option<egui::Rect>; 2],
+    ) {
+        let [layers_rail, properties_rail] = rails;
+        let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
+            return;
+        };
         // A rail's panel opened over the Canvas: Layers from the left, Properties as a
         // floating inspector pinned to the top right.
-        let canvas_rect = canvas.response.rect;
-        let palette = theme::palette(&ctx);
+        let palette = theme::palette(ctx);
         let overlay_frame = egui::Frame::new()
             .fill(palette.bg_panel)
             .stroke(egui::Stroke::new(1.0, palette.border_strong))
@@ -233,7 +258,7 @@ impl MapMakerApp {
             let area = egui::Area::new(egui::Id::new("layers overlay"))
                 .order(egui::Order::Foreground)
                 .fixed_pos(canvas_rect.min)
-                .show(&ctx, |ui| {
+                .show(ctx, |ui| {
                     overlay_frame.show(ui, |ui| {
                         ui.set_width(width);
                         ui.set_height(canvas_rect.height());
@@ -249,7 +274,7 @@ impl MapMakerApp {
             let area = egui::Area::new(egui::Id::new("properties inspector"))
                 .order(egui::Order::Foreground)
                 .fixed_pos(canvas_rect.right_top() + egui::vec2(-width - MARGIN, MARGIN))
-                .show(&ctx, |ui| {
+                .show(ctx, |ui| {
                     overlay_frame.show(ui, |ui| {
                         ui.set_width(width);
                         ui.set_height(height);
@@ -278,7 +303,5 @@ impl MapMakerApp {
                 self.win.shell.close_overlays();
             }
         }
-        self.track_drag(&ctx);
-        self.journal(&ctx);
     }
 }
