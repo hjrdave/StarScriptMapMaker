@@ -405,7 +405,7 @@ impl LabelLayout {
             shapes,
             effect: false,
             object: None,
-            off_canvas: false,
+            placement: crate::vector::Placement::Canvas,
         }
     }
 }

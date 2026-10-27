@@ -292,7 +292,7 @@ impl CanvasView {
             Quality::Full
         };
         // After input, so this frame shows this frame's edits.
-        let scene = CanvasScene::new(editor.map().canvas())
+        let scene = CanvasScene::for_map(editor.map())
             .with_content(editor.scene_content())
             .with_quality(quality);
         let painter = ui.painter_at(rect);
@@ -323,6 +323,14 @@ impl CanvasView {
             let select = crate::theme::palette(ui.ctx()).select;
             handles::paint(&painter, &bounds, &view, rect.min, ppp, rotatable, select);
         }
+        paint_board_labels(
+            &painter,
+            editor.map(),
+            &view,
+            rect.min,
+            ppp,
+            crate::theme::palette(ui.ctx()).text_secondary,
+        );
         paint_missing_names(&painter, editor, &view, rect.min, ppp);
         tools::paint_overlay(
             &painter,
@@ -540,6 +548,33 @@ impl CanvasView {
     }
 }
 
+/// Names each board above its top-left corner, once the Map has more than the Canvas.
+fn paint_board_labels(
+    painter: &egui::Painter,
+    map: &ssmap_core::Map,
+    view: &View,
+    origin: egui::Pos2,
+    ppp: f64,
+    color: egui::Color32,
+) {
+    if map.boards().len() < 2 {
+        return;
+    }
+    for board in map.boards() {
+        let Some(label) = map.board_label(board.id) else {
+            continue;
+        };
+        let corner = handles::to_screen(view, origin, ppp, board.canvas.origin);
+        painter.text(
+            corner - egui::vec2(0.0, 4.0),
+            egui::Align2::LEFT_BOTTOM,
+            label,
+            egui::FontId::proportional(12.0),
+            color,
+        );
+    }
+}
+
 /// Writes the Asset's name on the box drawn for each Stamp whose Asset is not installed.
 fn paint_missing_names(
     painter: &egui::Painter,
@@ -586,6 +621,16 @@ fn paint_placeholder(
         ]),
     );
     painter.rect_filled(canvas, 0.0, color(scene.backdrop.water));
+    for board in &scene.art_boards {
+        let area = egui::Rect::from_two_pos(
+            corner(board.origin),
+            corner([
+                board.origin[0] + board.size[0],
+                board.origin[1] + board.size[1],
+            ]),
+        );
+        painter.rect_filled(area, 0.0, color(board.backdrop.water));
+    }
 }
 
 struct CanvasCallback {

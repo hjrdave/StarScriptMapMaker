@@ -482,7 +482,7 @@ mod tests {
             }],
             effect: false,
             object: Some(object),
-            off_canvas: false,
+            placement: crate::vector::Placement::Canvas,
         }
     }
 

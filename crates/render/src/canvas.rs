@@ -16,8 +16,8 @@ use crate::profile::{self, Stage};
 use crate::sprite::SpriteStore;
 use crate::stamp::{PlacedStamp, StampRenderer};
 use crate::vector::{
-    APPLY_BUDGET, DrawFilter, FillRule, LyonRenderer, TessellationCache, TessellationRebuild,
-    VectorGroup,
+    APPLY_BUDGET, DrawFilter, FillRule, LyonRenderer, Placement, TessellationCache,
+    TessellationRebuild, VectorGroup,
 };
 use crate::view::View;
 
@@ -58,6 +58,26 @@ impl From<&ssmap_core::Background> for Backdrop {
             texture_scale: texture.scale,
             texture_light: texture.light,
             texture_dark: texture.dark,
+        }
+    }
+}
+
+/// A board of the scene besides the Canvas: an Art board's rectangle and background.
+#[derive(Clone, PartialEq, Debug)]
+pub struct BoardArea {
+    /// Size in Canvas units.
+    pub size: [f64; 2],
+    /// The top-left corner in workspace coordinates.
+    pub origin: [f64; 2],
+    pub backdrop: Backdrop,
+}
+
+impl From<&ssmap_core::Canvas> for BoardArea {
+    fn from(board: &ssmap_core::Canvas) -> Self {
+        Self {
+            size: [f64::from(board.width), f64::from(board.height)],
+            origin: board.origin,
+            backdrop: Backdrop::from(&board.background),
         }
     }
 }
@@ -167,7 +187,10 @@ pub struct CanvasScene {
     /// The Canvas's top-left corner in workspace coordinates.
     pub canvas_origin: [f64; 2],
     pub backdrop: Backdrop,
-    /// The area around the Canvas. Editor-only; export never shows it.
+    /// The Art boards, in the Map's order without the Canvas: [`Placement::Board`] counts
+    /// them. Empty for export, which draws the Canvas only.
+    pub art_boards: Vec<BoardArea>,
+    /// The area around the boards. Editor-only; export never shows it.
     pub off_canvas: Color,
     /// Drawn over the backdrop.
     pub content: Content,
@@ -182,11 +205,25 @@ impl CanvasScene {
             canvas_size: [f64::from(canvas.width), f64::from(canvas.height)],
             canvas_origin: canvas.origin,
             backdrop: Backdrop::from(&canvas.background),
+            art_boards: Vec::new(),
             off_canvas: Color::rgb(0x1c, 0x1c, 0x1f),
             content: Content::default(),
             quality: Quality::Full,
             off_canvas_objects: true,
         }
+    }
+
+    /// A scene of every board of `map`: the Canvas and its Art boards, each with its own
+    /// background. Export uses [`CanvasScene::new`], which has the Canvas only.
+    pub fn for_map(map: &ssmap_core::Map) -> Self {
+        let mut scene = Self::new(map.canvas());
+        scene.art_boards = map
+            .boards()
+            .iter()
+            .filter(|board| board.id != map.primary_board())
+            .map(|board| BoardArea::from(&board.canvas))
+            .collect();
+        scene
     }
 
     pub fn with_quality(mut self, quality: Quality) -> Self {
@@ -206,6 +243,7 @@ struct BackdropKey {
     canvas_size: [f64; 2],
     canvas_origin: [f64; 2],
     backdrop: Backdrop,
+    art_boards: Vec<BoardArea>,
 }
 
 pub struct CanvasRenderer {
@@ -376,6 +414,7 @@ impl CanvasRenderer {
             canvas_size: scene.canvas_size,
             canvas_origin: scene.canvas_origin,
             backdrop: scene.backdrop,
+            art_boards: scene.art_boards.clone(),
         };
         if self.drawn_backdrop.as_ref() != Some(&backdrop) {
             self.set_backdrop(device, queue, backdrop);
@@ -396,10 +435,11 @@ impl CanvasRenderer {
                     .cuts()
                     .chain(clips.iter().flat_map(|c| [c.groups.start, c.groups.end]))
                     .collect();
-                // Off-Canvas Objects draw unscissored, so a run never mixes them with members.
+                // Each board scissors its members, and Objects off the boards draw unscissored,
+                // so a run never mixes placements.
                 let groups = scene.content.groups();
                 cuts.extend(
-                    (1..groups.len()).filter(|&i| groups[i].off_canvas != groups[i - 1].off_canvas),
+                    (1..groups.len()).filter(|&i| groups[i].placement != groups[i - 1].placement),
                 );
                 cuts.sort_unstable();
                 cuts.dedup();
@@ -483,22 +523,22 @@ impl CanvasRenderer {
         for run in 0..=self.content_cuts.len() {
             // A run lies inside one Clip scope or outside them all, as scope edges are cuts.
             let scope = clips.iter().position(|clip| clip.groups.contains(&start));
-            let off_canvas = scene
+            let placement = scene
                 .content
                 .groups()
                 .get(start)
-                .is_some_and(|group| group.off_canvas);
+                .map_or(Placement::Canvas, |group| group.placement);
             self.enter(&mut pass, &mut scissor, &mut active, scope);
-            if scissor.set(&mut pass, off_canvas) {
+            if scissor.set(&mut pass, placement) {
                 self.content
                     .draw_run(&mut pass, run, scope.is_some(), &filter);
             }
             let Some(&cut) = self.content_cuts.get(run) else {
                 break;
             };
-            for (clip, off_canvas, batches) in self.stamps.runs_after(cut) {
+            for (clip, placement, batches) in self.stamps.runs_after(cut) {
                 self.enter(&mut pass, &mut scissor, &mut active, clip);
-                if scissor.set(&mut pass, off_canvas) {
+                if scissor.set(&mut pass, placement) {
                     self.stamps
                         .draw(&mut pass, batches, clip.is_some(), filter.bounds);
                 }
@@ -522,7 +562,7 @@ impl CanvasRenderer {
         if *active == scope {
             return;
         }
-        scissor.set(pass, true);
+        scissor.set(pass, Placement::OffCanvas);
         if let Some(old) = *active {
             self.masks.draw_mask(pass, 2 * old, 0);
         }
@@ -534,34 +574,43 @@ impl CanvasRenderer {
     }
 
     fn set_backdrop(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, scene: BackdropKey) {
-        let [w, h] = scene.canvas_size.map(|v| v as f32);
-        let [x, y] = scene.canvas_origin.map(|v| v as f32);
-        let mut builder = Path::builder();
-        builder.add_rectangle(
-            &Box2D::new((x, y).into(), (x + w, y + h).into()),
-            Winding::Positive,
-        );
-        self.backdrop.set_groups(
-            device,
-            &[VectorGroup::fill(
-                builder.build(),
-                scene.backdrop.water,
-                FillRule::NonZero,
-            )],
-        );
-        self.ocean.set(
-            queue,
-            OceanUniform {
-                canvas_size: [w, h],
-                origin: [x, y],
+        // The Canvas first, then the Art boards. Where boards overlap, the later one's water
+        // and ocean show.
+        let boards: Vec<BoardArea> = std::iter::once(BoardArea {
+            size: scene.canvas_size,
+            origin: scene.canvas_origin,
+            backdrop: scene.backdrop,
+        })
+        .chain(scene.art_boards.iter().cloned())
+        .collect();
+        let fills: Vec<VectorGroup> = boards
+            .iter()
+            .map(|board| {
+                let [w, h] = board.size.map(|v| v as f32);
+                let [x, y] = board.origin.map(|v| v as f32);
+                let mut builder = Path::builder();
+                builder.add_rectangle(
+                    &Box2D::new((x, y).into(), (x + w, y + h).into()),
+                    Winding::Positive,
+                );
+                VectorGroup::fill(builder.build(), board.backdrop.water, FillRule::NonZero)
+            })
+            .collect();
+        self.backdrop.set_groups(device, &fills);
+        let oceans: Vec<OceanUniform> = boards
+            .iter()
+            .map(|board| OceanUniform {
+                canvas_size: board.size.map(|v| v as f32),
+                origin: board.origin.map(|v| v as f32),
                 _pad: [0.0; 2],
-                strength: scene.backdrop.texture_strength.clamp(0.0, 1.0),
+                strength: board.backdrop.texture_strength.clamp(0.0, 1.0),
                 // Keeps the shader's division finite.
-                scale: scene.backdrop.texture_scale.max(0.01),
-                light: scene.backdrop.texture_light.to_linear_premultiplied(),
-                dark: scene.backdrop.texture_dark.to_linear_premultiplied(),
-            },
-        );
+                scale: board.backdrop.texture_scale.max(0.01),
+                light: board.backdrop.texture_light.to_linear_premultiplied(),
+                dark: board.backdrop.texture_dark.to_linear_premultiplied(),
+            })
+            .collect();
+        self.ocean.set(device, queue, &oceans);
         self.drawn_backdrop = Some(scene);
     }
 
@@ -626,16 +675,16 @@ impl CanvasRenderer {
     }
 }
 
-/// Keeps Objects that belong to the Canvas inside it by scissoring their draws to the Canvas
-/// rectangle in target pixels. Off-Canvas Objects draw across the whole target.
+/// Keeps Objects that belong to a board inside it by scissoring their draws to the board's
+/// rectangle in target pixels. Objects off the boards draw across the whole target.
 struct Scissor {
-    /// The Canvas rectangle as `[x, y, width, height]` clamped to the target; `None` when none
-    /// of it is in view.
-    canvas: Option<[u32; 4]>,
+    /// The Canvas, then the Art boards: each rectangle as `[x, y, width, height]` clamped to
+    /// the target; `None` when none of it is in view.
+    boards: Vec<Option<[u32; 4]>>,
     size: [u32; 2],
     off_canvas_objects: bool,
     /// The kind of draw the pass is currently set up for.
-    current: Option<bool>,
+    current: Option<Placement>,
 }
 
 impl Scissor {
@@ -643,38 +692,56 @@ impl Scissor {
         let size = view.size.map(|v| v.max(1));
         let pixel = |axis: usize, canvas: f64| (canvas - view.origin[axis]) * view.zoom;
         let clamp = |axis: usize, v: f64| v.round().clamp(0.0, f64::from(size[axis])) as u32;
-        let min = [0, 1].map(|axis| clamp(axis, pixel(axis, scene.canvas_origin[axis])));
-        let max = [0, 1].map(|axis| {
-            let edge = scene.canvas_origin[axis] + scene.canvas_size[axis];
-            clamp(axis, pixel(axis, edge))
-        });
-        Self {
-            canvas: (max[0] > min[0] && max[1] > min[1]).then_some([
+        let rect = |origin: [f64; 2], extent: [f64; 2]| {
+            let min = [0, 1].map(|axis| clamp(axis, pixel(axis, origin[axis])));
+            let max = [0, 1].map(|axis| clamp(axis, pixel(axis, origin[axis] + extent[axis])));
+            (max[0] > min[0] && max[1] > min[1]).then_some([
                 min[0],
                 min[1],
                 max[0] - min[0],
                 max[1] - min[1],
-            ]),
+            ])
+        };
+        let boards = std::iter::once(rect(scene.canvas_origin, scene.canvas_size))
+            .chain(
+                scene
+                    .art_boards
+                    .iter()
+                    .map(|board| rect(board.origin, board.size)),
+            )
+            .collect();
+        Self {
+            boards,
             size,
             off_canvas_objects: scene.off_canvas_objects,
             current: None,
         }
     }
 
-    /// Sets the scissor for a draw of an off-Canvas Object or of a Canvas member, and says
-    /// whether the draw can show anything.
-    fn set(&mut self, pass: &mut wgpu::RenderPass<'_>, off_canvas: bool) -> bool {
-        if self.current != Some(off_canvas) {
-            self.current = Some(off_canvas);
-            match self.canvas.filter(|_| !off_canvas) {
+    /// The rectangle clipping `placement`: `None` for Objects off the boards. The inner
+    /// `None` is a board with none of it in view; a board the scene lacks counts as that.
+    fn rect(&self, placement: Placement) -> Option<Option<[u32; 4]>> {
+        match placement {
+            Placement::OffCanvas => None,
+            Placement::Canvas => Some(self.boards[0]),
+            Placement::Board(index) => Some(self.boards.get(index + 1).copied().flatten()),
+        }
+    }
+
+    /// Sets the scissor for a draw of an Object off the boards or of a board's member, and
+    /// says whether the draw can show anything.
+    fn set(&mut self, pass: &mut wgpu::RenderPass<'_>, placement: Placement) -> bool {
+        let rect = self.rect(placement);
+        if self.current != Some(placement) {
+            self.current = Some(placement);
+            match rect.flatten() {
                 Some([x, y, w, h]) => pass.set_scissor_rect(x, y, w, h),
                 None => pass.set_scissor_rect(0, 0, self.size[0], self.size[1]),
             }
         }
-        if off_canvas {
-            self.off_canvas_objects
-        } else {
-            self.canvas.is_some()
+        match rect {
+            None => self.off_canvas_objects,
+            Some(rect) => rect.is_some(),
         }
     }
 }
