@@ -61,6 +61,10 @@ CI (`.github/workflows/ci.yml`) runs the same checks. Do not edit `.github/`.
 
 Say which of these a change touches, so they get checked on a machine with a GPU.
 
+## Code navigation
+
+`rust-analyzer` is in `rust-toolchain.toml`, so rustup installs it with the toolchain, and `.claude/settings.json` enables the `rust-analyzer-lsp` plugin from `claude-plugins-official`. Prefer the LSP's go-to-definition, find-references and diagnostics over text search for Rust symbols. It needs a few GB of memory and about 15 to 60 seconds to index this workspace.
+
 ## Language and design
 
 - Use the terms in `CONTEXT.md` (Map, Object, Layer, Landmass, Stamp...) in code, docs, UI text and commit messages. Do not use the `_Avoid_` alternatives listed there.
