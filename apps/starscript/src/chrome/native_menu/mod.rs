@@ -11,9 +11,9 @@
 use crate::menu::{self, Command, Entry, Key, Shortcut, State, TabState};
 
 #[cfg(target_os = "macos")]
-pub mod dock;
+pub(crate) mod dock;
 #[cfg(target_os = "macos")]
-pub mod mac;
+pub(crate) mod mac;
 
 /// A native key equivalent: ⌘ plus the keys listed. `key` is the character the key types.
 #[derive(Clone, Debug, PartialEq, Eq)]

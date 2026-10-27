@@ -27,7 +27,7 @@ static CLICKED: AtomicBool = AtomicBool::new(false);
 static CONTEXT: OnceLock<egui::Context> = OnceLock::new();
 
 /// Installs the Dock hook. Must run on the main thread after winit set its app delegate.
-pub fn install(ctx: &egui::Context) {
+pub(crate) fn install(ctx: &egui::Context) {
     let _ = CONTEXT.set(ctx.clone());
     let Some(mtm) = MainThreadMarker::new() else {
         return;
@@ -92,6 +92,6 @@ extern "C-unwind" fn should_reopen(
 }
 
 /// Whether the Dock icon was clicked with no visible window since the last call.
-pub fn take_click() -> bool {
+pub(crate) fn take_click() -> bool {
     CLICKED.swap(false, Ordering::SeqCst)
 }
