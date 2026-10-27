@@ -1,8 +1,4 @@
 //! The Map's background: the water colour and the procedural texture drawn over it.
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -16,8 +12,10 @@ use crate::extra::Extra;
 pub struct Background {
     /// The flat colour under the texture.
     pub water: Color,
+    /// The mottling over the water.
     #[serde(default)]
     pub texture: BackgroundTexture,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -35,6 +33,7 @@ pub struct BackgroundTexture {
     pub light: Color,
     /// The colour the noise darkens towards.
     pub dark: Color,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }

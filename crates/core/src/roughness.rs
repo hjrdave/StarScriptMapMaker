@@ -14,10 +14,6 @@
     clippy::expect_used,
     reason = "existing invariant panics; replace with error handling over time (#351)"
 )]
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -50,11 +46,13 @@ pub struct Roughness {
     pub scale: f64,
     /// Picks one of many equally rough coastlines.
     pub seed: u32,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
 
 impl Roughness {
+    /// A Roughness of `amount` and `scale` with `seed`.
     pub fn new(amount: f64, scale: f64, seed: u32) -> Self {
         Self {
             amount,
@@ -298,6 +296,7 @@ impl Shared {
 }
 
 impl RoughnessCache {
+    /// An empty cache.
     pub fn new() -> Self {
         Self::default()
     }
@@ -459,6 +458,7 @@ impl Rebuild {
         self.jobs.len()
     }
 
+    /// Whether there is nothing to compute.
     pub fn is_empty(&self) -> bool {
         self.jobs.is_empty()
     }

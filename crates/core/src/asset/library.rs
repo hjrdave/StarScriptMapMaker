@@ -1,8 +1,4 @@
 //! Finding and loading every pack.
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -14,7 +10,9 @@ use super::{Asset, AssetRef, Pack, PackSource};
 /// The folders searched for packs. Each holds one folder per pack.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PackRoots {
+    /// The folder of packs that ship with the app.
     pub built_in: PathBuf,
+    /// The per-user packs folder, if there is one.
     pub user: Option<PathBuf>,
 }
 
@@ -31,16 +29,22 @@ impl PackRoots {
 /// A pack that could not be loaded. The other packs still load.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum LoadProblem {
+    /// A pack's manifest has errors.
     Manifest(ManifestErrors),
     /// A pack folder could not be listed.
     Unreadable {
+        /// The folder that could not be listed.
         dir: PathBuf,
+        /// Why it could not be listed.
         message: String,
     },
     /// Two packs share an id. Built-in packs win over user packs, then the earlier folder name.
     DuplicateId {
+        /// The id both packs use.
         id: String,
+        /// The folder of the pack that loaded.
         kept: PathBuf,
+        /// The folder of the pack that did not.
         skipped: PathBuf,
     },
 }
@@ -113,10 +117,12 @@ impl PackLibrary {
         Some(self.packs.remove(index))
     }
 
+    /// Every loaded pack, in load order.
     pub fn packs(&self) -> &[Pack] {
         &self.packs
     }
 
+    /// The pack with id `id`, if one is loaded.
     pub fn pack(&self, id: &str) -> Option<&Pack> {
         self.packs.iter().find(|pack| pack.id == id)
     }
@@ -126,6 +132,7 @@ impl PackLibrary {
         self.packs.iter().find(|pack| pack.default)
     }
 
+    /// The pack and Asset that `reference` names, if both are loaded.
     pub fn asset(&self, reference: &AssetRef) -> Option<(&Pack, &Asset)> {
         let pack = self.pack(&reference.pack)?;
         Some((pack, pack.asset(&reference.asset)?))

@@ -4,10 +4,6 @@
     clippy::expect_used,
     reason = "existing invariant panics; replace with error handling over time (#351)"
 )]
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -31,11 +27,13 @@ pub struct Label {
     /// The anchor in Canvas units: the vertical centre of the text block, and its left edge,
     /// centre or right edge according to `align`.
     pub position: Point,
+    /// How the lines line up with each other and with `position`.
     pub align: Align,
     /// Degrees clockwise about `position`.
     pub rotation: f64,
     /// The Label style it follows. An unknown id is read as the default style.
     pub style: Id,
+    /// Overrides the style's font face; `None` follows the style.
     pub font: Option<FontFace>,
     /// The em size in Canvas units.
     pub size: Option<f64>,
@@ -48,10 +46,13 @@ pub struct Label {
     pub arch: Option<f64>,
     /// Shows the text in capitals without changing what is stored.
     pub all_caps: Option<bool>,
+    /// Overrides the style's fill colour; `None` follows the style.
     pub fill: Option<Color>,
     /// From 0 (transparent) to 1 (opaque), for fill and halo alike.
     pub opacity: Option<f32>,
+    /// Overrides the style's halo; `None` follows the style.
     pub halo: Option<Halo>,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -175,18 +176,31 @@ impl Label {
 /// A Label with its style applied: every setting the renderer needs, none optional.
 #[derive(Clone, PartialEq, Debug)]
 pub struct ResolvedLabel {
+    /// The text, with explicit line breaks as `\n`.
     pub text: String,
+    /// The anchor in Canvas units, as on [`Label`].
     pub position: Point,
+    /// How the lines line up with each other and with `position`.
     pub align: Align,
+    /// Degrees clockwise about `position`.
     pub rotation: f64,
+    /// The font face.
     pub font: FontFace,
+    /// The em size in Canvas units.
     pub size: f64,
+    /// Extra space after each character, as a share of `size`.
     pub letter_spacing: f64,
+    /// The distance from one baseline to the next, as a multiple of `size`.
     pub line_height: f64,
+    /// How far each line bends along an arc, from -1 to 1.
     pub arch: f64,
+    /// Whether the text shows in capitals.
     pub all_caps: bool,
+    /// The text colour.
     pub fill: Color,
+    /// From 0 (transparent) to 1 (opaque), for fill and halo alike.
     pub opacity: f32,
+    /// The halo drawn under the text.
     pub halo: Halo,
 }
 
@@ -212,8 +226,11 @@ impl ResolvedLabel {
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]
 pub struct LabelStyle {
+    /// The style's id, which Labels name to follow it.
     pub id: Id,
+    /// The style's name, such as "Realm". Unique within a Map.
     pub name: String,
+    /// The font face.
     pub font: FontFace,
     /// The em size in Canvas units.
     pub size: f64,
@@ -224,11 +241,15 @@ pub struct LabelStyle {
     /// Bends each line along an arc: from -1 to 1, where the sign is the direction (positive
     /// arches up, negative sags down) and 1 sweeps half a circle.
     pub arch: f64,
+    /// Shows the text in capitals without changing what is stored.
     pub all_caps: bool,
+    /// The text colour.
     pub fill: Color,
     /// From 0 (transparent) to 1 (opaque), for fill and halo alike.
     pub opacity: f32,
+    /// The halo drawn under the text.
     pub halo: Halo,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -338,22 +359,27 @@ impl LabelStyles {
         Self(styles)
     }
 
+    /// The styles, in list order.
     pub fn iter(&self) -> impl Iterator<Item = &LabelStyle> {
         self.0.iter()
     }
 
+    /// How many styles there are.
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Whether there are no styles. Never true, as the default style is always present.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
+    /// The style with id `id`, if there is one.
     pub fn get(&self, id: Id) -> Option<&LabelStyle> {
         self.0.iter().find(|style| style.id == id)
     }
 
+    /// The default style.
     pub fn default_style(&self) -> &LabelStyle {
         self.get(LabelStyle::DEFAULT_ID)
             .expect("the default style is always present")

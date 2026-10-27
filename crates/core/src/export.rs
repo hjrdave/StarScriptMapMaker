@@ -2,10 +2,6 @@
 //!
 //! Only the settings live here; rendering and UI come later. The settings are stored in the
 //! Map (ADR 0005) with the file name only, never an absolute path.
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 
 use std::path::{Path, PathBuf};
 
@@ -27,11 +23,22 @@ pub const WARN_EXPORT_SIDE: u32 = 16_384;
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum SizeMode {
     /// A multiple of the region's nominal 1x pixel size (1x, 2x, 4x or custom).
-    Scale { factor: f64 },
+    Scale {
+        /// The multiple of the region's nominal size.
+        factor: f64,
+    },
     /// A target width in pixels; the height follows the region's aspect ratio.
-    Width { pixels: u32 },
+    Width {
+        /// The width in pixels.
+        pixels: u32,
+    },
     /// A print size: a width in inches at `dpi`; the height follows the region's aspect ratio.
-    Print { width_inches: f64, dpi: u32 },
+    Print {
+        /// The print width in inches.
+        width_inches: f64,
+        /// Dots per inch.
+        dpi: u32,
+    },
 }
 
 /// The part of the Canvas to export.
@@ -41,7 +48,10 @@ pub enum ExportRegion {
     /// The whole Canvas.
     Canvas,
     /// A rectangle in Canvas units.
-    Custom { rect: Rect },
+    Custom {
+        /// The rectangle to export.
+        rect: Rect,
+    },
 }
 
 /// What to do about the credits of credit-required Assets (ADR 0003).
@@ -102,14 +112,18 @@ pub fn credits_file_path(png: &Path) -> PathBuf {
 /// The last export settings of a Map.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ExportSettings {
+    /// How the pixel size is chosen.
     pub size: SizeMode,
+    /// The part of the Canvas to export.
     pub region: ExportRegion,
     /// Skip the Canvas background fill.
     pub transparent_background: bool,
+    /// What to do about the credits of credit-required Assets.
     pub credits: CreditsOptions,
     /// The file name only, with no directory. `None` until the first export.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_name: Option<String>,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -130,7 +144,9 @@ impl Default for ExportSettings {
 /// The pixel size an export comes out at.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ExportSize {
+    /// The width in pixels.
     pub width: u32,
+    /// The height in pixels.
     pub height: u32,
     /// The DPI to write in the PNG, when a print size was chosen.
     pub dpi: Option<u32>,
@@ -138,14 +154,23 @@ pub struct ExportSize {
     pub warn_large: bool,
 }
 
+/// Why an export size could not be worked out.
 #[derive(Clone, Copy, PartialEq, Debug, Error)]
 pub enum ExportSizeError {
+    /// The export region has no area.
     #[error("the export region is empty")]
     EmptyRegion,
+    /// The chosen size is not a positive number.
     #[error("the export size must be a positive number")]
     InvalidSize,
+    /// A side comes out above [`MAX_EXPORT_SIDE`].
     #[error("a {width} × {height} px export is over the {MAX_EXPORT_SIDE}px limit per side")]
-    TooLarge { width: u64, height: u64 },
+    TooLarge {
+        /// The width the export would have, in pixels.
+        width: u64,
+        /// The height the export would have, in pixels.
+        height: u64,
+    },
 }
 
 impl ExportSettings {

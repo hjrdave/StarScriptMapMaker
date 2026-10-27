@@ -7,10 +7,6 @@
     clippy::expect_used,
     reason = "existing invariant panics; replace with error handling over time (#351)"
 )]
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
@@ -37,6 +33,7 @@ pub struct ManifestError {
     pub asset: Option<String>,
     /// The field, such as `anchor` or `pack.licence`. `None` when the problem is not one field.
     pub field: Option<String>,
+    /// What is wrong.
     pub message: String,
 }
 

@@ -8,10 +8,6 @@
     clippy::expect_used,
     reason = "existing invariant panics; replace with error handling over time (#351)"
 )]
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 
 use geo::orient::Direction;
 use geo::{
@@ -302,8 +298,10 @@ fn outline_of(map: &Map, id: Id) -> Option<&MultiPolygon> {
     }
 }
 
+/// Why a land brush stroke could not be made.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum BrushError {
+    /// There is no Layer to paint into.
     #[error("choose a Layer to paint land into")]
     NoLayer,
 }
@@ -358,10 +356,13 @@ pub fn intersects(a: &MultiPolygon, b: &MultiPolygon) -> bool {
 /// Why a node edit could not be made.
 #[derive(Clone, PartialEq, Debug, thiserror::Error)]
 pub enum NodeEditError {
+    /// The outline has no node there.
     #[error("the outline has no point at part {}, ring {}, point {}", .0.part, .0.ring, .0.index)]
     NoSuchNode(NodeRef),
+    /// The edit would leave a ring with fewer than three points.
     #[error("a ring needs at least three points")]
     TooFewPoints,
+    /// The edit would leave nothing of the outline.
     #[error("the edit would leave nothing of the outline")]
     Collapsed,
 }

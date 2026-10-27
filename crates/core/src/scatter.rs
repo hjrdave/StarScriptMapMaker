@@ -5,10 +5,6 @@
 //! concrete Command that names every Stamp, so replaying a script places identical Stamps
 //! (ADR 0004). Land and water are checked at placement time only; a Stamp keeps its place when
 //! a Coastline is edited later.
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 
 use std::sync::Arc;
 
@@ -28,6 +24,7 @@ pub enum Placement {
     Land,
     /// Anywhere that is not land: the ocean, or a Lake.
     Water,
+    /// On land, in the ocean or on a Lake alike.
     Anywhere,
 }
 
@@ -46,6 +43,7 @@ pub struct ScatterBrush {
     pub random_variant: bool,
     /// How far a Stamp's rotation may stray from the base Stamp's, in degrees either way.
     pub rotation_jitter: f64,
+    /// Where on the Map the brush may place Stamps.
     pub placement: Placement,
 }
 
@@ -71,6 +69,7 @@ pub struct Terrain {
 }
 
 impl Terrain {
+    /// The land and Lakes of `map`, with each outline roughened as it is drawn.
     pub fn of(map: &Map, cache: &mut RoughnessCache) -> Self {
         let mut terrain = Terrain::default();
         for id in map.ids() {
@@ -95,6 +94,7 @@ impl Terrain {
             && !self.lakes.iter().any(|outline| outline.contains(point))
     }
 
+    /// Whether `point` is somewhere `placement` allows.
     pub fn allows(&self, placement: Placement, point: Point) -> bool {
         match placement {
             Placement::Land => self.is_land(point),
@@ -137,6 +137,7 @@ pub(crate) const MAX_STAMPS_PER_STROKE: usize = 5000;
 /// One finished scatter stroke and what it scatters.
 #[derive(Clone, Copy, Debug)]
 pub struct ScatterStroke<'a> {
+    /// The path the brush followed, in Canvas units.
     pub points: &'a [Point],
     /// The brush radius in Canvas units.
     pub radius: f64,

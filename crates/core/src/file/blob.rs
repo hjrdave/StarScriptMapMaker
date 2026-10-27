@@ -8,10 +8,6 @@
     clippy::expect_used,
     reason = "existing invariant panics; replace with error handling over time (#351)"
 )]
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 
 use thiserror::Error;
 
@@ -20,10 +16,13 @@ use crate::geometry::{MultiPolygon, Point, Polygon};
 /// Why an outline blob could not be decoded.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum BlobError {
+    /// The blob ends before the outline does.
     #[error("the blob ends early")]
     EndsEarly,
+    /// A polygon has no exterior ring.
     #[error("a polygon has no exterior ring")]
     NoExteriorRing,
+    /// Bytes remain after the outline.
     #[error("{0} bytes left over")]
     LeftOver(usize),
 }

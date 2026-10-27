@@ -80,6 +80,7 @@ Say which of these a change touches, so they get checked on a machine with a GPU
 
 - Existing hits carry `#[allow(..., reason = "...")]`, many at file level. Remove an allow when you clean up the code under it; don't add one to new code.
 - A `pub` item that no other crate uses is `pub(crate)`; `unreachable_pub` flags the rest.
+- `crates/core` also warns on `missing_docs`: every public item gets a one-line `///` comment.
 - Integration tests and benches may panic, so their files allow the two lints at the top.
 
 ## Conventions

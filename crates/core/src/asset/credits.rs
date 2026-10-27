@@ -1,8 +1,4 @@
 //! Credits: what the loaded packs ask to be credited for, and which of it a Map uses.
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 
 use std::collections::BTreeSet;
 
@@ -14,13 +10,17 @@ use super::{AssetRef, Pack, PackLibrary};
 /// One pack's entry on the credits screen.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PackCredit {
+    /// The pack's id.
     pub pack_id: String,
+    /// The pack's display name.
     pub name: String,
+    /// The pack's licence.
     pub licence: String,
     /// Where the licence text can be read, if the pack says.
     pub licence_url: Option<String>,
     /// The pack's free-form credit line.
     pub credits: String,
+    /// Whether the pack's licence requires crediting it.
     pub attribution_required: bool,
     /// Every distinct Asset author, sorted.
     pub authors: Vec<String>,
@@ -33,12 +33,19 @@ pub struct PackCredit {
 /// An Asset from a pack that must be credited.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct AttributedAsset {
+    /// Which Asset this is.
     pub reference: AssetRef,
+    /// The name of its pack.
     pub pack_name: String,
+    /// The Asset's display name.
     pub asset_name: String,
+    /// Who made the Asset.
     pub author: String,
+    /// The Asset's licence.
     pub licence: String,
+    /// A link to the licence text, if there is one.
     pub licence_url: Option<String>,
+    /// Where the Asset came from, if it says.
     pub source_url: Option<String>,
     /// The pack's credit line.
     pub credits: String,

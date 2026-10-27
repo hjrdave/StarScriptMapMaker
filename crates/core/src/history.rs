@@ -8,10 +8,6 @@
     clippy::expect_used,
     reason = "existing invariant panics; replace with error handling over time (#351)"
 )]
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 
 use std::collections::VecDeque;
 
@@ -35,8 +31,11 @@ pub const DEFAULT_BUDGET_BYTES: usize = 256 * 1024 * 1024;
 /// The Commands of one gesture or agent action, undone and redone together.
 #[derive(Clone, Debug)]
 pub struct UndoStep {
+    /// The name of the step, as the Undo menu shows it.
     pub label: String,
+    /// The Selection before the step, restored by undo.
     pub selection_before: Selection,
+    /// The Selection after the step, restored by redo.
     pub selection_after: Selection,
     /// Inverses in the order their Ops were applied.
     inverses: Vec<Op>,
@@ -52,14 +51,18 @@ struct Transaction {
     applied: Vec<Op>,
 }
 
+/// Why a History call was refused.
 #[derive(Clone, PartialEq, Debug, Error)]
 pub enum HistoryError {
+    /// An Undo step is already open.
     #[error("an Undo step is already open")]
     TransactionOpen,
+    /// No Undo step is open.
     #[error("no Undo step is open")]
     NoTransaction,
 }
 
+/// The Undo steps of one Map, with a memory budget, and the Undo step being built (the open transaction).
 #[derive(Debug)]
 pub struct History {
     undo: VecDeque<UndoStep>,
@@ -79,6 +82,7 @@ impl Default for History {
 }
 
 impl History {
+    /// An empty History that keeps steps up to `budget_bytes`, dropping the oldest beyond it.
     pub fn new(budget_bytes: usize) -> Self {
         Self {
             undo: VecDeque::new(),
@@ -220,10 +224,12 @@ impl History {
         Ok(Some(selection))
     }
 
+    /// The name of the step undo would undo, if there is one.
     pub fn undo_label(&self) -> Option<&str> {
         self.undo.back().map(|step| step.label.as_str())
     }
 
+    /// The name of the step redo would redo, if there is one.
     pub fn redo_label(&self) -> Option<&str> {
         self.redo.last().map(|step| step.label.as_str())
     }
@@ -239,14 +245,17 @@ impl History {
         self.redo.iter().rev().map(|step| step.label.as_str())
     }
 
+    /// How many steps can be undone.
     pub fn undo_len(&self) -> usize {
         self.undo.len()
     }
 
+    /// How many steps can be redone.
     pub fn redo_len(&self) -> usize {
         self.redo.len()
     }
 
+    /// Whether an Undo step is open.
     pub fn is_open(&self) -> bool {
         self.open.is_some()
     }
@@ -282,10 +291,13 @@ impl History {
     }
 }
 
+/// Why executing a Command in a History failed.
 #[derive(Clone, PartialEq, Debug, Error)]
 pub enum ExecuteError {
+    /// The Command was refused.
     #[error(transparent)]
     Command(#[from] CommandError),
+    /// The History refused it, such as when no Undo step was open.
     #[error(transparent)]
     History(#[from] HistoryError),
 }

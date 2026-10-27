@@ -5,10 +5,6 @@
 //! (art, Silhouettes, font files), plus one record per `pack-id/asset-id` and per font file
 //! holding its manifest entry, credits and licence. Identical bytes are stored once. The
 //! embedded copy wins over an installed pack's art until the user updates it from the pack.
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write as _};
@@ -30,14 +26,17 @@ use crate::node::{Node, ObjectKind};
 pub struct ContentHash([u8; 32]);
 
 impl ContentHash {
+    /// The hash of `bytes`.
     pub fn of(bytes: &[u8]) -> Self {
         Self(sha256(bytes))
     }
 
+    /// The 32 raw bytes of the hash.
     pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 
+    /// A hash from its 32 raw bytes.
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
         Self(bytes)
     }
@@ -93,10 +92,12 @@ impl JsonSchema for ContentHash {
 pub struct Blob(Arc<[u8]>);
 
 impl Blob {
+    /// A blob holding `bytes`.
     pub fn new(bytes: impl Into<Arc<[u8]>>) -> Self {
         Self(bytes.into())
     }
 
+    /// The content hash of the bytes.
     pub fn hash(&self) -> ContentHash {
         ContentHash::of(&self.0)
     }
@@ -148,10 +149,13 @@ impl JsonSchema for Blob {
 /// Why a string is not valid hex, or not a hash.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Error)]
 pub enum ParseHexError {
+    /// The text has an odd number of hex digits.
     #[error("expected an even number of hex digits")]
     OddLength,
+    /// The text has a character that is not a hex digit.
     #[error("expected hex digits")]
     NotHex,
+    /// The text is not 32 bytes long, so it is not a hash.
     #[error("a hash is 32 bytes")]
     WrongLength,
 }
@@ -170,28 +174,44 @@ fn from_hex(text: &str) -> Result<Vec<u8>, ParseHexError> {
 /// they were when embedded.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct EmbeddedAsset {
+    /// The Asset's display name.
     pub name: String,
+    /// The category it is listed under.
     pub category: String,
+    /// Search tags.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// The format of the art file.
     pub format: ArtFormat,
     /// The art file.
     pub art: ContentHash,
+    /// The Silhouette file, if the Asset has one.
     pub silhouette: Option<ContentHash>,
     /// The ground point, as fractions of the art's width and height from its top-left.
     pub anchor: [f64; 2],
     /// Default width in Canvas units.
     pub width: f64,
+    /// The Variant group the Asset belongs to, if any.
     pub variant_group: Option<String>,
+    /// Who made the Asset.
     pub author: String,
+    /// Where the Asset came from, if it says.
     pub source_url: Option<String>,
+    /// The Asset's licence.
     pub licence: String,
+    /// When the Asset was last changed, as its manifest records it.
     pub modified: String,
+    /// The name of the Asset pack it came from.
     pub pack_name: String,
+    /// The pack's licence.
     pub pack_licence: String,
+    /// A link to the pack's licence text, if it has one.
     pub pack_licence_url: Option<String>,
+    /// The pack's credits text.
     pub pack_credits: String,
+    /// Whether the pack's licence requires crediting it.
     pub attribution_required: bool,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -203,9 +223,11 @@ pub struct EmbeddedFont {
     pub family: String,
     /// The font's file name, which is also its key.
     pub file: String,
+    /// The font file.
     pub data: ContentHash,
     /// The full licence text.
     pub licence: String,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -216,6 +238,7 @@ pub struct Embedded {
     /// The files, by content hash.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub blobs: BTreeMap<ContentHash, Blob>,
+    /// The records of embedded Assets, by reference.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub assets: BTreeMap<AssetRef, EmbeddedAsset>,
     /// By file name.
@@ -224,10 +247,12 @@ pub struct Embedded {
 }
 
 impl Embedded {
+    /// Whether nothing is embedded.
     pub fn is_empty(&self) -> bool {
         self.blobs.is_empty() && self.assets.is_empty() && self.fonts.is_empty()
     }
 
+    /// The file with content hash `hash`, if the store has it.
     pub fn blob(&self, hash: &ContentHash) -> Option<&Blob> {
         self.blobs.get(hash)
     }
@@ -266,18 +291,26 @@ impl Embedded {
 /// An Asset to embed: its record and its files.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct EmbedAsset {
+    /// Which Asset this is.
     pub reference: AssetRef,
+    /// Its record.
     pub record: EmbeddedAsset,
+    /// The art file.
     pub art: Blob,
+    /// The Silhouette file, if it has one.
     pub silhouette: Option<Blob>,
 }
 
 /// A font file to embed.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct EmbedFont {
+    /// The family name Labels store.
     pub family: String,
+    /// The font's file name.
     pub file: String,
+    /// The full licence text.
     pub licence: String,
+    /// The font file.
     pub data: Blob,
 }
 

@@ -34,10 +34,6 @@
 //! ```
 //!
 //! Assets are referenced as `pack-id/asset-id` ([`AssetRef`]).
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 
 mod credits;
 mod install;
@@ -60,10 +56,13 @@ pub use manifest::{ManifestError, ManifestErrors, parse_manifest, read_pack};
 /// One Asset pack, as read from its manifest.
 #[derive(Clone, PartialEq, Debug)]
 pub struct Pack {
+    /// The pack's id, which Asset references start with.
     pub id: String,
+    /// The pack's display name.
     pub name: String,
     /// The folder holding `pack.toml`. Asset files are relative to it.
     pub dir: PathBuf,
+    /// The pack's licence.
     pub licence: String,
     /// Where the licence text can be read.
     pub licence_url: Option<String>,
@@ -73,12 +72,14 @@ pub struct Pack {
     pub attribution_required: bool,
     /// Whether the Asset browser selects this pack. At most one pack should be flagged.
     pub default: bool,
+    /// Where the pack was found.
     pub source: PackSource,
     /// In manifest order.
     pub assets: Vec<Asset>,
 }
 
 impl Pack {
+    /// The Asset with id `id`, if the pack has it.
     pub fn asset(&self, id: &str) -> Option<&Asset> {
         self.assets.iter().find(|asset| asset.id == id)
     }
@@ -108,12 +109,17 @@ pub enum PackSource {
 /// One piece of map art.
 #[derive(Clone, PartialEq, Debug)]
 pub struct Asset {
+    /// The Asset's id within its pack.
     pub id: String,
+    /// The Asset's display name.
     pub name: String,
+    /// The category it is listed under.
     pub category: String,
+    /// Search tags.
     pub tags: Vec<String>,
     /// Relative to the pack folder.
     pub file: PathBuf,
+    /// The format of the art file.
     pub format: ArtFormat,
     /// The ground point, as fractions of the art's width and height from its top-left.
     pub anchor: [f64; 2],
@@ -121,9 +127,13 @@ pub struct Asset {
     pub width: f64,
     /// Relative to the pack folder.
     pub silhouette: Option<PathBuf>,
+    /// The Variant group the Asset belongs to, if any.
     pub variant_group: Option<String>,
+    /// Who made the Asset.
     pub author: String,
+    /// Where the Asset came from, if it says.
     pub source_url: Option<String>,
+    /// The Asset's licence.
     pub licence: String,
     /// `YYYY-MM-DD`.
     pub modified: String,
@@ -140,6 +150,7 @@ pub enum ArtFormat {
 }
 
 impl ArtFormat {
+    /// The format a file's extension names, or `None` if it is not Asset art.
     pub fn from_path(path: &std::path::Path) -> Option<Self> {
         let extension = path.extension()?.to_str()?.to_ascii_lowercase();
         match extension.as_str() {
@@ -153,7 +164,9 @@ impl ArtFormat {
 /// A reference to one Asset, written `pack-id/asset-id`.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct AssetRef {
+    /// The id of the pack.
     pub pack: String,
+    /// The id of the Asset within the pack.
     pub asset: String,
 }
 

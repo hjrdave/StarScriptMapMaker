@@ -4,10 +4,6 @@
     clippy::expect_used,
     reason = "existing invariant panics; replace with error handling over time (#351)"
 )]
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 
 use std::collections::{HashMap, HashSet};
 
@@ -40,6 +36,7 @@ pub struct Canvas {
     /// origin.
     #[serde(default, skip_serializing_if = "is_workspace_origin")]
     pub origin: Point,
+    /// What one Canvas unit stands for in the real world.
     pub scale: Scale,
     /// The water colour and texture behind the Objects. Files saved before it existed get
     /// the default.
@@ -49,6 +46,7 @@ pub struct Canvas {
     /// background later does not change it. Maps not made from a template have none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub template: Option<String>,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -69,6 +67,7 @@ impl Canvas {
         }
     }
 
+    /// A Canvas `width` by `height` units at `scale`, at the workspace origin, with the default background and no template.
     pub fn new(width: u32, height: u32, scale: Scale) -> Self {
         Self {
             width,
@@ -85,13 +84,17 @@ impl Canvas {
 /// How much real-world distance one Canvas unit stands for.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Scale {
+    /// How many `unit`s one Canvas unit stands for.
     pub distance_per_unit: f64,
+    /// The unit of distance.
     pub unit: DistanceUnit,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
 
 impl Scale {
+    /// A scale where one Canvas unit is `distance_per_unit` of `unit`.
     pub fn new(distance_per_unit: f64, unit: DistanceUnit) -> Self {
         Self {
             distance_per_unit,
@@ -101,10 +104,13 @@ impl Scale {
     }
 }
 
+/// A unit of real-world distance.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DistanceUnit {
+    /// Miles.
     Miles,
+    /// Kilometres.
     Kilometres,
 }
 
@@ -129,6 +135,7 @@ pub struct MapDefaults {
     /// The Label styles Labels refer to. Files saved before they existed get the default one.
     #[serde(default)]
     pub label_styles: LabelStyles,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -170,9 +177,12 @@ impl MapDefaults {
 /// whole branches of the tree.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Subtree {
+    /// The id of the node at the top of the branch.
     pub id: Id,
+    /// The node itself.
     #[serde(flatten)]
     pub node: Node,
+    /// Its children, lowest in the Stacking order first, each with their own children.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<Subtree>,
 }
@@ -180,7 +190,9 @@ pub struct Subtree {
 /// A serialisable snapshot of a whole Map, for agents, tests and debugging.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct MapView {
+    /// The Canvas.
     pub canvas: Canvas,
+    /// The Map-wide defaults.
     #[serde(default)]
     pub defaults: MapDefaults,
     /// The top-level Layers, first drawn lowest.
@@ -221,6 +233,7 @@ pub struct Map {
 }
 
 impl Map {
+    /// An empty Map on `canvas`, with the default settings.
     pub fn new(canvas: Canvas) -> Self {
         Self {
             canvas,
@@ -256,6 +269,7 @@ impl Map {
         Ok(map)
     }
 
+    /// A snapshot of the whole Map, for agents, tests and debugging.
     pub fn view(&self) -> MapView {
         MapView {
             canvas: self.canvas.clone(),
@@ -283,6 +297,7 @@ impl Map {
         self.canvas = canvas;
     }
 
+    /// The Map-wide defaults.
     pub fn defaults(&self) -> &MapDefaults {
         &self.defaults
     }
@@ -337,10 +352,12 @@ impl Map {
             .collect()
     }
 
+    /// Whether a node with id `id` exists.
     pub fn contains(&self, id: Id) -> bool {
         self.entries.contains_key(&id)
     }
 
+    /// The node with id `id`, if it exists.
     pub fn node(&self, id: Id) -> Option<&Node> {
         self.entries.get(&id).map(|entry| &entry.node)
     }
@@ -697,16 +714,22 @@ impl Map {
 /// A broken structural rule of the Map tree.
 #[derive(Clone, PartialEq, Eq, Debug, Error)]
 pub enum InvariantError {
+    /// The id belongs to more than one node.
     #[error("id {0} appears more than once")]
     DuplicateId(Id),
+    /// The Object is at the top level, which holds only Layers.
     #[error("Object {0} is at the top level; only Layers can be")]
     ObjectAtRoot(Id),
+    /// The Object has children, which only Layers can.
     #[error("Object {0} has children; only Layers can")]
     ObjectWithChildren(Id),
+    /// The node is listed as a child but does not exist.
     #[error("node {0} is listed as a child but missing")]
     Missing(Id),
+    /// The node records a different parent from the one that lists it.
     #[error("node {0} records the wrong parent")]
     WrongParent(Id),
+    /// The node cannot be reached from the top level.
     #[error("node {0} is not reachable from the top level")]
     Orphan(Id),
 }

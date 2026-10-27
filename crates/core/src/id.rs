@@ -1,7 +1,3 @@
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 use std::fmt;
 
 use schemars::JsonSchema;
@@ -16,14 +12,17 @@ use uuid::Uuid;
 pub struct Id(Uuid);
 
 impl Id {
+    /// A new, unique id.
     pub fn new() -> Self {
         Self(Uuid::now_v7())
     }
 
+    /// An id from a UUID.
     pub const fn from_uuid(uuid: Uuid) -> Self {
         Self(uuid)
     }
 
+    /// The id as a UUID.
     pub fn as_uuid(&self) -> Uuid {
         self.0
     }

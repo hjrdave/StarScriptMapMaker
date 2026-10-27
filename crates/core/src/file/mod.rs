@@ -35,10 +35,6 @@
     clippy::expect_used,
     reason = "existing invariant panics; replace with error handling over time (#351)"
 )]
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 
 mod blob;
 mod embed;
@@ -100,7 +96,9 @@ const UPSERT_NODE: &str = "
 /// A Map file version, written as `major.minor`.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct FormatVersion {
+    /// The major version. A newer major version cannot be opened.
     pub major: u32,
+    /// The minor version. Newer minor versions open, keeping what they add.
     pub minor: u32,
 }
 
@@ -122,32 +120,50 @@ impl FromStr for FormatVersion {
     }
 }
 
+/// Why a Map file could not be opened, saved or recovered.
 #[derive(Debug, Error)]
 pub enum FileError {
+    /// Reading or writing the file failed.
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    /// The file is not a StarScript Map file.
     #[error("this is not a StarScript Map file")]
     NotAMapFile,
+    /// The file was saved by a newer major format version.
     #[error(
         "this Map was saved by a newer StarScript Map Maker (file format {found}); this \
          version opens format {}.x and older",
         FORMAT_VERSION.major
     )]
-    NewerMajor { found: FormatVersion },
+    NewerMajor {
+        /// The file's format version.
+        found: FormatVersion,
+    },
+    /// The file's format version has no upgrade to the current one.
     #[error("this Map uses file format {found}, which this version can't upgrade")]
-    NoMigration { found: FormatVersion },
+    NoMigration {
+        /// The file's format version.
+        found: FormatVersion,
+    },
+    /// The file's contents are not a valid Map.
     #[error("the Map file is damaged: {0}")]
     Damaged(String),
+    /// A Landmass or Lake's outline could not be read.
     #[error("the Map file is damaged: the outline of {id} is unreadable")]
     Outline {
+        /// The Landmass or Lake.
         id: Id,
+        /// Why the outline is unreadable.
         #[source]
         source: BlobError,
     },
+    /// A column holds a value of the wrong type.
     #[error("the Map file is damaged: a column holds the wrong type")]
     WrongColumnType(#[from] rusqlite::types::FromSqlError),
+    /// The path is not valid Unicode.
     #[error("the file path must be valid Unicode: {0}")]
     PathNotUnicode(PathBuf),
+    /// The database reported an error.
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
 }
@@ -159,6 +175,7 @@ pub struct SaveStats {
     pub written: usize,
     /// Rows whose node only changed place among its siblings.
     pub moved: usize,
+    /// Rows removed because their node was deleted.
     pub deleted: usize,
 }
 
@@ -363,6 +380,7 @@ impl MapFile {
         Ok(stats)
     }
 
+    /// The path of the open file.
     pub fn path(&self) -> &Path {
         &self.path
     }

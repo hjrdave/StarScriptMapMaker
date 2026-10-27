@@ -5,10 +5,6 @@
     clippy::expect_used,
     reason = "existing invariant panics; replace with error handling over time (#351)"
 )]
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -40,7 +36,12 @@ pub enum InstallError {
     InvalidManifest(ManifestErrors),
     /// A loaded pack already uses this id.
     #[error("a pack named `{id}` is already installed ({})", existing.display())]
-    DuplicateId { id: String, existing: PathBuf },
+    DuplicateId {
+        /// The id the pack has.
+        id: String,
+        /// The folder of the pack that already uses it.
+        existing: PathBuf,
+    },
     /// Copying failed. Nothing is left half-installed.
     #[error("cannot install the pack: {0}")]
     Io(#[from] std::io::Error),
@@ -49,7 +50,9 @@ pub enum InstallError {
 /// Progress of an install, in bytes of pack files copied.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct InstallProgress {
+    /// The bytes copied so far.
     pub copied: u64,
+    /// The bytes to copy in all.
     pub total: u64,
 }
 

@@ -2,10 +2,6 @@
 //! outline: an outline, ripple lines stepping outward over the water, and shading inward from
 //! the coast. A Map-wide default exists for Landmasses and another for Lakes; either kind can
 //! override its default.
-#![allow(
-    missing_docs,
-    reason = "still to document; remove this once the file is done (#351)"
-)]
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -21,6 +17,7 @@ pub const MAX_RIPPLES: u32 = 12;
 pub struct ShoreOutline {
     /// In Canvas units.
     pub width: f64,
+    /// The line's colour.
     pub color: Color,
 }
 
@@ -33,6 +30,7 @@ pub struct ShoreRipples {
     pub spacing: f64,
     /// The width of each line, in Canvas units.
     pub width: f64,
+    /// The lines' colour.
     pub color: Color,
     /// How much each line fades relative to the one before it, from 0 (none) to 1 (the last
     /// line is invisible).
@@ -48,11 +46,16 @@ pub struct ShoreShading {
     pub color: Color,
 }
 
+/// How the coast of a Landmass or Lake is drawn: outline, ripples and inner shading.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ShoreStyle {
+    /// The line along the coast.
     pub outline: ShoreOutline,
+    /// The lines stepping outward over the water.
     pub ripples: ShoreRipples,
+    /// The shading inward from the coast.
     pub shading: ShoreShading,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -158,6 +161,8 @@ impl ShoreStyle {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ShoreKind {
+    /// The Shore style of Landmasses.
     Landmass,
+    /// The Shore style of Lakes.
     Lake,
 }
