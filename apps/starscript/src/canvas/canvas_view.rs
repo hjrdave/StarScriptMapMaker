@@ -458,7 +458,6 @@ impl CanvasView {
 
     /// The box a Label's text is typed in, just below the Label so its real render shows
     /// live above. Clicking away or Escape commits; emptying it deletes the Label.
-    #[allow(clippy::expect_used, reason = "four corners")]
     fn text_box(
         &mut self,
         ui: &mut egui::Ui,
@@ -480,7 +479,9 @@ impl CanvasView {
             }
             return;
         };
-        let bounds = Bounds::around(&layout.corners(&shown)).expect("four corners");
+        let Some(bounds) = Bounds::around(&layout.corners(&shown)) else {
+            return;
+        };
         let at = handles::to_screen(view, origin, ppp, [bounds.min[0], bounds.max[1]]);
         let text_id = egui::Id::new("label_text").with(id);
         let mut output = None;
@@ -597,7 +598,6 @@ struct CanvasCallback {
 }
 
 impl egui_wgpu::CallbackTrait for CanvasCallback {
-    #[allow(clippy::expect_used, reason = "installed at startup")]
     fn prepare(
         &self,
         device: &wgpu::Device,
@@ -606,12 +606,14 @@ impl egui_wgpu::CallbackTrait for CanvasCallback {
         encoder: &mut wgpu::CommandEncoder,
         resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
-        let CanvasResources {
+        // Installed at startup; without it there is nothing to draw with.
+        let Some(CanvasResources {
             renderer,
             presenter,
-        } = resources
-            .get_mut::<CanvasResources>()
-            .expect("installed at startup");
+        }) = resources.get_mut::<CanvasResources>()
+        else {
+            return Vec::new();
+        };
         if let Some(cache) = &self.cache {
             renderer.use_tessellation_cache(cache);
         }
@@ -623,15 +625,15 @@ impl egui_wgpu::CallbackTrait for CanvasCallback {
         Vec::new()
     }
 
-    #[allow(clippy::expect_used, reason = "installed at startup")]
     fn paint(
         &self,
         _info: egui::PaintCallbackInfo,
         pass: &mut wgpu::RenderPass<'static>,
         resources: &egui_wgpu::CallbackResources,
     ) {
-        let resources: &CanvasResources = resources.get().expect("installed at startup");
-        resources.presenter.draw(pass);
+        if let Some(resources) = resources.get::<CanvasResources>() {
+            resources.presenter.draw(pass);
+        }
     }
 }
 

@@ -351,7 +351,6 @@ impl<P> Chunked<P> {
 
 /// Like [`resolve`] for the groups in `range` only. Looks an Object up by all its groups,
 /// wherever they are, so chunk edges never split what the cache keeps whole.
-#[allow(clippy::expect_used, reason = "indexed above")]
 fn resolve_chunk(
     groups: &[VectorGroup],
     objects: &HashMap<Id, Vec<usize>>,
@@ -387,7 +386,7 @@ fn resolve_chunk(
                 cache.store(object, &sources, meshes.clone());
                 Some(meshes)
             });
-            let position = indices.binary_search(&index).expect("indexed above");
+            let position = indices.binary_search(&index).ok()?;
             meshes.as_ref().map(|meshes| meshes[position].clone())
         })
         .collect();

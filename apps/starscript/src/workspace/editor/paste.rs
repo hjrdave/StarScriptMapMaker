@@ -72,18 +72,18 @@ impl Editor {
         path
     }
 
-    #[allow(clippy::expect_used, reason = "listed ids exist")]
-    pub(super) fn subtree(&self, id: Id) -> Subtree {
-        Subtree {
+    /// The node `id` and everything inside it, or `None` if there is no such node.
+    pub(super) fn subtree(&self, id: Id) -> Option<Subtree> {
+        Some(Subtree {
             id,
-            node: self.map.node(id).expect("listed ids exist").clone(),
+            node: self.map.node(id)?.clone(),
             children: self
                 .map
                 .children(Some(id))
                 .iter()
-                .map(|&child| self.subtree(child))
+                .filter_map(|&child| self.subtree(child))
                 .collect(),
-        }
+        })
     }
 
     /// Copies the selected Layers and Objects, with everything inside them, locked ones too.
@@ -132,7 +132,7 @@ impl Editor {
             points.extend([bounds.min, bounds.max]);
         }
         let centre = Bounds::around(&points).map(|bounds| bounds.centre());
-        let subtrees = roots.iter().map(|&id| self.subtree(id)).collect();
+        let subtrees = roots.iter().filter_map(|&id| self.subtree(id)).collect();
         Clipboard::new(subtrees, centre)
     }
 

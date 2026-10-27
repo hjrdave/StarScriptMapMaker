@@ -21,6 +21,9 @@ pub enum PngWriteError {
     RowLength { expected: usize, got: usize },
     #[error("the image has {expected} rows, but {got} were written")]
     RowCount { expected: u32, got: u32 },
+    /// The image was already completed.
+    #[error("the PNG is already complete")]
+    Finished,
 }
 
 /// What to embed besides the pixels.
@@ -103,7 +106,6 @@ impl PngWriter {
     }
 
     /// Appends one row of `width * 4` RGBA bytes.
-    #[allow(clippy::expect_used, reason = "stream is open until finish")]
     pub fn write_row(&mut self, row: &[u8]) -> Result<(), PngWriteError> {
         let expected = self.width as usize * 4;
         if row.len() != expected {
@@ -118,14 +120,13 @@ impl PngWriter {
                 got: self.rows + 1,
             });
         }
-        let stream = self.stream.as_mut().expect("stream is open until finish");
+        let stream = self.stream.as_mut().ok_or(PngWriteError::Finished)?;
         stream.write_all(row)?;
         self.rows += 1;
         Ok(())
     }
 
     /// Completes the image and moves it into place. Fails if rows are missing.
-    #[allow(clippy::expect_used, reason = "stream is open until finish")]
     pub fn finish(mut self) -> Result<(), PngWriteError> {
         if self.rows != self.height {
             return Err(PngWriteError::RowCount {
@@ -133,7 +134,7 @@ impl PngWriter {
                 got: self.rows,
             });
         }
-        let stream = self.stream.take().expect("stream is open until finish");
+        let stream = self.stream.take().ok_or(PngWriteError::Finished)?;
         stream.finish()?;
         std::fs::rename(&self.temp, &self.dest)?;
         self.done = true;
