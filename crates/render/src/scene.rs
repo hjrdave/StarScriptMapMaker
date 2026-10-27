@@ -19,7 +19,7 @@ use crate::profile::{self, Stage};
 use crate::shore_rings::{RingStore, SHADING_BANDS, ripple_distances, shading_distances};
 use crate::stamp::{PlacedStamp, StampDraw};
 use crate::text::{Fonts, LabelLayout, LayoutKey};
-use crate::vector::{FillRule, ObjectRef, Paint, VectorGroup, VectorShape};
+use crate::vector::{FillRule, ObjectRef, Paint, Placement, VectorGroup, VectorShape};
 
 /// The roughened outline of `id`, timed as the Roughness stage (a cache hit is near free).
 fn outline(roughness: &mut RoughnessCache, map: &Map, id: Id) -> Option<Arc<MultiPolygon>> {
@@ -172,7 +172,7 @@ impl MapScene {
             mark_object(map, id, &mut groups[first_group..]);
             for placed in &mut stamps[first_stamp..] {
                 placed.clip = clip;
-                placed.off_canvas = is_off_canvas(map, id);
+                placed.placement = placement_of(map, id);
             }
             if let Some(scope) = clips.last_mut().filter(|_| open.is_some()) {
                 scope.groups.end = groups.len();
@@ -222,7 +222,7 @@ impl MapScene {
             ObjectKind::Stamp(stamp) => stamps.push(PlacedStamp {
                 after: groups.len(),
                 clip: None,
-                off_canvas: false,
+                placement: Placement::Canvas,
                 draw: StampDraw {
                     asset: stamp.asset.clone(),
                     position: stamp.position,
@@ -272,16 +272,29 @@ fn mark_object(map: &Map, id: Id, groups: &mut [VectorGroup]) {
     let Some(version) = map.version(id) else {
         return;
     };
-    let off_canvas = is_off_canvas(map, id);
+    let placement = placement_of(map, id);
     for group in groups {
         group.object = Some(ObjectRef { id, version });
-        group.off_canvas = off_canvas;
+        group.placement = placement;
     }
 }
 
-/// Whether `id` is an Object that sits off the Canvas rather than belonging to it.
-fn is_off_canvas(map: &Map, id: Id) -> bool {
-    matches!(map.node(id), Some(Node::Object(object)) if object.membership == Membership::OffCanvas)
+/// Where the Object `id` is drawn: the board that clips it, or none. Art boards are counted
+/// in the Map's order without the Canvas, as [`CanvasScene::for_map`](crate::CanvasScene::for_map) lists them.
+fn placement_of(map: &Map, id: Id) -> Placement {
+    let Some(Node::Object(object)) = map.node(id) else {
+        return Placement::Canvas;
+    };
+    match object.membership {
+        Membership::Canvas => Placement::Canvas,
+        Membership::OffCanvas => Placement::OffCanvas,
+        Membership::Board(board) => map
+            .boards()
+            .iter()
+            .filter(|other| other.id != map.primary_board())
+            .position(|other| other.id == board)
+            .map_or(Placement::Canvas, Placement::Board),
+    }
 }
 
 /// The Landmass `id` is clipped to: that of the nearest Layer above it that has a Clip. A
@@ -359,7 +372,7 @@ fn stroke(path: Path, color: Color, width: f32, opacity: f32) -> VectorGroup {
         }],
         effect: false,
         object: None,
-        off_canvas: false,
+        placement: Placement::Canvas,
     }
 }
 

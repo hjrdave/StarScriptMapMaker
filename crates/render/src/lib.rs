@@ -29,7 +29,9 @@ mod tiled;
 mod vector;
 mod view;
 
-pub use canvas::{Backdrop, CANVAS_FORMAT, CanvasRenderer, CanvasScene, Content, Quality};
+pub use canvas::{
+    Backdrop, BoardArea, CANVAS_FORMAT, CanvasRenderer, CanvasScene, Content, Quality,
+};
 pub use color::Color;
 pub use export_job::{ExportContext, ExportError, ExportJob, ExportStep};
 pub use gpu::{GpuCapabilities, Headless, HeadlessError, Suitability};
@@ -41,7 +43,7 @@ pub use sprite::{PLACEHOLDER_SIZE, Sprite, SpriteError, SpriteState, SpriteStore
 pub use stamp::{PlacedStamp, StampDraw};
 pub use text::{Fonts, LabelLayout};
 pub use tiled::{ExportStatus, TiledExport, TiledExportError};
-pub use vector::{FillRule, Paint, TessellationCache, TessellationRebuild, VectorGroup};
+pub use vector::{FillRule, Paint, Placement, TessellationCache, TessellationRebuild, VectorGroup};
 pub use view::View;
 
 /// The wgpu version this crate is built against, for callers that share a device with it.

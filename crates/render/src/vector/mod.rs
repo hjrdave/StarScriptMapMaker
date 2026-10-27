@@ -15,6 +15,20 @@ pub use cache::{TessellationCache, TessellationRebuild};
 pub(crate) use chunk::APPLY_BUDGET;
 pub(crate) use renderer::LyonRenderer;
 
+/// Where an Object is drawn and which edge clips it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Placement {
+    /// A member of the Canvas, clipped at its edge.
+    #[default]
+    Canvas,
+    /// A member of the Art board at this place among the scene's Art boards
+    /// ([`CanvasScene::art_boards`](crate::CanvasScene::art_boards)), clipped at its edge. A
+    /// scene without that Art board (export) leaves the Object out.
+    Board(usize),
+    /// Off every board: drawn in full around them, and left out of export.
+    OffCanvas,
+}
+
 /// How a path is painted.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Paint {
@@ -53,9 +67,9 @@ pub struct VectorGroup {
     /// The Object the group draws, whose tessellation is cached as a whole. Groups of no
     /// Object (Clip masks, the backdrop) are tessellated afresh every time.
     pub object: Option<ObjectRef>,
-    /// The group draws an Object off the Canvas, which shows in full around the Canvas
-    /// where other Objects are clipped at its edge, and is left out of export.
-    pub off_canvas: bool,
+    /// Which board's edge clips the group, or none: an Object off the boards shows in full
+    /// around them, and is left out of export.
+    pub placement: Placement,
 }
 
 /// An Object at the version its groups were built from.
@@ -75,7 +89,7 @@ impl VectorGroup {
             }],
             effect: false,
             object: None,
-            off_canvas: false,
+            placement: Placement::Canvas,
         }
     }
 

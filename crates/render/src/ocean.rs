@@ -17,10 +17,13 @@ pub(crate) struct OceanUniform {
     pub(crate) dark: [f32; 4],
 }
 
+/// The ocean texture of every board in view: one uniform and bind group each.
 pub(crate) struct OceanPass {
     pipeline: wgpu::RenderPipeline,
-    uniform: wgpu::Buffer,
-    bind_group: wgpu::BindGroup,
+    layout: wgpu::BindGroupLayout,
+    boards: Vec<(wgpu::Buffer, wgpu::BindGroup)>,
+    /// How many of `boards` the last [`OceanPass::set`] filled in.
+    count: usize,
 }
 
 impl OceanPass {
@@ -39,20 +42,7 @@ impl OceanPass {
                 .into(),
             ),
         });
-        let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("ocean"),
-            contents: bytemuck::bytes_of(&OceanUniform::zeroed()),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
         let layout = crate::canvas::uniform_layout(device, "ocean");
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("ocean"),
-            layout: &layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform.as_entire_binding(),
-            }],
-        });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("ocean"),
             bind_group_layouts: &[Some(view_layout), Some(&layout)],
@@ -69,18 +59,46 @@ impl OceanPass {
         );
         Self {
             pipeline,
-            uniform,
-            bind_group,
+            layout,
+            boards: Vec::new(),
+            count: 0,
         }
     }
 
-    pub(crate) fn set(&self, queue: &wgpu::Queue, uniform: OceanUniform) {
-        queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&uniform));
+    /// Sets the ocean of each board, in the order they draw.
+    pub(crate) fn set(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        uniforms: &[OceanUniform],
+    ) {
+        while self.boards.len() < uniforms.len() {
+            let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("ocean"),
+                contents: bytemuck::bytes_of(&OceanUniform::zeroed()),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("ocean"),
+                layout: &self.layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
+            });
+            self.boards.push((buffer, bind_group));
+        }
+        for ((buffer, _), uniform) in self.boards.iter().zip(uniforms) {
+            queue.write_buffer(buffer, 0, bytemuck::bytes_of(uniform));
+        }
+        self.count = uniforms.len();
     }
 
     pub(crate) fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
         pass.set_pipeline(&self.pipeline);
-        pass.set_bind_group(1, &self.bind_group, &[]);
-        pass.draw(0..6, 0..1);
+        for (_, bind_group) in self.boards.iter().take(self.count) {
+            pass.set_bind_group(1, bind_group, &[]);
+            pass.draw(0..6, 0..1);
+        }
     }
 }
