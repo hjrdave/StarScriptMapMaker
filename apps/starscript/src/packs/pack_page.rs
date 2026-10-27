@@ -251,10 +251,6 @@ impl PackPage {
     }
 
     /// One pack as a card. Returns whether it was clicked.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "existing long function; split over time (#351)"
-    )]
     fn pack_card(
         &mut self,
         ui: &mut egui::Ui,
@@ -287,39 +283,7 @@ impl PackPage {
             },
             p.bg_canvas,
         );
-        // A few of the pack's Assets, side by side.
-        let tile = PREVIEW_HEIGHT - 16.0;
-        let shown: Vec<&Asset> = pack.assets.iter().take(PREVIEW_COUNT).collect();
-        let strip = tile * shown.len() as f32 + 6.0 * shown.len().saturating_sub(1) as f32;
-        let mut x = preview.center().x - strip / 2.0;
-        for asset in shown {
-            let tile_rect =
-                Rect::from_min_size(egui::pos2(x, preview.min.y + 8.0), egui::Vec2::splat(tile));
-            x += tile + 6.0;
-            let Ok(reference) = AssetRef::new(pack.id.clone(), asset.id.clone()) else {
-                continue;
-            };
-            let art = self
-                .thumbnails
-                .entry(reference.clone())
-                .or_insert_with(|| asset_browser::load_art(ui.ctx(), sprites, &reference))
-                .clone();
-            let fill = match &art {
-                Some(art) if art.light => p.thumb_bg_light_art,
-                _ => p.thumb_bg,
-            };
-            painter.rect_filled(tile_rect, radius, fill);
-            if let Some(art) = art {
-                let size = art.texture.size_vec2();
-                let scale = ((tile - 8.0) / size.x.max(1.0)).min((tile - 8.0) / size.y.max(1.0));
-                painter.image(
-                    art.texture.id(),
-                    Rect::from_center_size(tile_rect.center(), size * scale),
-                    Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                    egui::Color32::WHITE,
-                );
-            }
-        }
+        self.paint_preview_strip(ui, sprites, pack, preview);
         painter.hline(
             rect.x_range(),
             preview.max.y + 0.5,
@@ -365,27 +329,7 @@ impl PackPage {
             theme::CAPTION,
             p.text_secondary,
         );
-        // Badges: where the pack came from, and whether it must be credited.
-        let mut badge_x = left;
-        let badge_y = top + 54.0;
-        let mut badges = vec![(origin_label(pack), p.text_secondary)];
-        if pack.attribution_required {
-            badges.push(("Attribution required", p.gold_text));
-        }
-        for (text, color) in badges {
-            let galley = painter.layout_no_wrap(
-                text.to_owned(),
-                egui::FontId::new(theme::CAPTION, theme::ui_family()),
-                color,
-            );
-            let chip = Rect::from_min_size(
-                egui::pos2(badge_x, badge_y),
-                galley.size() + vec2(10.0, 4.0),
-            );
-            painter.rect_filled(chip, theme::RADIUS_CHIP, p.bg_panel);
-            painter.galley(chip.min + vec2(5.0, 2.0), galley, color);
-            badge_x = chip.max.x + 6.0;
-        }
+        paint_badges(ui, pack, egui::pos2(left, top + 54.0));
         // The "…" button, shown while the card is hovered or its menu is open.
         let more_id = response.id.with("more");
         let button = Rect::from_center_size(
@@ -401,25 +345,53 @@ impl PackPage {
             }
             icons::paint(ui, button, Icon::More, 16.0, p.text_secondary);
         }
-        egui::Popup::menu(&more)
-            .id(more_id.with("popup"))
-            .show(|ui| {
-                let danger = theme::palette(ui.ctx()).danger;
-                let blocked = delete_blocked_reason(pack);
-                let item = ui.add_enabled(
-                    blocked.is_none(),
-                    egui::Button::new(egui::RichText::new("Delete…").color(danger)),
-                );
-                let item = match blocked {
-                    Some(reason) => item.on_disabled_hover_text(reason),
-                    None => item,
-                };
-                if item.clicked() {
-                    actions.push(Action::Delete(pack.id.clone()));
-                    ui.close();
-                }
-            });
+        pack_menu(&more, more_id, pack, actions);
         response.clicked() && !more.clicked()
+    }
+
+    /// Paints a few of the pack's Assets side by side in the card's `preview` area.
+    fn paint_preview_strip(
+        &mut self,
+        ui: &egui::Ui,
+        sprites: &SpriteStore,
+        pack: &Pack,
+        preview: Rect,
+    ) {
+        let p = theme::palette(ui.ctx());
+        let radius = theme::RADIUS_FIELD;
+        let painter = ui.painter().clone();
+        let tile = PREVIEW_HEIGHT - 16.0;
+        let shown: Vec<&Asset> = pack.assets.iter().take(PREVIEW_COUNT).collect();
+        let strip = tile * shown.len() as f32 + 6.0 * shown.len().saturating_sub(1) as f32;
+        let mut x = preview.center().x - strip / 2.0;
+        for asset in shown {
+            let tile_rect =
+                Rect::from_min_size(egui::pos2(x, preview.min.y + 8.0), egui::Vec2::splat(tile));
+            x += tile + 6.0;
+            let Ok(reference) = AssetRef::new(pack.id.clone(), asset.id.clone()) else {
+                continue;
+            };
+            let art = self
+                .thumbnails
+                .entry(reference.clone())
+                .or_insert_with(|| asset_browser::load_art(ui.ctx(), sprites, &reference))
+                .clone();
+            let fill = match &art {
+                Some(art) if art.light => p.thumb_bg_light_art,
+                _ => p.thumb_bg,
+            };
+            painter.rect_filled(tile_rect, radius, fill);
+            if let Some(art) = art {
+                let size = art.texture.size_vec2();
+                let scale = ((tile - 8.0) / size.x.max(1.0)).min((tile - 8.0) / size.y.max(1.0));
+                painter.image(
+                    art.texture.id(),
+                    Rect::from_center_size(tile_rect.center(), size * scale),
+                    Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    egui::Color32::WHITE,
+                );
+            }
+        }
     }
 
     fn pack_detail(
@@ -587,6 +559,55 @@ fn status_banner(ui: &mut egui::Ui, status: &Status, actions: &mut Vec<Action>) 
                     }
                 }
             });
+        });
+}
+
+/// Paints the chips under a pack card's text, starting at `origin`: where the pack came from,
+/// and whether it must be credited.
+fn paint_badges(ui: &egui::Ui, pack: &Pack, origin: egui::Pos2) {
+    let p = theme::palette(ui.ctx());
+    let painter = ui.painter().clone();
+    let mut badge_x = origin.x;
+    let badge_y = origin.y;
+    let mut badges = vec![(origin_label(pack), p.text_secondary)];
+    if pack.attribution_required {
+        badges.push(("Attribution required", p.gold_text));
+    }
+    for (text, color) in badges {
+        let galley = painter.layout_no_wrap(
+            text.to_owned(),
+            egui::FontId::new(theme::CAPTION, theme::ui_family()),
+            color,
+        );
+        let chip = Rect::from_min_size(
+            egui::pos2(badge_x, badge_y),
+            galley.size() + vec2(10.0, 4.0),
+        );
+        painter.rect_filled(chip, theme::RADIUS_CHIP, p.bg_panel);
+        painter.galley(chip.min + vec2(5.0, 2.0), galley, color);
+        badge_x = chip.max.x + 6.0;
+    }
+}
+
+/// The pack card's "…" menu, which offers Delete unless something blocks it.
+fn pack_menu(more: &egui::Response, more_id: egui::Id, pack: &Pack, actions: &mut Vec<Action>) {
+    egui::Popup::menu(more)
+        .id(more_id.with("popup"))
+        .show(|ui| {
+            let danger = theme::palette(ui.ctx()).danger;
+            let blocked = delete_blocked_reason(pack);
+            let item = ui.add_enabled(
+                blocked.is_none(),
+                egui::Button::new(egui::RichText::new("Delete…").color(danger)),
+            );
+            let item = match blocked {
+                Some(reason) => item.on_disabled_hover_text(reason),
+                None => item,
+            };
+            if item.clicked() {
+                actions.push(Action::Delete(pack.id.clone()));
+                ui.close();
+            }
         });
 }
 
