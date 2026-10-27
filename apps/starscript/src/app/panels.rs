@@ -223,6 +223,13 @@ pub(super) fn layers_panel(
         }
         return;
     }
+    if shell.sidebar_section() == shell::SidebarSection::Assets {
+        shell::panel_header(ui, "Assets", |_| {});
+        egui::Frame::NONE
+            .inner_margin(egui::Margin::symmetric(theme::SPACING[3] as i8, 0))
+            .show(ui, |ui| tab.asset_browser.show(ui, &mut tab.editor));
+        return;
+    }
     shell::panel_header(ui, "Layers", |ui| {
         if icons::icon_button(ui, icons::Icon::Add, "New Layer (⇧⌘N)").clicked() {
             tab.editor.new_layer();

@@ -1,6 +1,6 @@
 //! The Asset picker: the installed Asset packs, filtered by pack, category and a search over
-//! names and tags, as a grid of thumbnails. It sits in the Stamp tool
-//! sections of Properties; choosing an Asset sets `Editor::selected_asset`.
+//! names and tags, as a grid of thumbnails. It fills the Assets section of the sidebar;
+//! choosing an Asset sets `Editor::selected_asset` and switches to the Stamp tool.
 
 use std::collections::HashMap;
 
@@ -10,11 +10,10 @@ use ssmap_render::SpriteStore;
 
 use crate::editor::Editor;
 use crate::theme;
+use crate::tools::ToolId;
 
 /// Thumbnails per row.
 const COLUMNS: usize = 4;
-/// The grid scrolls past this height, in points.
-const GRID_MAX_HEIGHT: f32 = 240.0;
 
 #[derive(Default)]
 pub(crate) struct AssetBrowser {
@@ -27,6 +26,8 @@ pub(crate) struct AssetBrowser {
     search: String,
     /// `None` records art that could not be loaded.
     thumbnails: HashMap<AssetRef, Option<ThumbArt>>,
+    /// "Open Asset packs" was clicked; the owner of the window shows the page.
+    open_packs: bool,
 }
 
 /// Whether `asset` passes the filters: `category` exactly, and every word of `search` found
@@ -106,9 +107,30 @@ fn thumbnail_label(
 }
 
 impl AssetBrowser {
+    /// Whether "Open Asset packs" was clicked since the last call.
+    pub(crate) fn take_open_packs(&mut self) -> bool {
+        std::mem::take(&mut self.open_packs)
+    }
+
+    /// With no packs installed: a short message and the way to the Asset packs page.
+    fn no_packs(&mut self, ui: &mut egui::Ui) {
+        let palette = theme::palette(ui.ctx());
+        ui.add_space(theme::SPACING[2]);
+        ui.label(
+            egui::RichText::new("No Asset packs are installed.")
+                .size(theme::BODY)
+                .color(palette.text_secondary),
+        );
+        ui.add_space(theme::SPACING[1]);
+        if ui.button("Open Asset packs").clicked() {
+            self.open_packs = true;
+        }
+    }
+
     pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
-        let Some(library) = editor.sprites().map(|sprites| sprites.library().clone()) else {
-            ui.weak("No Asset packs are loaded.");
+        let library = editor.sprites().map(|sprites| sprites.library().clone());
+        let Some(library) = library.filter(|library| !library.packs().is_empty()) else {
+            self.no_packs(ui);
             return;
         };
         if !self.default_applied {
@@ -194,7 +216,7 @@ impl AssetBrowser {
                 .max(24.0);
             egui::ScrollArea::vertical()
                 .id_salt("asset grid")
-                .max_height(GRID_MAX_HEIGHT)
+                .max_height(ui.available_height())
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     for row in shown_assets.chunks(COLUMNS) {
@@ -226,6 +248,7 @@ impl AssetBrowser {
         }
         if let Some(reference) = chosen {
             editor.selected_asset = Some(reference);
+            editor.active_tool = ToolId::Stamp;
         }
         self.picked(ui, editor, &library);
     }

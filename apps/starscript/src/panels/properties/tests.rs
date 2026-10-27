@@ -312,7 +312,7 @@ fn install_test_pack(editor: &mut Editor, attribution_required: bool) {
 }
 
 #[test]
-fn stamp_shows_the_picker_and_scatter_settings_and_select_shows_no_tool_section() {
+fn stamp_shows_the_chosen_asset_and_scatter_settings_and_select_shows_no_tool_section() {
     let (mut fixture, _, _) = fixture();
     install_test_pack(&mut fixture.editor, false);
     fixture.editor.active_tool = ToolId::Stamp;
@@ -327,96 +327,38 @@ fn stamp_shows_the_picker_and_scatter_settings_and_select_shows_no_tool_section(
         "Rotation jitter",
         "Random flip",
         "Random variant",
+        "Choose Asset…",
+        "No Asset chosen",
     ] {
         assert!(harness.query_by_label(label).is_some(), "{label}");
     }
-    assert!(harness.query_by_label("Tree (test-pack/tree)").is_some());
+    // The picker lives in the Assets section, not here.
+    assert!(harness.query_by_label("Search names and tags").is_none());
+
+    harness.state_mut().editor.selected_asset = Some("test-pack/tree".parse().unwrap());
+    harness.run();
+    assert!(harness.query_by_label("Tree").is_some());
+    assert!(harness.query_by_label("Test pack").is_some());
+    assert!(harness.query_by_label("No Asset chosen").is_none());
 
     harness.state_mut().editor.active_tool = ToolId::Select;
     harness.run();
-    for label in ["Density", "Tree (test-pack/tree)"] {
+    for label in ["Density", "Choose Asset…"] {
         assert!(harness.query_by_label(label).is_none(), "{label}");
     }
 }
 
 #[test]
-fn picking_a_thumbnail_arms_its_asset() {
+fn choose_asset_asks_for_the_assets_section() {
     let (mut fixture, _, _) = fixture();
     install_test_pack(&mut fixture.editor, false);
     fixture.editor.active_tool = ToolId::Stamp;
     let mut harness = harness(fixture);
-    assert_eq!(harness.state().editor.selected_asset, None);
-    harness.get_by_label("Tree (test-pack/tree)").click();
+    assert!(!harness.state_mut().panel.take_show_assets());
+    harness.get_by_label("Choose Asset…").click();
     harness.run();
-    assert_eq!(
-        harness.state().editor.selected_asset,
-        Some("test-pack/tree".parse().unwrap())
-    );
-    assert_eq!(harness.state().editor.active_tool, ToolId::Stamp);
-    // The picked Asset's pack · author · licence.
-    assert!(
-        harness
-            .query_by_label_contains("Test pack · StarScript Map Maker contributors · CC0-1.0")
-            .is_some()
-    );
-}
-
-#[test]
-fn variants_show_their_count_and_attribution_shows_the_dot() {
-    let (mut fixture, _, _) = fixture();
-    install_test_pack(&mut fixture.editor, true);
-    fixture.editor.active_tool = ToolId::Stamp;
-    let mut harness = harness(fixture);
-    assert!(
-        harness
-            .query_by_label("Tree (test-pack/tree), attribution required")
-            .is_some()
-    );
-    assert!(
-        harness
-            .query_by_label("Mountain (test-pack/mountain-1), 2 variants, attribution required")
-            .is_some()
-    );
-    harness
-        .get_by_label("Tree (test-pack/tree), attribution required")
-        .click();
-    harness.run();
-    assert!(
-        harness
-            .query_by_label_contains("Attribution required")
-            .is_some()
-    );
-}
-
-#[test]
-fn no_dot_without_attribution_and_an_empty_search_offers_a_way_out() {
-    let (mut fixture, _, _) = fixture();
-    install_test_pack(&mut fixture.editor, false);
-    fixture.editor.active_tool = ToolId::Stamp;
-    let mut harness = harness(fixture);
-    assert!(
-        harness
-            .query_by_label_contains("attribution required")
-            .is_none()
-    );
-    // The search field is the first text field, above the Layer's name.
-    for step in 0..2 {
-        let search = harness
-            .get_all_by_role(egui::accesskit::Role::TextInput)
-            .next()
-            .expect("the search field");
-        if step == 0 {
-            search.click();
-        } else {
-            search.type_text("zzz");
-        }
-        harness.run();
-    }
-    harness.run();
-    assert!(harness.query_by_label("No Assets match “zzz”").is_some());
-    harness.get_by_label("Clear search").click();
-    harness.run();
-    assert!(harness.query_by_label("Tree (test-pack/tree)").is_some());
+    assert!(harness.state_mut().panel.take_show_assets());
+    assert!(!harness.state_mut().panel.take_show_assets());
 }
 
 #[test]

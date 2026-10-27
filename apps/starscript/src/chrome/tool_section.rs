@@ -1,11 +1,13 @@
 //! The active tool's settings, at the top of Properties above the selection: the Land Brush's
-//! size and mode, the Stamp's Asset picker, its scatter settings, and the
+//! size and mode, the Stamp's chosen Asset and scatter settings, and the
 //! Stamp Eraser's size. Tools without settings get no section.
 
 use eframe::egui;
 use ssmap_core::scatter::Placement;
 
-use crate::asset_browser::AssetBrowser;
+use ssmap_core::asset::AssetRef;
+
+use crate::asset_browser::{self, ThumbArt, Thumbnail};
 use crate::editor::Editor;
 use crate::icons::{self, Icon};
 use crate::prop_widgets::{self, ScrubSpec};
@@ -14,7 +16,10 @@ use crate::tools::{self, ToolId};
 
 #[derive(Default)]
 pub(crate) struct ToolSection {
-    browser: AssetBrowser,
+    /// The chosen Asset's thumbnail; `None` records art that could not be loaded.
+    thumbnail: Option<(AssetRef, Option<ThumbArt>)>,
+    /// "Choose Asset…" was clicked; the owner of the window opens the Assets section.
+    show_assets: bool,
 }
 
 /// The icon of a tool.
@@ -46,6 +51,70 @@ fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> bool {
 }
 
 impl ToolSection {
+    /// Whether "Choose Asset…" was clicked since the last call.
+    pub(crate) fn take_show_assets(&mut self) -> bool {
+        std::mem::take(&mut self.show_assets)
+    }
+
+    /// The Asset the Stamp places, with its thumbnail, and the link to the Assets section
+    /// where it is chosen.
+    fn chosen_asset(&mut self, ui: &mut egui::Ui, editor: &Editor) {
+        let palette = theme::palette(ui.ctx());
+        let library = editor.sprites().map(|sprites| sprites.library().clone());
+        let found = editor.selected_asset.as_ref().and_then(|reference| {
+            let (pack, asset) = library.as_ref()?.asset(reference)?;
+            Some((reference, pack, asset))
+        });
+        ui.horizontal(|ui| {
+            if let Some((reference, pack, asset)) = found {
+                if self
+                    .thumbnail
+                    .as_ref()
+                    .is_none_or(|(held, _)| held != reference)
+                {
+                    let art = editor
+                        .sprites()
+                        .and_then(|sprites| asset_browser::load_art(ui.ctx(), sprites, reference));
+                    self.thumbnail = Some((reference.clone(), art));
+                }
+                let art = self.thumbnail.as_ref().and_then(|(_, art)| art.clone());
+                asset_browser::paint_thumbnail(
+                    ui,
+                    art,
+                    reference,
+                    asset,
+                    Thumbnail {
+                        side: 48.0,
+                        selected: false,
+                        variants: 0,
+                        attribution: pack.attribution_required,
+                    },
+                );
+                ui.vertical(|ui| {
+                    ui.label(
+                        egui::RichText::new(&asset.name)
+                            .size(theme::BODY)
+                            .color(palette.text_primary),
+                    );
+                    ui.label(
+                        egui::RichText::new(&pack.name)
+                            .size(theme::CAPTION)
+                            .color(palette.text_tertiary),
+                    );
+                });
+            } else {
+                ui.label(
+                    egui::RichText::new("No Asset chosen")
+                        .size(theme::BODY)
+                        .color(palette.text_secondary),
+                );
+            }
+        });
+        if ui.link("Choose Asset…").clicked() {
+            self.show_assets = true;
+        }
+    }
+
     pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         let tool = editor.active_tool;
         if !has_section(tool) {
@@ -65,7 +134,7 @@ impl ToolSection {
                 match tool {
                     ToolId::LandBrush | ToolId::WaterBrush => land_brush(ui, editor),
                     ToolId::Stamp => {
-                        self.browser.show(ui, editor);
+                        self.chosen_asset(ui, editor);
                         ui.add_space(theme::SPACING[2]);
                         scatter_settings(ui, editor);
                     }

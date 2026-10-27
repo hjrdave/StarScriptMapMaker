@@ -110,6 +110,11 @@ impl Home {
         self.requested.remove(path);
     }
 
+    /// Makes the Asset packs page the list Home shows.
+    pub(crate) fn show_packs(&mut self) {
+        self.view = View::Packs;
+    }
+
     /// Called each frame Home is drawn. The first frame after another tab was shown reads
     /// every file again, so times and previews are not stale. What was read stays on screen
     /// until the new reading arrives.

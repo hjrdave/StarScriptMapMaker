@@ -150,6 +150,13 @@ impl MapMakerApp {
             .show(ui, |ui| tab.canvas_view.show(ui, &mut tab.editor));
         self.win.canvas_zone = Some(canvas.response.rect);
         self.win.layers_zone = layers_divider;
+        if tab.properties.take_show_assets() {
+            self.win.shell.show_section(shell::SidebarSection::Assets);
+        }
+        if tab.asset_browser.take_open_packs() {
+            self.win.home.show_packs();
+            self.win.home_active = self.win.main;
+        }
         tool_dock::show(&ctx, canvas.response.rect, &mut tab.editor.active_tool);
         tab.editor.show_toasts(&ctx, canvas.response.rect);
         // After the Canvas, so the strips on its edges win the pointer over it.
