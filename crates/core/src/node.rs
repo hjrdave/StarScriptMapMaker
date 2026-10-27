@@ -17,15 +17,19 @@ use crate::shore::{ShoreKind, ShoreStyle};
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Node {
+    /// A Layer.
     Layer(Layer),
+    /// An Object.
     Object(Object),
 }
 
 impl Node {
+    /// Whether this is a Layer.
     pub fn is_layer(&self) -> bool {
         matches!(self, Node::Layer(_))
     }
 
+    /// Whether this node is locked itself, not counting a locked Layer above it.
     pub fn locked(&self) -> bool {
         match self {
             Node::Layer(layer) => layer.locked,
@@ -52,8 +56,11 @@ impl Node {
 /// A container of Objects and other Layers. A Group is just a nested Layer.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Layer {
+    /// The Layer's name.
     pub name: String,
+    /// Whether the Layer and what it holds are drawn.
     pub visible: bool,
+    /// Whether the Layer refuses Commands, along with everything inside it.
     pub locked: bool,
     /// From 0 (transparent) to 1 (opaque).
     pub opacity: f32,
@@ -67,11 +74,13 @@ pub struct Layer {
     /// transform together. A set of one links nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<Id>,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
 
 impl Layer {
+    /// A visible, unlocked, fully opaque Layer called `name`, with nothing set.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -92,20 +101,24 @@ pub struct Object {
     /// A name the user gave it; `None` shows the kind's default name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Whether the Object refuses Commands.
     pub locked: bool,
-    /// Whether the Object belongs to the Canvas (and is clipped at its edge) or sits on the
-    /// off-Canvas. Changed only by dragging, never by resizing the Canvas.
+    /// Whether the Object belongs to the Canvas (and is clipped at its edge) or sits off it.
+    /// Changed only by dragging, never by resizing the Canvas.
     #[serde(default, skip_serializing_if = "Membership::is_default")]
     pub membership: Membership,
+    /// What the Object is, with that kind's own settings.
     pub kind: ObjectKind,
     /// The Link set this Object belongs to, as on a [`Layer`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub link: Option<Id>,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
 
 impl Object {
+    /// An unnamed, unlocked Object of `kind` that belongs to the Canvas.
     pub fn new(kind: ObjectKind) -> Self {
         Self {
             name: None,
@@ -141,8 +154,11 @@ impl Membership {
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ObjectKind {
+    /// A filled region of land.
     Landmass(Landmass),
+    /// A closed region of fresh water.
     Lake(Lake),
+    /// One placed Asset.
     Stamp(Stamp),
     /// Boxed: a Label carries far more fields than other kinds, and Maps hold many nodes.
     Label(Box<Label>),
@@ -273,13 +289,16 @@ pub struct Landmass {
     /// Overrides the Map-wide default Shore style.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shore: Option<ShoreStyle>,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
 
 impl Landmass {
+    /// The fill colour a new Landmass gets.
     pub const DEFAULT_FILL: Color = Color::rgb(0xd8, 0xc4, 0x9a);
 
+    /// A Landmass with outline `geometry` and the default fill, Roughness and Shore style.
     pub fn new(geometry: MultiPolygon) -> Self {
         Self {
             geometry,
@@ -316,13 +335,16 @@ pub struct Lake {
     /// Overrides the Map-wide default Shore style.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shore: Option<ShoreStyle>,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
 
 impl Lake {
+    /// The fill colour a new Lake gets.
     pub const DEFAULT_FILL: Color = Color::rgb(0x6f, 0xa8, 0xc8);
 
+    /// A Lake with outline `geometry` and the default fill, Roughness and Shore style.
     pub fn new(geometry: MultiPolygon) -> Self {
         Self {
             geometry,
@@ -350,6 +372,7 @@ fn default_lake_fill() -> Color {
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]
 pub struct Stamp {
+    /// The Asset this Stamp places.
     pub asset: AssetRef,
     /// Where the Anchor sits, in Canvas units.
     pub position: Point,
@@ -365,11 +388,13 @@ pub struct Stamp {
     pub fill: Option<Color>,
     /// From 0 (transparent) to 1 (opaque).
     pub opacity: f32,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
 
 impl Stamp {
+    /// A Stamp of `asset` with its Anchor at `position`, at normal size, upright and opaque.
     pub fn new(asset: AssetRef, position: Point) -> Self {
         Self {
             asset,
@@ -403,9 +428,12 @@ impl Default for Stamp {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Align {
+    /// Lines start at the Label's left edge.
     Left,
+    /// Lines are centred on the Label's position.
     #[default]
     Centre,
+    /// Lines end at the Label's right edge.
     Right,
 }
 
@@ -414,10 +442,13 @@ pub enum Align {
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]
 pub struct FontFace {
+    /// The font family name.
     pub family: String,
     /// The CSS weight, from 1 to 1000; 400 is regular and 700 bold.
     pub weight: u16,
+    /// Whether the face is italic.
     pub italic: bool,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -439,7 +470,9 @@ impl Default for FontFace {
 pub struct Halo {
     /// How far the halo reaches past the glyph edges, in Canvas units. 0 draws none.
     pub width: f64,
+    /// The halo's colour.
     pub color: Color,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }

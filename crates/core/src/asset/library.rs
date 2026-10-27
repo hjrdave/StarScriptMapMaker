@@ -1,4 +1,8 @@
 //! Finding and loading every pack.
+#![allow(
+    missing_docs,
+    reason = "still to document; remove this once the file is done (#351)"
+)]
 
 use std::fmt;
 use std::path::{Path, PathBuf};

@@ -2,6 +2,10 @@
 //! outline: an outline, ripple lines stepping outward over the water, and shading inward from
 //! the coast. A Map-wide default exists for Landmasses and another for Lakes; either kind can
 //! override its default.
+#![allow(
+    missing_docs,
+    reason = "still to document; remove this once the file is done (#351)"
+)]
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

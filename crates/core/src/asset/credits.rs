@@ -1,4 +1,8 @@
 //! Credits: what the loaded packs ask to be credited for, and which of it a Map uses.
+#![allow(
+    missing_docs,
+    reason = "still to document; remove this once the file is done (#351)"
+)]
 
 use std::collections::BTreeSet;
 

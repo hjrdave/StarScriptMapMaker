@@ -1,6 +1,10 @@
 //! What a Map lacks for copied branches to paste into it as they were: the Assets, fonts and
 //! Label styles they name that the Map does not have. Pasting into another Map or tab can
 //! leave such gaps; [`Map::fit_for_paste`] closes them.
+#![allow(
+    missing_docs,
+    reason = "still to document; remove this once the file is done (#351)"
+)]
 
 use std::collections::BTreeSet;
 

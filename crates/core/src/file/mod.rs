@@ -35,6 +35,10 @@
     clippy::expect_used,
     reason = "existing invariant panics; replace with error handling over time (#351)"
 )]
+#![allow(
+    missing_docs,
+    reason = "still to document; remove this once the file is done (#351)"
+)]
 
 mod blob;
 mod embed;

@@ -1,4 +1,8 @@
 //! Colours as users pick them.
+#![allow(
+    missing_docs,
+    reason = "still to document; remove this once the file is done (#351)"
+)]
 
 use std::borrow::Cow;
 use std::fmt;

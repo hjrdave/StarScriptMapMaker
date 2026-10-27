@@ -1,4 +1,8 @@
 //! Outline geometry. Landmass and Lake outlines are `f64` polygon rings (ADR 0002).
+#![allow(
+    missing_docs,
+    reason = "still to document; remove this once the file is done (#351)"
+)]
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

@@ -34,6 +34,10 @@
 //! ```
 //!
 //! Assets are referenced as `pack-id/asset-id` ([`AssetRef`]).
+#![allow(
+    missing_docs,
+    reason = "still to document; remove this once the file is done (#351)"
+)]
 
 mod credits;
 mod install;

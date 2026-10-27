@@ -5,6 +5,10 @@
     clippy::expect_used,
     reason = "existing invariant panics; replace with error handling over time (#351)"
 )]
+#![allow(
+    missing_docs,
+    reason = "still to document; remove this once the file is done (#351)"
+)]
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};

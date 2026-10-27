@@ -2,6 +2,10 @@
 //!
 //! Only the settings live here; rendering and UI come later. The settings are stored in the
 //! Map (ADR 0005) with the file name only, never an absolute path.
+#![allow(
+    missing_docs,
+    reason = "still to document; remove this once the file is done (#351)"
+)]
 
 use std::path::{Path, PathBuf};
 

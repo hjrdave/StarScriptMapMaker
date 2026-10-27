@@ -5,6 +5,10 @@
 //! concrete Command that names every Stamp, so replaying a script places identical Stamps
 //! (ADR 0004). Land and water are checked at placement time only; a Stamp keeps its place when
 //! a Coastline is edited later.
+#![allow(
+    missing_docs,
+    reason = "still to document; remove this once the file is done (#351)"
+)]
 
 use std::sync::Arc;
 

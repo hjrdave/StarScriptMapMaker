@@ -1,4 +1,8 @@
 //! The Map's background: the water colour and the procedural texture drawn over it.
+#![allow(
+    missing_docs,
+    reason = "still to document; remove this once the file is done (#351)"
+)]
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

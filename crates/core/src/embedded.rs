@@ -5,6 +5,10 @@
 //! (art, Silhouettes, font files), plus one record per `pack-id/asset-id` and per font file
 //! holding its manifest entry, credits and licence. Identical bytes are stored once. The
 //! embedded copy wins over an installed pack's art until the user updates it from the pack.
+#![allow(
+    missing_docs,
+    reason = "still to document; remove this once the file is done (#351)"
+)]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write as _};
