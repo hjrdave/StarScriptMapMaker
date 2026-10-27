@@ -431,12 +431,7 @@ pub fn number_field(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) ->
 /// A slider with a small number box. Dragging is one gesture; clicking the track is one step.
 /// Arrow keys nudge (⇧ ×10, ⌥ ×0.1) and a double-click resets to the spec's default. The box
 /// types an exact value (Enter or blur commits, Esc cancels), clamped to the spec's range.
-#[allow(
-    clippy::too_many_lines,
-    reason = "existing long function; split over time (#351)"
-)]
 pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit {
-    let palette = theme::palette(ui.ctx());
     let enabled = ui.is_enabled();
     let id = ui.make_persistent_id(("slider", spec.label));
     let mut typing: Option<String> = ui.data(|d| d.get_temp(id));
@@ -471,58 +466,9 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
         let span = max - min;
         let usable = span.is_finite() && span > 0.0;
         if enabled && usable {
-            if response.double_clicked()
-                && let Some(default) = spec.default
-            {
-                let default = spec.range.clamp(default);
-                if default != *value || spec.mixed {
-                    *value = default;
-                    edit = Edit::instant();
-                }
-            } else {
-                if response.drag_started() || response.clicked() {
-                    edit.began = true;
-                }
-                if (response.dragged() || response.clicked())
-                    && let Some(pos) = response.interact_pointer_pos()
-                {
-                    let t = f64::from((pos.x - rect.left() - 6.0) / (rect.width() - 12.0));
-                    let next = slider_value(min, max, t, spec.decimals, spec.log);
-                    if next != *value || spec.mixed {
-                        *value = next;
-                        edit.changed = true;
-                    }
-                }
-                if response.drag_stopped() || response.clicked() {
-                    edit.finished = true;
-                }
-            }
+            slider_pointer(&response, rect, value, spec, (min, max), &mut edit);
             if response.has_focus() {
-                let (dir, speed) = ui.input(|i| {
-                    let dir = f64::from(
-                        i32::from(i.key_pressed(egui::Key::ArrowRight))
-                            + i32::from(i.key_pressed(egui::Key::ArrowUp))
-                            - i32::from(i.key_pressed(egui::Key::ArrowLeft))
-                            - i32::from(i.key_pressed(egui::Key::ArrowDown)),
-                    );
-                    (dir, Speed::from_modifiers(i.modifiers))
-                });
-                if dir != 0.0 {
-                    let base = if spec.log {
-                        spec.step
-                    } else {
-                        (span / 100.0).max(spec.step)
-                    };
-                    let nudge = base * speed.factor();
-                    let next = round_to(
-                        spec.range.clamp(*value + dir * nudge),
-                        spec.decimals.max(if speed == Speed::Fine { 2 } else { 0 }),
-                    );
-                    if next != *value {
-                        *value = next;
-                        edit = Edit::instant();
-                    }
-                }
+                slider_keys(ui, value, spec, span, &mut edit);
             }
         }
         let t = if usable {
@@ -530,56 +476,7 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
         } else {
             0.0
         };
-        let (line, fill, thumb, radius) = if !enabled {
-            (
-                palette.border_subtle,
-                palette.border_strong,
-                palette.text_tertiary,
-                6.0,
-            )
-        } else if spec.mixed && !response.dragged() {
-            (
-                palette.border_strong,
-                palette.gold,
-                palette.text_tertiary,
-                6.0,
-            )
-        } else if response.dragged() {
-            (palette.border_strong, palette.gold, palette.gold_text, 7.0)
-        } else if response.hovered() || response.has_focus() {
-            (palette.border_strong, palette.gold, palette.gold_text, 6.5)
-        } else {
-            (
-                palette.border_strong,
-                palette.gold,
-                palette.text_primary,
-                6.0,
-            )
-        };
-        let y = rect.center().y;
-        let (x0, x1) = (rect.left() + 6.0, rect.right() - 6.0);
-        // A mixed setting has no place on the track: the thumb waits in the middle, unfilled.
-        let x = if spec.mixed {
-            (x0 + x1) / 2.0
-        } else {
-            x0 + t * (x1 - x0)
-        };
-        ui.painter().line_segment(
-            [egui::pos2(x0, y), egui::pos2(x1, y)],
-            Stroke::new(3.0, line),
-        );
-        if !spec.mixed {
-            ui.painter().line_segment(
-                [egui::pos2(x0, y), egui::pos2(x, y)],
-                Stroke::new(3.0, fill),
-            );
-        }
-        ui.painter().circle(
-            egui::pos2(x, y),
-            radius,
-            thumb,
-            Stroke::new(1.0, palette.bg_field),
-        );
+        paint_slider(ui, rect, &response, spec, enabled, t);
         if let Some(next) = number_box(ui, *value, spec, &mut typing, readout_w) {
             *value = next;
             edit = Edit::instant();
@@ -597,6 +494,136 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
         }
     });
     edit
+}
+
+/// Applies a double-click (reset to the default), a drag or a click on the track to `value`,
+/// noting in `edit` what began, changed and finished. `(min, max)` is the track's range.
+fn slider_pointer(
+    response: &egui::Response,
+    rect: egui::Rect,
+    value: &mut f64,
+    spec: &ScrubSpec<'_>,
+    (min, max): (f64, f64),
+    edit: &mut Edit,
+) {
+    if response.double_clicked()
+        && let Some(default) = spec.default
+    {
+        let default = spec.range.clamp(default);
+        if default != *value || spec.mixed {
+            *value = default;
+            *edit = Edit::instant();
+        }
+    } else {
+        if response.drag_started() || response.clicked() {
+            edit.began = true;
+        }
+        if (response.dragged() || response.clicked())
+            && let Some(pos) = response.interact_pointer_pos()
+        {
+            let t = f64::from((pos.x - rect.left() - 6.0) / (rect.width() - 12.0));
+            let next = slider_value(min, max, t, spec.decimals, spec.log);
+            if next != *value || spec.mixed {
+                *value = next;
+                edit.changed = true;
+            }
+        }
+        if response.drag_stopped() || response.clicked() {
+            edit.finished = true;
+        }
+    }
+}
+
+/// Nudges `value` with the arrow keys while the track has focus: ⇧ ×10, ⌥ ×0.1. `span` is the
+/// track's range.
+fn slider_keys(ui: &egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>, span: f64, edit: &mut Edit) {
+    let (dir, speed) = ui.input(|i| {
+        let dir = f64::from(
+            i32::from(i.key_pressed(egui::Key::ArrowRight))
+                + i32::from(i.key_pressed(egui::Key::ArrowUp))
+                - i32::from(i.key_pressed(egui::Key::ArrowLeft))
+                - i32::from(i.key_pressed(egui::Key::ArrowDown)),
+        );
+        (dir, Speed::from_modifiers(i.modifiers))
+    });
+    if dir != 0.0 {
+        let base = if spec.log {
+            spec.step
+        } else {
+            (span / 100.0).max(spec.step)
+        };
+        let nudge = base * speed.factor();
+        let next = round_to(
+            spec.range.clamp(*value + dir * nudge),
+            spec.decimals.max(if speed == Speed::Fine { 2 } else { 0 }),
+        );
+        if next != *value {
+            *value = next;
+            *edit = Edit::instant();
+        }
+    }
+}
+
+/// Paints the track, its filled part and the thumb, which sits at `t` (0 to 1) along it.
+fn paint_slider(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    response: &egui::Response,
+    spec: &ScrubSpec<'_>,
+    enabled: bool,
+    t: f32,
+) {
+    let palette = theme::palette(ui.ctx());
+    let (line, fill, thumb, radius) = if !enabled {
+        (
+            palette.border_subtle,
+            palette.border_strong,
+            palette.text_tertiary,
+            6.0,
+        )
+    } else if spec.mixed && !response.dragged() {
+        (
+            palette.border_strong,
+            palette.gold,
+            palette.text_tertiary,
+            6.0,
+        )
+    } else if response.dragged() {
+        (palette.border_strong, palette.gold, palette.gold_text, 7.0)
+    } else if response.hovered() || response.has_focus() {
+        (palette.border_strong, palette.gold, palette.gold_text, 6.5)
+    } else {
+        (
+            palette.border_strong,
+            palette.gold,
+            palette.text_primary,
+            6.0,
+        )
+    };
+    let y = rect.center().y;
+    let (x0, x1) = (rect.left() + 6.0, rect.right() - 6.0);
+    // A mixed setting has no place on the track: the thumb waits in the middle, unfilled.
+    let x = if spec.mixed {
+        (x0 + x1) / 2.0
+    } else {
+        x0 + t * (x1 - x0)
+    };
+    ui.painter().line_segment(
+        [egui::pos2(x0, y), egui::pos2(x1, y)],
+        Stroke::new(3.0, line),
+    );
+    if !spec.mixed {
+        ui.painter().line_segment(
+            [egui::pos2(x0, y), egui::pos2(x, y)],
+            Stroke::new(3.0, fill),
+        );
+    }
+    ui.painter().circle(
+        egui::pos2(x, y),
+        radius,
+        thumb,
+        Stroke::new(1.0, palette.bg_field),
+    );
 }
 
 #[cfg(test)]
