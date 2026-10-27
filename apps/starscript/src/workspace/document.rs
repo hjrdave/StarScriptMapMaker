@@ -3,8 +3,8 @@
 
 use std::path::{Path, PathBuf};
 
-use ssmap_core::Map;
 use ssmap_core::file::{FileError, MapFile};
+use ssmap_core::{ExportSettings, Map};
 use uuid::Uuid;
 
 /// File extension of Map files.
@@ -15,6 +15,9 @@ pub struct Document {
     file: Option<MapFile>,
     /// [`Map::revision`] when last saved or opened. A new Map starts unchanged at 0.
     saved_revision: u64,
+    /// The export settings when last saved or opened. They are written outside Commands (ADR
+    /// 0011) and so leave the revision alone, so they are compared separately.
+    saved_export: ExportSettings,
 }
 
 impl Document {
@@ -23,6 +26,7 @@ impl Document {
         let (file, map) = MapFile::open(path)?;
         let document = Self {
             saved_revision: file.saved_revision(),
+            saved_export: map.export_settings.clone(),
             file: Some(file),
         };
         Ok((document, map))
@@ -33,6 +37,7 @@ impl Document {
         Self {
             file: None,
             saved_revision: u64::MAX,
+            saved_export: ExportSettings::default(),
         }
     }
 
@@ -53,7 +58,7 @@ impl Document {
     }
 
     pub fn has_unsaved_changes(&self, map: &Map) -> bool {
-        map.revision() != self.saved_revision
+        map.revision() != self.saved_revision || map.export_settings != self.saved_export
     }
 
     /// Saves to the open file. Fails with `None` before the first save, which needs a path.
@@ -61,6 +66,7 @@ impl Document {
         let file = self.file.as_mut()?;
         Some(file.save(map, preview).map(|_| {
             self.saved_revision = map.revision();
+            self.saved_export = map.export_settings.clone();
         }))
     }
 
@@ -80,6 +86,7 @@ impl Document {
             }
         }
         self.saved_revision = map.revision();
+        self.saved_export = map.export_settings.clone();
         Ok(())
     }
 }
@@ -93,5 +100,44 @@ pub fn with_extension(path: PathBuf) -> PathBuf {
         name.push(".");
         name.push(EXTENSION);
         name.into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ssmap_core::{Canvas, DistanceUnit, Scale};
+
+    fn map() -> Map {
+        Map::new(Canvas::new(100, 100, Scale::new(1.0, DistanceUnit::Miles)))
+    }
+
+    #[test]
+    fn changing_the_export_settings_marks_the_map_unsaved_until_saved() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.ssmap");
+        let mut map = map();
+        let mut document = Document::default();
+        document.save_as(&path, &map, None).unwrap();
+        assert!(!document.has_unsaved_changes(&map));
+
+        map.export_settings.transparent_background = true;
+        assert!(document.has_unsaved_changes(&map));
+
+        document.save(&map, None).unwrap().unwrap();
+        assert!(!document.has_unsaved_changes(&map));
+        let (reopened, loaded) = Document::open(&path).unwrap();
+        assert_eq!(loaded.export_settings, map.export_settings);
+        assert!(!reopened.has_unsaved_changes(&loaded));
+    }
+
+    #[test]
+    fn setting_the_export_settings_back_clears_the_unsaved_mark() {
+        let mut map = map();
+        let document = Document::default();
+        map.export_settings.transparent_background = true;
+        assert!(document.has_unsaved_changes(&map));
+        map.export_settings = ExportSettings::default();
+        assert!(!document.has_unsaved_changes(&map));
     }
 }
