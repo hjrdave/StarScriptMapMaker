@@ -103,6 +103,7 @@ impl PngWriter {
     }
 
     /// Appends one row of `width * 4` RGBA bytes.
+    #[allow(clippy::expect_used, reason = "stream is open until finish")]
     pub fn write_row(&mut self, row: &[u8]) -> Result<(), PngWriteError> {
         let expected = self.width as usize * 4;
         if row.len() != expected {
@@ -124,6 +125,7 @@ impl PngWriter {
     }
 
     /// Completes the image and moves it into place. Fails if rows are missing.
+    #[allow(clippy::expect_used, reason = "stream is open until finish")]
     pub fn finish(mut self) -> Result<(), PngWriteError> {
         if self.rows != self.height {
             return Err(PngWriteError::RowCount {

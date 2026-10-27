@@ -11,10 +11,13 @@ use crate::geometry::{MultiPolygon, Point, Polygon};
 /// Why an outline blob could not be decoded.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum BlobError {
+    /// The blob ends before the outline does.
     #[error("the blob ends early")]
     EndsEarly,
+    /// A polygon has no exterior ring.
     #[error("a polygon has no exterior ring")]
     NoExteriorRing,
+    /// Bytes remain after the outline.
     #[error("{0} bytes left over")]
     LeftOver(usize),
 }
@@ -50,7 +53,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<MultiPolygon, BlobError> {
             return Err(BlobError::NoExteriorRing);
         }
         let mut rings = (0..rings).map(|_| reader.ring());
-        let exterior = rings.next().expect("at least one ring")?;
+        let exterior = rings.next().ok_or(BlobError::NoExteriorRing)??;
         let holes = rings.collect::<Result<_, _>>()?;
         geometry.push(Polygon { exterior, holes });
     }
@@ -60,6 +63,10 @@ pub(super) fn decode(bytes: &[u8]) -> Result<MultiPolygon, BlobError> {
     Ok(MultiPolygon(geometry))
 }
 
+#[allow(
+    clippy::expect_used,
+    reason = "a Map with 2^32 parts, rings or points would not fit in memory"
+)]
 fn push_len(out: &mut Vec<u8>, len: usize) {
     let len = u32::try_from(len).expect("fewer than 2^32 parts, rings or points");
     out.extend_from_slice(&len.to_le_bytes());

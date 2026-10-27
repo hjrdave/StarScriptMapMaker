@@ -18,7 +18,7 @@ use crate::menu::Command;
 
 /// What choosing a native item does.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Action {
+pub(crate) enum Action {
     Command(Command),
     OpenRecent(PathBuf),
     /// Quit goes through the window's close request, so unsaved Maps are asked about.
@@ -27,7 +27,7 @@ pub enum Action {
 
 /// Everything the native menu shows. It is rebuilt when this changes.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Spec {
+pub(crate) struct Spec {
     pub app: Vec<NativeItem>,
     pub menus: Vec<NativeMenu>,
     pub recent: Vec<PathBuf>,
@@ -41,7 +41,7 @@ struct Built {
     help: Option<Submenu>,
 }
 
-pub struct MacMenu {
+pub(crate) struct MacMenu {
     /// Kept alive: dropping a `Menu` removes it.
     built: Option<Built>,
     shown: Option<Spec>,
@@ -50,7 +50,7 @@ pub struct MacMenu {
 
 impl MacMenu {
     /// Must run on the main thread once the event loop has started.
-    pub fn new(ctx: &eframe::egui::Context) -> Self {
+    pub(crate) fn new(ctx: &eframe::egui::Context) -> Self {
         let (sender, events) = mpsc::channel();
         super::dock::install(ctx);
         let ctx = ctx.clone();
@@ -67,7 +67,7 @@ impl MacMenu {
     }
 
     /// Shows `spec`, if it differs from what is showing.
-    pub fn sync(&mut self, spec: Spec) {
+    pub(crate) fn sync(&mut self, spec: Spec) {
         if self.shown.as_ref() == Some(&spec) {
             return;
         }
@@ -94,7 +94,7 @@ impl MacMenu {
     }
 
     /// The items chosen since the last call.
-    pub fn take_actions(&mut self) -> Vec<Action> {
+    pub(crate) fn take_actions(&mut self) -> Vec<Action> {
         let Some(built) = &self.built else {
             return Vec::new();
         };

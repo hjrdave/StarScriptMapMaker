@@ -26,8 +26,11 @@ pub const DEFAULT_BUDGET_BYTES: usize = 256 * 1024 * 1024;
 /// The Commands of one gesture or agent action, undone and redone together.
 #[derive(Clone, Debug)]
 pub struct UndoStep {
+    /// The name of the step, as the Undo menu shows it.
     pub label: String,
+    /// The Selection before the step, restored by undo.
     pub selection_before: Selection,
+    /// The Selection after the step, restored by redo.
     pub selection_after: Selection,
     /// Inverses in the order their Ops were applied.
     inverses: Vec<Op>,
@@ -43,14 +46,18 @@ struct Transaction {
     applied: Vec<Op>,
 }
 
+/// Why a History call was refused.
 #[derive(Clone, PartialEq, Debug, Error)]
 pub enum HistoryError {
-    #[error("a transaction is already open")]
+    /// An Undo step is already open.
+    #[error("an Undo step is already open")]
     TransactionOpen,
-    #[error("no transaction is open")]
+    /// No Undo step is open.
+    #[error("no Undo step is open")]
     NoTransaction,
 }
 
+/// The Undo steps of one Map, with a memory budget, and the Undo step being built (the open transaction).
 #[derive(Debug)]
 pub struct History {
     undo: VecDeque<UndoStep>,
@@ -70,6 +77,7 @@ impl Default for History {
 }
 
 impl History {
+    /// An empty History that keeps steps up to `budget_bytes`, dropping the oldest beyond it.
     pub fn new(budget_bytes: usize) -> Self {
         Self {
             undo: VecDeque::new(),
@@ -153,7 +161,7 @@ impl History {
     /// Cancels the transaction, undoing everything it applied.
     pub fn rollback(&mut self, map: &mut Map) -> Result<(), HistoryError> {
         let transaction = self.open.take().ok_or(HistoryError::NoTransaction)?;
-        map.revert(transaction.inverses);
+        map.revert_ops(transaction.inverses);
         Ok(())
     }
 
@@ -162,7 +170,7 @@ impl History {
     /// holds one Command's worth of inverses and nothing drifts from repeated small edits.
     pub fn rewind(&mut self, map: &mut Map) -> Result<(), HistoryError> {
         let transaction = self.open.as_mut().ok_or(HistoryError::NoTransaction)?;
-        map.revert(std::mem::take(&mut transaction.inverses));
+        map.revert_ops(std::mem::take(&mut transaction.inverses));
         // The journal never sees what was rewound, as it never sees a rollback.
         transaction.applied.clear();
         Ok(())
@@ -192,7 +200,7 @@ impl History {
             return Ok(None);
         };
         self.record_revert(&step);
-        step.inverses = map.revert(std::mem::take(&mut step.inverses));
+        step.inverses = map.revert_ops(std::mem::take(&mut step.inverses));
         let selection = step.selection_before.clone();
         self.redo.push(step);
         Ok(Some(selection))
@@ -205,16 +213,18 @@ impl History {
             return Ok(None);
         };
         self.record_revert(&step);
-        step.inverses = map.revert(std::mem::take(&mut step.inverses));
+        step.inverses = map.revert_ops(std::mem::take(&mut step.inverses));
         let selection = step.selection_after.clone();
         self.undo.push_back(step);
         Ok(Some(selection))
     }
 
+    /// The name of the step undo would undo, if there is one.
     pub fn undo_label(&self) -> Option<&str> {
         self.undo.back().map(|step| step.label.as_str())
     }
 
+    /// The name of the step redo would redo, if there is one.
     pub fn redo_label(&self) -> Option<&str> {
         self.redo.last().map(|step| step.label.as_str())
     }
@@ -230,14 +240,17 @@ impl History {
         self.redo.iter().rev().map(|step| step.label.as_str())
     }
 
+    /// How many steps can be undone.
     pub fn undo_len(&self) -> usize {
         self.undo.len()
     }
 
+    /// How many steps can be redone.
     pub fn redo_len(&self) -> usize {
         self.redo.len()
     }
 
+    /// Whether an Undo step is open.
     pub fn is_open(&self) -> bool {
         self.open.is_some()
     }
@@ -265,6 +278,7 @@ impl History {
     }
 
     /// Drops the oldest steps until history fits the budget, always keeping the newest.
+    #[allow(clippy::expect_used, reason = "more than one step")]
     fn enforce_budget(&mut self) {
         while self.used > self.budget && self.undo.len() > 1 {
             let oldest = self.undo.pop_front().expect("more than one step");
@@ -273,10 +287,13 @@ impl History {
     }
 }
 
+/// Why executing a Command in a History failed.
 #[derive(Clone, PartialEq, Debug, Error)]
 pub enum ExecuteError {
+    /// The Command was refused.
     #[error(transparent)]
     Command(#[from] CommandError),
+    /// The History refused it, such as when no Undo step was open.
     #[error(transparent)]
     History(#[from] HistoryError),
 }

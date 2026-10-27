@@ -4,6 +4,11 @@
 //! numbers; afterwards a guard times save and open once and fails above 2× their targets, so
 //! the nightly run breaks only on a real regression. `SSMAP_BENCH_SCALE` (default 1.0)
 //! shrinks the Map for quick local runs, and turns the guard off below 1.0.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::f64::consts::TAU;
 use std::hint::black_box;

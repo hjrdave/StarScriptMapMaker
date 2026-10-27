@@ -34,7 +34,7 @@ const BOTH: egui::Modifiers = egui::Modifiers {
 fn layer_count(harness: &Harness<'_, MapMakerApp>) -> usize {
     harness.state().tabs()[harness.state().active_tab()]
         .editor()
-        .map
+        .map()
         .children(None)
         .len()
 }

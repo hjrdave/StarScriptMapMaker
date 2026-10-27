@@ -1,5 +1,10 @@
 //! Several Maps open at once, one per tab: opening, switching, closing, quitting and the
 //! Recovery journal of each (no window needed).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -41,7 +46,7 @@ fn saved_map(dir: &Path, name: &str) -> PathBuf {
 fn layers(harness: &Harness<'_, MapMakerApp>, tab: usize) -> usize {
     harness.state().tabs()[tab]
         .editor()
-        .map
+        .map()
         .children(None)
         .len()
 }

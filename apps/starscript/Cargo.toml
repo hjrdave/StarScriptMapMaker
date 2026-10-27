@@ -42,6 +42,8 @@ objc2.workspace = true
 objc2-app-kit.workspace = true
 
 [dev-dependencies]
+# Tests build Maps from raw Ops and Commands (ADR 0004).
+ssmap-core = { workspace = true, features = ["test-support"] }
 tempfile.workspace = true
 egui_kittest = { version = "0.36", features = ["eframe"] }
 
@@ -49,9 +51,14 @@ egui_kittest = { version = "0.36", features = ["eframe"] }
 # Dock-click method to winit's app delegate. Keep in step with the workspace table.
 [lints.rust]
 unsafe_code = "deny"
+unreachable_pub = "warn"
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+too_many_lines = "warn"
+cognitive_complexity = "warn"
 
 # Installable packages, built by `cargo packager --release` from this folder (ADR 0008,
 # docs/packaging.md). Paths are relative to this crate. All packages are unsigned.

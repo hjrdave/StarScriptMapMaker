@@ -9,7 +9,9 @@ pub type Point = [f64; 2];
 /// One part of a region: an outer boundary and optional holes. Rings are implicitly closed.
 #[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize, JsonSchema)]
 pub struct Polygon {
+    /// The outer boundary, as points in order.
     pub exterior: Vec<Point>,
+    /// The holes, each a ring of points in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub holes: Vec<Vec<Point>>,
 }
@@ -18,8 +20,11 @@ pub struct Polygon {
 /// 1 and up for its holes, and `index` is the point within the ring.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct NodeRef {
+    /// Which Polygon of the outline.
     pub part: usize,
+    /// Which ring of that Polygon: 0 is the exterior, 1 and up are holes.
     pub ring: usize,
+    /// Which point of the ring.
     pub index: usize,
 }
 
@@ -31,15 +36,19 @@ pub struct MultiPolygon(pub Vec<Polygon>);
 /// An axis-aligned box in Canvas units.
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Rect {
+    /// The top-left corner.
     pub min: Point,
+    /// The bottom-right corner.
     pub max: Point,
 }
 
 impl Rect {
+    /// The width.
     pub fn width(&self) -> f64 {
         self.max[0] - self.min[0]
     }
 
+    /// The height.
     pub fn height(&self) -> f64 {
         self.max[1] - self.min[1]
     }
@@ -67,6 +76,7 @@ impl Rect {
 pub struct Affine(pub [f64; 6]);
 
 impl Affine {
+    /// A transform that moves points by `offset`.
     pub fn translate(offset: [f64; 2]) -> Affine {
         Affine([1.0, 0.0, 0.0, 1.0, offset[0], offset[1]])
     }
@@ -87,6 +97,7 @@ impl Affine {
         ])
     }
 
+    /// Where the transform sends `point`.
     pub fn apply(&self, [x, y]: Point) -> Point {
         let [a, b, c, d, e, f] = self.0;
         [a * x + c * y + e, b * x + d * y + f]
@@ -131,6 +142,7 @@ impl Polygon {
 }
 
 impl MultiPolygon {
+    /// Whether the region has no Polygons.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -159,6 +171,7 @@ impl MultiPolygon {
         self.0.get_mut(part)?.ring_mut(ring)
     }
 
+    /// A copy of the region with every point sent through `transform`.
     pub fn transformed(&self, transform: &Affine) -> MultiPolygon {
         let ring = |ring: &[Point]| ring.iter().map(|&p| transform.apply(p)).collect();
         MultiPolygon(

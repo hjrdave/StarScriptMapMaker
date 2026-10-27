@@ -2,14 +2,15 @@
 
 use std::collections::HashSet;
 
-use crate::geometry::Affine;
+use crate::color::Color;
+use crate::geometry::{Affine, MultiPolygon};
 use crate::id::Id;
 use crate::map::{Map, Subtree};
-use crate::node::{Node, Object, ObjectKind};
+use crate::node::{Lake, Landmass, Membership, Node, Object, ObjectKind};
 use crate::op::{Op, Property};
 
 use super::CommandError;
-use super::check::{collect_branch, layer, set, unlocked, unlocked_branch};
+use super::check::{collect_branch, existing, layer, set, unlocked, unlocked_branch};
 use super::land::{outline, outlined};
 
 pub(super) fn delete(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
@@ -59,7 +60,7 @@ pub(super) fn create_object(
     }
     layer(map, parent)?;
     unlocked(map, parent)?;
-    let geometry = kind.geometry().expect("Landmasses and Lakes have outlines");
+    let geometry = kind.geometry().ok_or(CommandError::NoOutline(id))?;
     if let Some(problem) = geometry.problem() {
         return Err(CommandError::InvalidGeometry { id, problem });
     }
@@ -96,6 +97,59 @@ pub(super) fn transform(
             return Err(CommandError::InvalidGeometry { id, problem });
         }
         ops.push(Op::ReplaceGeometry { id, geometry });
+    }
+    Ok(ops)
+}
+
+/// Creates a Landmass in Layer `parent`. Without a `fill` it takes the Map's land colour.
+pub(super) fn create_landmass(
+    map: &Map,
+    id: Id,
+    parent: Id,
+    index: Option<usize>,
+    geometry: &MultiPolygon,
+    fill: Option<Color>,
+) -> Result<Vec<Op>, CommandError> {
+    let landmass = Landmass {
+        fill: fill.unwrap_or(map.defaults.land_fill),
+        ..Landmass::new(geometry.clone())
+    };
+    create_object(map, id, parent, index, ObjectKind::Landmass(landmass))
+}
+
+/// Creates a Lake in Layer `parent`. Without a `fill` it takes the default water colour.
+pub(super) fn create_lake(
+    map: &Map,
+    id: Id,
+    parent: Id,
+    index: Option<usize>,
+    geometry: &MultiPolygon,
+    fill: Option<Color>,
+) -> Result<Vec<Op>, CommandError> {
+    let lake = Lake {
+        fill: fill.unwrap_or(Lake::DEFAULT_FILL),
+        ..Lake::new(geometry.clone())
+    };
+    create_object(map, id, parent, index, ObjectKind::Lake(lake))
+}
+
+/// Sets whether Objects belong to the Canvas or sit off it. Layers are refused, and so are
+/// locked Objects.
+pub(super) fn set_membership(
+    map: &Map,
+    ids: &[Id],
+    membership: Membership,
+) -> Result<Vec<Op>, CommandError> {
+    let mut seen = HashSet::new();
+    let mut ops = Vec::with_capacity(ids.len());
+    for &id in ids {
+        if !matches!(existing(map, id)?, Node::Object(_)) {
+            return Err(CommandError::NotAnObject(id));
+        }
+        unlocked(map, id)?;
+        if seen.insert(id) {
+            ops.push(set(id, Property::Membership(membership)));
+        }
     }
     Ok(ops)
 }

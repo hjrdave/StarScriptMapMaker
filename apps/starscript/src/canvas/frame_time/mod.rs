@@ -20,8 +20,8 @@ use std::time::{Duration, Instant};
 use scripts::{Script, World};
 use ssmap_core::asset::{PackLibrary, PackRoots};
 use ssmap_core::{
-    AssetRef, Canvas, Command, DistanceUnit, Id, Landmass, Layer, Map, MultiPolygon, Node, Object,
-    ObjectKind, Op, PlacedStamp, Polygon, Scale, Stamp, Subtree,
+    AssetRef, Canvas, Command, DistanceUnit, Id, Map, MultiPolygon, PlacedStamp, Polygon, Scale,
+    Stamp,
 };
 use ssmap_render::profile::{self, Stage, StageTimes};
 use ssmap_render::{
@@ -138,6 +138,7 @@ fn parse(args: &[OsString]) -> Result<Options, String> {
 }
 
 /// Runs the measurement, prints the report to stdout and returns the process exit code.
+#[allow(clippy::expect_used, reason = "a valid reference")]
 pub fn run(args: &[OsString]) -> i32 {
     let options = match parse(args) {
         Ok(options) => options,
@@ -247,6 +248,7 @@ fn check_baseline(options: &Options, results: &BTreeMap<String, baseline::Script
     }
 }
 
+#[allow(clippy::expect_used, reason = "the baseline serialises")]
 fn write_baseline(options: &Options, scripts: BTreeMap<String, baseline::ScriptBaseline>) -> i32 {
     let new = baseline::Baseline {
         note: format!(
@@ -284,6 +286,10 @@ struct Measured {
     stages: Vec<StageTimes>,
 }
 
+#[allow(
+    clippy::expect_used,
+    reason = "the bench harness panics on purpose if the device is lost mid-frame"
+)]
 fn measure(
     gpu: &Headless,
     capabilities: GpuCapabilities,
@@ -301,14 +307,14 @@ fn measure(
     // As in the editor, shore rings are computed off the frame.
     scene.compute_rings_in_background(|| {});
     let canvas_size = [
-        f64::from(world.map.canvas.width),
-        f64::from(world.map.canvas.height),
+        f64::from(world.map.canvas().width),
+        f64::from(world.map.canvas().height),
     ];
     let views = scripts::views(script, canvas_size);
     let mut draw = |world: &mut World, view: &View| -> (Duration, Duration) {
         let started = Instant::now();
         let content = scene.content(&world.map, &mut world.cache);
-        let canvas = CanvasScene::new(&world.map.canvas).with_content(content);
+        let canvas = CanvasScene::new(world.map.canvas()).with_content(content);
         let built = started.elapsed();
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         renderer.render(&gpu.device, &gpu.queue, &mut encoder, &canvas, view);
@@ -511,17 +517,33 @@ fn large_map(scale: f64, asset: AssetRef) -> (Map, Id) {
         16_384,
         Scale::new(1.0, DistanceUnit::Miles),
     ));
-    let layer = insert(&mut map, None, Node::Layer(Layer::new("Bench")));
+    let layer = Id::new();
+    scripts::run(
+        &mut map,
+        &Command::CreateLayer {
+            id: layer,
+            parent: None,
+            index: None,
+            name: "Bench".to_owned(),
+        },
+        "the top level takes a Layer",
+    );
     for i in 0..LANDMASSES {
         let geometry = coastline(
             scripts::centre_of(i),
             ((VERTICES_PER_LANDMASS as f64 * scale) as usize).max(3),
         );
-        let object = Object::new(ObjectKind::Landmass(Landmass {
-            geometry,
-            ..Default::default()
-        }));
-        insert(&mut map, Some(layer), Node::Object(object));
+        scripts::run(
+            &mut map,
+            &Command::CreateLandmass {
+                id: Id::new(),
+                parent: layer,
+                index: None,
+                geometry,
+                fill: None,
+            },
+            "the Layer was just created, so it takes a Landmass",
+        );
     }
     let stamps = (0..(STAMPS as f64 * scale) as usize)
         .map(|i| PlacedStamp {
@@ -532,11 +554,14 @@ fn large_map(scale: f64, asset: AssetRef) -> (Map, Id) {
             ),
         })
         .collect();
-    map.execute(&Command::PlaceStamps {
-        parent: layer,
-        stamps,
-    })
-    .expect("the Layer was just inserted into this Map, so placing Stamps on it cannot fail");
+    scripts::run(
+        &mut map,
+        &Command::PlaceStamps {
+            parent: layer,
+            stamps,
+        },
+        "the Layer was just created in this Map, so placing Stamps on it cannot fail",
+    );
     (map, layer)
 }
 
@@ -552,22 +577,6 @@ fn coastline(centre: [f64; 2], vertices: usize) -> MultiPolygon {
         exterior: ring,
         holes: Vec::new(),
     }])
-}
-
-fn insert(map: &mut Map, parent: Option<Id>, node: Node) -> Id {
-    let id = Id::new();
-    let index = map.children(parent).len();
-    map.apply(Op::Insert {
-        parent,
-        index,
-        subtree: Subtree {
-            id,
-            node,
-            children: Vec::new(),
-        },
-    })
-    .expect("the index is the current child count, so it is in range");
-    id
 }
 
 #[cfg(test)]

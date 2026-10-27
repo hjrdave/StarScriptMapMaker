@@ -11,7 +11,7 @@ use crate::handles::{self, Bounds, Grip};
 
 /// The custom export region, if the Map has one.
 pub fn custom_region(editor: &Editor) -> Option<Bounds> {
-    match &editor.map.export_settings.region {
+    match &editor.map().export_settings.region {
         ExportRegion::Custom { rect } => Some(Bounds {
             min: rect.min,
             max: rect.max,
@@ -31,13 +31,13 @@ pub(super) fn export_region_tool(
 ) -> Option<egui::CursorIcon> {
     let ppp = input.pixels_per_point;
     let canvas = [
-        f64::from(editor.map.canvas.width),
-        f64::from(editor.map.canvas.height),
+        f64::from(editor.map().canvas().width),
+        f64::from(editor.map().canvas().height),
     ];
     if std::mem::take(&mut editor.cancel_tool)
         && let Some((_, before)) = state.region_drag.take()
     {
-        editor.map.export_settings.region = before;
+        editor.export_settings_mut().region = before;
         return None;
     }
     let existing = custom_region(editor);
@@ -72,7 +72,7 @@ pub(super) fn export_region_tool(
             },
             _ => RegionDrag::Draw { anchor: start },
         };
-        state.region_drag = Some((drag, editor.map.export_settings.region.clone()));
+        state.region_drag = Some((drag, editor.map().export_settings.region.clone()));
     }
     let Some((drag, before)) = state.region_drag.clone() else {
         return cursor;
@@ -81,14 +81,14 @@ pub(super) fn export_region_tool(
         && let Some(pos) = input.pointer_pos
     {
         let rect = drag.rect(input.canvas_point(view, pos), canvas);
-        editor.map.export_settings.region = ExportRegion::Custom { rect };
+        editor.export_settings_mut().region = ExportRegion::Custom { rect };
     }
     if input.drag_stopped {
         state.region_drag = None;
-        if let ExportRegion::Custom { rect } = &editor.map.export_settings.region
+        if let ExportRegion::Custom { rect } = &editor.map().export_settings.region
             && !export_region::is_usable(rect)
         {
-            editor.map.export_settings.region = before;
+            editor.export_settings_mut().region = before;
         }
     }
     cursor

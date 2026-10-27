@@ -91,6 +91,7 @@ pub(super) fn write(
     Ok(next)
 }
 
+#[allow(clippy::expect_used, reason = "an embedded record serialises")]
 fn json<T: serde::Serialize>(record: &T) -> String {
     serde_json::to_string(record).expect("an embedded record serialises")
 }

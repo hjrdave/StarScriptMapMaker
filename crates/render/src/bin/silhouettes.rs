@@ -136,6 +136,10 @@ fn write_png(path: &Path, mask: &ssmap_render::raster::Raster) -> Result<(), Str
     .map_err(|err| format!("{}: cannot be written: {err}", path.display()))
 }
 
+#[allow(
+    clippy::expect_used,
+    reason = "the manifest parsed, so it has [[asset]] tables; asset ids are ASCII"
+)]
 fn set_silhouette(document: &mut toml_edit::DocumentMut, id: &str, path: &Path) {
     let assets = document
         .get_mut("asset")

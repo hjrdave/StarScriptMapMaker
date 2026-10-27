@@ -5,7 +5,8 @@ use super::{Command, CommandError};
 
 impl Map {
     /// Applies a Command all or nothing and returns the inverses of its Ops, in the order they
-    /// were applied.
+    /// were applied. Outside the `test-support` feature, edits go through `History` (ADR 0004).
+    #[cfg(any(test, feature = "test-support"))]
     pub fn execute(&mut self, command: &Command) -> Result<Vec<Op>, CommandError> {
         self.execute_recording(command, None)
     }
@@ -24,10 +25,10 @@ impl Map {
             if let Some(applied) = applied.as_deref_mut() {
                 applied.push(op.clone());
             }
-            match self.apply(op) {
+            match self.apply_op(op) {
                 Ok(inverse) => inverses.push(inverse),
                 Err(err) => {
-                    self.revert(inverses);
+                    self.revert_ops(inverses);
                     if let Some(applied) = applied {
                         applied.truncate(recorded);
                     }
@@ -39,12 +40,19 @@ impl Map {
     }
 
     /// Undoes Ops from their inverses (as `execute` returns them) and returns the Ops that
-    /// redo them, in the same form.
+    /// redo them, in the same form. Outside the `test-support` feature, `History` undoes.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn revert(&mut self, inverses: Vec<Op>) -> Vec<Op> {
+        self.revert_ops(inverses)
+    }
+
+    /// The reverter behind [`Map::revert`], for `core` itself.
+    #[allow(clippy::expect_used, reason = "an inverse always applies")]
+    pub(crate) fn revert_ops(&mut self, inverses: Vec<Op>) -> Vec<Op> {
         inverses
             .into_iter()
             .rev()
-            .map(|inverse| self.apply(inverse).expect("an inverse always applies"))
+            .map(|inverse| self.apply_op(inverse).expect("an inverse always applies"))
             .collect()
     }
 }

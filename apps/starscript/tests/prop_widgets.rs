@@ -1,5 +1,10 @@
 //! The Properties widgets in a headless window: a scrub is one Undo step, a reset arrow
 //! clears an override, and the gallery draws every state.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use eframe::egui;
 use egui_kittest::Harness;
@@ -15,7 +20,7 @@ struct Fixture {
 }
 
 fn opacity(fixture: &Fixture) -> f32 {
-    match fixture.editor.map.node(fixture.layer) {
+    match fixture.editor.map().node(fixture.layer) {
         Some(Node::Layer(layer)) => layer.opacity,
         _ => panic!("the Layer is gone"),
     }

@@ -5,19 +5,19 @@ use ssmap_render::View;
 
 use crate::handles::Bounds;
 
-pub const MIN_ZOOM: f64 = 0.01;
-pub const MAX_ZOOM: f64 = 64.0;
+pub(crate) const MIN_ZOOM: f64 = 0.01;
+pub(crate) const MAX_ZOOM: f64 = 64.0;
 
 /// What one press of `−` or `+` multiplies the zoom by.
-pub const STEP: f64 = 1.25;
+pub(crate) const STEP: f64 = 1.25;
 /// The presets of the zoom menu, as a share of 1:1.
-pub const PRESETS: [f64; 6] = [0.25, 0.5, 1.0, 2.0, 4.0, 8.0];
+pub(crate) const PRESETS: [f64; 6] = [0.25, 0.5, 1.0, 2.0, 4.0, 8.0];
 /// Space left around the framed area, in points.
-pub const FRAME_MARGIN: f64 = 32.0;
+pub(crate) const FRAME_MARGIN: f64 = 32.0;
 
 /// A zoom the user asked for, from the control, the menu or a shortcut.
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum Zoom {
+pub(crate) enum Zoom {
     In,
     Out,
     /// A share of 1:1 (1.0 is 100%), in points rather than physical pixels.
@@ -28,20 +28,20 @@ pub enum Zoom {
 
 /// Sets the zoom to `target` (physical pixels per Canvas unit, clamped), keeping the Canvas
 /// point under `pixel` where it is.
-pub fn zoom_about(view: &mut View, pixel: [f64; 2], target: f64) {
+pub(crate) fn zoom_about(view: &mut View, pixel: [f64; 2], target: f64) {
     let target = target.clamp(MIN_ZOOM, MAX_ZOOM);
     view.zoom_at(pixel, target / view.zoom);
 }
 
 /// The middle of the view, in target pixels.
-pub fn centre(view: &View) -> [f64; 2] {
+pub(crate) fn centre(view: &View) -> [f64; 2] {
     [f64::from(view.size[0]) / 2.0, f64::from(view.size[1]) / 2.0]
 }
 
 /// Applies a zoom that keeps the view's centre. `bounds` is what Zoom to Selection frames;
 /// `canvas` is the Canvas size for Zoom to Fit. Returns false when nothing changed because
 /// there was nothing to frame.
-pub fn apply(
+pub(crate) fn apply(
     view: &mut View,
     zoom: Zoom,
     pixels_per_point: f64,
@@ -65,7 +65,7 @@ pub fn apply(
 }
 
 /// A view of `size` pixels with `bounds` centred and filling it, `margin` pixels clear.
-pub fn frame(bounds: &Bounds, size: [u32; 2], margin: f64) -> View {
+pub(crate) fn frame(bounds: &Bounds, size: [u32; 2], margin: f64) -> View {
     let extent = [
         (bounds.max[0] - bounds.min[0]).max(1.0),
         (bounds.max[1] - bounds.min[1]).max(1.0),

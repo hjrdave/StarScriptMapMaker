@@ -1,4 +1,9 @@
 //! The scatter brush, Stamp eraser and Shuffle variant (spec §4, ADR 0003, ADR 0004).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use ssmap_core::scatter::{
     Placement, ScatterBrush, ScatterStroke, Terrain, erase_command, scatter_command,

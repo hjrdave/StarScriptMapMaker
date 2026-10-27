@@ -206,7 +206,7 @@ fn merge(meshes: &[Option<Arc<GroupMesh>>], cuts: &[usize]) -> Built {
 
 /// What a frame may spend applying finished background results to the drawn geometry. Anything
 /// over carries to the next frame, so input is never held up for more than about one frame.
-pub const APPLY_BUDGET: Duration = Duration::from_millis(4);
+pub(crate) const APPLY_BUDGET: Duration = Duration::from_millis(4);
 
 /// Groups per chunk. An Object that lands marks only the chunks holding its groups dirty.
 const CHUNK_GROUPS: usize = 64;
@@ -351,6 +351,7 @@ impl<P> Chunked<P> {
 
 /// Like [`resolve`] for the groups in `range` only. Looks an Object up by all its groups,
 /// wherever they are, so chunk edges never split what the cache keeps whole.
+#[allow(clippy::expect_used, reason = "indexed above")]
 fn resolve_chunk(
     groups: &[VectorGroup],
     objects: &HashMap<Id, Vec<usize>>,
@@ -482,7 +483,7 @@ mod tests {
             }],
             effect: false,
             object: Some(object),
-            pasteboard: false,
+            off_canvas: false,
         }
     }
 

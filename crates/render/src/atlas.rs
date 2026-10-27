@@ -97,6 +97,7 @@ impl Packer {
 
     /// Finds room for `width` x `height` pixels plus the gutter, opening a page if none has
     /// room. Returns the entry and whether a page was opened.
+    #[allow(clippy::expect_used, reason = "an empty page fits the entry")]
     fn allocate(&mut self, width: u32, height: u32) -> Result<(AtlasEntry, bool), AtlasError> {
         let (padded_width, padded_height) = (width + 2 * GUTTER, height + 2 * GUTTER);
         if width == 0

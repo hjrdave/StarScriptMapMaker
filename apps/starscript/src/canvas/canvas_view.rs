@@ -30,7 +30,7 @@ struct CanvasResources {
 /// egui's callback resources. Returns false, leaving the Canvas as a placeholder, when the
 /// adapter is below the hardware floor. Called once per run, so a software-adapter warning
 /// shows once.
-pub fn install(render_state: &egui_wgpu::RenderState, sprites: SpriteStore) -> bool {
+pub(crate) fn install(render_state: &egui_wgpu::RenderState, sprites: SpriteStore) -> bool {
     let capabilities = GpuCapabilities::query(&render_state.adapter);
     match capabilities.suitability() {
         Suitability::Ok => {}
@@ -58,7 +58,7 @@ pub fn install(render_state: &egui_wgpu::RenderState, sprites: SpriteStore) -> b
 
 /// Renders the whole Canvas, `longest_side` pixels on its longer side, as for the preview
 /// stored in a Map file. Uses the same renderer as the screen.
-pub fn render_whole_canvas(
+pub(crate) fn render_whole_canvas(
     render_state: &egui_wgpu::RenderState,
     editor: &mut Editor,
     cache: Option<&TessellationCache>,
@@ -71,9 +71,9 @@ pub fn render_whole_canvas(
     if let Some(cache) = cache {
         resources.renderer.use_tessellation_cache(cache);
     }
-    let mut scene = CanvasScene::new(&editor.map.canvas).with_content(editor.scene_content());
-    // The preview is of the Canvas alone, so pasteboard Objects stay out of it.
-    scene.pasteboard_objects = false;
+    let mut scene = CanvasScene::new(editor.map().canvas()).with_content(editor.scene_content());
+    // The preview is of the Canvas alone, so off-Canvas Objects stay out of it.
+    scene.off_canvas_objects = false;
     let view = View::whole_canvas_at(scene.canvas_origin, scene.canvas_size, longest_side);
     // A failed readback leaves the Map without a preview rather than crashing.
     render_to_image(
@@ -87,7 +87,7 @@ pub fn render_whole_canvas(
 }
 
 /// Advances `job` by one step on the same renderer as the screen. `None` without a GPU.
-pub fn step_export(
+pub(crate) fn step_export(
     render_state: &egui_wgpu::RenderState,
     editor: &mut Editor,
     cache: Option<&TessellationCache>,
@@ -122,7 +122,7 @@ fn resize_keeping_centre(view: &mut View, size: [u32; 2]) {
     ];
 }
 
-pub struct CanvasView {
+pub(crate) struct CanvasView {
     /// `None` until the first frame, which fits the Canvas to the panel.
     view: Option<View>,
     /// False without a wgpu device (as in UI tests); the Canvas is then a flat placeholder.
@@ -149,7 +149,7 @@ pub struct CanvasView {
 
 impl CanvasView {
     /// `cache` is this tab's tessellation cache; `None` without a wgpu device.
-    pub fn new(cache: Option<TessellationCache>) -> Self {
+    pub(crate) fn new(cache: Option<TessellationCache>) -> Self {
         Self {
             view: None,
             gpu: cache.is_some(),
@@ -166,22 +166,22 @@ impl CanvasView {
     }
 
     /// Zooms on the next frame, as from a shortcut.
-    pub fn request_zoom(&mut self, zoom: Zoom) {
+    pub(crate) fn request_zoom(&mut self, zoom: Zoom) {
         self.pending_zoom = Some(zoom);
     }
 
     /// This tab's tessellation cache; `None` without a wgpu device.
-    pub fn cache(&self) -> Option<&TessellationCache> {
+    pub(crate) fn cache(&self) -> Option<&TessellationCache> {
         self.cache.as_ref()
     }
 
     /// Whether a Label's text box is open.
-    pub fn editing_text(&self) -> bool {
+    pub(crate) fn editing_text(&self) -> bool {
         self.tools.editing.is_some()
     }
 
     /// The screen position of a Canvas point, as last drawn.
-    pub fn to_screen(&self, point: [f64; 2]) -> Option<egui::Pos2> {
+    pub(crate) fn to_screen(&self, point: [f64; 2]) -> Option<egui::Pos2> {
         let (rect, ppp) = self.panel?;
         Some(handles::to_screen(
             self.view.as_ref()?,
@@ -193,7 +193,7 @@ impl CanvasView {
 
     /// The Canvas point under `pointer` (screen points), when it is over the Canvas as last
     /// drawn.
-    pub fn canvas_point(&self, pointer: egui::Pos2) -> Option<[f64; 2]> {
+    pub(crate) fn canvas_point(&self, pointer: egui::Pos2) -> Option<[f64; 2]> {
         let (rect, ppp) = self.panel?;
         if !rect.contains(pointer) {
             return None;
@@ -208,7 +208,7 @@ impl CanvasView {
     /// Where Paste puts the middle of what it pastes: the Canvas point under `pointer` (the
     /// last cursor position) when it is over the Canvas, else the middle of what is visible.
     /// Uses this tab's own zoom and pan.
-    pub fn paste_point(&self, pointer: Option<egui::Pos2>) -> Option<[f64; 2]> {
+    pub(crate) fn paste_point(&self, pointer: Option<egui::Pos2>) -> Option<[f64; 2]> {
         pointer
             .and_then(|pointer| self.canvas_point(pointer))
             .or_else(|| {
@@ -219,11 +219,11 @@ impl CanvasView {
     }
 
     /// Zoom as a share of 1:1, in points rather than physical pixels.
-    pub fn zoom(&self, pixels_per_point: f64) -> Option<f64> {
+    pub(crate) fn zoom(&self, pixels_per_point: f64) -> Option<f64> {
         self.view.map(|view| view.zoom / pixels_per_point)
     }
 
-    pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+    pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
         let ppp = f64::from(ui.ctx().pixels_per_point());
@@ -232,9 +232,9 @@ impl CanvasView {
             (f64::from(rect.height()) * ppp).round().max(1.0) as u32,
         ];
         let view = self.view.get_or_insert_with(|| {
-            let canvas = &editor.map.canvas;
+            let canvas = &editor.map().canvas();
             let canvas = [f64::from(canvas.width), f64::from(canvas.height)];
-            View::fit_at(editor.map.canvas.origin, canvas, size, FIT_MARGIN * ppp)
+            View::fit_at(editor.map().canvas().origin, canvas, size, FIT_MARGIN * ppp)
         });
         resize_keeping_centre(view, size);
 
@@ -248,7 +248,7 @@ impl CanvasView {
         )
         .or(self.pending_zoom.take());
         if let Some(requested) = requested {
-            let canvas = &editor.map.canvas;
+            let canvas = &editor.map().canvas();
             let canvas = [f64::from(canvas.width), f64::from(canvas.height)];
             let bounds = if requested == Zoom::Selection {
                 Bounds::of_selection(editor)
@@ -292,7 +292,7 @@ impl CanvasView {
             Quality::Full
         };
         // After input, so this frame shows this frame's edits.
-        let scene = CanvasScene::new(&editor.map.canvas)
+        let scene = CanvasScene::new(editor.map().canvas())
             .with_content(editor.scene_content())
             .with_quality(quality);
         let painter = ui.painter_at(rect);
@@ -333,11 +333,11 @@ impl CanvasView {
             response.hover_pos(),
             ppp,
         );
-        if let Some(text) = self.tools.board_hud(editor)
+        if let Some(text) = self.tools.canvas_hud(editor)
             && let Some(pointer) = ui.input(|i| i.pointer.latest_pos())
         {
             let palette = crate::theme::palette(ui.ctx());
-            egui::Area::new(egui::Id::new("board_hud"))
+            egui::Area::new(egui::Id::new("canvas_hud"))
                 .order(egui::Order::Tooltip)
                 .interactable(false)
                 .fixed_pos(pointer + egui::vec2(14.0, 14.0))
@@ -458,6 +458,7 @@ impl CanvasView {
 
     /// The box a Label's text is typed in, just below the Label so its real render shows
     /// live above. Clicking away or Escape commits; emptying it deletes the Label.
+    #[allow(clippy::expect_used, reason = "four corners")]
     fn text_box(
         &mut self,
         ui: &mut egui::Ui,
@@ -559,7 +560,7 @@ fn paint_missing_names(
     }
 }
 
-/// The pasteboard and a flat Canvas, for when there is no GPU to render with.
+/// The off-Canvas and a flat Canvas, for when there is no GPU to render with.
 fn paint_placeholder(
     painter: &egui::Painter,
     rect: egui::Rect,
@@ -568,7 +569,7 @@ fn paint_placeholder(
     ppp: f64,
 ) {
     let color = |c: ssmap_render::Color| egui::Color32::from_rgb(c.r, c.g, c.b);
-    painter.rect_filled(rect, 0.0, color(scene.pasteboard));
+    painter.rect_filled(rect, 0.0, color(scene.off_canvas));
     let corner = |p: [f64; 2]| {
         rect.min
             + egui::vec2(
@@ -596,6 +597,7 @@ struct CanvasCallback {
 }
 
 impl egui_wgpu::CallbackTrait for CanvasCallback {
+    #[allow(clippy::expect_used, reason = "installed at startup")]
     fn prepare(
         &self,
         device: &wgpu::Device,
@@ -621,6 +623,7 @@ impl egui_wgpu::CallbackTrait for CanvasCallback {
         Vec::new()
     }
 
+    #[allow(clippy::expect_used, reason = "installed at startup")]
     fn paint(
         &self,
         _info: egui::PaintCallbackInfo,
@@ -703,7 +706,7 @@ mod tests {
     #[test]
     fn the_banner_counts_the_selected_nodes() {
         let harness = harness();
-        harness.get_by_label("Editing nodes · 1 of 4 selected");
+        harness.get_by_label("Editing points · 1 of 4 selected");
     }
 
     #[test]
@@ -718,7 +721,7 @@ mod tests {
     #[test]
     fn cancel_drops_a_gesture_then_leaves_node_edit() {
         let mut harness = harness();
-        let gesture = harness.state_mut().1.begin_gesture("Move Nodes");
+        let gesture = harness.state_mut().1.begin_gesture("Move Points");
         harness.get_by_label("Cancel").click();
         harness.run();
         // The button rolled it back, so the token is stale.

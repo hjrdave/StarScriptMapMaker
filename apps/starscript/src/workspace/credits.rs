@@ -10,7 +10,7 @@ use ssmap_fonts::{FAMILIES, UI_FAMILIES};
 
 /// One bundled font family's entry.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct FontCredit {
+pub(crate) struct FontCredit {
     pub family: String,
     /// The copyright line of its OFL notice.
     pub copyright: String,
@@ -20,13 +20,13 @@ pub struct FontCredit {
 
 /// What the credits screen shows, built from the loaded packs and bundled fonts.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
-pub struct CreditsPage {
+pub(crate) struct CreditsPage {
     pub packs: Vec<PackCredit>,
     pub fonts: Vec<FontCredit>,
 }
 
 impl CreditsPage {
-    pub fn new(library: &PackLibrary) -> Self {
+    pub(crate) fn new(library: &PackLibrary) -> Self {
         let fonts = FAMILIES
             .iter()
             .chain(UI_FAMILIES)
@@ -50,25 +50,25 @@ impl CreditsPage {
 }
 
 /// The credits window, opened from the Help menu.
-pub struct Credits {
+pub(crate) struct Credits {
     pub open: bool,
     page: CreditsPage,
 }
 
 impl Credits {
-    pub fn new(library: &PackLibrary) -> Self {
+    pub(crate) fn new(library: &PackLibrary) -> Self {
         Self {
             open: false,
             page: CreditsPage::new(library),
         }
     }
 
-    pub fn page(&self) -> &CreditsPage {
+    pub(crate) fn page(&self) -> &CreditsPage {
         &self.page
     }
 
     /// Shows the window. `editor` is the active Map's, for the credits it owes; `None` on Home.
-    pub fn show(&mut self, ctx: &egui::Context, editor: Option<&mut Editor>) {
+    pub(crate) fn show(&mut self, ctx: &egui::Context, editor: Option<&mut Editor>) {
         let page = &self.page;
         egui::Window::new("Credits")
             .open(&mut self.open)

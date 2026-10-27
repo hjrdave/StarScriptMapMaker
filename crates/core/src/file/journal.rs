@@ -30,9 +30,15 @@ const JOURNAL_VERSION: u32 = 1;
 #[serde(tag = "base", rename_all = "snake_case")]
 pub enum JournalBase {
     /// The Map file beside the journal, as of the save that stamped `generation`.
-    File { generation: Uuid },
+    File {
+        /// The save generation the journal was written against.
+        generation: Uuid,
+    },
     /// A Map never saved, as it was when the editor opened it.
-    Unsaved { map: Box<MapView> },
+    Unsaved {
+        /// The Map as the editor opened it.
+        map: Box<MapView>,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -43,14 +49,19 @@ struct Header {
     base: JournalBase,
 }
 
+/// Why a Recovery journal could not be written or read.
 #[derive(Debug, Error)]
 pub enum JournalError {
+    /// Reading or writing the journal failed.
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    /// Another window has the journal open.
     #[error("the Recovery journal is in use by another window")]
     InUse,
+    /// The file is not a Recovery journal.
     #[error("this is not a Recovery journal")]
     NotAJournal,
+    /// The journal was written by a newer version of the app.
     #[error("the Recovery journal was written by a newer version (journal format {0})")]
     NewerVersion(u32),
 }
@@ -74,6 +85,7 @@ impl Journal {
     /// Starts a journal at `path` holding `ops`, replacing any journal there that is not in
     /// use. It is written beside `path` and renamed over it, so a crash never leaves a
     /// journal without its header.
+    #[allow(clippy::expect_used, reason = "a header serialises")]
     pub fn create(path: &Path, base: &JournalBase, ops: &[Op]) -> Result<Self, JournalError> {
         if let Some(existing) = open_existing(path)? {
             lock_shared(&existing)?;
@@ -121,6 +133,7 @@ impl Journal {
         Ok(())
     }
 
+    /// The path of the journal file.
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -133,6 +146,7 @@ impl Journal {
     }
 }
 
+#[allow(clippy::expect_used, reason = "Ops serialise")]
 fn ops_line(ops: &[Op]) -> String {
     let mut line = serde_json::to_string(ops).expect("Ops serialise");
     line.push('\n');
@@ -142,6 +156,7 @@ fn ops_line(ops: &[Op]) -> String {
 /// A journal read back after a crash.
 #[derive(Clone, PartialEq, Debug)]
 pub struct Recovered {
+    /// What the Ops apply to.
     pub base: JournalBase,
     /// Every Op that reached the disk, in the order they were applied.
     pub ops: Vec<Op>,
@@ -195,10 +210,10 @@ impl Recovered {
     pub fn replay(self, map: &mut Map) -> Result<(), OpError> {
         let mut inverses = Vec::with_capacity(self.ops.len());
         for op in self.ops {
-            match map.apply(op) {
+            match map.apply_op(op) {
                 Ok(inverse) => inverses.push(inverse),
                 Err(err) => {
-                    map.revert(inverses);
+                    map.revert_ops(inverses);
                     return Err(err);
                 }
             }
@@ -211,7 +226,7 @@ impl Recovered {
     pub fn replay_lenient(self, map: &mut Map) -> usize {
         self.ops
             .into_iter()
-            .filter(|op| map.apply(op.clone()).is_err())
+            .filter(|op| map.apply_op(op.clone()).is_err())
             .count()
     }
 }

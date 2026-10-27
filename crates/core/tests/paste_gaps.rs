@@ -1,4 +1,9 @@
 //! What a Map lacks for pasted branches, and how pasting closes the gaps.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use ssmap_core::{
     AssetRef, Canvas, DistanceUnit, FontFace, Id, Label, LabelStyle, Layer, Map, Node, Object,

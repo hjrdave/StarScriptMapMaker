@@ -1,4 +1,9 @@
 //! Depth sort: a Layer draws its direct Stamps by Anchor height, lower in front (ADR 0003).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use ssmap_core::{Canvas, Command, CommandError, DistanceUnit, Id, Map, Scale, Stamp};
 

@@ -22,6 +22,7 @@ pub struct PasteGaps {
 }
 
 impl PasteGaps {
+    /// Whether the Map lacks nothing the paste needs.
     pub fn is_empty(&self) -> bool {
         self.assets.is_empty() && self.fonts.is_empty() && self.label_styles == 0
     }

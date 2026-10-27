@@ -2,6 +2,11 @@
 //! present, and an export started during a rebuild equal to one made after it.
 //!
 //! Needs a GPU adapter; without one each test returns early, as the golden tests do.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::convert::Infallible;
 use std::path::PathBuf;

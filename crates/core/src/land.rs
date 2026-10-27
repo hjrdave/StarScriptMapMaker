@@ -54,8 +54,10 @@ pub fn brush_region(points: &[Point], radius: f64, tolerance: f64) -> MultiPolyg
             kept.push(point);
         }
     }
-    if let (Some(&last), true) = (points.last(), kept.len() > 1) {
-        *kept.last_mut().expect("not empty") = last;
+    if kept.len() > 1
+        && let (Some(&last), Some(end)) = (points.last(), kept.last_mut())
+    {
+        *end = last;
     }
     let line = centreline(&kept).chaikin_smoothing(SMOOTHING_PASSES);
     let stroked = line.buffer_with_style(BufferStyle::new(radius));
@@ -141,9 +143,10 @@ pub fn brush_command(
                 .iter()
                 .copied()
                 .filter(|&id| match map.node(id) {
-                    Some(Node::Object(o)) if is_landmass(&o.kind) => {
-                        intersects(o.kind.geometry().expect("a Landmass"), &region)
-                    }
+                    Some(Node::Object(o)) if is_landmass(&o.kind) => o
+                        .kind
+                        .geometry()
+                        .is_some_and(|geometry| intersects(geometry, &region)),
                     _ => false,
                 })
                 .collect()
@@ -213,7 +216,7 @@ pub fn water_command(
                 .filter(|&id| {
                     matches!(map.node(id), Some(Node::Object(o))
                         if matches!(o.kind, ObjectKind::Lake(_))
-                            && intersects(o.kind.geometry().expect("a Lake"), &region))
+                            && o.kind.geometry().is_some_and(|geometry| intersects(geometry, &region)))
                 })
                 .collect();
         }
@@ -293,8 +296,10 @@ fn outline_of(map: &Map, id: Id) -> Option<&MultiPolygon> {
     }
 }
 
+/// Why a land brush stroke could not be made.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum BrushError {
+    /// There is no Layer to paint into.
     #[error("choose a Layer to paint land into")]
     NoLayer,
 }
@@ -349,10 +354,13 @@ pub fn intersects(a: &MultiPolygon, b: &MultiPolygon) -> bool {
 /// Why a node edit could not be made.
 #[derive(Clone, PartialEq, Debug, thiserror::Error)]
 pub enum NodeEditError {
-    #[error("the outline has no node at part {}, ring {}, point {}", .0.part, .0.ring, .0.index)]
+    /// The outline has no node there.
+    #[error("the outline has no point at part {}, ring {}, point {}", .0.part, .0.ring, .0.index)]
     NoSuchNode(NodeRef),
+    /// The edit would leave a ring with fewer than three points.
     #[error("a ring needs at least three points")]
     TooFewPoints,
+    /// The edit would leave nothing of the outline.
     #[error("the edit would leave nothing of the outline")]
     Collapsed,
 }

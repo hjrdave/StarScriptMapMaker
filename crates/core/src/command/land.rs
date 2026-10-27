@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 
+use crate::color::Color;
 use crate::geometry::MultiPolygon;
 use crate::id::Id;
 use crate::land;
@@ -9,6 +10,7 @@ use crate::map::{Map, Subtree};
 use crate::node::{Node, ObjectKind};
 use crate::op::{Op, Property};
 use crate::roughness::Roughness;
+use crate::shore::ShoreStyle;
 
 use super::CommandError;
 use super::check::{existing, set, unlocked};
@@ -84,7 +86,9 @@ fn landmasses_topmost_first(
 
 pub(super) fn union_landmasses(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
     let ids = landmasses_topmost_first(map, ids, "Union")?;
-    let (&keeper, others) = ids.split_first().expect("two or more");
+    let Some((&keeper, others)) = ids.split_first() else {
+        return Err(CommandError::NeedsTwoLandmasses { command: "Union" });
+    };
     let mut geometry = outline(map, keeper).clone();
     for &other in others {
         geometry = land::union(&geometry, outline(map, other));
@@ -114,7 +118,11 @@ pub(super) fn union_landmasses(map: &Map, ids: &[Id]) -> Result<Vec<Op>, Command
 
 pub(super) fn subtract_landmasses(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
     let ids = landmasses_topmost_first(map, ids, "Subtract")?;
-    let (&cutter, targets) = ids.split_first().expect("two or more");
+    let Some((&cutter, targets)) = ids.split_first() else {
+        return Err(CommandError::NeedsTwoLandmasses {
+            command: "Subtract",
+        });
+    };
     let region = outline(map, cutter).clone();
     let mut ops = Vec::new();
     let mut gone = vec![cutter];
@@ -160,12 +168,12 @@ pub(super) fn split_apart(map: &Map, id: Id, new_ids: &[Id]) -> Result<Vec<Op>, 
             return Err(CommandError::IdInUse(new));
         }
     }
-    let parent = map.parent(id).expect("Objects live in Layers");
+    let parent = map.parent(id).ok_or(CommandError::NotFound(id))?;
     let position = map
         .children(Some(parent))
         .iter()
         .position(|&c| c == id)
-        .expect("a node is listed by its parent");
+        .ok_or(CommandError::NotFound(id))?;
     let mut ops = vec![Op::ReplaceGeometry {
         id,
         geometry: MultiPolygon(vec![parts[0].clone()]),
@@ -225,6 +233,10 @@ pub(super) fn outlined(map: &Map, ids: &[Id]) -> Result<Vec<Id>, CommandError> {
 }
 
 /// The outline of an id `outlined` accepted.
+#[allow(
+    clippy::expect_used,
+    reason = "`outlined` verified the Object has an outline"
+)]
 pub(super) fn outline(map: &Map, id: Id) -> &MultiPolygon {
     match map.node(id) {
         Some(Node::Object(object)) => object
@@ -254,4 +266,44 @@ pub(super) fn valid_roughness(roughness: &Roughness) -> Result<(), CommandError>
     } else {
         Err(CommandError::InvalidRoughness { amount, scale })
     }
+}
+
+/// Sets the fill colour of Landmasses and Lakes.
+pub(super) fn set_fill(map: &Map, ids: &[Id], fill: Color) -> Result<Vec<Op>, CommandError> {
+    Ok(outlined(map, ids)?
+        .into_iter()
+        .map(|id| set(id, Property::Fill(fill)))
+        .collect())
+}
+
+/// Sets the Roughness of Landmasses and Lakes, or with `None` returns them to the Map-wide
+/// default.
+pub(super) fn set_roughness(
+    map: &Map,
+    ids: &[Id],
+    roughness: &Option<Roughness>,
+) -> Result<Vec<Op>, CommandError> {
+    if let Some(roughness) = roughness {
+        valid_roughness(roughness)?;
+    }
+    Ok(outlined(map, ids)?
+        .into_iter()
+        .map(|id| set(id, Property::Roughness(roughness.clone())))
+        .collect())
+}
+
+/// Sets the Shore style of Landmasses and Lakes, or with `None` returns them to the Map-wide
+/// default for their kind.
+pub(super) fn set_shore(
+    map: &Map,
+    ids: &[Id],
+    shore: &Option<ShoreStyle>,
+) -> Result<Vec<Op>, CommandError> {
+    if let Some(problem) = shore.as_ref().and_then(ShoreStyle::problem) {
+        return Err(CommandError::InvalidShore(problem));
+    }
+    Ok(outlined(map, ids)?
+        .into_iter()
+        .map(|id| set(id, Property::Shore(shore.clone())))
+        .collect())
 }

@@ -33,17 +33,17 @@ impl PropertiesPanel {
             .iter()
             .copied()
             .filter(|&id| {
-                matches!(editor.map.node(id), Some(Node::Object(o)) if o.kind.geometry().is_some())
+                matches!(editor.map().node(id), Some(Node::Object(o)) if o.kind.geometry().is_some())
             })
             .collect();
         if ids.is_empty() {
             return;
         }
-        let default = editor.map.defaults().roughness.clone();
+        let default = editor.map().defaults().roughness.clone();
         let mut any_own = false;
         let members: Vec<Roughness> = ids
             .iter()
-            .map(|&id| match editor.map.node(id) {
+            .map(|&id| match editor.map().node(id) {
                 Some(Node::Object(o)) => o.kind.roughness().map_or_else(
                     || default.clone(),
                     |own| {
@@ -143,7 +143,7 @@ impl PropertiesPanel {
         let mut members = Vec::new();
         let mut any_own = false;
         for &id in ids {
-            let Some(Node::Object(object)) = editor.map.node(id) else {
+            let Some(Node::Object(object)) = editor.map().node(id) else {
                 continue;
             };
             let Some(kind) = object.kind.shore_kind() else {
@@ -155,7 +155,7 @@ impl PropertiesPanel {
                     any_own = true;
                     own.clone()
                 }
-                None => editor.map.defaults().shore_for(kind).clone(),
+                None => editor.map().defaults().shore_for(kind).clone(),
             });
         }
         if shored.is_empty() {

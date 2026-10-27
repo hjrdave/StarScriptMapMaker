@@ -1,4 +1,9 @@
 //! Groups: Layers nested in Layers, with Lock and Hide inherited (issue #261).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use ssmap_core::file::MapFile;
 use ssmap_core::{

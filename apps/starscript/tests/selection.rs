@@ -1,5 +1,10 @@
 //! Multi-select on the Canvas (box-select, Shift-click), its sync with the Layers panel, and
 //! the right-click menu. The real app, driven headlessly; the Canvas draws its placeholder.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use eframe::egui;
 use egui_kittest::Harness;
@@ -8,7 +13,7 @@ use ssmap_app::MapMakerApp;
 use ssmap_core::{Canvas, DistanceUnit, Id, Scale};
 
 /// Canvas points of the three Labels: two near each other, one far off, and a spot on the
-/// pasteboard outside the Canvas.
+/// off-Canvas outside the Canvas.
 const A: [f64; 2] = [1000.0, 1000.0];
 const B: [f64; 2] = [2000.0, 1000.0];
 const C: [f64; 2] = [3000.0, 2500.0];
@@ -156,7 +161,7 @@ fn a_box_drag_selects_what_it_touches() {
 }
 
 #[test]
-fn a_box_drag_can_start_on_the_pasteboard() {
+fn a_box_drag_can_start_on_the_off_canvas() {
     let (mut harness, [a, b, _]) = app();
     // Starting outside the Canvas edge, up and to the left of everything.
     let origin = screen(&harness, [0.0, 0.0]) - egui::vec2(20.0, 20.0);
@@ -188,8 +193,8 @@ fn the_canvas_and_the_layers_panel_share_one_selection() {
     box_drag(&mut harness, from, to, egui::Modifiers::NONE);
     // Both Labels sit in the Labels Layer, which the panel shows with the selection's
     // active Layer: grouping from the panel's menu acts on what the Canvas selected.
-    let layer = harness.state().editor().map.parent(a).unwrap();
-    assert_eq!(harness.state().editor().map.parent(b), Some(layer));
+    let layer = harness.state().editor().map().parent(a).unwrap();
+    assert_eq!(harness.state().editor().map().parent(b), Some(layer));
     assert_eq!(harness.state().editor().active_layer(), Some(layer));
     // And the other way: a row clicked in the panel is what the Canvas now has selected.
     harness.get_by_label("Labels").click();
@@ -206,7 +211,7 @@ fn right_click_on_an_unselected_object_selects_it_and_opens_the_menu() {
     for item in ["Copy", "Cut", "Paste", "Group", "Delete"] {
         harness.get_by_label(item);
     }
-    assert!(harness.state().editor().map.contains(a));
+    assert!(harness.state().editor().map().contains(a));
 }
 
 #[test]
@@ -219,13 +224,13 @@ fn the_menu_copies_cuts_and_pastes() {
     harness.get_by_label("Copy").click();
     harness.run();
     assert!(harness.state().editor().has_clipboard());
-    assert!(harness.state().editor().map.contains(a));
+    assert!(harness.state().editor().map().contains(a));
 
     right_click(&mut harness, A);
     harness.get_by_label("Cut").click();
     harness.run();
-    assert!(!harness.state().editor().map.contains(a));
-    assert!(!harness.state().editor().map.contains(b));
+    assert!(!harness.state().editor().map().contains(a));
+    assert!(!harness.state().editor().map().contains(b));
 
     // Paste lands the pair back, with their middle under the right-click.
     let target = [2500.0, 2000.0];
@@ -262,7 +267,7 @@ fn the_menu_groups_and_deletes() {
     let [group] = editor.selection() else {
         panic!("the new Group is selected")
     };
-    assert_eq!(editor.map.children(Some(*group)).len(), 2);
+    assert_eq!(editor.map().children(Some(*group)).len(), 2);
     assert_eq!(editor.undo_label(), Some("Group"));
 
     // Undo, then delete the pair.
@@ -273,7 +278,7 @@ fn the_menu_groups_and_deletes() {
     harness.get_by_label("Delete").click();
     harness.run();
     let editor = harness.state().editor();
-    assert!(!editor.map.contains(a) && !editor.map.contains(b));
+    assert!(!editor.map().contains(a) && !editor.map().contains(b));
     assert_eq!(editor.undo_label(), Some("Delete"));
 }
 
@@ -285,13 +290,13 @@ fn the_panel_menu_pastes_what_the_canvas_copied() {
     harness.get_by_label("Copy").click();
     harness.run();
 
-    let layer = harness.state().editor().map.parent(a).unwrap();
-    let before = harness.state().editor().map.children(Some(layer)).len();
+    let layer = harness.state().editor().map().parent(a).unwrap();
+    let before = harness.state().editor().map().children(Some(layer)).len();
     harness.get_by_label("Labels").click_secondary();
     harness.run();
     harness.get_by_label("Paste").click();
     harness.run();
     harness.run();
     let editor = harness.state().editor();
-    assert_eq!(editor.map.children(Some(layer)).len(), before + 1);
+    assert_eq!(editor.map().children(Some(layer)).len(), before + 1);
 }

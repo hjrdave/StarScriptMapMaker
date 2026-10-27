@@ -1,4 +1,9 @@
 //! Duplicate: copies of Layers and Objects go just above the originals, as one Command.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use ssmap_core::{
     Canvas, Command, CommandError, DistanceUnit, Id, Map, Node, ObjectKind, Scale, Stamp,

@@ -7,11 +7,11 @@ use ssmap_core::Rect;
 use crate::handles::{Bounds, Handle};
 
 /// The smallest side, in Canvas units, a region may have. A smaller drag is dropped.
-pub const MIN_SIDE: f64 = 1.0;
+pub(crate) const MIN_SIDE: f64 = 1.0;
 
 /// What a pointer drag on the region is doing.
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum RegionDrag {
+pub(crate) enum RegionDrag {
     /// Drawing a new rectangle from the point where the button went down.
     Draw { anchor: [f64; 2] },
     /// Moving the rectangle as it was when the drag began.
@@ -27,7 +27,7 @@ pub enum RegionDrag {
 impl RegionDrag {
     /// The region with the pointer at `pointer`, kept inside the Canvas of `canvas` size.
     /// Every frame works from where the drag began, so nothing drifts.
-    pub fn rect(&self, pointer: [f64; 2], canvas: [f64; 2]) -> Rect {
+    pub(crate) fn rect(&self, pointer: [f64; 2], canvas: [f64; 2]) -> Rect {
         match *self {
             RegionDrag::Draw { anchor } => {
                 let a = clamp_point(anchor, canvas);
@@ -64,7 +64,7 @@ fn clamp_point(point: [f64; 2], canvas: [f64; 2]) -> [f64; 2] {
 }
 
 /// `rect` moved by `delta`, stopping at the Canvas edges rather than changing size.
-pub fn moved(rect: &Rect, delta: [f64; 2], canvas: [f64; 2]) -> Rect {
+pub(crate) fn moved(rect: &Rect, delta: [f64; 2], canvas: [f64; 2]) -> Rect {
     let shift = |axis: usize| {
         let low = -rect.min[axis];
         let high = canvas[axis] - rect.max[axis];
@@ -84,7 +84,7 @@ pub fn moved(rect: &Rect, delta: [f64; 2], canvas: [f64; 2]) -> Rect {
 
 /// `rect` with `handle` dragged by `delta`, kept inside the Canvas. Dragging past the
 /// opposite side flips the rectangle.
-pub fn resized(rect: &Rect, handle: Handle, delta: [f64; 2], canvas: [f64; 2]) -> Rect {
+pub(crate) fn resized(rect: &Rect, handle: Handle, delta: [f64; 2], canvas: [f64; 2]) -> Rect {
     let bounds = Bounds {
         min: rect.min,
         max: rect.max,
@@ -97,7 +97,7 @@ pub fn resized(rect: &Rect, handle: Handle, delta: [f64; 2], canvas: [f64; 2]) -
 }
 
 /// Whether the region is big enough to keep.
-pub fn is_usable(rect: &Rect) -> bool {
+pub(crate) fn is_usable(rect: &Rect) -> bool {
     rect.width() >= MIN_SIDE && rect.height() >= MIN_SIDE
 }
 

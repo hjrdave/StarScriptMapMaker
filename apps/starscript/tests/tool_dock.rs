@@ -37,7 +37,7 @@ fn dock_span(harness: &Harness<'static, MapMakerApp>) -> (f32, f32) {
         .min
         .x;
     let right = harness
-        .get_by_label(&button_label(ToolId::ArtBoard))
+        .get_by_label(&button_label(ToolId::Canvas))
         .rect()
         .max
         .x;
@@ -69,12 +69,12 @@ fn s_selects_stamp_and_c_does_not_select_a_tool() {
 }
 
 #[test]
-fn the_crop_button_is_the_art_board_tool_on_a_and_export_region_is_not_in_the_dock() {
+fn the_crop_button_is_the_canvas_tool_on_a_and_export_region_is_not_in_the_dock() {
     let mut harness = app(egui::vec2(WIDTH, 800.0));
-    assert_eq!(button_label(ToolId::ArtBoard), "Art board (A)");
+    assert_eq!(button_label(ToolId::Canvas), "Canvas (A)");
     harness.key_press(egui::Key::A);
     harness.run();
-    assert_eq!(harness.state().editor().active_tool, ToolId::ArtBoard);
+    assert_eq!(harness.state().editor().active_tool, ToolId::Canvas);
     harness.key_press(egui::Key::V);
     harness.run();
     harness.key_press(egui::Key::X);

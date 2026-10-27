@@ -11,13 +11,13 @@
 use crate::menu::{self, Command, Entry, Key, Shortcut, State, TabState};
 
 #[cfg(target_os = "macos")]
-pub mod dock;
+pub(crate) mod dock;
 #[cfg(target_os = "macos")]
-pub mod mac;
+pub(crate) mod mac;
 
 /// A native key equivalent: ⌘ plus the keys listed. `key` is the character the key types.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Accelerator {
+pub(crate) struct Accelerator {
     pub command: bool,
     pub shift: bool,
     pub alt: bool,
@@ -25,7 +25,7 @@ pub struct Accelerator {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NativeItem {
+pub(crate) struct NativeItem {
     pub command: Command,
     pub title: String,
     pub accelerator: Option<Accelerator>,
@@ -35,7 +35,7 @@ pub struct NativeItem {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum NativeEntry {
+pub(crate) enum NativeEntry {
     Item(NativeItem),
     Separator,
     /// The Open Recent submenu.
@@ -43,27 +43,28 @@ pub enum NativeEntry {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NativeMenu {
+pub(crate) struct NativeMenu {
     pub title: &'static str,
     pub entries: Vec<NativeEntry>,
 }
 
 impl NativeMenu {
-    pub fn items(&self) -> impl Iterator<Item = &NativeItem> {
+    pub(crate) fn items(&self) -> impl Iterator<Item = &NativeItem> {
         self.entries.iter().filter_map(|entry| match entry {
             NativeEntry::Item(item) => Some(item),
             _ => None,
         })
     }
 
-    pub fn item(&self, command: Command) -> Option<&NativeItem> {
+    #[cfg(test)]
+    pub(crate) fn item(&self, command: Command) -> Option<&NativeItem> {
         self.items().find(|item| item.command == command)
     }
 }
 
 /// The native key equivalent for `shortcut`, or `None` if the native menu leaves the key to
 /// egui: it has no ⌘, or it is not a character key.
-pub fn accelerator(shortcut: Shortcut) -> Option<Accelerator> {
+pub(crate) fn accelerator(shortcut: Shortcut) -> Option<Accelerator> {
     if !shortcut.command {
         return None;
     }
@@ -110,7 +111,7 @@ fn text_editing_key(command: Command) -> bool {
 }
 
 /// The native menus for `state`. `text_focus` is whether a text field has the keyboard.
-pub fn menus(state: &State, text_focus: bool) -> Vec<NativeMenu> {
+pub(crate) fn menus(state: &State, text_focus: bool) -> Vec<NativeMenu> {
     menu::menus(state)
         .into_iter()
         .map(|menu| NativeMenu {
@@ -139,7 +140,8 @@ pub fn menus(state: &State, text_focus: bool) -> Vec<NativeMenu> {
 
 /// The items at the top of the StarScript Map Maker app menu, ahead of the standard Hide and
 /// Quit items. They run the same commands as their twins in the Help menu.
-pub fn app_items(state: &State) -> Vec<NativeItem> {
+#[cfg(any(test, target_os = "macos"))]
+pub(crate) fn app_items(state: &State) -> Vec<NativeItem> {
     vec![
         NativeItem {
             command: Command::Credits,
@@ -159,7 +161,7 @@ pub fn app_items(state: &State) -> Vec<NativeItem> {
 }
 
 /// Every command whose key the native menu owns, so the egui handler can skip them.
-pub fn owned_commands() -> Vec<Command> {
+pub(crate) fn owned_commands() -> Vec<Command> {
     let everything = State {
         has_map: true,
         node_edit: true,

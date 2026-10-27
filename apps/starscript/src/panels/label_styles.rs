@@ -30,7 +30,7 @@ const ROW_HEIGHT: f32 = 40.0;
 const LIST_WIDTH: f32 = 220.0;
 
 #[derive(Default)]
-pub struct LabelStylesPanel {
+pub(crate) struct LabelStylesPanel {
     pub open: bool,
     /// The style listed as being edited.
     selected: Option<Id>,
@@ -145,19 +145,23 @@ fn tessellate_halo(path: &Path, width: f32, tolerance: f32) -> VertexBuffers<[f3
 }
 
 /// A name for a copy that no style has yet: "Name copy", then "Name copy 2", and so on.
-pub fn free_name(taken: &[&str], base: &str) -> String {
+pub(crate) fn free_name(taken: &[&str], base: &str) -> String {
     let first = format!("{base} copy");
     if !taken.contains(&first.as_str()) {
         return first;
     }
-    (2..)
-        .map(|n| format!("{first} {n}"))
-        .find(|name| !taken.contains(&name.as_str()))
-        .expect("an unbounded range")
+    let mut n = 2;
+    loop {
+        let name = format!("{first} {n}");
+        if !taken.contains(&name.as_str()) {
+            return name;
+        }
+        n += 1;
+    }
 }
 
 /// The notice after deleting a style that `count` Labels used.
-pub fn deleted_notice(name: &str, count: usize, default_name: &str) -> String {
+pub(crate) fn deleted_notice(name: &str, count: usize, default_name: &str) -> String {
     let labels = if count == 1 {
         "1 Label".to_owned()
     } else {
@@ -167,7 +171,7 @@ pub fn deleted_notice(name: &str, count: usize, default_name: &str) -> String {
 }
 
 impl LabelStylesPanel {
-    pub fn show(&mut self, ctx: &egui::Context, editor: &mut Editor) {
+    pub(crate) fn show(&mut self, ctx: &egui::Context, editor: &mut Editor) {
         let mut open = self.open;
         egui::Window::new("Label styles")
             .open(&mut open)
@@ -191,21 +195,18 @@ impl LabelStylesPanel {
     }
 
     fn contents(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
-        let styles: Vec<LabelStyle> = editor.map.label_styles().iter().cloned().collect();
+        let styles: Vec<LabelStyle> = editor.map().label_styles().iter().cloned().collect();
         self.previews
             .retain(|id, _| styles.iter().any(|style| style.id == *id));
-        if self
-            .selected
-            .is_none_or(|id| !styles.iter().any(|style| style.id == id))
-        {
-            self.selected = Some(LabelStyle::DEFAULT_ID);
-        }
-        let selected = self.selected.expect("set above");
-        let current = styles
-            .iter()
-            .find(|style| style.id == selected)
-            .expect("selected exists")
-            .clone();
+        let selected = match self.selected {
+            Some(id) if styles.iter().any(|style| style.id == id) => id,
+            _ => LabelStyle::DEFAULT_ID,
+        };
+        self.selected = Some(selected);
+        // The default style is always there, so this finds one.
+        let Some(current) = styles.iter().find(|style| style.id == selected).cloned() else {
+            return;
+        };
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(LIST_WIDTH);
@@ -221,7 +222,7 @@ impl LabelStylesPanel {
     fn list(&mut self, ui: &mut egui::Ui, editor: &Editor, styles: &[LabelStyle], selected: Id) {
         let palette = theme::palette(ui.ctx());
         for style in styles {
-            let used = editor.map.labels_using(style.id).len();
+            let used = editor.map().labels_using(style.id).len();
             let (rect, response) =
                 ui.allocate_exact_size(Vec2::new(LIST_WIDTH, ROW_HEIGHT), Sense::click());
             let is_selected = selected == style.id;
@@ -267,6 +268,18 @@ impl LabelStylesPanel {
         }
     }
 
+    /// The text of the rename box for `current`, starting from its name when another style was
+    /// being renamed before.
+    fn rename_text(&mut self, current: &LabelStyle) -> &mut String {
+        if self.rename.as_ref().is_none_or(|(id, _)| *id != current.id) {
+            self.rename = Some((current.id, current.name.clone()));
+        }
+        &mut self
+            .rename
+            .get_or_insert_with(|| (current.id, current.name.clone()))
+            .1
+    }
+
     fn editor_pane(
         &mut self,
         ui: &mut egui::Ui,
@@ -302,22 +315,19 @@ impl LabelStylesPanel {
                 .on_disabled_hover_text("The default style can't be deleted")
                 .clicked()
             {
-                let count = editor.map.labels_using(current.id).len();
+                let count = editor.map().labels_using(current.id).len();
                 if editor
                     .run(Command::DeleteLabelStyle { id: current.id })
                     .is_ok()
                 {
-                    let default = editor.map.label_styles().default_style().name.clone();
+                    let default = editor.map().label_styles().default_style().name.clone();
                     editor.info(deleted_notice(&current.name, count, &default));
                 }
             }
         });
         ui.add_space(6.0);
 
-        if self.rename.as_ref().is_none_or(|(id, _)| *id != current.id) {
-            self.rename = Some((current.id, current.name.clone()));
-        }
-        let name = &mut self.rename.as_mut().expect("set above").1;
+        let name = self.rename_text(current);
         let name_field = ui
             .horizontal(|ui| {
                 ui.label("Name");
@@ -543,11 +553,11 @@ mod tests {
 
         let editor = &harness.state().editor;
         assert_eq!(
-            editor.map.label_styles().get(style_id).unwrap().name,
+            editor.map().label_styles().get(style_id).unwrap().name,
             "Kingdom"
         );
         assert_eq!(editor.label(label_id).unwrap().style, style_id);
-        assert_eq!(editor.map.labels_using(style_id), vec![label_id]);
+        assert_eq!(editor.map().labels_using(style_id), vec![label_id]);
         harness.get_by_label("Kingdom");
     }
 
@@ -565,7 +575,7 @@ mod tests {
 
         harness.get_by_label("New").click();
         harness.run();
-        let styles = &harness.state().editor.map;
+        let styles = &harness.state().editor.map();
         assert_eq!(styles.label_styles().len(), 3);
         assert!(styles.label_styles().get(style_id).is_some());
     }

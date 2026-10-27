@@ -63,7 +63,7 @@ Map-wide Roughness (amount 60, scale 200) and frame one landmass at about 4x zoo
 The editing scripts run 90 frames. A first frame is rendered before measuring, to upload the Map
 and roughen every outline once; it isn't counted.
 
-Not measured yet: resizing a board or Canvas with many objects (issue #239), because there is no
+Not measured yet: resizing the Canvas with many objects (issue #239), because there is no
 resize Command yet. Add a script when there is.
 
 ## Reading the output

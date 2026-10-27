@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::document::Document;
 
 /// How long applied Ops may wait before they are written: "within about a second".
-pub const FLUSH_DELAY: Duration = Duration::from_millis(500);
+pub(crate) const FLUSH_DELAY: Duration = Duration::from_millis(500);
 
 /// The extension of journal files.
 const EXTENSION: &str = "recovery";
@@ -222,24 +222,26 @@ impl Recovery {
 
 /// A free path for a recovered copy of the Map file at `path`: `<name> (recovered).ssmap`,
 /// numbered if that exists.
-pub fn recovered_copy_path(path: &Path) -> PathBuf {
+pub(crate) fn recovered_copy_path(path: &Path) -> PathBuf {
     let stem = path
         .file_stem()
         .unwrap_or_default()
         .to_string_lossy()
         .into_owned();
     let extension = crate::document::EXTENSION;
-    (1..)
-        .map(|n| {
-            let suffix = if n == 1 {
-                String::new()
-            } else {
-                format!(" {n}")
-            };
-            path.with_file_name(format!("{stem} (recovered{suffix}).{extension}"))
-        })
-        .find(|candidate| !candidate.exists())
-        .expect("some numbered name is free")
+    let mut n = 1;
+    loop {
+        let suffix = if n == 1 {
+            String::new()
+        } else {
+            format!(" {n}")
+        };
+        let candidate = path.with_file_name(format!("{stem} (recovered{suffix}).{extension}"));
+        if !candidate.exists() {
+            return candidate;
+        }
+        n += 1;
+    }
 }
 
 #[cfg(test)]

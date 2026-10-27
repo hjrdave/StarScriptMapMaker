@@ -88,7 +88,7 @@ Stacks two things:
 - **Zoom control**: bottom-right: − | `84%` | +. The dropdown: editable % field, Zoom to Fit (⇧1), Zoom to Selection (⇧2), 25 / 50 / 100 (⇧0) / 200 / 400 / 800 %.
 - **Cursor HUD**: small pill near the cursor during a gesture ("Paint · 48 px → Valdren mainland", "Scatter · Pine cluster · Land only · +212 this stroke").
 - Selection = blue `#4FA3E0` bounds + white handles. Brush cursor = white ring over a dark ring. In-progress stroke = gold dashed outline.
-- Node editing: blue banner top-centre ("Editing nodes · 3 of 142 selected · Cancel / Done"), square nodes (selected = filled blue), box-select marquee, + ghost on hovered edge for "double-click to add".
+- Node editing: blue banner top-centre ("Editing points · 3 of 142 selected · Cancel / Done"), square nodes (selected = filled blue), box-select marquee, + ghost on hovered edge for "double-click to add".
 
 ### Status bar (24 px)
 Zoom %, cursor X/Y in px plus real-world units, selection summary (or Active Layer), frame time (right).

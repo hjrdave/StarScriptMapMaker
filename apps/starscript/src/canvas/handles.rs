@@ -67,7 +67,7 @@ impl Handle {
 
 /// What a pointer can grab on the selection.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Grip {
+pub(crate) enum Grip {
     Resize(Handle),
     /// The knob above the top edge.
     Rotate,
@@ -75,7 +75,7 @@ pub enum Grip {
 
 impl Grip {
     /// The pointer shown over the grip.
-    pub fn cursor(self) -> egui::CursorIcon {
+    pub(crate) fn cursor(self) -> egui::CursorIcon {
         match self {
             Grip::Resize(handle) => handle.cursor(),
             Grip::Rotate => egui::CursorIcon::Grab,
@@ -110,7 +110,7 @@ impl Bounds {
                 points.extend([bounds.min, bounds.max]);
                 continue;
             }
-            let Some(Node::Object(object)) = editor.map.node(id) else {
+            let Some(Node::Object(object)) = editor.map().node(id) else {
                 continue;
             };
             let Some(geometry) = object.kind.geometry() else {
@@ -206,7 +206,7 @@ impl Bounds {
 const MIN_SCALE: f64 = 0.01;
 
 /// `label` moved by `delta` Canvas units.
-pub fn moved(label: &Label, delta: [f64; 2]) -> Label {
+pub(crate) fn moved(label: &Label, delta: [f64; 2]) -> Label {
     Label {
         position: [label.position[0] + delta[0], label.position[1] + delta[1]],
         ..label.clone()
@@ -215,7 +215,7 @@ pub fn moved(label: &Label, delta: [f64; 2]) -> Label {
 
 /// `label` scaled by `scale` about the Canvas point `fixed`. Its size and halo scale with it;
 /// spacing and line height are relative to the size already.
-pub fn scaled(label: &Label, styles: &LabelStyles, scale: f64, fixed: [f64; 2]) -> Label {
+pub(crate) fn scaled(label: &Label, styles: &LabelStyles, scale: f64, fixed: [f64; 2]) -> Label {
     let resolved = label.resolve(styles);
     let mut out = label.clone();
     out.position = [
@@ -231,7 +231,7 @@ pub fn scaled(label: &Label, styles: &LabelStyles, scale: f64, fixed: [f64; 2]) 
 }
 
 /// `label` rotated clockwise by `degrees` about the Canvas point `centre`.
-pub fn rotated(label: &Label, degrees: f64, centre: [f64; 2]) -> Label {
+pub(crate) fn rotated(label: &Label, degrees: f64, centre: [f64; 2]) -> Label {
     let (sin, cos) = degrees.to_radians().sin_cos();
     let [dx, dy] = [label.position[0] - centre[0], label.position[1] - centre[1]];
     let mut out = label.clone();
@@ -244,7 +244,7 @@ pub fn rotated(label: &Label, degrees: f64, centre: [f64; 2]) -> Label {
 }
 
 /// `stamp` moved by `delta` Canvas units.
-pub fn moved_stamp(stamp: &Stamp, delta: [f64; 2]) -> Stamp {
+pub(crate) fn moved_stamp(stamp: &Stamp, delta: [f64; 2]) -> Stamp {
     Stamp {
         position: [stamp.position[0] + delta[0], stamp.position[1] + delta[1]],
         ..stamp.clone()
@@ -252,7 +252,7 @@ pub fn moved_stamp(stamp: &Stamp, delta: [f64; 2]) -> Stamp {
 }
 
 /// `stamp` scaled by `scale` about the Canvas point `fixed`.
-pub fn scaled_stamp(stamp: &Stamp, scale: f64, fixed: [f64; 2]) -> Stamp {
+pub(crate) fn scaled_stamp(stamp: &Stamp, scale: f64, fixed: [f64; 2]) -> Stamp {
     Stamp {
         position: [
             fixed[0] + (stamp.position[0] - fixed[0]) * scale,
@@ -264,7 +264,7 @@ pub fn scaled_stamp(stamp: &Stamp, scale: f64, fixed: [f64; 2]) -> Stamp {
 }
 
 /// `stamp` rotated clockwise by `degrees` about the Canvas point `centre`.
-pub fn rotated_stamp(stamp: &Stamp, degrees: f64, centre: [f64; 2]) -> Stamp {
+pub(crate) fn rotated_stamp(stamp: &Stamp, degrees: f64, centre: [f64; 2]) -> Stamp {
     let (sin, cos) = degrees.to_radians().sin_cos();
     let [dx, dy] = [stamp.position[0] - centre[0], stamp.position[1] - centre[1]];
     Stamp {
@@ -278,7 +278,7 @@ pub fn rotated_stamp(stamp: &Stamp, degrees: f64, centre: [f64; 2]) -> Stamp {
 }
 
 /// Converts a Canvas point to a screen position inside the Canvas panel at `origin`.
-pub fn to_screen(view: &View, origin: egui::Pos2, ppp: f64, point: [f64; 2]) -> egui::Pos2 {
+pub(crate) fn to_screen(view: &View, origin: egui::Pos2, ppp: f64, point: [f64; 2]) -> egui::Pos2 {
     let x = (point[0] - view.origin[0]) * view.zoom / ppp;
     let y = (point[1] - view.origin[1]) * view.zoom / ppp;
     origin + egui::vec2(x as f32, y as f32)
@@ -290,7 +290,7 @@ fn rotate_knob(bounds: &Bounds, view: &View, origin: egui::Pos2, ppp: f64) -> eg
 }
 
 /// The handle or knob under `pointer`, if any. The knob is there only when `rotatable`.
-pub fn hit(
+pub(crate) fn hit(
     bounds: &Bounds,
     view: &View,
     origin: egui::Pos2,
@@ -317,7 +317,7 @@ pub fn hit(
 }
 
 /// Draws just the box, for an outline that is shown but not being edited.
-pub fn paint_outline(
+pub(crate) fn paint_outline(
     painter: &egui::Painter,
     bounds: &Bounds,
     view: &View,
@@ -338,7 +338,7 @@ pub fn paint_outline(
 }
 
 /// Draws the box and its handles in `accent`, with the rotate knob when `rotatable`.
-pub fn paint(
+pub(crate) fn paint(
     painter: &egui::Painter,
     bounds: &Bounds,
     view: &View,

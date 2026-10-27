@@ -5,7 +5,7 @@ use std::thread::JoinHandle;
 
 use ssmap_render::{Content, TessellationCache};
 
-pub struct BackgroundTessellation {
+pub(crate) struct BackgroundTessellation {
     /// The renderer's cache; `None` without a wgpu device.
     cache: Option<TessellationCache>,
     /// Set when a Map opens; cleared once everything is ready and no outline is still to land.
@@ -14,7 +14,7 @@ pub struct BackgroundTessellation {
 
 impl BackgroundTessellation {
     /// Armed, since the Map the app starts with has just opened.
-    pub fn new(cache: Option<TessellationCache>) -> Self {
+    pub(crate) fn new(cache: Option<TessellationCache>) -> Self {
         Self { cache, armed: true }
     }
 
@@ -24,7 +24,7 @@ impl BackgroundTessellation {
     /// called from the worker as each Object lands and when it ends. Frames while a worker
     /// runs leave out Objects that are not ready; once disarmed, a frame tessellates whatever
     /// it needs on the spot, as edits, picking and export always do.
-    pub fn update(
+    pub(crate) fn update(
         &mut self,
         content: &Content,
         outlines_running: bool,

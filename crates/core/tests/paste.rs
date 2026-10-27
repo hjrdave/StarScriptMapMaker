@@ -1,4 +1,9 @@
 //! Paste: copied branches go into a Layer as one Command, from this Map or another.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use ssmap_core::{
     Canvas, Command, CommandError, DistanceUnit, Id, Map, Node, ObjectKind, Scale, Stamp, Subtree,

@@ -32,7 +32,7 @@ fn app() -> Harness<'static, MapMakerApp> {
 fn popped_layers(harness: &Harness<'_, MapMakerApp>) -> usize {
     harness.state().popped_tabs(0)[0]
         .editor()
-        .map
+        .map()
         .children(None)
         .len()
 }
@@ -72,7 +72,7 @@ fn edits_and_undo_keep_working_in_the_popped_out_window() {
     harness.run();
     assert_eq!(popped_layers(&harness), before + 2);
     // The main window's Map is a different one.
-    assert_eq!(harness.state().editor().map.children(None).len(), before);
+    assert_eq!(harness.state().editor().map().children(None).len(), before);
 
     harness
         .state_mut()
@@ -87,7 +87,11 @@ fn edits_and_undo_keep_working_in_the_popped_out_window() {
         .in_popped_window(0, |app| app.run_command(Command::MoveTabToMainWindow));
     harness.run();
     assert_eq!(
-        harness.state().tabs()[1].editor().map.children(None).len(),
+        harness.state().tabs()[1]
+            .editor()
+            .map()
+            .children(None)
+            .len(),
         before + 1
     );
     assert!(harness.state().tabs()[1].editor().can_undo());
@@ -118,7 +122,7 @@ fn the_popped_out_window_has_its_own_menu_and_no_home_tab() {
     assert_eq!(
         (
             popped_layers(&harness),
-            harness.state().editor().map.children(None).len()
+            harness.state().editor().map().children(None).len()
         ),
         (before + 1, before)
     );
@@ -245,12 +249,12 @@ fn a_tab_dropped_on_another_windows_strip_lands_at_the_drop_position() {
     assert_eq!(harness.state().active_tab(), 0);
     // It is the same Map, with its edit and undo history.
     assert_eq!(
-        harness.state().editor().map.children(None).len(),
+        harness.state().editor().map().children(None).len(),
         before + 1
     );
     harness.state_mut().run_command(Command::Undo);
     harness.run();
-    assert_eq!(harness.state().editor().map.children(None).len(), before);
+    assert_eq!(harness.state().editor().map().children(None).len(), before);
 }
 
 #[test]
@@ -273,7 +277,7 @@ fn a_tab_dropped_in_the_middle_of_a_strip_goes_between_its_neighbours() {
     harness.run();
     assert_eq!(harness.state().tabs().len(), 3);
     assert_eq!(harness.state().active_tab(), 1);
-    assert_eq!(harness.state().editor().map.children(None).len(), marked);
+    assert_eq!(harness.state().editor().map().children(None).len(), marked);
 }
 
 #[test]
@@ -281,7 +285,7 @@ fn a_tab_dropped_outside_every_window_pops_out() {
     let mut harness = app();
     harness.state_mut().run_command(Command::NewLayer);
     harness.run();
-    let layers = harness.state().editor().map.children(None).len();
+    let layers = harness.state().editor().map().children(None).len();
 
     harness
         .state_mut()
@@ -329,7 +333,7 @@ fn a_tab_dropped_on_its_own_strip_reorders() {
     let mut harness = app();
     harness.state_mut().run_command(Command::NewLayer);
     harness.run();
-    let layers = harness.state().editor().map.children(None).len();
+    let layers = harness.state().editor().map().children(None).len();
     // The active second tab goes before the first.
     let at = on_strip(&harness, 0, 0);
     harness.state_mut().drop_tab(0, 1, at);
@@ -338,7 +342,7 @@ fn a_tab_dropped_on_its_own_strip_reorders() {
     assert_eq!(harness.state().window_count(), 1);
     assert_eq!(harness.state().tabs().len(), 2);
     assert_eq!(harness.state().active_tab(), 0);
-    assert_eq!(harness.state().editor().map.children(None).len(), layers);
+    assert_eq!(harness.state().editor().map().children(None).len(), layers);
 }
 
 /// Pops the second Map out, so window 0 holds the first and window 1 the second.
@@ -358,7 +362,7 @@ fn near_bottom_left(zone: egui::Rect) -> egui::Pos2 {
 }
 
 fn main_layers(harness: &Harness<'_, MapMakerApp>) -> usize {
-    harness.state().editor().map.children(None).len()
+    harness.state().editor().map().children(None).len()
 }
 
 #[test]
@@ -388,7 +392,7 @@ fn an_asset_dropped_on_another_windows_map_is_placed_there() {
     harness.run();
     harness.run();
     let editor = harness.state().editor();
-    assert_eq!(editor.map.children(Some(layer)).len(), 1);
+    assert_eq!(editor.map().children(Some(layer)).len(), 1);
     assert_eq!(editor.undo_label(), Some("Add Stamp"));
 
     // One Undo step in the target Map only.
@@ -398,7 +402,7 @@ fn an_asset_dropped_on_another_windows_map_is_placed_there() {
         harness
             .state()
             .editor()
-            .map
+            .map()
             .children(Some(layer))
             .is_empty()
     );
@@ -414,7 +418,7 @@ fn a_layer_dropped_on_another_windows_map_or_layers_panel_is_copied() {
     harness.run();
     let layer = harness.state().popped_tabs(0)[0]
         .editor()
-        .map
+        .map()
         .children(None)[0];
     let (popped, before) = (popped_layers(&harness), main_layers(&harness));
 
@@ -445,7 +449,7 @@ fn a_layer_dropped_outside_every_drop_zone_does_nothing() {
     harness.run();
     let layer = harness.state().popped_tabs(0)[0]
         .editor()
-        .map
+        .map()
         .children(None)[0];
     let before = main_layers(&harness);
     harness
@@ -465,7 +469,7 @@ fn copy_in_one_window_pastes_into_another() {
     harness.run();
     harness.state_mut().in_popped_window(0, |app| {
         let editor = app.active_editor_mut().unwrap();
-        let layer = editor.map.children(None)[0];
+        let layer = editor.map().children(None)[0];
         editor.select(vec![layer]);
         app.run_command(Command::Copy);
     });

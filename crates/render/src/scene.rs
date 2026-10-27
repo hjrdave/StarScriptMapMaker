@@ -172,7 +172,7 @@ impl MapScene {
             mark_object(map, id, &mut groups[first_group..]);
             for placed in &mut stamps[first_stamp..] {
                 placed.clip = clip;
-                placed.pasteboard = on_pasteboard(map, id);
+                placed.off_canvas = is_off_canvas(map, id);
             }
             if let Some(scope) = clips.last_mut().filter(|_| open.is_some()) {
                 scope.groups.end = groups.len();
@@ -222,7 +222,7 @@ impl MapScene {
             ObjectKind::Stamp(stamp) => stamps.push(PlacedStamp {
                 after: groups.len(),
                 clip: None,
-                pasteboard: false,
+                off_canvas: false,
                 draw: StampDraw {
                     asset: stamp.asset.clone(),
                     position: stamp.position,
@@ -272,16 +272,16 @@ fn mark_object(map: &Map, id: Id, groups: &mut [VectorGroup]) {
     let Some(version) = map.version(id) else {
         return;
     };
-    let pasteboard = on_pasteboard(map, id);
+    let off_canvas = is_off_canvas(map, id);
     for group in groups {
         group.object = Some(ObjectRef { id, version });
-        group.pasteboard = pasteboard;
+        group.off_canvas = off_canvas;
     }
 }
 
-/// Whether `id` is an Object that belongs to the pasteboard rather than the Canvas.
-fn on_pasteboard(map: &Map, id: Id) -> bool {
-    matches!(map.node(id), Some(Node::Object(object)) if object.membership == Membership::Pasteboard)
+/// Whether `id` is an Object that sits off the Canvas rather than belonging to it.
+fn is_off_canvas(map: &Map, id: Id) -> bool {
+    matches!(map.node(id), Some(Node::Object(object)) if object.membership == Membership::OffCanvas)
 }
 
 /// The Landmass `id` is clipped to: that of the nearest Layer above it that has a Clip. A
@@ -359,7 +359,7 @@ fn stroke(path: Path, color: Color, width: f32, opacity: f32) -> VectorGroup {
         }],
         effect: false,
         object: None,
-        pasteboard: false,
+        off_canvas: false,
     }
 }
 

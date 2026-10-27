@@ -1,4 +1,9 @@
 //! The credits query and per-pack credit entries.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::path::{Path, PathBuf};
 

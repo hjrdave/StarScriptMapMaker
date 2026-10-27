@@ -1,5 +1,10 @@
 //! The egui menu bar, drawn from the menu model: items follow the active tab, and each Map
 //! command is one Undo step (no window needed).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 mod common;
 
@@ -99,14 +104,14 @@ fn embed_assets_is_one_undo_step() {
     with_stamp(&mut harness);
     let before = harness.state().tabs()[0]
         .editor()
-        .map
+        .map()
         .embedded()
         .assets
         .len();
     common::choose(&mut harness, "Map", "Embed Assets");
     let embedded = harness.state().tabs()[0]
         .editor()
-        .map
+        .map()
         .embedded()
         .assets
         .len();
@@ -115,7 +120,7 @@ fn embed_assets_is_one_undo_step() {
     common::undo(&mut harness);
     let after = harness.state().tabs()[0]
         .editor()
-        .map
+        .map()
         .embedded()
         .assets
         .len();
@@ -176,14 +181,22 @@ fn a_switched_off_shortcut_is_left_alone() {
     harness
         .state_mut()
         .set_shortcut_enabled(Command::NewLayer, false);
-    let layers = harness.state().tabs()[0].editor().map.children(None).len();
+    let layers = harness.state().tabs()[0]
+        .editor()
+        .map()
+        .children(None)
+        .len();
     harness.key_press_modifiers(
         egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
         egui::Key::N,
     );
     harness.run();
     assert_eq!(
-        harness.state().tabs()[0].editor().map.children(None).len(),
+        harness.state().tabs()[0]
+            .editor()
+            .map()
+            .children(None)
+            .len(),
         layers
     );
     harness
@@ -195,7 +208,11 @@ fn a_switched_off_shortcut_is_left_alone() {
     );
     harness.run();
     assert_eq!(
-        harness.state().tabs()[0].editor().map.children(None).len(),
+        harness.state().tabs()[0]
+            .editor()
+            .map()
+            .children(None)
+            .len(),
         layers + 1
     );
 }

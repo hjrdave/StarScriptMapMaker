@@ -61,7 +61,7 @@ pub(super) fn start_drag(
         .iter()
         .copied()
         .filter(|&id| {
-            matches!(editor.map.node(id), Some(ssmap_core::Node::Object(o)) if o.kind.geometry().is_some())
+            matches!(editor.map().node(id), Some(ssmap_core::Node::Object(o)) if o.kind.geometry().is_some())
         })
         .collect();
     let labels: Vec<(Id, Label)> = moving
@@ -87,7 +87,7 @@ pub(super) fn start_drag(
             .copied()
             .filter(|&id| {
                 (outlines.contains(&id) || editor.label(id).is_some() || editor.stamp(id).is_some())
-                    && !editor.map.node(id).is_some_and(ssmap_core::Node::locked)
+                    && !editor.map().node(id).is_some_and(ssmap_core::Node::locked)
             })
             .collect();
         if sources.is_empty() {
@@ -119,20 +119,20 @@ pub(super) fn start_drag(
         bounds,
         outlines,
         labels,
-        styles: editor.map.label_styles().clone(),
+        styles: editor.map().label_styles().clone(),
         stamps,
         copies,
     });
 }
 
 /// The `SetMembership` Command a move drag ends each frame with: the pointer at `point`
-/// decides the board the dragged Objects belong to, inside the Canvas or off it, as in Figma.
-/// `None` when nothing changes board, or for a resize or rotation.
+/// decides whether the dragged Objects belong to the Canvas or sit off it, as in Figma.
+/// `None` when nothing changes membership, or for a resize or rotation.
 pub(super) fn membership_command(editor: &Editor, drag: &Drag, point: [f64; 2]) -> Option<Command> {
     if drag.grip.is_some() {
         return None;
     }
-    let canvas = editor.map.canvas.rect();
+    let canvas = editor.map().canvas().rect();
     let inside = point[0] >= canvas.min[0]
         && point[0] <= canvas.max[0]
         && point[1] >= canvas.min[1]
@@ -140,7 +140,7 @@ pub(super) fn membership_command(editor: &Editor, drag: &Drag, point: [f64; 2]) 
     let target = if inside {
         Membership::Canvas
     } else {
-        Membership::Pasteboard
+        Membership::OffCanvas
     };
     let moved: Vec<Id> = match &drag.copies {
         Some((_, new_ids)) => new_ids.clone(),
@@ -155,8 +155,8 @@ pub(super) fn membership_command(editor: &Editor, drag: &Drag, point: [f64; 2]) 
     let ids: Vec<Id> = moved
         .into_iter()
         .filter(|&id| {
-            matches!(editor.map.node(id), Some(Node::Object(o)) if o.membership != target)
-                && !editor.map.is_locked(id)
+            matches!(editor.map().node(id), Some(Node::Object(o)) if o.membership != target)
+                && !editor.map().is_locked(id)
         })
         .collect();
     (!ids.is_empty()).then_some(Command::SetMembership {
@@ -430,7 +430,7 @@ mod link_tests {
     }
 
     fn left(editor: &Editor, id: Id) -> f64 {
-        match editor.map.node(id) {
+        match editor.map().node(id) {
             Some(Node::Object(o)) => o.kind.geometry().unwrap().0[0].exterior[0][0],
             _ => panic!("not an Object"),
         }
@@ -482,12 +482,12 @@ mod link_tests {
                 })
                 .is_ok()
         );
-        let before = editor.map.view();
+        let before = editor.map().view();
         let mut state = ToolState::default();
         let bounds = Bounds::of_selection(&mut editor);
         start_drag(&mut editor, &mut state, bounds, None, [5.0, 5.0], false);
         assert!(state.drag.is_none() && !editor.gesture_open());
-        assert_eq!(editor.map.view(), before);
+        assert_eq!(editor.map().view(), before);
         let text = &editor.notice().expect("an error toast").text;
         assert!(
             text.contains("Far Isle") && text.contains("locked"),
@@ -512,6 +512,6 @@ mod link_tests {
         assert_eq!(left(&editor, b), 100.0);
         let copy = editor.selection()[0];
         assert_ne!(copy, a);
-        assert!(!editor.map.is_linked(copy));
+        assert!(!editor.map().is_linked(copy));
     }
 }

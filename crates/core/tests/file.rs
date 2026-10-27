@@ -1,4 +1,9 @@
 //! Map file save and open (ADR 0005).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::path::{Path, PathBuf};
 
@@ -424,9 +429,9 @@ fn unknown_fields_from_a_newer_minor_version_round_trip() {
             geometry: island(3.0),
         })
         .unwrap();
-    let mut canvas = opened.canvas.clone();
+    let mut canvas = opened.canvas().clone();
     canvas.width = 5000;
-    opened.canvas = canvas;
+    opened.set_canvas(canvas);
     file.save(&opened, None).unwrap();
     // Save As keeps what this version doesn't know, too.
     let copy_path = path(&dir, "copy.ssmap");

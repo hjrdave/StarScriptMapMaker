@@ -9,6 +9,11 @@
 //! off below 1.0. `SSMAP_BENCH_ALLOW_HARDWARE=1` falls back to a real GPU.
 //!
 //! Run with `cargo bench -p ssmap-render --bench pan_zoom`.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::f64::consts::TAU;
 use std::path::PathBuf;
@@ -225,7 +230,7 @@ fn main() {
     let started = Instant::now();
     let content = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
     println!("scene build: {:?}", started.elapsed());
-    let scene = CanvasScene::new(&map.canvas).with_content(content);
+    let scene = CanvasScene::new(map.canvas()).with_content(content);
 
     let mut renderer = CanvasRenderer::new(&gpu.device, capabilities);
     renderer.set_sprites(sprites());

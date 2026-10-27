@@ -17,7 +17,7 @@ const COLUMNS: usize = 4;
 const GRID_MAX_HEIGHT: f32 = 240.0;
 
 #[derive(Default)]
-pub struct AssetBrowser {
+pub(crate) struct AssetBrowser {
     /// The pack shown, or every pack.
     pack: Option<String>,
     /// Set once the pack flagged `default = true` has been selected, which happens once.
@@ -31,7 +31,7 @@ pub struct AssetBrowser {
 
 /// Whether `asset` passes the filters: `category` exactly, and every word of `search` found
 /// in its name, id, category or tags, ignoring case.
-pub fn matches(asset: &Asset, category: Option<&str>, search: &str) -> bool {
+pub(crate) fn matches(asset: &Asset, category: Option<&str>, search: &str) -> bool {
     if category.is_some_and(|category| asset.category != category) {
         return false;
     }
@@ -106,7 +106,7 @@ pub(crate) fn thumbnail_label(
 }
 
 impl AssetBrowser {
-    pub fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+    pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         let Some(library) = editor.sprites().map(|sprites| sprites.library().clone()) else {
             ui.weak("No Asset packs are loaded.");
             return;

@@ -20,7 +20,7 @@ fn the_starter_template_is_a_ready_layer_stack() {
         template: Some("Ocean".to_owned()),
         ..canvas()
     };
-    assert_eq!(map.canvas, expected);
+    assert_eq!(map.canvas(), &expected);
     map.validate().unwrap();
 
     let layers: Vec<(String, bool)> = map
@@ -134,13 +134,13 @@ fn every_bundled_template_loads_validates_and_round_trips() {
     for template in &templates {
         let map = template.new_map(canvas());
         map.validate().unwrap();
-        assert_eq!(map.canvas.width, 2000);
+        assert_eq!(map.canvas().width, 2000);
         let path = dir.path().join(format!("{}.ssmap", template.id()));
         MapFile::create(&path, &map, None).unwrap();
         let (_, reopened) = MapFile::open(&path).unwrap();
         assert_eq!(reopened.view(), map.view(), "{}", template.name());
-        assert_eq!(reopened.canvas.background, map.canvas.background);
-        backgrounds.push(map.canvas.background.clone());
+        assert_eq!(reopened.canvas().background, map.canvas().background);
+        backgrounds.push(map.canvas().background.clone());
     }
     for (i, background) in backgrounds.iter().enumerate() {
         assert!(!backgrounds[i + 1..].contains(background));
@@ -152,10 +152,10 @@ fn a_map_takes_the_templates_background_and_the_chosen_canvas() {
     let (templates, _) = MapTemplate::load_all();
     let flat = templates.iter().find(|t| t.id() == "flat-colour").unwrap();
     let map = flat.new_map(canvas());
-    assert_eq!(map.canvas.width, 2000);
-    assert_eq!(map.canvas.height, 1000);
-    assert_eq!(map.canvas.background.texture.strength, 0.0);
-    assert_eq!(map.canvas.background.water, Color::rgb(0x6f, 0x9f, 0xc0));
+    assert_eq!(map.canvas().width, 2000);
+    assert_eq!(map.canvas().height, 1000);
+    assert_eq!(map.canvas().background.texture.strength, 0.0);
+    assert_eq!(map.canvas().background.water, Color::rgb(0x6f, 0x9f, 0xc0));
 }
 
 #[test]
@@ -163,32 +163,32 @@ fn a_map_remembers_its_template_and_a_background_change_keeps_it() {
     let templates = MapTemplate::load_all().0;
     let (ocean, parchment) = (&templates[0], &templates[3]);
     let mut map = ocean.new_map(canvas());
-    assert_eq!(map.canvas.template.as_deref(), Some("Ocean"));
+    assert_eq!(map.canvas().template.as_deref(), Some("Ocean"));
 
     let mut history = ssmap_core::History::default();
-    let original = map.canvas.background.clone();
+    let original = map.canvas().background.clone();
     let background = parchment.background().clone();
     history
         .execute_step(&mut map, &Command::SetBackground { background }, Vec::new())
         .unwrap();
-    assert_eq!(map.canvas.background, *parchment.background());
-    assert_eq!(map.canvas.template.as_deref(), Some("Ocean"));
+    assert_eq!(map.canvas().background, *parchment.background());
+    assert_eq!(map.canvas().template.as_deref(), Some("Ocean"));
 
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("changed.ssmap");
     MapFile::create(&path, &map, None).unwrap();
     let (_, reopened) = MapFile::open(&path).unwrap();
-    assert_eq!(reopened.canvas.background, *parchment.background());
-    assert_eq!(reopened.canvas.template.as_deref(), Some("Ocean"));
+    assert_eq!(reopened.canvas().background, *parchment.background());
+    assert_eq!(reopened.canvas().template.as_deref(), Some("Ocean"));
 
     history.undo(&mut map).unwrap();
-    assert_eq!(map.canvas.background, original);
+    assert_eq!(map.canvas().background, original);
 }
 
 #[test]
 fn a_background_with_a_texture_strength_out_of_range_is_refused() {
     let mut map = MapTemplate::starter().unwrap().new_map(canvas());
-    let mut background = map.canvas.background.clone();
+    let mut background = map.canvas().background.clone();
     background.texture.strength = 1.5;
     assert!(map.execute(&Command::SetBackground { background }).is_err());
 }

@@ -53,7 +53,7 @@ pub(super) fn select_tool(
         let grip = grip_at(pos);
         let on_selection = bounds.is_some_and(|b| b.contains(point));
         if grip.is_none() && !on_selection && editor.pick(point).is_none() {
-            // Empty Canvas or pasteboard: the drag draws a selection box.
+            // Empty Canvas or off-Canvas: the drag draws a selection box.
             let keep = if shift {
                 editor.selection().to_vec()
             } else {
@@ -172,17 +172,17 @@ pub(super) fn paint_select_box(
 }
 
 /// The unlocked Objects whose bounds meet the box between `a` and `b`, in draw order. Reaches
-/// the pasteboard as well as the Canvas.
+/// the off-Canvas as well as the Canvas.
 fn objects_in_box(editor: &mut Editor, a: Point, b: Point) -> Vec<Id> {
     let (min, max) = (
         [a[0].min(b[0]), a[1].min(b[1])],
         [a[0].max(b[0]), a[1].max(b[1])],
     );
     let candidates: Vec<Id> = editor
-        .map
+        .map()
         .draw_order()
         .into_iter()
-        .filter(|&id| !editor.map.is_locked(id))
+        .filter(|&id| !editor.map().is_locked(id))
         .collect();
     candidates
         .into_iter()

@@ -1,5 +1,10 @@
 //! The Home tab in the real app: it is where the app starts, and where Maps are found and
 //! opened (no window needed).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};

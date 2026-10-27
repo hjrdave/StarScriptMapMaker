@@ -16,6 +16,11 @@
 //!
 //! The snapshot lists every step with its outcome. After every step the runner checks that
 //! the tree is valid and that no Clip points at a missing Landmass.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use serde::Deserialize;
 use serde_json::{Value, json};

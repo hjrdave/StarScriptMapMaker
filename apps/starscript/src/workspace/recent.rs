@@ -6,20 +6,20 @@ use std::path::{Path, PathBuf};
 use eframe::egui;
 
 /// How many recent files are remembered.
-pub const MAX_RECENT: usize = 10;
+pub(crate) const MAX_RECENT: usize = 10;
 const STORAGE_KEY: &str = "recent_files";
 /// Thumbnail height in the menu, in points.
 const THUMBNAIL_HEIGHT: f32 = 48.0;
 
 #[derive(Default)]
-pub struct RecentFiles {
+pub(crate) struct RecentFiles {
     paths: Vec<PathBuf>,
     /// `None` when the file has no preview or can't be read.
     thumbnails: HashMap<PathBuf, Option<egui::TextureHandle>>,
 }
 
 impl RecentFiles {
-    pub fn load(storage: Option<&dyn eframe::Storage>) -> Self {
+    pub(crate) fn load(storage: Option<&dyn eframe::Storage>) -> Self {
         let paths: Vec<PathBuf> = storage
             .and_then(|storage| storage.get_string(STORAGE_KEY))
             .and_then(|json| serde_json::from_str(&json).ok())
@@ -30,7 +30,7 @@ impl RecentFiles {
         }
     }
 
-    pub fn store(&self, storage: &mut dyn eframe::Storage) {
+    pub(crate) fn store(&self, storage: &mut dyn eframe::Storage) {
         // Paths that aren't valid UTF-8 can't be serialised, so they aren't remembered.
         let storable: Vec<&Path> = self
             .paths
@@ -44,25 +44,25 @@ impl RecentFiles {
         }
     }
 
-    pub fn paths(&self) -> &[PathBuf] {
+    pub(crate) fn paths(&self) -> &[PathBuf] {
         &self.paths
     }
 
     /// Puts `path` first, and forgets its thumbnail so the next look reads the new preview.
-    pub fn add(&mut self, path: &Path) {
+    pub(crate) fn add(&mut self, path: &Path) {
         self.paths.retain(|known| known != path);
         self.paths.insert(0, path.to_path_buf());
         self.paths.truncate(MAX_RECENT);
         self.thumbnails.remove(path);
     }
 
-    pub fn remove(&mut self, path: &Path) {
+    pub(crate) fn remove(&mut self, path: &Path) {
         self.paths.retain(|known| known != path);
         self.thumbnails.remove(path);
     }
 
     /// The entries of the Open Recent menu. Returns the path the user picked.
-    pub fn menu(&mut self, ui: &mut egui::Ui) -> Option<PathBuf> {
+    pub(crate) fn menu(&mut self, ui: &mut egui::Ui) -> Option<PathBuf> {
         if self.paths.is_empty() {
             ui.weak("No recent files");
             return None;

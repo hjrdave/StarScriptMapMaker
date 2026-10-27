@@ -1,5 +1,10 @@
 //! Adding a pack from the Asset packs page: the folder dialog button, drag and drop, progress
 //! and the result message (no window needed).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::fs;
 use std::path::{Path, PathBuf};

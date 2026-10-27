@@ -1,5 +1,10 @@
 //! Canvas resize and Object membership: resizing never moves, resizes, removes or re-homes an
 //! Object, and only an explicit membership change does the last.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use ssmap_core::file::MapFile;
 use ssmap_core::{
@@ -65,8 +70,8 @@ fn resizing_from_any_edge_never_changes_objects() {
 
     // Grow past the left and top edges: the origin moves, the Object does not.
     resize(&mut map, [-50.0, -40.0], 150, 120);
-    assert_eq!(map.canvas.rect().min, [-50.0, -40.0]);
-    assert_eq!(map.canvas.rect().max, [100.0, 80.0]);
+    assert_eq!(map.canvas().rect().min, [-50.0, -40.0]);
+    assert_eq!(map.canvas().rect().max, [100.0, 80.0]);
     assert_eq!(map.view().layers, before);
 
     // Shrink past the Object from the left/top, and then to nothing around it.
@@ -93,13 +98,13 @@ fn membership_changes_only_when_asked() {
     let (mut map, id) = map_with_landmass(square(10.0, 10.0, 20.0));
     map.execute(&Command::SetMembership {
         ids: vec![id],
-        membership: Membership::Pasteboard,
+        membership: Membership::OffCanvas,
     })
     .unwrap();
-    assert_eq!(membership(&map, id), Membership::Pasteboard);
+    assert_eq!(membership(&map, id), Membership::OffCanvas);
     // Resizing to cover the Object does not adopt it.
     resize(&mut map, [-100.0, -100.0], 400, 400);
-    assert_eq!(membership(&map, id), Membership::Pasteboard);
+    assert_eq!(membership(&map, id), Membership::OffCanvas);
 }
 
 #[test]
@@ -109,7 +114,7 @@ fn membership_needs_an_unlocked_object() {
     assert!(matches!(
         map.execute(&Command::SetMembership {
             ids: vec![layer],
-            membership: Membership::Pasteboard,
+            membership: Membership::OffCanvas,
         }),
         Err(CommandError::NotAnObject(_))
     ));
@@ -118,7 +123,7 @@ fn membership_needs_an_unlocked_object() {
     assert!(matches!(
         map.execute(&Command::SetMembership {
             ids: vec![id],
-            membership: Membership::Pasteboard,
+            membership: Membership::OffCanvas,
         }),
         Err(CommandError::Locked(_))
     ));
@@ -142,7 +147,7 @@ fn rejects_an_empty_or_non_finite_canvas() {
         map.execute(&bad([f64::NAN, 0.0], 10, 10)),
         Err(CommandError::InvalidCanvasOrigin(_))
     ));
-    assert_eq!((map.canvas.width, map.canvas.height), (100, 80));
+    assert_eq!((map.canvas().width, map.canvas().height), (100, 80));
 }
 
 #[test]
@@ -180,7 +185,7 @@ fn undo_restores_membership() {
             &mut map,
             &Command::SetMembership {
                 ids: vec![id],
-                membership: Membership::Pasteboard,
+                membership: Membership::OffCanvas,
             },
             vec![],
         )
@@ -188,7 +193,7 @@ fn undo_restores_membership() {
     history.undo(&mut map).unwrap();
     assert_eq!(membership(&map, id), Membership::Canvas);
     history.redo(&mut map).unwrap();
-    assert_eq!(membership(&map, id), Membership::Pasteboard);
+    assert_eq!(membership(&map, id), Membership::OffCanvas);
 }
 
 #[test]
@@ -197,7 +202,7 @@ fn origin_and_membership_round_trip_through_json() {
     resize(&mut map, [-5.5, 7.0], 30, 30);
     map.execute(&Command::SetMembership {
         ids: vec![id],
-        membership: Membership::Pasteboard,
+        membership: Membership::OffCanvas,
     })
     .unwrap();
     let json = serde_json::to_string(&map.view()).unwrap();
@@ -211,7 +216,7 @@ fn origin_and_membership_survive_a_save_and_reopen() {
     resize(&mut map, [-5.5, 7.0], 30, 30);
     map.execute(&Command::SetMembership {
         ids: vec![id],
-        membership: Membership::Pasteboard,
+        membership: Membership::OffCanvas,
     })
     .unwrap();
     let dir = tempfile::tempdir().unwrap();
@@ -227,6 +232,6 @@ fn old_files_without_origin_or_membership_load_with_defaults() {
     let json = serde_json::to_string(&map.view()).unwrap();
     assert!(!json.contains("origin") && !json.contains("membership"));
     let back = Map::from_view(serde_json::from_str(&json).unwrap()).unwrap();
-    assert_eq!(back.canvas.origin, [0.0, 0.0]);
+    assert_eq!(back.canvas().origin, [0.0, 0.0]);
     assert_eq!(membership(&back, id), Membership::Canvas);
 }

@@ -13,7 +13,7 @@ const BANNER_GAP: f32 = 12.0;
 
 /// What the user chose in the node-edit banner.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum BannerAction {
+pub(crate) enum BannerAction {
     Cancel,
     Done,
 }
@@ -77,7 +77,7 @@ fn divider(ui: &mut egui::Ui, palette: &Palette) {
 
 /// The `−` | `84%` | `+` control over the bottom-right of `canvas`. `percent` is the current
 /// zoom as a share of 1:1 in points; `field` keeps the menu's percentage text between frames.
-pub fn zoom_control(
+pub(crate) fn zoom_control(
     ctx: &egui::Context,
     canvas: egui::Rect,
     percent: f64,
@@ -176,7 +176,7 @@ fn zoom_menu(
 }
 
 /// The blue banner at the top centre of `canvas` while nodes are edited.
-pub fn node_banner(
+pub(crate) fn node_banner(
     ctx: &egui::Context,
     canvas: egui::Rect,
     selected: usize,
@@ -198,7 +198,7 @@ pub fn node_banner(
                     ui.horizontal(|ui| {
                         ui.label(
                             egui::RichText::new(format!(
-                                "Editing nodes · {selected} of {total} selected"
+                                "Editing points · {selected} of {total} selected"
                             ))
                             .size(theme::BODY)
                             .color(egui::Color32::WHITE),

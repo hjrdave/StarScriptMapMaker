@@ -17,7 +17,7 @@ use eframe::egui;
 use ssmap_render::raster::Art;
 
 /// Side of an icon's grid in points; the default size an icon is drawn at.
-pub const GRID: f32 = 16.0;
+pub(crate) const GRID: f32 = 16.0;
 
 macro_rules! icons {
     ($($variant:ident, $label:literal, $file:literal;)*) => {
@@ -68,7 +68,7 @@ icons! {
     Reset, "Reset", "reset";
     ReRoll, "Re-roll", "re-roll";
     Attribution, "Attribution", "attribution";
-    Nodes, "Nodes", "nodes";
+    Nodes, "Points", "nodes";
     Union, "Union", "union";
     Subtract, "Subtract", "subtract";
     SplitApart, "Split apart", "split-apart";
@@ -110,7 +110,7 @@ impl Icon {
 
 /// Which atlas to draw from.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub enum Scale {
+pub(crate) enum Scale {
     /// 16 px cells.
     X1,
     /// 32 px cells.
@@ -121,7 +121,7 @@ impl Scale {
     /// 1x only at 1 pixel per point (or less); 1.5 and up use 2x as the design asks, and so
     /// do the scales between, such as 125%, downsampling the 2x atlas linearly. The 1x atlas
     /// is never scaled up.
-    pub fn for_pixels_per_point(pixels_per_point: f32) -> Self {
+    pub(crate) fn for_pixels_per_point(pixels_per_point: f32) -> Self {
         if pixels_per_point > 1.0 + 1e-3 {
             Scale::X2
         } else {
@@ -130,7 +130,7 @@ impl Scale {
     }
 
     /// Side of one atlas cell in pixels.
-    pub fn cell(self) -> u32 {
+    pub(crate) fn cell(self) -> u32 {
         match self {
             Scale::X1 => 16,
             Scale::X2 => 32,
@@ -141,7 +141,7 @@ impl Scale {
 const COLUMNS: u32 = 8;
 
 /// All icons rasterised at one scale: premultiplied RGBA8, white glyphs on transparent.
-pub struct Atlas {
+pub(crate) struct Atlas {
     scale: Scale,
     width: u32,
     height: u32,
@@ -149,7 +149,7 @@ pub struct Atlas {
 }
 
 impl Atlas {
-    pub fn build(scale: Scale) -> Self {
+    pub(crate) fn build(scale: Scale) -> Self {
         let cell = scale.cell();
         let rows = (Icon::ALL.len() as u32).div_ceil(COLUMNS);
         let (width, height) = (COLUMNS * cell, rows * cell);
@@ -175,12 +175,9 @@ impl Atlas {
         }
     }
 
-    pub fn scale(&self) -> Scale {
-        self.scale
-    }
-
-    /// The icon's cell as `[x, y]` of its top-left pixel; the cell is `scale().cell()` square.
-    pub fn cell_origin(&self, icon: Icon) -> [u32; 2] {
+    /// The icon's cell as `[x, y]` of its top-left pixel; the cell is `scale.cell()` square.
+    #[allow(clippy::expect_used, reason = "every icon is in ALL")]
+    pub(crate) fn cell_origin(&self, icon: Icon) -> [u32; 2] {
         let index = Icon::ALL
             .iter()
             .position(|&i| i == icon)
@@ -190,7 +187,8 @@ impl Atlas {
     }
 
     /// The icon's cell as premultiplied RGBA8 rows.
-    pub fn cell_pixels(&self, icon: Icon) -> Vec<u8> {
+    #[cfg(test)]
+    pub(crate) fn cell_pixels(&self, icon: Icon) -> Vec<u8> {
         let cell = self.scale.cell();
         let [x0, y0] = self.cell_origin(icon);
         let mut out = Vec::with_capacity((cell * cell * 4) as usize);
@@ -202,7 +200,7 @@ impl Atlas {
     }
 
     /// The icon's cell in texture coordinates.
-    pub fn uv(&self, icon: Icon) -> egui::Rect {
+    pub(crate) fn uv(&self, icon: Icon) -> egui::Rect {
         let [x, y] = self.cell_origin(icon);
         let cell = self.scale.cell();
         let (w, h) = (self.width as f32, self.height as f32);
@@ -220,6 +218,7 @@ impl Atlas {
     }
 }
 
+#[allow(clippy::expect_used, reason = "embedded icons are valid SVG")]
 fn rasterise(icon: Icon, scale: Scale) -> ssmap_render::raster::Raster {
     let svg = match scale {
         Scale::X1 => match icon.one_x_override() {
@@ -258,7 +257,7 @@ fn texture(ctx: &egui::Context, scale: Scale) -> Texture {
 
 /// Centres a square of `size` points in `container`, rounded to whole physical pixels so the
 /// glyph never straddles a pixel boundary.
-pub fn snapped_rect(container: egui::Rect, size: f32, pixels_per_point: f32) -> egui::Rect {
+pub(crate) fn snapped_rect(container: egui::Rect, size: f32, pixels_per_point: f32) -> egui::Rect {
     let pixels = (size * pixels_per_point).round().max(1.0);
     let min = container.center().to_vec2() * pixels_per_point - egui::Vec2::splat(pixels / 2.0);
     let min = egui::pos2(min.x.round(), min.y.round()) / pixels_per_point;
@@ -267,12 +266,18 @@ pub fn snapped_rect(container: egui::Rect, size: f32, pixels_per_point: f32) -> 
 
 /// Paints `icon` centred in `container` at `size` points (use [`GRID`] for the native size),
 /// tinted with `tint`.
-pub fn paint(ui: &egui::Ui, container: egui::Rect, icon: Icon, size: f32, tint: egui::Color32) {
+pub(crate) fn paint(
+    ui: &egui::Ui,
+    container: egui::Rect,
+    icon: Icon,
+    size: f32,
+    tint: egui::Color32,
+) {
     paint_flipped(ui, container, icon, size, tint, false);
 }
 
 /// Like [`paint`], optionally mirrored left to right (a left chevron from the right one).
-pub fn paint_flipped(
+pub(crate) fn paint_flipped(
     ui: &egui::Ui,
     container: egui::Rect,
     icon: Icon,
@@ -296,12 +301,12 @@ pub fn paint_flipped(
 ///
 /// The glyph is tinted from the current egui visuals until the Phase 2 theme (#157) supplies
 /// palette colours.
-pub fn icon_button(ui: &mut egui::Ui, icon: Icon, label: &str) -> egui::Response {
+pub(crate) fn icon_button(ui: &mut egui::Ui, icon: Icon, label: &str) -> egui::Response {
     icon_button_with(ui, icon, label, 24.0, GRID, None)
 }
 
 /// [`icon_button`] with the glyph mirrored left to right when `flip` is set.
-pub fn icon_button_flipped(
+pub(crate) fn icon_button_flipped(
     ui: &mut egui::Ui,
     icon: Icon,
     label: &str,
@@ -312,7 +317,7 @@ pub fn icon_button_flipped(
 
 /// [`icon_button`] with its button `side` and glyph `size` in points, and optionally a `tint`
 /// in place of the visuals' text colour.
-pub fn icon_button_with(
+pub(crate) fn icon_button_with(
     ui: &mut egui::Ui,
     icon: Icon,
     label: &str,

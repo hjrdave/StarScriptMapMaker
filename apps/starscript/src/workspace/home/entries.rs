@@ -8,7 +8,7 @@ use eframe::egui;
 
 /// Which Maps the main area lists.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum View {
+pub(crate) enum View {
     /// Every Map file the app knows of.
     #[default]
     All,
@@ -21,7 +21,7 @@ pub enum View {
 }
 
 impl View {
-    pub fn title(self) -> &'static str {
+    pub(crate) fn title(self) -> &'static str {
         match self {
             View::All => "All maps",
             View::Recent => "Recent",
@@ -32,7 +32,7 @@ impl View {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum Sort {
+pub(crate) enum Sort {
     #[default]
     LastEdited,
     Name,
@@ -49,7 +49,7 @@ impl Sort {
 
 /// One Map in a list.
 #[derive(Clone, PartialEq, Debug)]
-pub struct Entry {
+pub(crate) struct Entry {
     /// `None` for a Map never saved.
     pub path: Option<PathBuf>,
     pub name: String,
@@ -64,14 +64,14 @@ pub struct Entry {
 }
 
 impl Entry {
-    pub fn is_open(&self) -> bool {
+    pub(crate) fn is_open(&self) -> bool {
         self.tab.is_some()
     }
 }
 
 /// What reading a Map file's header gives, kept with its thumbnail.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub struct Info {
+pub(crate) struct Info {
     pub modified: Option<SystemTime>,
     pub canvas: Option<(u32, u32)>,
     pub missing: bool,
@@ -79,7 +79,7 @@ pub struct Info {
 
 /// Reads what the list shows of the Map file at `path`, and its preview image. Reads only the
 /// file's header, never the Map.
-pub fn read_info(path: &Path) -> (Info, Option<egui::ColorImage>) {
+pub(crate) fn read_info(path: &Path) -> (Info, Option<egui::ColorImage>) {
     let Ok(meta) = std::fs::metadata(path) else {
         return (
             Info {
@@ -114,7 +114,7 @@ fn read_thumbnail(path: &Path) -> Option<egui::ColorImage> {
 
 /// A Map open in a tab, as the list needs to know it.
 #[derive(Clone, Debug)]
-pub struct OpenTab {
+pub(crate) struct OpenTab {
     pub path: Option<PathBuf>,
     pub name: String,
     pub canvas: (u32, u32),
@@ -123,7 +123,7 @@ pub struct OpenTab {
 }
 
 /// The known Maps, in the order the app remembers them, with the tab each is open in.
-pub fn known_entries(
+pub(crate) fn known_entries(
     recent: &[PathBuf],
     tabs: &[OpenTab],
     info: impl Fn(&Path) -> Info,
@@ -145,7 +145,7 @@ pub fn known_entries(
 }
 
 /// One entry per tab, in tab order.
-pub fn open_entries(tabs: &[OpenTab], info: impl Fn(&Path) -> Info) -> Vec<Entry> {
+pub(crate) fn open_entries(tabs: &[OpenTab], info: impl Fn(&Path) -> Info) -> Vec<Entry> {
     tabs.iter()
         .enumerate()
         .filter(|(_, tab)| !tab.blank)
@@ -189,13 +189,13 @@ fn file_name(path: &Path) -> String {
 
 /// The numbers beside the list names in the left rail.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Counts {
+pub(crate) struct Counts {
     pub all: usize,
     pub recent: usize,
     pub open: usize,
 }
 
-pub fn counts(known: &[Entry], open: &[Entry]) -> Counts {
+pub(crate) fn counts(known: &[Entry], open: &[Entry]) -> Counts {
     Counts {
         all: known.len(),
         recent: known.len(),
@@ -205,7 +205,7 @@ pub fn counts(known: &[Entry], open: &[Entry]) -> Counts {
 
 /// The entries `view` lists, whose name contains `query` (ignoring case), in `sort` order.
 /// Recent keeps the app's own order, newest first.
-pub fn select<'a>(
+pub(crate) fn select<'a>(
     view: View,
     known: &'a [Entry],
     open: &'a [Entry],
@@ -233,7 +233,7 @@ pub fn select<'a>(
 }
 
 /// "Edited 2 hours ago".
-pub fn edited_ago(now: SystemTime, then: SystemTime) -> String {
+pub(crate) fn edited_ago(now: SystemTime, then: SystemTime) -> String {
     let seconds = now.duration_since(then).unwrap_or_default().as_secs();
     let plural = |n: u64, unit: &str| {
         if n == 1 {
@@ -253,7 +253,7 @@ pub fn edited_ago(now: SystemTime, then: SystemTime) -> String {
 }
 
 /// "4096 × 3072 px".
-pub fn size_label((width, height): (u32, u32)) -> String {
+pub(crate) fn size_label((width, height): (u32, u32)) -> String {
     format!("{width} × {height} px")
 }
 

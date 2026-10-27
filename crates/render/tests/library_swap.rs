@@ -1,5 +1,10 @@
 //! Swapping the installed packs under a live `SpriteStore`, as installing or deleting a pack
 //! does. CPU only.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::path::Path;
 use std::sync::Arc;

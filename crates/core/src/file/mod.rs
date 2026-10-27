@@ -91,7 +91,9 @@ const UPSERT_NODE: &str = "
 /// A Map file version, written as `major.minor`.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct FormatVersion {
+    /// The major version. A newer major version cannot be opened.
     pub major: u32,
+    /// The minor version. Newer minor versions open, keeping what they add.
     pub minor: u32,
 }
 
@@ -113,32 +115,50 @@ impl FromStr for FormatVersion {
     }
 }
 
+/// Why a Map file could not be opened, saved or recovered.
 #[derive(Debug, Error)]
 pub enum FileError {
+    /// Reading or writing the file failed.
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    /// The file is not a StarScript Map file.
     #[error("this is not a StarScript Map file")]
     NotAMapFile,
+    /// The file was saved by a newer major format version.
     #[error(
         "this Map was saved by a newer StarScript Map Maker (file format {found}); this \
          version opens format {}.x and older",
         FORMAT_VERSION.major
     )]
-    NewerMajor { found: FormatVersion },
+    NewerMajor {
+        /// The file's format version.
+        found: FormatVersion,
+    },
+    /// The file's format version has no upgrade to the current one.
     #[error("this Map uses file format {found}, which this version can't upgrade")]
-    NoMigration { found: FormatVersion },
+    NoMigration {
+        /// The file's format version.
+        found: FormatVersion,
+    },
+    /// The file's contents are not a valid Map.
     #[error("the Map file is damaged: {0}")]
     Damaged(String),
+    /// A Landmass or Lake's outline could not be read.
     #[error("the Map file is damaged: the outline of {id} is unreadable")]
     Outline {
+        /// The Landmass or Lake.
         id: Id,
+        /// Why the outline is unreadable.
         #[source]
         source: BlobError,
     },
+    /// A column holds a value of the wrong type.
     #[error("the Map file is damaged: a column holds the wrong type")]
     WrongColumnType(#[from] rusqlite::types::FromSqlError),
+    /// The path is not valid Unicode.
     #[error("the file path must be valid Unicode: {0}")]
     PathNotUnicode(PathBuf),
+    /// The database reported an error.
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
 }
@@ -150,6 +170,7 @@ pub struct SaveStats {
     pub written: usize,
     /// Rows whose node only changed place among its siblings.
     pub moved: usize,
+    /// Rows removed because their node was deleted.
     pub deleted: usize,
 }
 
@@ -280,6 +301,10 @@ impl MapFile {
     /// Writes what changed in `map` since the last save, as one transaction, and stamps a new
     /// save generation. A `preview` PNG replaces the stored one; without one, the stale
     /// preview is removed.
+    #[allow(
+        clippy::expect_used,
+        reason = "a Canvas serialises; settings serialise; defaults serialise"
+    )]
     pub fn save(&mut self, map: &Map, preview: Option<&[u8]>) -> Result<SaveStats, FileError> {
         let generation = Uuid::now_v7();
         let tx = self
@@ -354,6 +379,7 @@ impl MapFile {
         Ok(stats)
     }
 
+    /// The path of the open file.
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -535,6 +561,7 @@ fn write_meta(
 
 /// Writes rows for new and changed nodes, moves rows whose place changed, deletes rows of
 /// removed nodes, and returns the new saved state.
+#[allow(clippy::expect_used, reason = "a listed node exists")]
 fn write_nodes(
     tx: &Transaction<'_>,
     map: &Map,
@@ -593,6 +620,7 @@ fn write_nodes(
 }
 
 /// The `kind`, `props` and `geometry` columns of a node.
+#[allow(clippy::expect_used, reason = "a node serialises")]
 fn encode_node(node: &Node) -> (&'static str, String, Option<Vec<u8>>) {
     let to_json = |node: &Node| serde_json::to_string(node).expect("a node serialises");
     match node {

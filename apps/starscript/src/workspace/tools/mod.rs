@@ -2,8 +2,8 @@
 //! view changes or Commands. Object tools (stamps) arrive with their tickets and register
 //! here.
 
-mod art_board;
 mod brush;
+mod canvas_tool;
 mod drag;
 mod export_region;
 mod input;
@@ -44,7 +44,7 @@ pub enum ToolId {
     Label,
     Stamp,
     StampEraser,
-    ArtBoard,
+    Canvas,
     /// Drawing the custom export region; started from the Export dialog, not the dock.
     ExportRegion,
 }
@@ -59,7 +59,7 @@ impl ToolId {
         ToolId::Label,
         ToolId::Stamp,
         ToolId::StampEraser,
-        ToolId::ArtBoard,
+        ToolId::Canvas,
     ];
 
     pub fn label(self) -> &'static str {
@@ -72,7 +72,7 @@ impl ToolId {
             ToolId::Label => "Label",
             ToolId::Stamp => "Stamp",
             ToolId::StampEraser => "Stamp Eraser",
-            ToolId::ArtBoard => "Art board",
+            ToolId::Canvas => "Canvas",
             ToolId::ExportRegion => "Export Region",
         }
     }
@@ -89,7 +89,7 @@ impl ToolId {
             ToolId::Label => (none, egui::Key::T),
             ToolId::Stamp => (none, egui::Key::S),
             ToolId::StampEraser => (none, egui::Key::E),
-            ToolId::ArtBoard => (none, egui::Key::A),
+            ToolId::Canvas => (none, egui::Key::A),
             ToolId::ExportRegion => return None,
         })
     }
@@ -138,17 +138,17 @@ pub struct ToolState {
     lasso: Option<Lasso>,
     /// An Export Region drag in progress, with the region as it was before the drag.
     region_drag: Option<(RegionDrag, ExportRegion)>,
-    /// An Art board resize in progress.
-    board_drag: Option<crate::art_board::BoardDrag>,
-    /// Where the board's label was last drawn, in screen points, for clicking it.
-    board_label: Option<egui::Rect>,
+    /// A Canvas resize in progress.
+    canvas_drag: Option<crate::canvas_resize::CanvasDrag>,
+    /// Where the Canvas's label was last drawn, in screen points, for clicking it.
+    canvas_label: Option<egui::Rect>,
     /// A box-select in node-edit mode: where it began and where the pointer is, in Canvas units.
     marquee: Option<(Point, Point)>,
     /// A box-select dragged from empty Canvas with the Select tool.
     select_box: Option<SelectBox>,
     /// The Label whose text is being typed in the overlay box.
     pub editing: Option<TextEditing>,
-    /// The gesture a `drag`, `stroke`, `node_drag` or `board_drag` holds open, and the tool
+    /// The gesture a `drag`, `stroke`, `node_drag` or `canvas_drag` holds open, and the tool
     /// that opened it.
     held: Option<(ToolId, GestureId)>,
 }
@@ -240,7 +240,7 @@ impl ToolState {
             self.drag = None;
             self.stroke = None;
             self.node_drag = None;
-            self.board_drag = None;
+            self.canvas_drag = None;
         }
     }
 
@@ -249,11 +249,11 @@ impl ToolState {
         self.drag.is_some()
     }
 
-    /// The cursor HUD while the Art board is being resized, such as "Board · 4096 × 2560".
-    pub fn board_hud(&self, editor: &Editor) -> Option<String> {
-        self.board_drag?;
-        let canvas = &editor.map.canvas;
-        Some(crate::art_board::hud_text(canvas.width, canvas.height))
+    /// The cursor HUD while the Canvas is being resized, such as "Canvas · 4096 × 2560".
+    pub fn canvas_hud(&self, editor: &Editor) -> Option<String> {
+        self.canvas_drag?;
+        let canvas = &editor.map().canvas();
+        Some(crate::canvas_resize::hud_text(canvas.width, canvas.height))
     }
 }
 
@@ -272,9 +272,9 @@ pub fn canvas_input(
         editor.leave_node_edit();
     }
     state.drop_held_for_other_tool(editor);
-    if editor.active_tool != ToolId::ArtBoard {
-        state.board_label = None;
-        editor.select_board(false);
+    if editor.active_tool != ToolId::Canvas {
+        state.canvas_label = None;
+        editor.select_canvas(false);
     }
     if pan::pan_tool(editor, view, &frame) {
         return;
@@ -298,7 +298,7 @@ pub fn canvas_input(
             scatter::scatter_tool(editor, view, state, &frame, erase)
         }
         ToolId::ExportRegion => export_region::export_region_tool(editor, view, state, &frame),
-        ToolId::ArtBoard => art_board::art_board_tool(editor, view, state, &frame),
+        ToolId::Canvas => canvas_tool::canvas_tool(editor, view, state, &frame),
         ToolId::Label => {
             label::label_tool(editor, view, state, &frame);
             None
@@ -333,8 +333,8 @@ pub fn paint_overlay(
     hover: Option<egui::Pos2>,
     ppp: f64,
 ) {
-    if editor.active_tool == ToolId::ArtBoard {
-        art_board::paint_board(painter, editor, view, state, origin, ppp);
+    if editor.active_tool == ToolId::Canvas {
+        canvas_tool::paint_canvas(painter, editor, view, state, origin, ppp);
     }
     if editor.active_tool == ToolId::Select {
         node_edit::paint_nodes(painter, editor, view, state, origin, hover, ppp);

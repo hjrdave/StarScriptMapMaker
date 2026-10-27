@@ -1,5 +1,10 @@
 //! A setting that differs across a multi-selection shows "Mixed"; dragging the slider or typing
 //! a value sets every selected item, as one Undo step.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use eframe::egui;
 use egui::accesskit::Role;
@@ -79,7 +84,7 @@ fn amounts(harness: &Harness<'static, MapMakerApp>, ids: [Id; 2]) -> [f64; 2] {
         harness
             .state()
             .editor()
-            .map
+            .map()
             .roughness(id)
             .expect("a Landmass")
             .amount
@@ -91,7 +96,7 @@ fn counts(harness: &Harness<'static, MapMakerApp>, ids: [Id; 2]) -> [u32; 2] {
         harness
             .state()
             .editor()
-            .map
+            .map()
             .shore(id)
             .expect("a Landmass")
             .ripples

@@ -1,5 +1,10 @@
 //! The Recovery journal in the real app (ADR 0005): edits survive a crash, and closing
 //! cleanly or saving leaves no journal behind.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -110,7 +115,10 @@ fn edit_child() {
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
     harness.run();
     wait_until_journaled(&mut harness);
-    println!("journaled {:?}", layer_names(&harness.state().editor().map));
+    println!(
+        "journaled {:?}",
+        layer_names(harness.state().editor().map())
+    );
     loop {
         std::thread::sleep(Duration::from_secs(60));
     }
@@ -155,15 +163,15 @@ fn killing_the_app_after_edits_then_reopening_replays_them() {
     let mut harness = app(dir.path());
     assert!(harness.state_mut().open_path(&file));
     harness.run();
-    assert_eq!(layer_names(&harness.state().editor().map), ["Base"]);
+    assert_eq!(layer_names(harness.state().editor().map()), ["Base"]);
     harness.get_by_label("Recover Changes").click();
     harness.run();
     let state = harness.state();
     assert_eq!(
-        layer_names(&state.editor().map),
+        layer_names(state.editor().map()),
         ["Base", "Layer 2", "Layer 3"]
     );
-    assert!(state.document().has_unsaved_changes(&state.editor().map));
+    assert!(state.document().has_unsaved_changes(state.editor().map()));
     assert!(
         !state.editor().can_undo(),
         "recovered changes are not undo steps"
@@ -187,7 +195,7 @@ fn killing_the_app_after_edits_then_reopening_replays_them() {
     harness.get_by_label("Recover Changes").click();
     harness.run();
     assert_eq!(
-        layer_names(&harness.state().editor().map),
+        layer_names(harness.state().editor().map()),
         ["Base", "Layer 2", "Layer 3", "Layer 4"]
     );
 
@@ -221,8 +229,8 @@ fn a_replaced_map_file_gets_a_separate_recovered_copy_and_is_left_untouched() {
         state.editor().notice().map(|n| n.text.as_str()),
         Some("Saved the recovered changes as “coast (recovered).ssmap”")
     );
-    assert_eq!(layer_names(&state.editor().map), ["Elsewhere"]);
-    assert!(!state.document().has_unsaved_changes(&state.editor().map));
+    assert_eq!(layer_names(state.editor().map()), ["Elsewhere"]);
+    assert!(!state.document().has_unsaved_changes(state.editor().map()));
     assert_eq!(
         std::fs::read(&file).unwrap(),
         replaced,
@@ -250,7 +258,7 @@ fn discarding_recovered_changes_deletes_the_journal() {
     harness.get_by_label("Discard").click();
     harness.run();
     assert!(!recovery_path(&file).exists());
-    assert_eq!(layer_names(&harness.state().editor().map), ["Base"]);
+    assert_eq!(layer_names(harness.state().editor().map()), ["Base"]);
 }
 
 fn journals_in(dir: &Path) -> Vec<PathBuf> {
@@ -280,11 +288,11 @@ fn a_map_never_saved_journals_under_the_data_dir_and_is_offered_at_startup() {
     let state = harness.state();
     // The starter template's four Layers, then the two made above.
     assert_eq!(
-        layer_names(&state.editor().map),
+        layer_names(state.editor().map()),
         ["Backdrop", "Land", "Assets", "Labels", "Layer 5", "Layer 6"]
     );
     assert!(state.document().path().is_none());
-    assert!(state.document().has_unsaved_changes(&state.editor().map));
+    assert!(state.document().has_unsaved_changes(state.editor().map()));
     assert_eq!(state.recovery_journal(), Some(journal.as_path()));
 
     // Saving it deletes the journal under the data dir.

@@ -168,12 +168,12 @@ pub struct CanvasScene {
     pub canvas_origin: [f64; 2],
     pub backdrop: Backdrop,
     /// The area around the Canvas. Editor-only; export never shows it.
-    pub pasteboard: Color,
+    pub off_canvas: Color,
     /// Drawn over the backdrop.
     pub content: Content,
     pub quality: Quality,
-    /// Whether Objects on the pasteboard are drawn. Export turns it off.
-    pub pasteboard_objects: bool,
+    /// Whether Objects off the Canvas are drawn. Export turns it off.
+    pub off_canvas_objects: bool,
 }
 
 impl CanvasScene {
@@ -182,10 +182,10 @@ impl CanvasScene {
             canvas_size: [f64::from(canvas.width), f64::from(canvas.height)],
             canvas_origin: canvas.origin,
             backdrop: Backdrop::from(&canvas.background),
-            pasteboard: Color::rgb(0x1c, 0x1c, 0x1f),
+            off_canvas: Color::rgb(0x1c, 0x1c, 0x1f),
             content: Content::default(),
             quality: Quality::Full,
-            pasteboard_objects: true,
+            off_canvas_objects: true,
         }
     }
 
@@ -362,6 +362,7 @@ impl CanvasRenderer {
 
     /// Records the Canvas render into `encoder` and returns the resolved target, which holds
     /// the result once the encoder is submitted.
+    #[allow(clippy::expect_used, reason = "ensured above")]
     pub fn render(
         &mut self,
         device: &wgpu::Device,
@@ -395,10 +396,10 @@ impl CanvasRenderer {
                     .cuts()
                     .chain(clips.iter().flat_map(|c| [c.groups.start, c.groups.end]))
                     .collect();
-                // Pasteboard Objects draw unscissored, so a run never mixes them with members.
+                // Off-Canvas Objects draw unscissored, so a run never mixes them with members.
                 let groups = scene.content.groups();
                 cuts.extend(
-                    (1..groups.len()).filter(|&i| groups[i].pasteboard != groups[i - 1].pasteboard),
+                    (1..groups.len()).filter(|&i| groups[i].off_canvas != groups[i - 1].off_canvas),
                 );
                 cuts.sort_unstable();
                 cuts.dedup();
@@ -454,7 +455,7 @@ impl CanvasRenderer {
                 depth_slice: None,
                 resolve_target,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(scene.pasteboard.to_wgpu()),
+                    load: wgpu::LoadOp::Clear(scene.off_canvas.to_wgpu()),
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -482,22 +483,22 @@ impl CanvasRenderer {
         for run in 0..=self.content_cuts.len() {
             // A run lies inside one Clip scope or outside them all, as scope edges are cuts.
             let scope = clips.iter().position(|clip| clip.groups.contains(&start));
-            let pasteboard = scene
+            let off_canvas = scene
                 .content
                 .groups()
                 .get(start)
-                .is_some_and(|group| group.pasteboard);
+                .is_some_and(|group| group.off_canvas);
             self.enter(&mut pass, &mut scissor, &mut active, scope);
-            if scissor.set(&mut pass, pasteboard) {
+            if scissor.set(&mut pass, off_canvas) {
                 self.content
                     .draw_run(&mut pass, run, scope.is_some(), &filter);
             }
             let Some(&cut) = self.content_cuts.get(run) else {
                 break;
             };
-            for (clip, pasteboard, batches) in self.stamps.runs_after(cut) {
+            for (clip, off_canvas, batches) in self.stamps.runs_after(cut) {
                 self.enter(&mut pass, &mut scissor, &mut active, clip);
-                if scissor.set(&mut pass, pasteboard) {
+                if scissor.set(&mut pass, off_canvas) {
                     self.stamps
                         .draw(&mut pass, batches, clip.is_some(), filter.bounds);
                 }
@@ -510,7 +511,7 @@ impl CanvasRenderer {
 
     /// Makes `scope` the active Clip: removes the previous one's shape from the stencil and
     /// writes the new one's. The shapes are written across the whole target, so a run on the
-    /// pasteboard in the same scope still finds them outside the Canvas.
+    /// off-Canvas in the same scope still finds them outside the Canvas.
     fn enter(
         &self,
         pass: &mut wgpu::RenderPass<'_>,
@@ -626,13 +627,13 @@ impl CanvasRenderer {
 }
 
 /// Keeps Objects that belong to the Canvas inside it by scissoring their draws to the Canvas
-/// rectangle in target pixels. Pasteboard Objects draw across the whole target.
+/// rectangle in target pixels. Off-Canvas Objects draw across the whole target.
 struct Scissor {
     /// The Canvas rectangle as `[x, y, width, height]` clamped to the target; `None` when none
     /// of it is in view.
     canvas: Option<[u32; 4]>,
     size: [u32; 2],
-    pasteboard_objects: bool,
+    off_canvas_objects: bool,
     /// The kind of draw the pass is currently set up for.
     current: Option<bool>,
 }
@@ -655,23 +656,23 @@ impl Scissor {
                 max[1] - min[1],
             ]),
             size,
-            pasteboard_objects: scene.pasteboard_objects,
+            off_canvas_objects: scene.off_canvas_objects,
             current: None,
         }
     }
 
-    /// Sets the scissor for a draw of a pasteboard Object or of a Canvas member, and says
+    /// Sets the scissor for a draw of an off-Canvas Object or of a Canvas member, and says
     /// whether the draw can show anything.
-    fn set(&mut self, pass: &mut wgpu::RenderPass<'_>, pasteboard: bool) -> bool {
-        if self.current != Some(pasteboard) {
-            self.current = Some(pasteboard);
-            match self.canvas.filter(|_| !pasteboard) {
+    fn set(&mut self, pass: &mut wgpu::RenderPass<'_>, off_canvas: bool) -> bool {
+        if self.current != Some(off_canvas) {
+            self.current = Some(off_canvas);
+            match self.canvas.filter(|_| !off_canvas) {
                 Some([x, y, w, h]) => pass.set_scissor_rect(x, y, w, h),
                 None => pass.set_scissor_rect(0, 0, self.size[0], self.size[1]),
             }
         }
-        if pasteboard {
-            self.pasteboard_objects
+        if off_canvas {
+            self.off_canvas_objects
         } else {
             self.canvas.is_some()
         }

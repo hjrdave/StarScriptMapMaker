@@ -40,6 +40,7 @@ impl Clipboard {
     }
 
     /// The text mirrored to the system clipboard.
+    #[allow(clippy::expect_used, reason = "a tree of plain data serialises")]
     pub fn to_text(&self) -> String {
         serde_json::to_string(&Payload {
             format: FORMAT.to_owned(),

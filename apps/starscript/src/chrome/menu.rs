@@ -348,8 +348,8 @@ pub fn menus(state: &State) -> Vec<Menu> {
     if map && state.node_edit {
         edit.extend([
             Separator,
-            item(DeleteNodes, "Delete Nodes", state.nodes_selected),
-            item(FinishNodeEdit, "Finish Node Editing", true),
+            item(DeleteNodes, "Delete Points", state.nodes_selected),
+            item(FinishNodeEdit, "Finish Point Editing", true),
             item(CancelGesture, "Cancel Gesture", state.gesture_open),
         ]);
     }

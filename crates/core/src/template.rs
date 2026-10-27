@@ -26,22 +26,33 @@ const TEMPLATES_DIR: &str = "templates";
 /// The starter template's id: its file name without the extension.
 const STARTER_TEMPLATE_ID: &str = "starter";
 
+/// Why a template could not be loaded.
 #[derive(Debug, Error)]
 pub enum TemplateError {
+    /// The template file could not be read.
     #[error("couldn't read {path}: {source}")]
     Read {
+        /// The file that could not be read.
         path: PathBuf,
+        /// Why it failed.
         source: std::io::Error,
     },
+    /// The file is not valid JSON for a template.
     #[error("the template is not valid: {0}")]
     Parse(#[from] serde_json::Error),
+    /// The `format_version` is not `major.minor`.
     #[error("the template's format_version “{0}” is not `major.minor`")]
     BadVersion(String),
+    /// The template uses a newer Map format than this version reads.
     #[error(
         "the template uses Map format {found}, but this version reads {}.x",
         FORMAT_VERSION.major
     )]
-    UnsupportedVersion { found: FormatVersion },
+    UnsupportedVersion {
+        /// The template's format version.
+        found: FormatVersion,
+    },
+    /// The template does not describe a valid Map.
     #[error("the template is not a valid Map: {0}")]
     Invalid(#[from] InvariantError),
 }
@@ -50,8 +61,11 @@ pub enum TemplateError {
 /// land, scatter Stamps and add Labels with no setup. A Layer the Map no longer has is ignored.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Debug, Deserialize)]
 pub struct DefaultLayers {
+    /// Where new Landmasses and Lakes go.
     pub land: Option<Id>,
+    /// Where new Stamps go.
     pub assets: Option<Id>,
+    /// Where new Labels go.
     pub labels: Option<Id>,
 }
 
@@ -123,6 +137,7 @@ impl MapTemplate {
         &self.view.defaults
     }
 
+    /// Reads a template from the file at `path`.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, TemplateError> {
         let path = path.as_ref();
         let text = std::fs::read_to_string(path).map_err(|source| TemplateError::Read {
@@ -177,6 +192,7 @@ impl MapTemplate {
 
     /// A new Map from the template with the given Canvas, which takes on the template's
     /// background.
+    #[allow(clippy::expect_used, reason = "the template was checked when loaded")]
     pub fn new_map(&self, mut canvas: Canvas) -> Map {
         canvas.background = self.view.canvas.background.clone();
         canvas.template = Some(self.name.clone());

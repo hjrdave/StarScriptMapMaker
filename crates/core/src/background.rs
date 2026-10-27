@@ -12,8 +12,10 @@ use crate::extra::Extra;
 pub struct Background {
     /// The flat colour under the texture.
     pub water: Color,
+    /// The mottling over the water.
     #[serde(default)]
     pub texture: BackgroundTexture,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -31,6 +33,7 @@ pub struct BackgroundTexture {
     pub light: Color,
     /// The colour the noise darkens towards.
     pub dark: Color,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }

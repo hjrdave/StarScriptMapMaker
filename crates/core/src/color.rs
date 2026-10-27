@@ -12,20 +12,28 @@ use thiserror::Error;
 /// `"#rrggbbaa"` when not opaque.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Color {
+    /// The red channel.
     pub r: u8,
+    /// The green channel.
     pub g: u8,
+    /// The blue channel.
     pub b: u8,
+    /// The alpha channel, where 255 is opaque.
     pub a: u8,
 }
 
 impl Color {
+    /// Opaque black.
     pub const BLACK: Color = Color::rgb(0, 0, 0);
+    /// Opaque white.
     pub const WHITE: Color = Color::rgb(0xff, 0xff, 0xff);
 
+    /// An opaque colour from its red, green and blue channels.
     pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b, a: 255 }
     }
 
+    /// A colour from its red, green, blue and alpha channels.
     pub const fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self { r, g, b, a }
     }
@@ -41,6 +49,7 @@ impl fmt::Display for Color {
     }
 }
 
+/// Why a string is not a colour: it is not `#rrggbb` or `#rrggbbaa`.
 #[derive(Clone, PartialEq, Eq, Debug, Error)]
 #[error("“{0}” is not a colour; expected #rrggbb or #rrggbbaa")]
 pub struct ParseColorError(String);

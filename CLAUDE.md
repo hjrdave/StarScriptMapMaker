@@ -24,7 +24,7 @@ wherever the file lives. A new module goes in its group's `mod.rs` and gets a re
 - `app/`: `MapMakerApp`, the eframe app that ties the groups together
 - `workspace/`: Map documents and app state: `document`, `editor`, `shell`, `home`, `tools`,
   `clipboard`, `credits`, `recent`, `file_actions`, `update`
-- `canvas/`: the Map view: `canvas_view`, `canvas_controls`, `art_board`, `overlay`, `handles`,
+- `canvas/`: the Map view: `canvas_view`, `canvas_controls`, `canvas_resize`, `overlay`, `handles`,
   `zoom`, `tessellation`, `frame_time`
 - `panels/`: side panels: `layer_tree`, `properties`, `prop_widgets`, `asset_browser`, `label_styles`
 - `chrome/`: window chrome: `menu`, `native_menu`, `tab`, `tab_strip`, `tool_dock`,
@@ -41,6 +41,7 @@ Run, in this order:
 cargo fmt --all
 cargo clippy --workspace --all-targets --locked -- -D warnings
 ./scripts/check-core-deps.sh
+./scripts/check-command-rule.sh
 cargo test --workspace --locked
 ```
 
@@ -67,11 +68,20 @@ Say which of these a change touches, so they get checked on a machine with a GPU
 
 ## Rules
 
-- Edits to a Map go through a `Command`, which compiles to `Op`s (ADR 0004). Never mutate a Map directly from UI or render code.
+- Edits to a Map go through a `Command`, which compiles to `Op`s (ADR 0004). Never mutate a Map directly from UI or render code. `Map::apply`, `execute` and `revert` exist only with core's `test-support` feature, which tests and benches enable; production code edits through `History`. `scripts/check-command-rule.sh` builds without the feature to prove it.
 - Every change to `crates/core` comes with tests.
 - Avoid `unwrap()` and `expect()` outside tests; return or handle the error.
 - Keep changes focused: no unrelated refactors or dependency changes.
 - Match the surrounding code's style, naming and comment density.
+
+## Lint policy
+
+`[workspace.lints.clippy]` in `Cargo.toml` warns on `unwrap_used`, `expect_used`, `too_many_lines` and `cognitive_complexity`, and `[workspace.lints.rust]` on `unreachable_pub`; CI's `-D warnings` makes them errors. Thresholds and the test exemptions are in `clippy.toml`. `apps/starscript` has its own lint table (it needs `unsafe_code = "deny"`), so keep it in step with the workspace one.
+
+- Source files have no blanket allows. A function that must `expect` carries `#[allow(clippy::expect_used, reason = "...")]` saying why it can't fail; don't add one to new code if a `Result` or `Option` will do. Lock guards recover from poisoning with `unwrap_or_else(PoisonError::into_inner)`.
+- A `pub` item that no other crate uses is `pub(crate)`; `unreachable_pub` flags the rest.
+- `crates/core` also warns on `missing_docs`: every public item gets a one-line `///` comment.
+- Integration tests and benches may panic, so their files allow the two lints at the top.
 
 ## Conventions
 

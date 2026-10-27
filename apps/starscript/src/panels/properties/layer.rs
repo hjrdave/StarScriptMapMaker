@@ -45,15 +45,15 @@ impl PropertiesPanel {
             row(ui, "Clip to", |ui| {
                 let current = layer
                     .clip
-                    .map_or("None".to_owned(), |t| landmass_name(&editor.map, t));
+                    .map_or("None".to_owned(), |t| landmass_name(editor.map(), t));
                 egui::ComboBox::from_id_salt("clip")
                     .selected_text(current)
                     .show_ui(ui, |ui| {
                         if ui.selectable_label(layer.clip.is_none(), "None").clicked() {
                             let _ = editor.run(Command::SetClip { id, target: None });
                         }
-                        for target in landmasses(&editor.map) {
-                            let name = landmass_name(&editor.map, target);
+                        for target in landmasses(editor.map()) {
+                            let name = landmass_name(editor.map(), target);
                             if ui
                                 .selectable_label(layer.clip == Some(target), name)
                                 .clicked()
@@ -66,7 +66,7 @@ impl PropertiesPanel {
                         }
                     });
             });
-            let selected = selected_landmass(&editor.map, editor.selection());
+            let selected = selected_landmass(editor.map(), editor.selection());
             if ui
                 .add_enabled(selected.is_some(), egui::Button::new("Use selection"))
                 .clicked()

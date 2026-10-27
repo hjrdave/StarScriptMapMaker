@@ -372,6 +372,7 @@ impl MapMakerApp {
     /// # Panics
     ///
     /// Panics while no Map is open (Home showing with no tabs).
+    #[allow(clippy::expect_used, reason = "no Map is open")]
     pub fn editor(&self) -> &Editor {
         self.tab().expect("no Map is open").editor()
     }
@@ -386,6 +387,7 @@ impl MapMakerApp {
     /// # Panics
     ///
     /// Panics while no Map is open (Home showing with no tabs).
+    #[allow(clippy::expect_used, reason = "no Map is open")]
     pub fn document(&self) -> &Document {
         self.tab().expect("no Map is open").document()
     }

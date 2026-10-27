@@ -178,7 +178,7 @@ fn picking_a_template_card_updates_the_preview_and_the_map() {
         assert_eq!(template.name(), name);
         let (map, _, problem) = ssmap_app::new_map::start_map_from(Ok(template.clone()), canvas());
         assert_eq!(problem, None);
-        assert_eq!(map.canvas.background, *template.background());
+        assert_eq!(map.canvas().background, *template.background());
     }
 }
 
@@ -196,7 +196,10 @@ fn creating_from_each_template_opens_a_map_with_its_background() {
         harness.run();
         assert_eq!(harness.state().tabs().len(), before + 1);
         let tab = harness.state().tabs().last().unwrap();
-        assert_eq!(tab.editor().map.canvas.background, *template.background());
+        assert_eq!(
+            tab.editor().map().canvas().background,
+            *template.background()
+        );
     }
 }
 

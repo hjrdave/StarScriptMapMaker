@@ -41,11 +41,13 @@ pub struct Roughness {
     pub scale: f64,
     /// Picks one of many equally rough coastlines.
     pub seed: u32,
+    /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
 }
 
 impl Roughness {
+    /// A Roughness of `amount` and `scale` with `seed`.
     pub fn new(amount: f64, scale: f64, seed: u32) -> Self {
         Self {
             amount,
@@ -264,7 +266,7 @@ struct CacheEntry {
 
 impl Shared {
     fn entries(&self) -> MutexGuard<'_, HashMap<Id, CacheEntry>> {
-        self.entries.lock().expect("roughness cache lock")
+        self.entries.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn store(
@@ -289,6 +291,7 @@ impl Shared {
 }
 
 impl RoughnessCache {
+    /// An empty cache.
     pub fn new() -> Self {
         Self::default()
     }
@@ -371,13 +374,17 @@ impl RoughnessCache {
     /// roughened one, not a stored placeholder. Export calls this before it builds its scene.
     /// A rebuild that is neither run nor dropped on another thread would wait forever.
     pub fn wait_until_ready(&self) {
-        let mut guard = self.shared.ended.lock().expect("roughness wait lock");
+        let mut guard = self
+            .shared
+            .ended
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         while self.is_rebuilding() {
             guard = self
                 .shared
                 .ended_signal
                 .wait(guard)
-                .expect("roughness wait lock");
+                .unwrap_or_else(PoisonError::into_inner);
         }
     }
 
@@ -450,6 +457,7 @@ impl Rebuild {
         self.jobs.len()
     }
 
+    /// Whether there is nothing to compute.
     pub fn is_empty(&self) -> bool {
         self.jobs.is_empty()
     }

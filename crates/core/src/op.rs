@@ -20,53 +20,88 @@ use crate::node::{Membership, Node, ObjectKind, Stamp};
 use crate::roughness::Roughness;
 use crate::shore::ShoreStyle;
 
+/// One primitive edit to a Map. Commands compile into Ops; applying an Op returns its inverse (ADR 0004).
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Op {
     /// Inserts a node and its descendants at `index` among `parent`'s children
     /// (`None` is the top level, which holds only Layers).
     Insert {
+        /// The Layer to insert into, or `None` for the top level.
         parent: Option<Id>,
+        /// Where to insert among the parent's children.
         index: usize,
+        /// The node and its descendants.
         subtree: Subtree,
     },
     /// Removes a node and its descendants.
-    Remove { id: Id },
+    Remove {
+        /// The node to remove.
+        id: Id,
+    },
     /// Sets one property of a node.
-    SetProperty { id: Id, property: Property },
+    SetProperty {
+        /// The node to change.
+        id: Id,
+        /// The property and its new value.
+        property: Property,
+    },
     /// Replaces the outline of a Landmass or Lake.
-    ReplaceGeometry { id: Id, geometry: MultiPolygon },
+    ReplaceGeometry {
+        /// The Landmass or Lake to change.
+        id: Id,
+        /// Its new outline.
+        geometry: MultiPolygon,
+    },
     /// Moves a node to `index` among `parent`'s children, counted after it leaves its old place.
     Move {
+        /// The node to move.
         id: Id,
+        /// The Layer to move into, or `None` for the top level.
         parent: Option<Id>,
+        /// The new place among the parent's children.
         index: usize,
     },
     /// Sets the Canvas size and the workspace position of its top-left corner. No node
     /// changes: Objects keep their positions and membership.
     ResizeCanvas {
+        /// Where the Canvas's top-left corner sits, in workspace units.
         origin: Point,
+        /// The new width, in Canvas units.
         width: u32,
+        /// The new height, in Canvas units.
         height: u32,
     },
     /// Replaces the Canvas's background.
-    SetBackground { background: Background },
+    SetBackground {
+        /// The new background.
+        background: Background,
+    },
     /// Replaces the Map-wide defaults.
-    SetDefaults { defaults: MapDefaults },
+    SetDefaults {
+        /// The new Map-wide defaults.
+        defaults: MapDefaults,
+    },
     /// Stores the embedded file with content hash `hash`, or with `None` removes it.
     SetBlob {
+        /// The content hash of the file.
         hash: ContentHash,
+        /// The file's bytes, or `None` to remove it.
         data: Option<Blob>,
     },
     /// Sets the embedded record of an Asset, or with `None` removes it. The files it names
     /// are separate [`Op::SetBlob`]s.
     SetEmbeddedAsset {
+        /// The Asset the record is for.
         asset: AssetRef,
+        /// The new record, or `None` to remove it.
         record: Option<Box<EmbeddedAsset>>,
     },
     /// Sets the embedded record of the font file named `file`, or with `None` removes it.
     SetEmbeddedFont {
+        /// The font file's name.
         file: String,
+        /// The new record, or `None` to remove it.
         record: Option<Box<EmbeddedFont>>,
     },
 }
@@ -104,31 +139,57 @@ pub enum Property {
     Stamp(Box<Stamp>),
 }
 
+/// Why an Op did not apply. The Map is left unchanged.
 #[derive(Clone, PartialEq, Debug, Error)]
 pub enum OpError {
+    /// No node has this id.
     #[error("no node has id {0}")]
     NotFound(Id),
+    /// The node is an Object, and only Layers hold children.
     #[error("{0} is an Object; only Layers hold children")]
     NotALayer(Id),
+    /// An Object was put at the top level, which holds only Layers.
     #[error("only Layers can be at the top level")]
     ObjectAtRoot,
+    /// The index is past the end of the parent's children.
     #[error("index {index} is past the end of {len} children")]
-    IndexOutOfRange { index: usize, len: usize },
+    IndexOutOfRange {
+        /// The index that was asked for.
+        index: usize,
+        /// How many children the parent has.
+        len: usize,
+    },
+    /// The node was moved into itself or one of its own descendants.
     #[error("cannot move {0} into itself or its own descendant")]
     MoveIntoSelf(Id),
+    /// The node's kind does not have this property.
     #[error("{0} has no property {1}")]
     NoSuchProperty(Id, &'static str),
+    /// The node has no outline to replace.
     #[error("{0} has no geometry")]
     NoGeometry(Id),
+    /// The embedded file's bytes do not match its content hash.
     #[error("the embedded file does not match its content hash {0}")]
     BlobHashMismatch(ContentHash),
+    /// The Op would break a structural rule of the Map.
     #[error(transparent)]
     Invariant(#[from] InvariantError),
 }
 
 impl Map {
-    /// Applies `op` and returns its inverse. On error the Map is unchanged.
+    /// Applies `op` and returns its inverse. On error the Map is unchanged. Outside the
+    /// `test-support` feature, only Commands reach this (ADR 0004).
+    #[cfg(any(test, feature = "test-support"))]
     pub fn apply(&mut self, op: Op) -> Result<Op, OpError> {
+        self.apply_op(op)
+    }
+
+    /// The Op applier behind [`Map::apply`], for `core` itself.
+    #[allow(
+        clippy::expect_used,
+        reason = "Map::check verified the id exists; Map::check verified the Object has geometry"
+    )]
+    pub(crate) fn apply_op(&mut self, op: Op) -> Result<Op, OpError> {
         self.check(&op)?;
         self.revision += 1;
         Ok(match op {
@@ -325,6 +386,7 @@ impl Map {
     }
 }
 
+#[allow(clippy::expect_used, reason = "a node is listed by its parent")]
 fn position(siblings: &[Id], id: Id) -> usize {
     siblings
         .iter()
@@ -381,6 +443,10 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
 }
 
 /// Sets a property `check_property` accepted and returns its old value.
+#[allow(
+    clippy::expect_used,
+    reason = "Map::check verified the Object has a fill; Map::check verified the Object has roughness; Map::check verified the Object has a shore"
+)]
 fn set_property(node: &mut Node, property: Property) -> Property {
     match (node, property) {
         (Node::Layer(layer), Property::Name(name)) => {

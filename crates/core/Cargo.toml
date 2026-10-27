@@ -19,7 +19,14 @@ thiserror.workspace = true
 toml.workspace = true
 uuid.workspace = true
 
+[features]
+# Exposes `Map::apply`, `execute` and `revert`, so tests and benches can build a Map from raw
+# Ops and Commands. Without it only `History` and the Recovery journal change a Map (ADR 0004).
+test-support = []
+
 [dev-dependencies]
+# Turns the feature on for core's own integration tests and benches.
+ssmap-core = { path = ".", features = ["test-support"] }
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 insta.workspace = true
 proptest.workspace = true

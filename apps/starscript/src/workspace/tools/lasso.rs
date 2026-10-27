@@ -65,8 +65,9 @@ pub(super) fn lasso_tool(
         && let Some(point) = pointer
     {
         let spacing = 2.0 * input.pixels_per_point / view.zoom;
-        let last = *lasso.points.last().expect("a loop starts with a point");
-        if (point[0] - last[0]).hypot(point[1] - last[1]) >= spacing {
+        if let Some(&last) = lasso.points.last()
+            && (point[0] - last[0]).hypot(point[1] - last[1]) >= spacing
+        {
             lasso.points.push(point);
         }
     }

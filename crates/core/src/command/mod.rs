@@ -5,6 +5,7 @@
 //! `compile` dispatch; the checks and Ops for each concern live in the submodules.
 
 mod check;
+mod defaults;
 mod embed;
 mod error;
 mod execute;
@@ -17,8 +18,6 @@ mod object;
 mod paste;
 mod stamp;
 
-use std::collections::HashSet;
-
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -29,14 +28,13 @@ use crate::geometry::{Affine, MultiPolygon, NodeRef, Point};
 use crate::id::Id;
 use crate::label::{Label, LabelStyle};
 use crate::land as outlines;
-use crate::map::{Map, MapDefaults, Subtree};
-use crate::node::{Lake, Landmass, Membership, Node, ObjectKind, Stamp};
-use crate::op::{Op, Property};
+use crate::map::{Map, Subtree};
+use crate::node::{Membership, Stamp};
+use crate::op::Op;
 use crate::roughness::Roughness;
 use crate::shore::{ShoreKind, ShoreStyle};
 
-use check::{existing, set, unlocked};
-use land::{node_edit, valid_roughness};
+use land::node_edit;
 
 pub use error::CommandError;
 
@@ -48,258 +46,354 @@ pub enum Command {
     /// Creates an empty Layer with the given id, inside `parent` (`None` for the top level).
     /// `index` counts from the bottom of the Stacking order; omitted, the Layer goes on top.
     CreateLayer {
+        /// The id the new Layer gets.
         id: Id,
+        /// The Layer to create it in, or `None` for the top level.
         parent: Option<Id>,
+        /// Where the node goes among its siblings, counted from the bottom of the Stacking order.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         index: Option<usize>,
+        /// The new Layer's name.
         name: String,
     },
+    /// Renames a Layer.
     RenameLayer {
+        /// The Layer.
         id: Id,
+        /// The new name.
         name: String,
     },
     /// Names an Object. An empty name clears it, back to the kind's default.
     RenameObject {
+        /// The id of the Layer or Object this Command acts on.
         id: Id,
+        /// The new name.
         name: String,
     },
     /// Moves a Layer or Object to `index` among `parent`'s children, counted after it leaves
     /// its old place.
     Move {
+        /// The id of the Layer or Object this Command acts on.
         id: Id,
+        /// The Layer to move into, or `None` for the top level.
         parent: Option<Id>,
+        /// The new place among `parent`'s children.
         index: usize,
     },
+    /// Shows or hides a Layer.
     SetVisible {
+        /// The Layer.
         id: Id,
+        /// Whether the Layer is shown.
         visible: bool,
     },
     /// Locks or unlocks a Layer or Object. Unlocking is refused while a Layer above it is locked.
     SetLocked {
+        /// The id of the Layer or Object this Command acts on.
         id: Id,
+        /// Whether it is locked.
         locked: bool,
     },
+    /// Sets the opacity of a Layer or Object, from 0 (clear) to 1 (opaque).
     SetOpacity {
+        /// The Layer or Object.
         id: Id,
+        /// The opacity, from 0 to 1.
         opacity: f32,
     },
     /// Switches Depth sort on or off for a Layer: its direct Stamps then draw by Anchor
     /// height (ADR 0003).
     SetDepthSort {
+        /// The id of the Layer or Object this Command acts on.
         id: Id,
+        /// Whether Depth sort is on.
         depth_sort: bool,
     },
     /// Clips a Layer to the Landmass `target`, or clears its Clip with `None`.
     SetClip {
+        /// The id of the Layer or Object this Command acts on.
         id: Id,
+        /// The Landmass to clip to, or `None` to clear the Clip.
         target: Option<Id>,
     },
     /// Wraps Layers and Objects that share a parent in a new Group (a Layer named `name`
     /// with the given id). The Group takes the place of the topmost member, and the members
     /// keep their relative order inside it.
     CreateGroup {
+        /// The id the new Group gets.
         id: Id,
+        /// The members to wrap, which must share a parent.
         ids: Vec<Id>,
+        /// The Group's name.
         name: String,
     },
     /// Dissolves Groups: their contents move up into the parent, in the Group's place and in
     /// order, and the empty Group is removed.
     Ungroup {
+        /// The Groups to dissolve.
         ids: Vec<Id>,
     },
     /// Links Layers and Objects into the Link set `id`, so moving or transforming one moves
     /// or transforms the others. Any set a listed node already belongs to joins it whole.
     /// The nodes keep their own places in the Stacking order, in any Layer.
     Link {
+        /// The id of the Link set.
         id: Id,
+        /// The nodes to link.
         ids: Vec<Id>,
     },
     /// Takes Layers and Objects out of their Link sets.
     Unlink {
+        /// The nodes to take out of their Link sets.
         ids: Vec<Id>,
     },
     /// Deletes Layers and Objects with everything inside them, and clears Clips that pointed
     /// at anything deleted.
     Delete {
+        /// The nodes to delete.
         ids: Vec<Id>,
     },
     /// Creates a Landmass with the given id and outline inside Layer `parent`. `index` counts
     /// from the bottom of the Stacking order; omitted, the Landmass goes on top. Without a
     /// `fill`, it takes the default land colour.
     CreateLandmass {
+        /// The id the new Landmass gets.
         id: Id,
+        /// The Layer to create it in.
         parent: Id,
+        /// Where the node goes among its siblings, counted from the bottom of the Stacking order.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         index: Option<usize>,
+        /// The outline of the Landmass.
         geometry: MultiPolygon,
+        /// The fill colour, or `None` for the default land colour.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         fill: Option<Color>,
     },
     /// Creates a Lake, as `create_landmass` does a Landmass.
     CreateLake {
+        /// The id the new Lake gets.
         id: Id,
+        /// The Layer to create it in.
         parent: Id,
+        /// Where the node goes among its siblings, counted from the bottom of the Stacking order.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         index: Option<usize>,
+        /// The outline of the Lake.
         geometry: MultiPolygon,
+        /// The fill colour, or `None` for the default water colour.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         fill: Option<Color>,
     },
     /// Moves the outlines of Landmasses and Lakes by `offset` Canvas units.
     Translate {
+        /// The Landmasses and Lakes to move.
         ids: Vec<Id>,
+        /// How far to move them, in Canvas units, as `[x, y]`.
         offset: [f64; 2],
     },
     /// Applies an affine transform to the outlines of Landmasses and Lakes, as dragging a
     /// resize handle does. It must not collapse them to a line or a point.
     Transform {
+        /// The Landmasses and Lakes to transform.
         ids: Vec<Id>,
+        /// The affine transform to apply.
         transform: Affine,
     },
     /// Adds `region` to the outline of a Landmass or Lake, as a land brush or lasso stroke
     /// does. Parts it joins become one part; a hole it covers fills in.
     AddRegion {
+        /// The Landmass or Lake to add to.
         id: Id,
+        /// The area to add.
         region: MultiPolygon,
     },
     /// Cuts `region` out of the outlines of Landmasses and Lakes. One it splits keeps every
     /// part, one it leaves with nothing is deleted (clearing Clips to it), and one it misses
     /// is left alone.
     SubtractRegion {
+        /// The Landmasses and Lakes to cut.
         ids: Vec<Id>,
+        /// The area to cut out.
         region: MultiPolygon,
     },
     /// Moves nodes of a Landmass or Lake by `offset` Canvas units. If that makes the outline
     /// cross itself, it is repaired.
     MoveNodes {
+        /// The Landmass or Lake the nodes belong to.
         id: Id,
+        /// The nodes to move.
         nodes: Vec<NodeRef>,
+        /// How far to move them, in Canvas units, as `[x, y]`.
         offset: [f64; 2],
     },
     /// Adds a node at `point` on the edge that runs from `edge` to the next point of its ring.
     InsertNode {
+        /// The Landmass or Lake to add the node to.
         id: Id,
+        /// The node the edge starts from.
         edge: NodeRef,
+        /// Where the new node goes.
         point: Point,
     },
     /// Deletes nodes. A ring cannot be left with fewer than three points.
     DeleteNodes {
+        /// The Landmass or Lake the nodes belong to.
         id: Id,
+        /// The nodes to delete.
         nodes: Vec<NodeRef>,
     },
     /// Merges Landmasses into one outline. The result keeps the topmost one's id, place and
     /// properties; the others are removed, and Layers clipped to them clip to the result.
     Union {
+        /// The Landmasses to merge.
         ids: Vec<Id>,
     },
     /// Cuts the topmost of the Landmasses out of the others and removes it. A Landmass left
     /// with nothing is deleted, clearing Clips to it.
     Subtract {
+        /// The Landmasses to work on; the topmost is cut out of the rest.
         ids: Vec<Id>,
     },
     /// Turns each part of a Landmass into a Landmass of its own, in the same Layer. The first
     /// part keeps `id`; `new_ids` name the rest, in order, so there must be one fewer than
     /// there are parts.
     SplitApart {
+        /// The Landmass to split.
         id: Id,
+        /// The ids for every part after the first.
         new_ids: Vec<Id>,
     },
     /// Resizes the Canvas to `width` by `height` with its top-left corner at the workspace
     /// position `origin`. Objects keep their positions, size and membership, even when they
     /// end up entirely outside the Canvas. Locks don't matter: no Object is touched.
     ResizeCanvas {
+        /// Where the Canvas's top-left corner sits, in workspace units.
         origin: Point,
+        /// The new width, in Canvas units.
         width: u32,
+        /// The new height, in Canvas units.
         height: u32,
     },
-    /// Sets whether Objects belong to the Canvas or sit on the pasteboard. Only a drag
+    /// Sets whether Objects belong to the Canvas or sit off it. Only a drag
     /// changes membership; resizing the Canvas never does.
     SetMembership {
+        /// The Objects to change.
         ids: Vec<Id>,
+        /// Whether they belong to the Canvas or sit off it.
         membership: Membership,
     },
     /// Sets the fill colour of Landmasses and Lakes.
     SetFill {
+        /// The Landmasses and Lakes to colour.
         ids: Vec<Id>,
+        /// The new fill colour.
         fill: Color,
     },
     /// Sets the Roughness of Landmasses and Lakes, or with `None` returns them to the Map-wide
     /// default.
     SetRoughness {
+        /// The Landmasses and Lakes to change.
         ids: Vec<Id>,
+        /// Their Roughness, or `None` to follow the Map-wide default.
         roughness: Option<Roughness>,
     },
     /// Replaces the Canvas's background: the water colour and the texture over it. The
     /// template the Map was made from is left as it is.
     SetBackground {
+        /// The new background.
         background: Background,
     },
     /// Sets the Roughness of every Landmass and Lake without its own.
     SetDefaultRoughness {
+        /// The new Map-wide Roughness.
         roughness: Roughness,
     },
     /// Sets the Shore style of Landmasses and Lakes, or with `None` returns them to the
     /// Map-wide default for their kind.
     SetShore {
+        /// The Landmasses and Lakes to change.
         ids: Vec<Id>,
+        /// Their Shore style, or `None` to follow the Map-wide default.
         shore: Option<ShoreStyle>,
     },
     /// Sets the Map-wide Shore style of every Landmass, or every Lake, without its own.
     SetDefaultShore {
+        /// Whether this is the default for Landmasses or for Lakes.
         kind: ShoreKind,
+        /// The new default Shore style.
         shore: ShoreStyle,
     },
     /// Places a Label with the given id inside Layer `parent`. `index` counts from the bottom
     /// of the Stacking order; omitted, the Label goes on top.
     CreateLabel {
+        /// The id the new Label gets.
         id: Id,
+        /// The Layer to place it in.
         parent: Id,
+        /// Where the node goes among its siblings, counted from the bottom of the Stacking order.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         index: Option<usize>,
+        /// The Label to place.
         label: Box<Label>,
     },
     /// Replaces every field of a Label, as one edit: text, placement, typography or colour.
     SetLabel {
+        /// The Label to replace.
         id: Id,
+        /// Its new content.
         label: Box<Label>,
     },
     /// Adds a Label style, last in the list. Its name must be new.
     CreateLabelStyle {
+        /// The style to add.
         style: LabelStyle,
     },
     /// Renames a Label style. The new name must not belong to another style.
     RenameLabelStyle {
+        /// The Label style to rename.
         id: Id,
+        /// Its new name.
         name: String,
     },
     /// Replaces the settings of a Label style, and so restyles every Label that follows it
     /// and does not override them, as one edit. The style keeps its name.
     SetLabelStyle {
+        /// The style as it should be, found by its id.
         style: LabelStyle,
     },
     /// Deletes a Label style other than the default. Labels that follow it get its values as
     /// overrides and move to the default style, so nothing changes on the Canvas.
     DeleteLabelStyle {
+        /// The Label style to delete.
         id: Id,
     },
     /// Places a Stamp with the given id inside Layer `parent`. `index` counts from the bottom
     /// of the Stacking order; omitted, the Stamp goes on top.
     CreateStamp {
+        /// The id the new Stamp gets.
         id: Id,
+        /// The Layer to place it in.
         parent: Id,
+        /// Where the node goes among its siblings, counted from the bottom of the Stacking order.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         index: Option<usize>,
+        /// The Stamp to place.
         stamp: Box<Stamp>,
     },
     /// Replaces every field of a Stamp, as one edit: its Asset, placement, colours or opacity.
     SetStamp {
+        /// The Stamp to replace.
         id: Id,
+        /// Its new content.
         stamp: Box<Stamp>,
     },
     /// Places many Stamps inside Layer `parent` on top, in the order given, as one edit. A
     /// brush resolves its randomness first, so this names every Stamp it creates.
     PlaceStamps {
+        /// The Layer to place them in.
         parent: Id,
+        /// The Stamps to place, each with its id.
         stamps: Vec<PlacedStamp>,
     },
     /// Copies Layers and Objects, each with everything inside it, to just above the original.
@@ -309,8 +403,11 @@ pub enum Command {
     /// Roughness, so its coast is identical). A Clip to a copied Landmass follows the copy.
     /// `offset` moves the copies by that many Canvas units, as an Option-drag does.
     Duplicate {
+        /// The nodes to copy.
         ids: Vec<Id>,
+        /// The ids of the copies, in the order described above.
         new_ids: Vec<Id>,
+        /// How far to move the copies, in Canvas units, as `[x, y]`.
         #[serde(default, skip_serializing_if = "is_zero")]
         offset: [f64; 2],
     },
@@ -323,12 +420,17 @@ pub enum Command {
     /// Landmass when that is pasted too, stays if the Landmass is still in the Map, and is
     /// dropped otherwise.
     Paste {
+        /// The Layer to paste into, or `None` for the top level.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parent: Option<Id>,
+        /// Where to paste among its children, or `None` for the top.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         index: Option<usize>,
+        /// The branches to paste, with their original ids.
         subtrees: Vec<Subtree>,
+        /// The ids of the pasted nodes, in the order described above.
         new_ids: Vec<Id>,
+        /// How far to move every Object, in Canvas units, as `[x, y]`.
         #[serde(default, skip_serializing_if = "is_zero")]
         offset: [f64; 2],
     },
@@ -336,12 +438,15 @@ pub enum Command {
     /// Map uses. Files are stored once per content hash. An Asset or font file already
     /// embedded is left as it is: the embedded copy wins.
     EmbedAssets {
+        /// The Assets to embed.
         assets: Vec<EmbedAsset>,
+        /// The font files to embed.
         fonts: Vec<EmbedFont>,
     },
     /// Replaces the embedded copies of Assets already embedded with fresh ones read from an
     /// installed pack ("Update from pack"). Files nothing refers to afterwards are dropped.
     UpdateFromPack {
+        /// The fresh copies of the Assets to replace.
         assets: Vec<EmbedAsset>,
     },
 }
@@ -353,7 +458,9 @@ fn is_zero(offset: &[f64; 2]) -> bool {
 /// One Stamp of a [`Command::PlaceStamps`], with the id it gets.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PlacedStamp {
+    /// The id the Stamp gets.
     pub id: Id,
+    /// The Stamp to place.
     pub stamp: Stamp,
 }
 
@@ -384,14 +491,14 @@ impl Command {
             Command::Transform { .. } => "Transform",
             Command::AddRegion { .. } => "Add Region",
             Command::SubtractRegion { .. } => "Subtract Region",
-            Command::MoveNodes { .. } => "Move Nodes",
-            Command::InsertNode { .. } => "Add Node",
-            Command::DeleteNodes { .. } => "Delete Nodes",
+            Command::MoveNodes { .. } => "Move Points",
+            Command::InsertNode { .. } => "Add Point",
+            Command::DeleteNodes { .. } => "Delete Points",
             Command::Union { .. } => "Union",
             Command::Subtract { .. } => "Subtract",
             Command::SplitApart { .. } => "Split Apart",
             Command::ResizeCanvas { .. } => "Resize Canvas",
-            Command::SetMembership { .. } => "Change Board",
+            Command::SetMembership { .. } => "Move On or Off Canvas",
             Command::SetFill { .. } => "Change Fill",
             Command::SetRoughness { .. } => "Change Roughness",
             Command::SetBackground { .. } => "Change Background",
@@ -444,26 +551,14 @@ impl Command {
                 index,
                 geometry,
                 fill,
-            } => {
-                let landmass = Landmass {
-                    fill: fill.unwrap_or(map.defaults.land_fill),
-                    ..Landmass::new(geometry.clone())
-                };
-                object::create_object(map, *id, *parent, *index, ObjectKind::Landmass(landmass))
-            }
+            } => object::create_landmass(map, *id, *parent, *index, geometry, *fill),
             Command::CreateLake {
                 id,
                 parent,
                 index,
                 geometry,
                 fill,
-            } => {
-                let lake = Lake {
-                    fill: fill.unwrap_or(Lake::DEFAULT_FILL),
-                    ..Lake::new(geometry.clone())
-                };
-                object::create_object(map, *id, *parent, *index, ObjectKind::Lake(lake))
-            }
+            } => object::create_lake(map, *id, *parent, *index, geometry, *fill),
             Command::Duplicate {
                 ids,
                 new_ids,
@@ -498,94 +593,19 @@ impl Command {
                 origin,
                 width,
                 height,
-            } => {
-                if *width == 0 || *height == 0 {
-                    return Err(CommandError::InvalidCanvasSize {
-                        width: *width,
-                        height: *height,
-                    });
-                }
-                if !origin.iter().all(|c| c.is_finite()) {
-                    return Err(CommandError::InvalidCanvasOrigin(*origin));
-                }
-                Ok(vec![Op::ResizeCanvas {
-                    origin: *origin,
-                    width: *width,
-                    height: *height,
-                }])
-            }
+            } => layer::resize_canvas(*origin, *width, *height),
             Command::SetMembership { ids, membership } => {
-                let mut seen = HashSet::new();
-                let mut ops = Vec::with_capacity(ids.len());
-                for &id in ids {
-                    if !matches!(existing(map, id)?, Node::Object(_)) {
-                        return Err(CommandError::NotAnObject(id));
-                    }
-                    unlocked(map, id)?;
-                    if seen.insert(id) {
-                        ops.push(set(id, Property::Membership(*membership)));
-                    }
-                }
-                Ok(ops)
+                object::set_membership(map, ids, *membership)
             }
-            Command::SetFill { ids, fill } => {
-                let ids = land::outlined(map, ids)?;
-                Ok(ids
-                    .into_iter()
-                    .map(|id| set(id, Property::Fill(*fill)))
-                    .collect())
-            }
-            Command::SetRoughness { ids, roughness } => {
-                if let Some(roughness) = roughness {
-                    valid_roughness(roughness)?;
-                }
-                let ids = land::outlined(map, ids)?;
-                Ok(ids
-                    .into_iter()
-                    .map(|id| set(id, Property::Roughness(roughness.clone())))
-                    .collect())
-            }
-            Command::SetShore { ids, shore } => {
-                if let Some(problem) = shore.as_ref().and_then(ShoreStyle::problem) {
-                    return Err(CommandError::InvalidShore(problem));
-                }
-                let ids = land::outlined(map, ids)?;
-                Ok(ids
-                    .into_iter()
-                    .map(|id| set(id, Property::Shore(shore.clone())))
-                    .collect())
-            }
+            Command::SetFill { ids, fill } => land::set_fill(map, ids, *fill),
+            Command::SetRoughness { ids, roughness } => land::set_roughness(map, ids, roughness),
+            Command::SetShore { ids, shore } => land::set_shore(map, ids, shore),
             Command::SetDefaultShore { kind, shore } => {
-                if let Some(problem) = shore.problem() {
-                    return Err(CommandError::InvalidShore(problem));
-                }
-                let mut defaults = map.defaults().clone();
-                match kind {
-                    ShoreKind::Landmass => defaults.shore = shore.clone(),
-                    ShoreKind::Lake => defaults.lake_shore = shore.clone(),
-                }
-                Ok(vec![Op::SetDefaults { defaults }])
+                defaults::set_default_shore(map, *kind, shore)
             }
-            Command::SetBackground { background } => {
-                let texture = &background.texture;
-                if !(0.0..=1.0).contains(&texture.strength)
-                    || !texture.scale.is_finite()
-                    || texture.scale <= 0.0
-                {
-                    return Err(CommandError::InvalidBackground);
-                }
-                Ok(vec![Op::SetBackground {
-                    background: background.clone(),
-                }])
-            }
+            Command::SetBackground { background } => defaults::set_background(background),
             Command::SetDefaultRoughness { roughness } => {
-                valid_roughness(roughness)?;
-                Ok(vec![Op::SetDefaults {
-                    defaults: MapDefaults {
-                        roughness: roughness.clone(),
-                        ..map.defaults().clone()
-                    },
-                }])
+                defaults::set_default_roughness(map, roughness)
             }
             Command::CreateLabel {
                 id,

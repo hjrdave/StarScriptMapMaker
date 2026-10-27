@@ -31,7 +31,12 @@ pub enum InstallError {
     InvalidManifest(ManifestErrors),
     /// A loaded pack already uses this id.
     #[error("a pack named `{id}` is already installed ({})", existing.display())]
-    DuplicateId { id: String, existing: PathBuf },
+    DuplicateId {
+        /// The id the pack has.
+        id: String,
+        /// The folder of the pack that already uses it.
+        existing: PathBuf,
+    },
     /// Copying failed. Nothing is left half-installed.
     #[error("cannot install the pack: {0}")]
     Io(#[from] std::io::Error),
@@ -40,7 +45,9 @@ pub enum InstallError {
 /// Progress of an install, in bytes of pack files copied.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct InstallProgress {
+    /// The bytes copied so far.
     pub copied: u64,
+    /// The bytes to copy in all.
     pub total: u64,
 }
 
@@ -178,7 +185,8 @@ impl PackLibrary {
             return Err(DeleteError::BuiltIn(id.to_owned()));
         }
         trash(&pack.dir).map_err(DeleteError::Trash)?;
-        Ok(self.remove(id).expect("the pack was just found"))
+        self.remove(id)
+            .ok_or_else(|| DeleteError::NotFound(id.to_owned()))
     }
 }
 

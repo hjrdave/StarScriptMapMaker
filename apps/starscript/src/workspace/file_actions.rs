@@ -7,7 +7,7 @@ use std::process::Command;
 use ssmap_core::asset::TrashError;
 
 /// The menu item that shows a file in the system file manager, named as the platform does.
-pub const REVEAL_LABEL: &str = if cfg!(target_os = "macos") {
+pub(crate) const REVEAL_LABEL: &str = if cfg!(target_os = "macos") {
     "Show in Finder"
 } else if cfg!(target_os = "windows") {
     "Show in File Explorer"
@@ -16,7 +16,7 @@ pub const REVEAL_LABEL: &str = if cfg!(target_os = "macos") {
 };
 
 /// What the platform calls the place deleted files go.
-pub const TRASH_NAME: &str = if cfg!(target_os = "windows") {
+pub(crate) const TRASH_NAME: &str = if cfg!(target_os = "windows") {
     "Recycle Bin"
 } else {
     "Trash"
@@ -24,7 +24,7 @@ pub const TRASH_NAME: &str = if cfg!(target_os = "windows") {
 
 /// Opens the folder holding `path` with the file selected where the platform can (Finder,
 /// File Explorer); elsewhere the folder alone is opened.
-pub fn reveal(path: &Path) -> Result<(), String> {
+pub(crate) fn reveal(path: &Path) -> Result<(), String> {
     let mut command = reveal_command(path);
     command
         .spawn()
@@ -50,7 +50,7 @@ fn reveal_command(path: &Path) -> Command {
 }
 
 /// Moves the file at `path` to the system Trash, so it can be put back from there.
-pub fn move_to_trash(path: &Path) -> Result<(), TrashError> {
+pub(crate) fn move_to_trash(path: &Path) -> Result<(), TrashError> {
     trash::delete(path).map_err(|err| err.into())
 }
 

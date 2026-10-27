@@ -56,7 +56,7 @@ impl MapMakerApp {
         state.can_select_all = !editor.active_layer_objects().is_empty();
         state.has_active_layer = editor
             .active_layer()
-            .is_some_and(|id| editor.map.contains(id));
+            .is_some_and(|id| editor.map().contains(id));
         state.can_combine = editor.can_combine();
         state.can_split = editor.can_split();
         state.can_shuffle = editor.can_shuffle();
@@ -319,9 +319,22 @@ impl MapMakerApp {
         {
             return;
         }
+        let off = self.app.shortcuts_off.clone();
+        if !self.window_shortcuts(ctx, &off) {
+            return;
+        }
+        self.command_shortcuts(ctx, &off);
+        let Some(tab) = self.tab_mut() else {
+            return;
+        };
+        ctx.input_mut(|input| edit_shortcuts(&mut tab.editor, input, &off));
+    }
+
+    /// The shortcuts for tabs, files and the panels. Returns whether the rest of the shortcuts
+    /// should be read: not after the active tab was closed, or while Home or a start page shows.
+    fn window_shortcuts(&mut self, ctx: &egui::Context, off: &HashSet<menu::Command>) -> bool {
         use egui::{Key, KeyboardShortcut, Modifiers};
         let shortcut = |modifiers, key| KeyboardShortcut::new(modifiers, key);
-        let off = self.app.shortcuts_off.clone();
         // The panel shortcuts come first: egui ignores extra Alt, so Cmd+Alt+1 would
         // otherwise also match Cmd+1 (Home) below.
         let panels = ctx.input_mut(|input| {
@@ -332,21 +345,21 @@ impl MapMakerApp {
                 menu::Command::HidePanels,
             ]
             .into_iter()
-            .filter(|&command| consume(input, &off, command))
+            .filter(|&command| consume(input, off, command))
             .collect::<Vec<_>>()
         });
         for command in panels {
             self.run_command(command);
         }
         let (new_map, number, step) = ctx.input_mut(|input| {
-            let new_map = consume(input, &off, menu::Command::NewTab);
+            let new_map = consume(input, off, menu::Command::NewTab);
             let number = (1u8..=9).find(|&n| {
                 let command = if n == 1 {
                     menu::Command::Home
                 } else {
                     menu::Command::Tab(n)
                 };
-                consume(input, &off, command)
+                consume(input, off, command)
             });
             // Shift first: plain Ctrl+Tab would also match it.
             let step = if input
@@ -376,12 +389,12 @@ impl MapMakerApp {
         }
         let (new_map, open, save, save_as, close_tab) = ctx.input_mut(|input| {
             // Cmd+Shift+N is New Layer, below.
-            let new_map = !input.modifiers.shift && consume(input, &off, menu::Command::NewMap);
+            let new_map = !input.modifiers.shift && consume(input, off, menu::Command::NewMap);
             // Shift+S first: plain Cmd+S would also match it.
-            let save_as = consume(input, &off, menu::Command::SaveAs);
-            let save = consume(input, &off, menu::Command::Save);
-            let open = consume(input, &off, menu::Command::Open);
-            let close_tab = consume(input, &off, menu::Command::CloseTab);
+            let save_as = consume(input, off, menu::Command::SaveAs);
+            let save = consume(input, off, menu::Command::Save);
+            let open = consume(input, off, menu::Command::Open);
+            let close_tab = consume(input, off, menu::Command::CloseTab);
             (new_map, open, save, save_as, close_tab)
         });
         if new_map {
@@ -392,17 +405,22 @@ impl MapMakerApp {
         }
         if close_tab && self.current_slot().can_close() {
             self.close_tab(self.win.active);
-            return;
+            return false;
         }
         // Home and a start page have no Map to save or edit.
         if !self.map_showing() {
-            return;
+            return false;
         }
         if save_as {
             self.show_save_dialog();
         } else if save {
             self.save();
         }
+        true
+    }
+
+    /// The shortcuts for Zoom, Select All, Export and the clipboard, which run as menu Commands.
+    fn command_shortcuts(&mut self, ctx: &egui::Context, off: &HashSet<menu::Command>) {
         let commands = ctx.input_mut(|input| {
             // More specific first: egui ignores an extra Shift or Alt, so ⌘A would also read
             // as ⇧⌘A, and ⇧0 as plain 0.
@@ -417,7 +435,7 @@ impl MapMakerApp {
                 menu::Command::ZoomIn,
                 menu::Command::ZoomOut,
             ] {
-                if consume(input, &off, command) {
+                if consume(input, off, command) {
                     commands.push(command);
                 }
             }
@@ -425,84 +443,85 @@ impl MapMakerApp {
             // for Zoom In, so the app takes the bare keys itself, menu or not. When the
             // menu does take a key it never reaches here, so nothing zooms twice.
             commands.extend(canvas_zoom_keys(input));
-            commands.extend(clipboard_keys(input, &off));
+            commands.extend(clipboard_keys(input, off));
             commands
         });
         for command in commands {
             self.run_command(command);
         }
-        let Some(tab) = self.tab_mut() else {
-            return;
+    }
+}
+
+/// The shortcuts that edit the Map or switch tools: undo, grouping, Delete, Escape, the tool
+/// keys and the brush size keys.
+fn edit_shortcuts(editor: &mut Editor, input: &mut egui::InputState, off: &HashSet<menu::Command>) {
+    use egui::{Key, KeyboardShortcut, Modifiers};
+    let shortcut = |modifiers, key| KeyboardShortcut::new(modifiers, key);
+    if editor.node_edit().is_some() && consume(input, off, menu::Command::FinishNodeEdit) {
+        editor.leave_node_edit();
+    }
+    if consume(input, off, menu::Command::Redo)
+        || input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::Y))
+    {
+        editor.redo();
+    } else if consume(input, off, menu::Command::Undo) {
+        editor.undo();
+    }
+    if consume(input, off, menu::Command::Duplicate) {
+        editor.duplicate_selection();
+    }
+    if consume(input, off, menu::Command::NewLayer) {
+        editor.new_layer();
+    }
+    if consume(input, off, menu::Command::Ungroup) {
+        editor.ungroup_selection();
+    } else if consume(input, off, menu::Command::Group) {
+        editor.group_selection();
+    }
+    if consume(input, off, menu::Command::Delete)
+        || (!off.contains(&menu::Command::Delete)
+            && input.consume_key(Modifiers::NONE, Key::Delete))
+    {
+        if editor.node_edit().is_some() {
+            editor.delete_selected_nodes();
+        } else {
+            editor.delete_selection();
+        }
+    }
+    if consume(input, off, menu::Command::CancelGesture) && !editor.cancel_open_gesture() {
+        if editor.node_edit().is_some() {
+            editor.leave_node_edit();
+        } else if editor.tool_busy {
+            editor.cancel_tool = true;
+        } else {
+            editor.select(Vec::new());
+        }
+    }
+    // Shifted shortcuts first: egui ignores an extra Shift, so ⇧S would also read as S.
+    let mut tools = ToolId::ALL;
+    tools.sort_by_key(|tool| {
+        !tool
+            .shortcut()
+            .is_some_and(|(modifiers, _)| modifiers.shift)
+    });
+    for tool in tools {
+        let Some((modifiers, key)) = tool.shortcut() else {
+            continue;
         };
-        let editor = &mut tab.editor;
-        ctx.input_mut(|input| {
-            if editor.node_edit().is_some() && consume(input, &off, menu::Command::FinishNodeEdit) {
-                editor.leave_node_edit();
-            }
-            if consume(input, &off, menu::Command::Redo)
-                || input.consume_shortcut(&shortcut(Modifiers::COMMAND, Key::Y))
-            {
-                editor.redo();
-            } else if consume(input, &off, menu::Command::Undo) {
-                editor.undo();
-            }
-            if consume(input, &off, menu::Command::Duplicate) {
-                editor.duplicate_selection();
-            }
-            if consume(input, &off, menu::Command::NewLayer) {
-                editor.new_layer();
-            }
-            if consume(input, &off, menu::Command::Ungroup) {
-                editor.ungroup_selection();
-            } else if consume(input, &off, menu::Command::Group) {
-                editor.group_selection();
-            }
-            if consume(input, &off, menu::Command::Delete)
-                || (!off.contains(&menu::Command::Delete)
-                    && input.consume_key(Modifiers::NONE, Key::Delete))
-            {
-                if editor.node_edit().is_some() {
-                    editor.delete_selected_nodes();
-                } else {
-                    editor.delete_selection();
-                }
-            }
-            if consume(input, &off, menu::Command::CancelGesture) && !editor.cancel_open_gesture() {
-                if editor.node_edit().is_some() {
-                    editor.leave_node_edit();
-                } else if editor.tool_busy {
-                    editor.cancel_tool = true;
-                } else {
-                    editor.select(Vec::new());
-                }
-            }
-            // Shifted shortcuts first: egui ignores an extra Shift, so ⇧S would also read as S.
-            let mut tools = ToolId::ALL;
-            tools.sort_by_key(|tool| {
-                !tool
-                    .shortcut()
-                    .is_some_and(|(modifiers, _)| modifiers.shift)
-            });
-            for tool in tools {
-                let Some((modifiers, key)) = tool.shortcut() else {
-                    continue;
-                };
-                if input.consume_key(modifiers, key) {
-                    editor.active_tool = tool;
-                }
-            }
-            if tools::uses_brush_size(editor.active_tool) {
-                let step = if input.consume_key(Modifiers::NONE, Key::OpenBracket) {
-                    1.0 / BRUSH_SIZE_STEP
-                } else if input.consume_key(Modifiers::NONE, Key::CloseBracket) {
-                    BRUSH_SIZE_STEP
-                } else {
-                    1.0
-                };
-                editor.brush_size = (editor.brush_size * step)
-                    .clamp(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end());
-            }
-        });
+        if input.consume_key(modifiers, key) {
+            editor.active_tool = tool;
+        }
+    }
+    if tools::uses_brush_size(editor.active_tool) {
+        let step = if input.consume_key(Modifiers::NONE, Key::OpenBracket) {
+            1.0 / BRUSH_SIZE_STEP
+        } else if input.consume_key(Modifiers::NONE, Key::CloseBracket) {
+            BRUSH_SIZE_STEP
+        } else {
+            1.0
+        };
+        editor.brush_size = (editor.brush_size * step)
+            .clamp(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end());
     }
 }
 

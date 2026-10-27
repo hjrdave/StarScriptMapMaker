@@ -7,6 +7,11 @@
 //! - `SSMAP_GOLDEN_UPDATE=1` rewrites the golden PNGs from the current renders.
 //! - `SSMAP_REQUIRE_SOFTWARE_GPU=1` fails instead of falling back when there is no software
 //!   adapter. CI sets it on Linux and Windows.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::path::PathBuf;
 
@@ -137,7 +142,7 @@ fn pixel(image: &RgbaImage, x: u32, y: u32) -> [u8; 4] {
     image.pixels[i..i + 4].try_into().unwrap()
 }
 
-/// A small Canvas fitted with a margin, so the image shows the pasteboard, the Canvas edge
+/// A small Canvas fitted with a margin, so the image shows the area off the Canvas, the Canvas edge
 /// and the ocean texture.
 fn backdrop_scene() -> (CanvasScene, View) {
     let scene = CanvasScene::new(&Canvas::new(800, 600, Scale::new(1.0, DistanceUnit::Miles)));
@@ -156,7 +161,7 @@ fn ocean_backdrop() {
     let (scene, view) = backdrop_scene();
     let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
     let image = render(headless, &scene, &view);
-    // Smoke checks that hold on any adapter: pasteboard outside, water inside.
+    // Smoke checks that hold on any adapter: off-Canvas outside, water inside.
     assert_eq!(pixel(&image, 4, 4), [0x1c, 0x1c, 0x1f, 0xff]);
     let inside = pixel(&image, 176, 132);
     assert!(
@@ -188,7 +193,7 @@ fn flat_background_is_one_colour_and_follows_the_map() {
 }
 
 #[test]
-fn whole_canvas_preview_shows_no_pasteboard() {
+fn whole_canvas_preview_shows_no_off_canvas() {
     let Some(gpu) = gpu() else { return };
     let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
     let scene = CanvasScene::new(&Canvas::new(
@@ -203,7 +208,7 @@ fn whole_canvas_preview_shows_no_pasteboard() {
         let corner = pixel(&image, x, y);
         assert!(
             corner[2] > corner[0],
-            "corner ({x}, {y}) is water, not pasteboard: {corner:?}"
+            "corner ({x}, {y}) is water, not off-Canvas: {corner:?}"
         );
     }
 }
@@ -213,7 +218,7 @@ fn whole_canvas_preview_shows_no_pasteboard() {
 /// Everything `map` draws, as the editor and export build it.
 fn scene_of(map: &Map) -> CanvasScene {
     let content = MapScene::new(Fonts::bundled()).content(map, &mut RoughnessCache::new());
-    CanvasScene::new(&map.canvas).with_content(content)
+    CanvasScene::new(map.canvas()).with_content(content)
 }
 
 fn land_and_water() -> Map {
@@ -535,8 +540,8 @@ fn render_labels(headless: &Headless, size: [u32; 2], labels: Vec<Label>) -> Rgb
         .unwrap();
     }
     let mut scene = MapScene::new(Fonts::bundled());
-    let canvas =
-        CanvasScene::new(&map.canvas).with_content(scene.content(&map, &mut RoughnessCache::new()));
+    let canvas = CanvasScene::new(map.canvas())
+        .with_content(scene.content(&map, &mut RoughnessCache::new()));
     let view = View::whole_canvas(canvas.canvas_size, size[0].max(size[1]) / 2);
     render(headless, &canvas, &view)
 }
@@ -688,7 +693,7 @@ fn deleting_a_style_in_use_changes_nothing_visually() {
     }
     let draw = |map: &Map| {
         let mut scene = MapScene::new(Fonts::bundled());
-        let canvas = CanvasScene::new(&map.canvas)
+        let canvas = CanvasScene::new(map.canvas())
             .with_content(scene.content(map, &mut RoughnessCache::new()));
         let view = View::whole_canvas(canvas.canvas_size, 600);
         render(headless, &canvas, &view)

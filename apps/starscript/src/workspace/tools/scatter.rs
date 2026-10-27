@@ -52,8 +52,9 @@ pub(super) fn scatter_tool(
     if let Some(pos) = input.pointer_pos {
         let point = input.canvas_point(view, pos);
         let spacing = (editor.brush_size * 0.05).max(1.0 / view.zoom);
-        let last = *stroke.points.last().expect("a stroke starts with a point");
-        if (point[0] - last[0]).hypot(point[1] - last[1]) >= spacing {
+        if let Some(&last) = stroke.points.last()
+            && (point[0] - last[0]).hypot(point[1] - last[1]) >= spacing
+        {
             stroke.points.push(point);
         }
     }

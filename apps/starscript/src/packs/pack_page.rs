@@ -27,7 +27,7 @@ const CARD_FOOTER: f32 = 92.0;
 
 /// What the user did on the page this frame.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum Action {
+pub(crate) enum Action {
     /// Open the Credits & licences view.
     Credits,
     /// Open the folder dialog to add a pack.
@@ -41,7 +41,7 @@ pub enum Action {
 }
 
 /// "Built in" or "Added by you".
-pub fn origin_label(pack: &Pack) -> &'static str {
+pub(crate) fn origin_label(pack: &Pack) -> &'static str {
     if pack.is_built_in() {
         "Built in"
     } else {
@@ -50,7 +50,7 @@ pub fn origin_label(pack: &Pack) -> &'static str {
 }
 
 /// "1 Asset" or "12 Assets".
-pub fn asset_count_label(pack: &Pack) -> String {
+pub(crate) fn asset_count_label(pack: &Pack) -> String {
     match pack.asset_count() {
         1 => "1 Asset".into(),
         n => format!("{n} Assets"),
@@ -58,7 +58,7 @@ pub fn asset_count_label(pack: &Pack) -> String {
 }
 
 /// What the delete confirmation says about the Stamps that use the pack.
-pub fn stamp_usage_label(stamps: usize) -> String {
+pub(crate) fn stamp_usage_label(stamps: usize) -> String {
     match stamps {
         0 => "No Stamps in the open Maps use it.".into(),
         1 => "1 Stamp in the open Maps uses it; it will show as a placeholder.".into(),
@@ -67,14 +67,14 @@ pub fn stamp_usage_label(stamps: usize) -> String {
 }
 
 /// Why a card's Delete is unavailable, or `None` when the pack can be deleted.
-pub fn delete_blocked_reason(pack: &Pack) -> Option<&'static str> {
+pub(crate) fn delete_blocked_reason(pack: &Pack) -> Option<&'static str> {
     pack.is_built_in()
         .then_some("Built-in packs ship with the app and can’t be deleted")
 }
 
 /// The authors of a pack's Assets, sorted and without repeats: "A", "A and B" or "A, B and 3
 /// more". "Unknown author" when none is given.
-pub fn author_label(pack: &Pack) -> String {
+pub(crate) fn author_label(pack: &Pack) -> String {
     let mut authors: Vec<&str> = pack
         .assets
         .iter()
@@ -92,7 +92,7 @@ pub fn author_label(pack: &Pack) -> String {
 }
 
 /// The Assets of `pack` that pass the filters, in manifest order.
-pub fn filtered<'a>(pack: &'a Pack, category: Option<&str>, search: &str) -> Vec<&'a Asset> {
+pub(crate) fn filtered<'a>(pack: &'a Pack, category: Option<&str>, search: &str) -> Vec<&'a Asset> {
     pack.assets
         .iter()
         .filter(|asset| asset_browser::matches(asset, category, search))
@@ -101,7 +101,7 @@ pub fn filtered<'a>(pack: &'a Pack, category: Option<&str>, search: &str) -> Vec
 
 /// The page's state: the opened pack, its filters and the thumbnails made so far.
 #[derive(Default)]
-pub struct PackPage {
+pub(crate) struct PackPage {
     /// The id of the opened pack, or the list of packs.
     open: Option<String>,
     category: Option<String>,
@@ -112,7 +112,7 @@ pub struct PackPage {
 
 impl PackPage {
     /// Draws the page and returns what the user did.
-    pub fn show(
+    pub(crate) fn show(
         &mut self,
         ui: &mut egui::Ui,
         sprites: Option<&SpriteStore>,
@@ -283,39 +283,7 @@ impl PackPage {
             },
             p.bg_canvas,
         );
-        // A few of the pack's Assets, side by side.
-        let tile = PREVIEW_HEIGHT - 16.0;
-        let shown: Vec<&Asset> = pack.assets.iter().take(PREVIEW_COUNT).collect();
-        let strip = tile * shown.len() as f32 + 6.0 * shown.len().saturating_sub(1) as f32;
-        let mut x = preview.center().x - strip / 2.0;
-        for asset in shown {
-            let tile_rect =
-                Rect::from_min_size(egui::pos2(x, preview.min.y + 8.0), egui::Vec2::splat(tile));
-            x += tile + 6.0;
-            let Ok(reference) = AssetRef::new(pack.id.clone(), asset.id.clone()) else {
-                continue;
-            };
-            let art = self
-                .thumbnails
-                .entry(reference.clone())
-                .or_insert_with(|| asset_browser::load_art(ui.ctx(), sprites, &reference))
-                .clone();
-            let fill = match &art {
-                Some(art) if art.light => p.thumb_bg_light_art,
-                _ => p.thumb_bg,
-            };
-            painter.rect_filled(tile_rect, radius, fill);
-            if let Some(art) = art {
-                let size = art.texture.size_vec2();
-                let scale = ((tile - 8.0) / size.x.max(1.0)).min((tile - 8.0) / size.y.max(1.0));
-                painter.image(
-                    art.texture.id(),
-                    Rect::from_center_size(tile_rect.center(), size * scale),
-                    Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                    egui::Color32::WHITE,
-                );
-            }
-        }
+        self.paint_preview_strip(ui, sprites, pack, preview);
         painter.hline(
             rect.x_range(),
             preview.max.y + 0.5,
@@ -361,27 +329,7 @@ impl PackPage {
             theme::CAPTION,
             p.text_secondary,
         );
-        // Badges: where the pack came from, and whether it must be credited.
-        let mut badge_x = left;
-        let badge_y = top + 54.0;
-        let mut badges = vec![(origin_label(pack), p.text_secondary)];
-        if pack.attribution_required {
-            badges.push(("Attribution required", p.gold_text));
-        }
-        for (text, color) in badges {
-            let galley = painter.layout_no_wrap(
-                text.to_owned(),
-                egui::FontId::new(theme::CAPTION, theme::ui_family()),
-                color,
-            );
-            let chip = Rect::from_min_size(
-                egui::pos2(badge_x, badge_y),
-                galley.size() + vec2(10.0, 4.0),
-            );
-            painter.rect_filled(chip, theme::RADIUS_CHIP, p.bg_panel);
-            painter.galley(chip.min + vec2(5.0, 2.0), galley, color);
-            badge_x = chip.max.x + 6.0;
-        }
+        paint_badges(ui, pack, egui::pos2(left, top + 54.0));
         // The "…" button, shown while the card is hovered or its menu is open.
         let more_id = response.id.with("more");
         let button = Rect::from_center_size(
@@ -397,25 +345,53 @@ impl PackPage {
             }
             icons::paint(ui, button, Icon::More, 16.0, p.text_secondary);
         }
-        egui::Popup::menu(&more)
-            .id(more_id.with("popup"))
-            .show(|ui| {
-                let danger = theme::palette(ui.ctx()).danger;
-                let blocked = delete_blocked_reason(pack);
-                let item = ui.add_enabled(
-                    blocked.is_none(),
-                    egui::Button::new(egui::RichText::new("Delete…").color(danger)),
-                );
-                let item = match blocked {
-                    Some(reason) => item.on_disabled_hover_text(reason),
-                    None => item,
-                };
-                if item.clicked() {
-                    actions.push(Action::Delete(pack.id.clone()));
-                    ui.close();
-                }
-            });
+        pack_menu(&more, more_id, pack, actions);
         response.clicked() && !more.clicked()
+    }
+
+    /// Paints a few of the pack's Assets side by side in the card's `preview` area.
+    fn paint_preview_strip(
+        &mut self,
+        ui: &egui::Ui,
+        sprites: &SpriteStore,
+        pack: &Pack,
+        preview: Rect,
+    ) {
+        let p = theme::palette(ui.ctx());
+        let radius = theme::RADIUS_FIELD;
+        let painter = ui.painter().clone();
+        let tile = PREVIEW_HEIGHT - 16.0;
+        let shown: Vec<&Asset> = pack.assets.iter().take(PREVIEW_COUNT).collect();
+        let strip = tile * shown.len() as f32 + 6.0 * shown.len().saturating_sub(1) as f32;
+        let mut x = preview.center().x - strip / 2.0;
+        for asset in shown {
+            let tile_rect =
+                Rect::from_min_size(egui::pos2(x, preview.min.y + 8.0), egui::Vec2::splat(tile));
+            x += tile + 6.0;
+            let Ok(reference) = AssetRef::new(pack.id.clone(), asset.id.clone()) else {
+                continue;
+            };
+            let art = self
+                .thumbnails
+                .entry(reference.clone())
+                .or_insert_with(|| asset_browser::load_art(ui.ctx(), sprites, &reference))
+                .clone();
+            let fill = match &art {
+                Some(art) if art.light => p.thumb_bg_light_art,
+                _ => p.thumb_bg,
+            };
+            painter.rect_filled(tile_rect, radius, fill);
+            if let Some(art) = art {
+                let size = art.texture.size_vec2();
+                let scale = ((tile - 8.0) / size.x.max(1.0)).min((tile - 8.0) / size.y.max(1.0));
+                painter.image(
+                    art.texture.id(),
+                    Rect::from_center_size(tile_rect.center(), size * scale),
+                    Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    egui::Color32::WHITE,
+                );
+            }
+        }
     }
 
     fn pack_detail(
@@ -583,6 +559,55 @@ fn status_banner(ui: &mut egui::Ui, status: &Status, actions: &mut Vec<Action>) 
                     }
                 }
             });
+        });
+}
+
+/// Paints the chips under a pack card's text, starting at `origin`: where the pack came from,
+/// and whether it must be credited.
+fn paint_badges(ui: &egui::Ui, pack: &Pack, origin: egui::Pos2) {
+    let p = theme::palette(ui.ctx());
+    let painter = ui.painter().clone();
+    let mut badge_x = origin.x;
+    let badge_y = origin.y;
+    let mut badges = vec![(origin_label(pack), p.text_secondary)];
+    if pack.attribution_required {
+        badges.push(("Attribution required", p.gold_text));
+    }
+    for (text, color) in badges {
+        let galley = painter.layout_no_wrap(
+            text.to_owned(),
+            egui::FontId::new(theme::CAPTION, theme::ui_family()),
+            color,
+        );
+        let chip = Rect::from_min_size(
+            egui::pos2(badge_x, badge_y),
+            galley.size() + vec2(10.0, 4.0),
+        );
+        painter.rect_filled(chip, theme::RADIUS_CHIP, p.bg_panel);
+        painter.galley(chip.min + vec2(5.0, 2.0), galley, color);
+        badge_x = chip.max.x + 6.0;
+    }
+}
+
+/// The pack card's "…" menu, which offers Delete unless something blocks it.
+fn pack_menu(more: &egui::Response, more_id: egui::Id, pack: &Pack, actions: &mut Vec<Action>) {
+    egui::Popup::menu(more)
+        .id(more_id.with("popup"))
+        .show(|ui| {
+            let danger = theme::palette(ui.ctx()).danger;
+            let blocked = delete_blocked_reason(pack);
+            let item = ui.add_enabled(
+                blocked.is_none(),
+                egui::Button::new(egui::RichText::new("Delete…").color(danger)),
+            );
+            let item = match blocked {
+                Some(reason) => item.on_disabled_hover_text(reason),
+                None => item,
+            };
+            if item.clicked() {
+                actions.push(Action::Delete(pack.id.clone()));
+                ui.close();
+            }
         });
 }
 

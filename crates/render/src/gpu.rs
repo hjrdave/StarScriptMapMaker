@@ -11,7 +11,7 @@ pub struct GpuCapabilities {
 }
 
 /// The smallest `max_texture_dimension_2d` the app supports: the atlas page size floor.
-pub const MIN_TEXTURE_DIMENSION: u32 = 2048;
+pub(crate) const MIN_TEXTURE_DIMENSION: u32 = 2048;
 
 /// Whether the adapter is good enough, decided once at startup.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -24,7 +24,7 @@ pub enum Suitability {
 }
 
 /// "name (max_texture_dimension_2d N, ...)" for error messages.
-pub fn describe_limits(name: &str, limits: &wgpu::Limits) -> String {
+pub(crate) fn describe_limits(name: &str, limits: &wgpu::Limits) -> String {
     format!(
         "{name} (max_texture_dimension_2d {}, max_buffer_size {}, max_texture_array_layers {})",
         limits.max_texture_dimension_2d, limits.max_buffer_size, limits.max_texture_array_layers
