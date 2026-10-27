@@ -180,8 +180,8 @@ impl MapMakerApp {
     }
 }
 
-/// The Layers panel: its header, the tree and the bottom bar with the collapse control. As an
-/// overlay, collapsing closes it.
+/// The sidebar's panel: the section it shows (Layers with its tree and the bottom bar with the
+/// collapse control, Assets, or History). As an overlay, collapsing closes it.
 pub(super) fn layers_panel(
     ui: &mut egui::Ui,
     shell: &mut shell::Shell,
@@ -189,6 +189,13 @@ pub(super) fn layers_panel(
     footer: bool,
     overlay: bool,
 ) {
+    if shell.sidebar_section() == shell::SidebarSection::Assets {
+        shell::panel_header(ui, "Assets", |_| {});
+        egui::Frame::NONE
+            .inner_margin(egui::Margin::symmetric(theme::SPACING[3] as i8, 0))
+            .show(ui, |ui| tab.asset_browser.show(ui, &mut tab.editor));
+        return;
+    }
     if shell.sidebar_section() == shell::SidebarSection::History {
         shell::panel_header(ui, "History", |_| {});
         let (steps, applied) = tab.editor.history_steps();

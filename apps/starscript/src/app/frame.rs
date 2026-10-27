@@ -117,7 +117,25 @@ impl MapMakerApp {
         }
         self.show_overlays(&ctx, canvas.response.rect, [layers_rail, properties_rail]);
         self.track_drag(&ctx);
+        self.sidebar_requests();
         self.journal(&ctx);
+    }
+
+    /// What the Stamp section and the Assets section asked for: the Assets section itself, or the
+    /// Asset packs page on Home.
+    fn sidebar_requests(&mut self) {
+        let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
+            return;
+        };
+        let open_assets = tab.properties.take_open_assets();
+        let open_packs = tab.asset_browser.take_open_packs();
+        if open_assets {
+            self.win.shell.show_section(shell::SidebarSection::Assets);
+        }
+        if open_packs {
+            self.show_slot(tab_strip::Slot::Home);
+            self.win.home.show_packs();
+        }
     }
 
     /// The start of a frame: the in-app overlay, egui's zoom held at 1, and what Copy or Cut
