@@ -5,6 +5,7 @@
 //! `compile` dispatch; the checks and Ops for each concern live in the submodules.
 
 mod check;
+mod defaults;
 mod embed;
 mod error;
 mod execute;
@@ -17,8 +18,6 @@ mod object;
 mod paste;
 mod stamp;
 
-use std::collections::HashSet;
-
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -29,14 +28,13 @@ use crate::geometry::{Affine, MultiPolygon, NodeRef, Point};
 use crate::id::Id;
 use crate::label::{Label, LabelStyle};
 use crate::land as outlines;
-use crate::map::{Map, MapDefaults, Subtree};
-use crate::node::{Lake, Landmass, Membership, Node, ObjectKind, Stamp};
-use crate::op::{Op, Property};
+use crate::map::{Map, Subtree};
+use crate::node::{Membership, Stamp};
+use crate::op::Op;
 use crate::roughness::Roughness;
 use crate::shore::{ShoreKind, ShoreStyle};
 
-use check::{existing, set, unlocked};
-use land::{node_edit, valid_roughness};
+use land::node_edit;
 
 pub use error::CommandError;
 
@@ -524,10 +522,6 @@ impl Command {
     }
 
     /// Checks the Command against `map` and returns the Ops it applies, in order.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "one arm per Command; split by family over time (#351)"
-    )]
     pub(crate) fn compile(&self, map: &Map) -> Result<Vec<Op>, CommandError> {
         match self {
             Command::CreateLayer {
@@ -557,26 +551,14 @@ impl Command {
                 index,
                 geometry,
                 fill,
-            } => {
-                let landmass = Landmass {
-                    fill: fill.unwrap_or(map.defaults.land_fill),
-                    ..Landmass::new(geometry.clone())
-                };
-                object::create_object(map, *id, *parent, *index, ObjectKind::Landmass(landmass))
-            }
+            } => object::create_landmass(map, *id, *parent, *index, geometry, *fill),
             Command::CreateLake {
                 id,
                 parent,
                 index,
                 geometry,
                 fill,
-            } => {
-                let lake = Lake {
-                    fill: fill.unwrap_or(Lake::DEFAULT_FILL),
-                    ..Lake::new(geometry.clone())
-                };
-                object::create_object(map, *id, *parent, *index, ObjectKind::Lake(lake))
-            }
+            } => object::create_lake(map, *id, *parent, *index, geometry, *fill),
             Command::Duplicate {
                 ids,
                 new_ids,
@@ -611,94 +593,19 @@ impl Command {
                 origin,
                 width,
                 height,
-            } => {
-                if *width == 0 || *height == 0 {
-                    return Err(CommandError::InvalidCanvasSize {
-                        width: *width,
-                        height: *height,
-                    });
-                }
-                if !origin.iter().all(|c| c.is_finite()) {
-                    return Err(CommandError::InvalidCanvasOrigin(*origin));
-                }
-                Ok(vec![Op::ResizeCanvas {
-                    origin: *origin,
-                    width: *width,
-                    height: *height,
-                }])
-            }
+            } => layer::resize_canvas(*origin, *width, *height),
             Command::SetMembership { ids, membership } => {
-                let mut seen = HashSet::new();
-                let mut ops = Vec::with_capacity(ids.len());
-                for &id in ids {
-                    if !matches!(existing(map, id)?, Node::Object(_)) {
-                        return Err(CommandError::NotAnObject(id));
-                    }
-                    unlocked(map, id)?;
-                    if seen.insert(id) {
-                        ops.push(set(id, Property::Membership(*membership)));
-                    }
-                }
-                Ok(ops)
+                object::set_membership(map, ids, *membership)
             }
-            Command::SetFill { ids, fill } => {
-                let ids = land::outlined(map, ids)?;
-                Ok(ids
-                    .into_iter()
-                    .map(|id| set(id, Property::Fill(*fill)))
-                    .collect())
-            }
-            Command::SetRoughness { ids, roughness } => {
-                if let Some(roughness) = roughness {
-                    valid_roughness(roughness)?;
-                }
-                let ids = land::outlined(map, ids)?;
-                Ok(ids
-                    .into_iter()
-                    .map(|id| set(id, Property::Roughness(roughness.clone())))
-                    .collect())
-            }
-            Command::SetShore { ids, shore } => {
-                if let Some(problem) = shore.as_ref().and_then(ShoreStyle::problem) {
-                    return Err(CommandError::InvalidShore(problem));
-                }
-                let ids = land::outlined(map, ids)?;
-                Ok(ids
-                    .into_iter()
-                    .map(|id| set(id, Property::Shore(shore.clone())))
-                    .collect())
-            }
+            Command::SetFill { ids, fill } => land::set_fill(map, ids, *fill),
+            Command::SetRoughness { ids, roughness } => land::set_roughness(map, ids, roughness),
+            Command::SetShore { ids, shore } => land::set_shore(map, ids, shore),
             Command::SetDefaultShore { kind, shore } => {
-                if let Some(problem) = shore.problem() {
-                    return Err(CommandError::InvalidShore(problem));
-                }
-                let mut defaults = map.defaults().clone();
-                match kind {
-                    ShoreKind::Landmass => defaults.shore = shore.clone(),
-                    ShoreKind::Lake => defaults.lake_shore = shore.clone(),
-                }
-                Ok(vec![Op::SetDefaults { defaults }])
+                defaults::set_default_shore(map, *kind, shore)
             }
-            Command::SetBackground { background } => {
-                let texture = &background.texture;
-                if !(0.0..=1.0).contains(&texture.strength)
-                    || !texture.scale.is_finite()
-                    || texture.scale <= 0.0
-                {
-                    return Err(CommandError::InvalidBackground);
-                }
-                Ok(vec![Op::SetBackground {
-                    background: background.clone(),
-                }])
-            }
+            Command::SetBackground { background } => defaults::set_background(background),
             Command::SetDefaultRoughness { roughness } => {
-                valid_roughness(roughness)?;
-                Ok(vec![Op::SetDefaults {
-                    defaults: MapDefaults {
-                        roughness: roughness.clone(),
-                        ..map.defaults().clone()
-                    },
-                }])
+                defaults::set_default_roughness(map, roughness)
             }
             Command::CreateLabel {
                 id,

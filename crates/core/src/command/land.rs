@@ -7,6 +7,7 @@
 
 use std::collections::HashSet;
 
+use crate::color::Color;
 use crate::geometry::MultiPolygon;
 use crate::id::Id;
 use crate::land;
@@ -14,6 +15,7 @@ use crate::map::{Map, Subtree};
 use crate::node::{Node, ObjectKind};
 use crate::op::{Op, Property};
 use crate::roughness::Roughness;
+use crate::shore::ShoreStyle;
 
 use super::CommandError;
 use super::check::{existing, set, unlocked};
@@ -259,4 +261,44 @@ pub(super) fn valid_roughness(roughness: &Roughness) -> Result<(), CommandError>
     } else {
         Err(CommandError::InvalidRoughness { amount, scale })
     }
+}
+
+/// Sets the fill colour of Landmasses and Lakes.
+pub(super) fn set_fill(map: &Map, ids: &[Id], fill: Color) -> Result<Vec<Op>, CommandError> {
+    Ok(outlined(map, ids)?
+        .into_iter()
+        .map(|id| set(id, Property::Fill(fill)))
+        .collect())
+}
+
+/// Sets the Roughness of Landmasses and Lakes, or with `None` returns them to the Map-wide
+/// default.
+pub(super) fn set_roughness(
+    map: &Map,
+    ids: &[Id],
+    roughness: &Option<Roughness>,
+) -> Result<Vec<Op>, CommandError> {
+    if let Some(roughness) = roughness {
+        valid_roughness(roughness)?;
+    }
+    Ok(outlined(map, ids)?
+        .into_iter()
+        .map(|id| set(id, Property::Roughness(roughness.clone())))
+        .collect())
+}
+
+/// Sets the Shore style of Landmasses and Lakes, or with `None` returns them to the Map-wide
+/// default for their kind.
+pub(super) fn set_shore(
+    map: &Map,
+    ids: &[Id],
+    shore: &Option<ShoreStyle>,
+) -> Result<Vec<Op>, CommandError> {
+    if let Some(problem) = shore.as_ref().and_then(ShoreStyle::problem) {
+        return Err(CommandError::InvalidShore(problem));
+    }
+    Ok(outlined(map, ids)?
+        .into_iter()
+        .map(|id| set(id, Property::Shore(shore.clone())))
+        .collect())
 }

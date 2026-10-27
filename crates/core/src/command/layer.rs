@@ -1,5 +1,6 @@
 //! Commands that create, name, move and set the properties of Layers and Objects.
 
+use crate::geometry::Point;
 use crate::id::Id;
 use crate::map::{Map, Subtree};
 use crate::node::{Layer, Node, Object, ObjectKind};
@@ -117,4 +118,23 @@ pub(super) fn set_clip(map: &Map, id: Id, target: Option<Id>) -> Result<Vec<Op>,
         return Err(CommandError::NotALandmass(target));
     }
     Ok(vec![set(id, Property::Clip(target))])
+}
+
+/// Resizes the Canvas. The size must be at least 1 by 1 and the origin finite.
+pub(super) fn resize_canvas(
+    origin: Point,
+    width: u32,
+    height: u32,
+) -> Result<Vec<Op>, CommandError> {
+    if width == 0 || height == 0 {
+        return Err(CommandError::InvalidCanvasSize { width, height });
+    }
+    if !origin.iter().all(|c| c.is_finite()) {
+        return Err(CommandError::InvalidCanvasOrigin(origin));
+    }
+    Ok(vec![Op::ResizeCanvas {
+        origin,
+        width,
+        height,
+    }])
 }
