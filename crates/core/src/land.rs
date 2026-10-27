@@ -354,7 +354,7 @@ pub fn intersects(a: &MultiPolygon, b: &MultiPolygon) -> bool {
 /// Why a node edit could not be made.
 #[derive(Clone, PartialEq, Debug, thiserror::Error)]
 pub enum NodeEditError {
-    #[error("the outline has no node at part {}, ring {}, point {}", .0.part, .0.ring, .0.index)]
+    #[error("the outline has no point at part {}, ring {}, point {}", .0.part, .0.ring, .0.index)]
     NoSuchNode(NodeRef),
     #[error("a ring needs at least three points")]
     TooFewPoints,

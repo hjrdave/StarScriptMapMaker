@@ -119,7 +119,7 @@ pub(super) fn node_edit_tool(
                         editor.select_nodes(nodes);
                     }
                     let shape = editor.edited_shape();
-                    if state.begin_held(editor, super::ToolId::Select, "Move Nodes") {
+                    if state.begin_held(editor, super::ToolId::Select, "Move Points") {
                         state.node_drag = Some(NodeDrag { start, shape });
                     }
                 }

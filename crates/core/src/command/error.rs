@@ -36,7 +36,7 @@ pub enum CommandError {
     NoOutline(Id),
     #[error("the outline of {id} is invalid: {problem}")]
     InvalidGeometry { id: Id, problem: String },
-    #[error("cannot edit the nodes of {id}: {problem}")]
+    #[error("cannot edit the points of {id}: {problem}")]
     NodeEdit { id: Id, problem: String },
     #[error("{0} is not a Landmass")]
     NotALandmass(Id),

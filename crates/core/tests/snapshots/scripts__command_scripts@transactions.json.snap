@@ -59,7 +59,7 @@ input_file: crates/core/tests/scripts/transactions.json
     },
     {
       "outcome": {
-        "error": "a transaction is already open"
+        "error": "an Undo step is already open"
       },
       "step": "undo"
     },
@@ -433,7 +433,7 @@ input_file: crates/core/tests/scripts/transactions.json
     },
     {
       "outcome": {
-        "error": "no transaction is open"
+        "error": "no Undo step is open"
       },
       "step": {
         "execute": {
@@ -445,13 +445,13 @@ input_file: crates/core/tests/scripts/transactions.json
     },
     {
       "outcome": {
-        "error": "no transaction is open"
+        "error": "no Undo step is open"
       },
       "step": "rollback"
     },
     {
       "outcome": {
-        "error": "no transaction is open"
+        "error": "no Undo step is open"
       },
       "step": {
         "commit": {

@@ -342,7 +342,7 @@ impl Home {
             }
         }
         ui.add_space(12.0);
-        section_label(ui, "Library");
+        section_label(ui, "Asset packs");
         if rail_row(
             ui,
             self.view == View::Packs,

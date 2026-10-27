@@ -389,7 +389,7 @@ input_file: crates/core/tests/scripts/node_edits.json
     },
     {
       "outcome": {
-        "error": "cannot edit the nodes of 00000000-0000-7000-8000-000000000011: a ring needs at least three points"
+        "error": "cannot edit the points of 00000000-0000-7000-8000-000000000011: a ring needs at least three points"
       },
       "step": {
         "step": {
@@ -417,7 +417,7 @@ input_file: crates/core/tests/scripts/node_edits.json
     },
     {
       "outcome": {
-        "error": "cannot edit the nodes of 00000000-0000-7000-8000-000000000011: the outline has no node at part 0, ring 0, point 99"
+        "error": "cannot edit the points of 00000000-0000-7000-8000-000000000011: the outline has no point at part 0, ring 0, point 99"
       },
       "step": {
         "step": {
@@ -435,7 +435,7 @@ input_file: crates/core/tests/scripts/node_edits.json
     },
     {
       "outcome": {
-        "error": "cannot edit the nodes of 00000000-0000-7000-8000-000000000011: the outline has no node at part 3, ring 0, point 0"
+        "error": "cannot edit the points of 00000000-0000-7000-8000-000000000011: the outline has no point at part 3, ring 0, point 0"
       },
       "step": {
         "step": {

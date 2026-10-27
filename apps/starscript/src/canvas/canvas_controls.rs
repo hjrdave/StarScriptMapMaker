@@ -198,7 +198,7 @@ pub fn node_banner(
                     ui.horizontal(|ui| {
                         ui.label(
                             egui::RichText::new(format!(
-                                "Editing nodes · {selected} of {total} selected"
+                                "Editing points · {selected} of {total} selected"
                             ))
                             .size(theme::BODY)
                             .color(egui::Color32::WHITE),

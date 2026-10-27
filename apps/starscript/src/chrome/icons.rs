@@ -68,7 +68,7 @@ icons! {
     Reset, "Reset", "reset";
     ReRoll, "Re-roll", "re-roll";
     Attribution, "Attribution", "attribution";
-    Nodes, "Nodes", "nodes";
+    Nodes, "Points", "nodes";
     Union, "Union", "union";
     Subtract, "Subtract", "subtract";
     SplitApart, "Split apart", "split-apart";

@@ -469,7 +469,7 @@ fn node_edit_mode_follows_the_selection_and_edits_undo_cleanly() {
 
     // A drag is one gesture and one Undo step, however many frames it takes.
     editor.select_nodes(vec![node(2)]);
-    let gesture = editor.begin_gesture("Move Nodes");
+    let gesture = editor.begin_gesture("Move Points");
     for step in 1..=5 {
         editor.gesture_replace(
             &gesture,
@@ -541,7 +541,7 @@ fn deleting_nodes_offers_an_undo() {
     editor.select_nodes(vec![node(0)]);
     editor.delete_selected_nodes();
     let toast = editor.notice().expect("a toast");
-    assert_eq!(toast.text, "Deleted 1 node");
+    assert_eq!(toast.text, "Deleted 1 point");
     assert!(toast.action.is_some());
 }
 

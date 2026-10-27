@@ -90,8 +90,8 @@ impl Editor {
         if self.run(command).is_ok() {
             self.select_nodes(Vec::new());
             self.info_with_undo(match count {
-                1 => "Deleted 1 node".to_string(),
-                n => format!("Deleted {n} nodes"),
+                1 => "Deleted 1 point".to_string(),
+                n => format!("Deleted {n} points"),
             });
         }
     }

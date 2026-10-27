@@ -703,7 +703,7 @@ mod tests {
     #[test]
     fn the_banner_counts_the_selected_nodes() {
         let harness = harness();
-        harness.get_by_label("Editing nodes · 1 of 4 selected");
+        harness.get_by_label("Editing points · 1 of 4 selected");
     }
 
     #[test]
@@ -718,7 +718,7 @@ mod tests {
     #[test]
     fn cancel_drops_a_gesture_then_leaves_node_edit() {
         let mut harness = harness();
-        let gesture = harness.state_mut().1.begin_gesture("Move Nodes");
+        let gesture = harness.state_mut().1.begin_gesture("Move Points");
         harness.get_by_label("Cancel").click();
         harness.run();
         // The button rolled it back, so the token is stale.

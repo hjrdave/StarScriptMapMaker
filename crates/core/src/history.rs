@@ -50,9 +50,9 @@ struct Transaction {
 
 #[derive(Clone, PartialEq, Debug, Error)]
 pub enum HistoryError {
-    #[error("a transaction is already open")]
+    #[error("an Undo step is already open")]
     TransactionOpen,
-    #[error("no transaction is open")]
+    #[error("no Undo step is open")]
     NoTransaction,
 }
 
