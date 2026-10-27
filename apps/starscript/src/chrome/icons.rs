@@ -10,6 +10,11 @@
 //! Where a 1.5 pt stroke blurs at 1x, put a hand-hinted `name@1x.svg` next to the icon and
 //! list it in `TABLE`; it replaces the 1x raster. Without one the 1x raster is the same
 //! SVG with its 1.5 stroke thinned to 1 px.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::sync::Arc;
 

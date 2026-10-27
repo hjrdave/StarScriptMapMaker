@@ -302,6 +302,10 @@ impl LayerTree {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "existing long function; split over time (#351)"
+    )]
     fn row(&mut self, ui: &mut egui::Ui, editor: &Editor, row: Row, actions: &mut Vec<Action>) {
         let map = &editor.map();
         let Some(node) = map.node(row.id) else { return };

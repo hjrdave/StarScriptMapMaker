@@ -1,5 +1,10 @@
 //! The Recovery journal in the real app (ADR 0005): edits survive a crash, and closing
 //! cleanly or saving leaves no journal behind.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};

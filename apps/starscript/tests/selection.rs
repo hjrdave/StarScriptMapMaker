@@ -1,5 +1,10 @@
 //! Multi-select on the Canvas (box-select, Shift-click), its sync with the Layers panel, and
 //! the right-click menu. The real app, driven headlessly; the Canvas draws its placeholder.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use eframe::egui;
 use egui_kittest::Harness;

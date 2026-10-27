@@ -1,5 +1,10 @@
 //! The egui menu bar, drawn from the menu model: items follow the active tab, and each Map
 //! command is one Undo step (no window needed).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 mod common;
 

@@ -1,6 +1,11 @@
 //! The window shell around a Map tab: the Layers and Properties columns, their widths and
 //! collapse state (the same for every tab, kept across launches), and the text of the status
 //! bar.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use eframe::egui;
 use serde::{Deserialize, Serialize};

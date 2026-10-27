@@ -1,5 +1,10 @@
 //! The app itself: [`MapMakerApp`], its state, and the `eframe::App` impl. The methods are
 //! spread over the sibling modules by what they do.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 mod close_flow;
 mod closing;

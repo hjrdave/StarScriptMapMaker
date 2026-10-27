@@ -431,6 +431,10 @@ pub fn number_field(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) ->
 /// A slider with a small number box. Dragging is one gesture; clicking the track is one step.
 /// Arrow keys nudge (⇧ ×10, ⌥ ×0.1) and a double-click resets to the spec's default. The box
 /// types an exact value (Enter or blur commits, Esc cancels), clamped to the spec's range.
+#[allow(
+    clippy::too_many_lines,
+    reason = "existing long function; split over time (#351)"
+)]
 pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit {
     let palette = theme::palette(ui.ctx());
     let enabled = ui.is_enabled();

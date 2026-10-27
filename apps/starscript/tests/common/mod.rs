@@ -1,5 +1,10 @@
 //! Helpers the UI tests share.
 #![allow(dead_code)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;

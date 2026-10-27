@@ -1,5 +1,10 @@
 //! What Copy and Cut take: branches of the Layer tree, kept in memory and mirrored to the
 //! system clipboard as a versioned JSON text payload (no image).
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use serde::{Deserialize, Serialize};
 use ssmap_core::Subtree;

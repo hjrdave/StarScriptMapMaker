@@ -1,5 +1,10 @@
 //! egui_kittest smoke tests: the real app, driven headlessly through its accessibility tree.
 //! There is no GPU here, so the Canvas draws its flat placeholder.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use eframe::egui;
 use egui_kittest::Harness;

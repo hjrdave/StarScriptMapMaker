@@ -239,6 +239,10 @@ fn fill(ui: &egui::Ui, rect: Rect, color: Color32) {
 /// Draws the strip in the panel `ui` and returns what the user did. `inset` is the room left
 /// clear at the left for the native window buttons; `custom_chrome` makes the empty part drag
 /// the window and a double-click zoom it.
+#[allow(
+    clippy::too_many_lines,
+    reason = "existing long function; split over time (#351)"
+)]
 pub(crate) fn show(
     ui: &mut egui::Ui,
     tabs: &[TabInfo],

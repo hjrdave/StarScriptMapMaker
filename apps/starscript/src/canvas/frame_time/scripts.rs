@@ -4,6 +4,11 @@
 //!
 //! Each frame stands for one burst of input: one stretch of a brush stroke, one step of a drag
 //! or one slider value. The harness times the edit, the scene rebuild and the GPU work apart.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::f64::consts::TAU;
 

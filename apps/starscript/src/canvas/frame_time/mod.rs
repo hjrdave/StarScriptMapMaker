@@ -5,6 +5,11 @@
 //! interaction chosen with `--script`, see [`scripts`]), prints frame-time statistics with the
 //! adapter, backend, OS and driver, and exits. It is run by hand per OS on a real GPU; CI only
 //! checks it works on a software adapter. `docs/design/performance.md` explains how to read it.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 mod baseline;
 mod scripts;

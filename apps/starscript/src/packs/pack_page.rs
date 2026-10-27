@@ -251,6 +251,10 @@ impl PackPage {
     }
 
     /// One pack as a card. Returns whether it was clicked.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "existing long function; split over time (#351)"
+    )]
     fn pack_card(
         &mut self,
         ui: &mut egui::Ui,

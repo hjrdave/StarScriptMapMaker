@@ -1,5 +1,10 @@
 //! The Canvas panel: hosts `render`'s offscreen Canvas inside egui's frame, with pan and
 //! zoom-at-cursor.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};

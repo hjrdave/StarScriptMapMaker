@@ -1,6 +1,11 @@
 //! The Canvas tool: select the Canvas by its edge or label (not its inside), resize it from
 //! its handles with Shift and Alt, the cursor HUD, one Undo step per resize, and that no
 //! Object moves. The real app, driven headlessly.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use eframe::egui;
 use egui_kittest::Harness;

@@ -1,4 +1,9 @@
 //! The Label and Stamp sections of the properties panel.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use eframe::egui;
 use ssmap_core::{Align, Command, Id, Label, LabelStyles, Landmass, ResolvedLabel, Stamp};
@@ -58,6 +63,10 @@ impl PropertiesPanel {
         });
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "existing long function; split over time (#351)"
+    )]
     fn label_fields(
         &mut self,
         ui: &mut egui::Ui,

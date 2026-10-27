@@ -1,5 +1,10 @@
 //! Editor state around one Map: history, Selection, the active Layer and tool, and the
 //! message bar. Every change to the Map goes through a Command here.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 mod caches;
 mod clipboard;

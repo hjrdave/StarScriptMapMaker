@@ -1,5 +1,10 @@
 //! A setting that differs across a multi-selection shows "Mixed"; dragging the slider or typing
 //! a value sets every selected item, as one Undo step.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests and benches may panic on failure"
+)]
 
 use eframe::egui;
 use egui::accesskit::Role;

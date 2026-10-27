@@ -307,6 +307,10 @@ impl MapMakerApp {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "existing long function; split over time (#351)"
+    )]
     pub(super) fn shortcuts(&mut self, ctx: &egui::Context) {
         // Text fields keep their own undo and keys. The Label text box keeps Escape too,
         // which egui takes its focus away for before this runs.

@@ -43,6 +43,10 @@ impl MapMakerApp {
     }
 
     /// One frame of the editor.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "existing long function; split over time (#351)"
+    )]
     pub(super) fn show(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         if self.win.main {

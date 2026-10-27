@@ -4,6 +4,11 @@
 //!
 //! A style has no Align or Rotation (those belong to each Label and are set in its
 //! Properties), so the editor has today's fields and no more.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "existing invariant panics; replace with error handling over time (#351)"
+)]
 
 use std::collections::HashMap;
 
