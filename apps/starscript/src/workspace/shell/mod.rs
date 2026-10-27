@@ -24,16 +24,18 @@ pub enum Side {
 pub enum SidebarSection {
     #[default]
     Layers,
+    Assets,
     History,
 }
 
 impl SidebarSection {
     /// Every section, in the order of the icon strip.
-    pub const ALL: [Self; 2] = [Self::Layers, Self::History];
+    pub const ALL: [Self; 3] = [Self::Layers, Self::Assets, Self::History];
 
     pub fn icon(self) -> Icon {
         match self {
             Self::Layers => Icon::LayerGroup,
+            Self::Assets => Icon::Stamp,
             Self::History => Icon::History,
         }
     }
@@ -41,6 +43,7 @@ impl SidebarSection {
     pub fn title(self) -> &'static str {
         match self {
             Self::Layers => "Layers",
+            Self::Assets => "Assets",
             Self::History => "History",
         }
     }
@@ -49,6 +52,7 @@ impl SidebarSection {
     pub fn label(self) -> &'static str {
         match self {
             Self::Layers => "Layers (⌘⌥1)",
+            Self::Assets => "Assets (⌘⌥4)",
             Self::History => "History (⌘⌥5)",
         }
     }

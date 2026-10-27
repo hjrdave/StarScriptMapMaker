@@ -293,8 +293,7 @@ impl MapMakerApp {
             .tabs
             .get(self.win.active)
             .is_some_and(|tab| tab.recovery_prompt.is_some() || tab.pending.is_some());
-        // The offer of a Map never saved is shared, and shown in the main window only.
-        if self.win.main && !tab_asking && !self.win.close.is_awaiting_save() {
+        if !tab_asking && !self.win.close.is_awaiting_save() {
             self.app.unsaved.offer_next();
         }
         let Some(tab) = self.win.tabs.get(self.win.active) else {
@@ -350,7 +349,7 @@ impl MapMakerApp {
 
     /// Offers the journal of a Map never saved that a crash left: recovering it opens a tab.
     fn unsaved_journal_dialog(&mut self, ctx: &egui::Context) {
-        if !self.win.main || !self.app.unsaved.is_asking() {
+        if !self.app.unsaved.is_asking() {
             return;
         }
         let text = "A Map that was never saved wasn’t closed properly. Recover it?";

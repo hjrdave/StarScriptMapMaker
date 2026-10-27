@@ -155,24 +155,11 @@ pub(crate) enum Action {
     Show(Slot),
     Close(usize),
     NewMap,
-    /// Pop tab `n` out into a window of its own.
-    MoveToNewWindow(usize),
-    /// Put tab `n` of a popped-out window back in the main window.
-    MoveToMainWindow(usize),
     /// Tab `n` was dragged and let go with the pointer at `at`, in this window's points.
     Dropped {
         index: usize,
         at: egui::Pos2,
     },
-}
-
-/// Which window a strip belongs to, which decides what its tabs' context menu offers.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Placement {
-    /// The main window, which also has the Home tab.
-    Main,
-    /// A window a tab was popped out into.
-    Popped,
 }
 
 /// Where the strip and its Map tabs were last drawn, in the window's own points, so a tab
@@ -246,7 +233,6 @@ pub(crate) fn show(
     state: &mut State,
     inset: f32,
     custom_chrome: bool,
-    placement: Placement,
 ) -> Vec<Action> {
     let mut actions = Vec::new();
     let p: &Palette = theme::palette(ui.ctx());
@@ -262,14 +248,9 @@ pub(crate) fn show(
         drag_window(ui, strip);
     }
 
-    // Home, which only the main window has.
-    let has_home = placement == Placement::Main;
-    let home_width = if has_home { layout::HOME_TAB } else { 0.0 };
-    let home = column(strip.min.x + inset, home_width);
+    let home = column(strip.min.x + inset, layout::HOME_TAB);
     let home_active = current == Slot::Home;
-    if has_home {
-        paint_home(ui, home, home_active, &mut actions);
-    }
+    paint_home(ui, home, home_active, &mut actions);
 
     // Map tabs.
     let first = home.max.x;
@@ -318,8 +299,6 @@ pub(crate) fn show(
                 width,
                 active,
                 hovered,
-                tab_count: tabs.len(),
-                placement,
             };
             paint_tab(ui, &tab, &mut actions);
         }
@@ -420,8 +399,6 @@ struct TabDraw<'a> {
     width: f32,
     active: bool,
     hovered: bool,
-    tab_count: usize,
-    placement: Placement,
 }
 
 /// Draws one Map tab with its close button and context menu, and records what the user did.
@@ -435,7 +412,6 @@ fn paint_tab(ui: &mut egui::Ui, tab: &TabDraw<'_>, actions: &mut Vec<Action>) {
         width,
         active,
         hovered,
-        placement,
         ..
     } = *tab;
     let body = ui.interact(
@@ -532,17 +508,6 @@ fn paint_tab(ui: &mut egui::Ui, tab: &TabDraw<'_>, actions: &mut Vec<Action>) {
     }
     let body = body.on_hover_text(info.path.as_deref().unwrap_or("Not saved yet"));
     body.context_menu(|ui| {
-        // A popped-out window's only tab can only go back.
-        if (placement == Placement::Main || tab.tab_count > 1)
-            && ui.button("Move Tab to New Window").clicked()
-        {
-            actions.push(Action::MoveToNewWindow(index));
-            ui.close();
-        }
-        if placement == Placement::Popped && ui.button("Move Tab to Main Window").clicked() {
-            actions.push(Action::MoveToMainWindow(index));
-            ui.close();
-        }
         if ui.button("Close Tab").clicked() {
             actions.push(Action::Close(index));
             ui.close();

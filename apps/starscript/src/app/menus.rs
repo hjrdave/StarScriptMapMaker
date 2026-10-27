@@ -21,7 +21,6 @@ impl MapMakerApp {
         let mut state = menu::State {
             updates_at_startup: self.app.updates.enabled() == Some(true),
             checking_for_updates: self.app.updates.is_checking(),
-            popped: !self.win.main,
             tabs: self
                 .win
                 .tabs
@@ -172,24 +171,16 @@ impl MapMakerApp {
             C::Home => self.show_slot(tab_strip::Slot::Home),
             C::ToggleLayers => self.win.shell.toggle_layers(),
             C::ToggleProperties => self.win.shell.toggle_properties(),
+            C::ShowAssets => self.win.shell.show_section(shell::SidebarSection::Assets),
             C::ShowHistory => self.win.shell.show_section(shell::SidebarSection::History),
             C::HidePanels => self.win.shell.toggle_panels(),
             C::Tab(n) => self.show_tab_number(n),
             C::ShowTab(index) => self.focus_tab(index),
-            C::MoveTabToNewWindow if self.map_showing() => {
-                self.move_tab_to_new_window(self.win.active);
-            }
-            C::MoveTabToMainWindow if self.map_showing() => {
-                self.move_tab_to_main_window(self.win.active);
-            }
-            C::MoveTabToNewWindow | C::MoveTabToMainWindow => {}
             C::Credits => {
                 self.app.credits.open = true;
-                self.show_main_window();
             }
             C::CheckForUpdates => {
                 self.app.updates.start(true);
-                self.show_main_window();
             }
             C::ToggleUpdateCheck => {
                 let on = self.app.updates.enabled() == Some(true);
@@ -201,15 +192,6 @@ impl MapMakerApp {
                 }
             }
             _ => self.run_map_command(command),
-        }
-    }
-
-    /// Brings the main window forward, where the dialogs shared by every window show.
-    fn show_main_window(&self) {
-        if !self.win.main {
-            self.app
-                .egui_ctx
-                .send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Focus);
         }
     }
 
@@ -342,6 +324,7 @@ impl MapMakerApp {
             [
                 menu::Command::ToggleLayers,
                 menu::Command::ToggleProperties,
+                menu::Command::ShowAssets,
                 menu::Command::ShowHistory,
                 menu::Command::HidePanels,
             ]
@@ -381,11 +364,7 @@ impl MapMakerApp {
             self.show_tab_number(n);
         }
         if let Some(forward) = step {
-            let mut slot = tab_strip::cycle(self.current_slot(), self.win.tabs.len(), forward);
-            if slot == tab_strip::Slot::Home && !self.win.main {
-                // No Home here: go on to the next one.
-                slot = tab_strip::cycle(slot, self.win.tabs.len(), forward);
-            }
+            let slot = tab_strip::cycle(self.current_slot(), self.win.tabs.len(), forward);
             self.show_slot(slot);
         }
         let (new_map, open, save, save_as, close_tab) = ctx.input_mut(|input| {

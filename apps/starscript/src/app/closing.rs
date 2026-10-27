@@ -10,36 +10,14 @@ impl MapMakerApp {
     pub(super) fn handle_close(&mut self, ctx: &egui::Context) {
         let window =
             self.win.close.take_request() || ctx.input(|input| input.viewport().close_requested());
-        let quit = if self.win.main {
-            self.app.quit.take_request()
-        } else {
-            self.win.close.quit_asked()
-        };
+        let quit = self.app.quit.take_request();
         if (!quit && !window) || self.win.close.is_allowed() {
-            return;
-        }
-        // Popped-out windows go first, each asking about its own unsaved tabs. Quitting waits
-        // for them, and stops if the user cancels in one.
-        if self.win.main
-            && !self.popped.is_empty()
-            && (quit || (window && !self.app.quit.close_hides_window()))
-        {
-            for popped in &mut self.popped {
-                popped.close.ask_quit();
-            }
-            self.app.quit.request();
-            if window {
-                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            }
             return;
         }
         // A question already on screen is the close in progress.
         let asking =
             self.win.close.is_awaiting_save() || self.win.tabs.iter().any(|t| t.pending.is_some());
-        if !self.win.main {
-            // A popped-out window only ever closes itself; the app goes on.
-            self.win.close.set_leaving(Leaving::Window);
-        } else if quit {
+        if quit {
             self.win.close.set_leaving(Leaving::Quit);
         } else if !asking {
             self.win
@@ -127,7 +105,6 @@ impl MapMakerApp {
         for tab in &mut self.win.tabs {
             tab.quit_decided = false;
         }
-        self.win.close.cancel_quit();
         self.app.quit.cancel();
     }
 
@@ -139,10 +116,6 @@ impl MapMakerApp {
             Leaving::Quit => {
                 self.win.close.allow();
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            }
-            Leaving::Window if !self.win.main => {
-                // No tabs left: the window is dropped after its frame.
-                self.win.tabs.clear();
             }
             Leaving::Window => {
                 // The Maps' memory is released, not kept loaded behind a hidden window.
@@ -163,7 +136,7 @@ impl MapMakerApp {
             .is_some_and(|tab| tab.pending.is_some() || tab.recovery_prompt.is_some())
             || self.win.tabs.iter().any(|tab| tab.pending.is_some())
             || self.win.close.is_awaiting_save()
-            || (self.win.main && self.app.unsaved.is_asking())
+            || self.app.unsaved.is_asking()
             || self.win.delete_prompt.is_some()
             || self.win.pack_delete_prompt.is_some()
             || self.win.template_prompt.is_some()

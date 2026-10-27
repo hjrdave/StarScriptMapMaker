@@ -1,11 +1,10 @@
 //! The active tool's settings, at the top of Properties above the selection: the Land Brush's
-//! size and mode, the Stamp's Asset picker, its scatter settings, and the
-//! Stamp Eraser's size. Tools without settings get no section.
+//! size and mode, the Stamp's chosen Asset and its scatter settings, and the Stamp Eraser's
+//! size. Tools without settings get no section.
 
 use eframe::egui;
 use ssmap_core::scatter::Placement;
 
-use crate::asset_browser::AssetBrowser;
 use crate::editor::Editor;
 use crate::icons::{self, Icon};
 use crate::prop_widgets::{self, ScrubSpec};
@@ -14,7 +13,8 @@ use crate::tools::{self, ToolId};
 
 #[derive(Default)]
 pub(crate) struct ToolSection {
-    browser: AssetBrowser,
+    /// "Choose Asset…" was clicked since the last [`ToolSection::take_open_assets`].
+    open_assets: bool,
 }
 
 /// The icon of a tool.
@@ -46,6 +46,11 @@ fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> bool {
 }
 
 impl ToolSection {
+    /// Whether "Choose Asset…" was clicked since the last call.
+    pub(crate) fn take_open_assets(&mut self) -> bool {
+        std::mem::take(&mut self.open_assets)
+    }
+
     pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         let tool = editor.active_tool;
         if !has_section(tool) {
@@ -65,7 +70,7 @@ impl ToolSection {
                 match tool {
                     ToolId::LandBrush | ToolId::WaterBrush => land_brush(ui, editor),
                     ToolId::Stamp => {
-                        self.browser.show(ui, editor);
+                        self.chosen_asset(ui, editor);
                         ui.add_space(theme::SPACING[2]);
                         scatter_settings(ui, editor);
                     }
@@ -74,6 +79,34 @@ impl ToolSection {
                 }
             });
         ui.add_space(theme::SPACING[1]);
+    }
+}
+
+impl ToolSection {
+    /// The Asset the Stamp places, and the way to the Assets section where it is chosen.
+    fn chosen_asset(&mut self, ui: &mut egui::Ui, editor: &Editor) {
+        let palette = theme::palette(ui.ctx());
+        let name = editor.selected_asset.as_ref().map(|reference| {
+            editor
+                .sprites()
+                .and_then(|sprites| {
+                    sprites
+                        .library()
+                        .asset(reference)
+                        .map(|(_, a)| a.name.clone())
+                })
+                .unwrap_or_else(|| format!("{reference} (pack missing)"))
+        });
+        ui.horizontal(|ui| {
+            ui.label("Asset");
+            ui.label(
+                egui::RichText::new(name.as_deref().unwrap_or("None chosen"))
+                    .color(palette.text_primary),
+            );
+        });
+        if ui.button("Choose Asset…").clicked() {
+            self.open_assets = true;
+        }
     }
 }
 

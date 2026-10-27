@@ -37,6 +37,8 @@ pub enum Command {
     ActualSize,
     ToggleLayers,
     ToggleProperties,
+    /// Shows the Assets section in the left sidebar.
+    ShowAssets,
     /// Shows the History section in the left sidebar.
     ShowHistory,
     HidePanels,
@@ -57,10 +59,6 @@ pub enum Command {
     ShuffleVariant,
     /// The Window menu's entry for the Map in this tab.
     ShowTab(usize),
-    /// Pops the active tab out into a window of its own.
-    MoveTabToNewWindow,
-    /// Puts the active tab of a popped-out window back in the main window.
-    MoveTabToMainWindow,
     Credits,
     CheckForUpdates,
     ToggleUpdateCheck,
@@ -192,6 +190,7 @@ pub fn shortcut(command: Command) -> Option<Shortcut> {
         ActualSize => Shortcut::new(!c, s, !a, Key::Num(0)),
         ToggleLayers => Shortcut::new(c, !s, a, Key::Num(1)),
         ToggleProperties => Shortcut::new(c, !s, a, Key::Num(2)),
+        ShowAssets => Shortcut::new(c, !s, a, Key::Num(4)),
         ShowHistory => Shortcut::new(c, !s, a, Key::Num(5)),
         HidePanels => Shortcut::new(!c, !s, !a, Key::Tab),
         Home => Shortcut::new(c, !s, !a, Key::Num(1)),
@@ -234,8 +233,6 @@ pub struct State {
     pub can_re_export: bool,
     /// Open Maps, in tab order.
     pub tabs: Vec<TabState>,
-    /// This is a popped-out window, not the main one.
-    pub popped: bool,
     pub updates_at_startup: bool,
     pub checking_for_updates: bool,
 }
@@ -368,6 +365,7 @@ pub fn menus(state: &State) -> Vec<Menu> {
         Separator,
         item(ToggleLayers, "Toggle Layers", map),
         item(ToggleProperties, "Toggle Properties", map),
+        item(ShowAssets, "Assets", map),
         item(ShowHistory, "History", map),
         item(HidePanels, "Hide Panels", map),
         Separator,
@@ -377,24 +375,12 @@ pub fn menus(state: &State) -> Vec<Menu> {
         let exists = tab_strip::slot_for_number(n, state.tabs.len()).is_some();
         view.push(item(Tab(n), format!("Tab {n}"), exists));
     }
-    let mut window: Vec<Entry> = state
+    let window: Vec<Entry> = state
         .tabs
         .iter()
         .enumerate()
         .map(|(index, tab)| checked(ShowTab(index), tab.name.clone(), true, tab.active))
         .collect();
-    window.push(Separator);
-    // A popped-out window's only tab has nowhere to go but back to the main window.
-    window.push(item(
-        MoveTabToNewWindow,
-        "Move Tab to New Window",
-        map && (!state.popped || state.tabs.len() > 1),
-    ));
-    window.push(item(
-        MoveTabToMainWindow,
-        "Move Tab to Main Window",
-        map && state.popped,
-    ));
     vec![
         Menu {
             title: "File",
@@ -625,20 +611,6 @@ mod tests {
         // Two Maps: Tab 2 and 3 exist, and 9 always reaches the last one.
         assert!(find(&m, "View", Command::Tab(3)).enabled);
         assert!(!find(&m, "View", Command::Tab(4)).enabled);
-    }
-
-    #[test]
-    fn window_menu_moves_the_tab_out_and_back() {
-        let main = menus(&open());
-        assert!(find(&main, "Window", Command::MoveTabToNewWindow).enabled);
-        assert!(!find(&main, "Window", Command::MoveTabToMainWindow).enabled);
-        let popped = menus(&State {
-            popped: true,
-            ..open()
-        });
-        // The only tab of a popped-out window has nowhere to go but back.
-        assert!(!find(&popped, "Window", Command::MoveTabToNewWindow).enabled);
-        assert!(find(&popped, "Window", Command::MoveTabToMainWindow).enabled);
     }
 
     #[test]

@@ -37,19 +37,6 @@ impl MapMakerApp {
             })
             .collect();
         let current = self.current_slot();
-        let placement = self.placement();
-        // Embedded windows share the screen's coordinates; real ones are placed on it.
-        self.win.screen_origin = if ui.ctx().embed_viewports() {
-            egui::Pos2::ZERO
-        } else {
-            ui.input(|i| i.viewport().inner_rect)
-                .map_or(egui::Pos2::ZERO, |rect| rect.min)
-        };
-        self.win.content_size = ui
-            .input(|i| i.viewport().inner_rect)
-            .map_or_else(|| ui.ctx().content_rect().size(), |rect| rect.size());
-        let origin = self.win.screen_origin;
-        let viewport = self.win.viewport;
         let actions = ui
             .add_enabled_ui(enabled, |ui| {
                 tab_strip::show(
@@ -59,23 +46,12 @@ impl MapMakerApp {
                     &mut self.win.strip,
                     CHROME_INSET,
                     CUSTOM_CHROME,
-                    placement,
                 )
             })
             .inner;
         for action in actions {
             match action {
-                tab_strip::Action::MoveToNewWindow(index) => self.move_tab_to_new_window(index),
-                tab_strip::Action::MoveToMainWindow(index) => self.move_tab_to_main_window(index),
-                tab_strip::Action::Dropped { index, at } => {
-                    let at = at + origin.to_vec2();
-                    self.app.tab_drops.push(TabDrop {
-                        from: viewport,
-                        index,
-                        at,
-                    });
-                    self.app.egui_ctx.request_repaint();
-                }
+                tab_strip::Action::Dropped { index, at } => self.drop_tab(index, at),
                 tab_strip::Action::Show(slot) => self.show_slot(slot),
                 tab_strip::Action::Close(index) => self.close_tab(index),
                 tab_strip::Action::NewMap => self.new_blank_tab(),
@@ -124,10 +100,8 @@ impl MapMakerApp {
             pack_status: self.win.pack_install.status(),
             notices: &self.win.notices,
         };
-        if self.win.main {
-            self.app.credits.show(&ctx, None);
-            self.app.updates.show(&ctx);
-        }
+        self.app.credits.show(&ctx, None);
+        self.app.updates.show(&ctx);
         let actions = if start_page {
             self.win.home.start_page(ui, &data)
         } else {
@@ -206,8 +180,8 @@ impl MapMakerApp {
     }
 }
 
-/// The Layers panel: its header, the tree and the bottom bar with the collapse control. As an
-/// overlay, collapsing closes it.
+/// The sidebar's panel: the section it shows (Layers with its tree and the bottom bar with the
+/// collapse control, Assets, or History). As an overlay, collapsing closes it.
 pub(super) fn layers_panel(
     ui: &mut egui::Ui,
     shell: &mut shell::Shell,
@@ -215,6 +189,13 @@ pub(super) fn layers_panel(
     footer: bool,
     overlay: bool,
 ) {
+    if shell.sidebar_section() == shell::SidebarSection::Assets {
+        shell::panel_header(ui, "Assets", |_| {});
+        egui::Frame::NONE
+            .inner_margin(egui::Margin::symmetric(theme::SPACING[3] as i8, 0))
+            .show(ui, |ui| tab.asset_browser.show(ui, &mut tab.editor));
+        return;
+    }
     if shell.sidebar_section() == shell::SidebarSection::History {
         shell::panel_header(ui, "History", |_| {});
         let (steps, applied) = tab.editor.history_steps();

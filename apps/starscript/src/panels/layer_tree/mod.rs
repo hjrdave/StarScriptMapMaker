@@ -48,9 +48,6 @@ pub(crate) struct LayerTree {
     anchor: Option<Id>,
     /// Set by the menu's Paste; the shell pastes, since it knows where the Canvas is looking.
     pub paste_requested: bool,
-    /// A row is being dragged this frame; the app takes it to learn which window a Layer is
-    /// dragged out of.
-    pub dragging: bool,
 }
 
 /// How a click on a row changes the Selection.

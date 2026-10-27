@@ -1,6 +1,6 @@
 //! The Asset picker: the installed Asset packs, filtered by pack, category and a search over
-//! names and tags, as a grid of thumbnails. It sits in the Stamp tool
-//! sections of Properties; choosing an Asset sets `Editor::selected_asset`.
+//! names and tags, as a grid of thumbnails. It is the Assets section of the sidebar; choosing
+//! an Asset sets `Editor::selected_asset` and switches to the Stamp tool.
 
 use std::collections::HashMap;
 
@@ -10,11 +10,14 @@ use ssmap_render::SpriteStore;
 
 use crate::editor::Editor;
 use crate::theme;
+use crate::tools::ToolId;
 
-/// Thumbnails per row.
-const COLUMNS: usize = 4;
-/// The grid scrolls past this height, in points.
-const GRID_MAX_HEIGHT: f32 = 240.0;
+/// The narrowest a thumbnail is drawn, in points; the grid fits as many columns as that allows.
+const MIN_THUMB: f32 = 56.0;
+/// Room kept under the grid for the picked Asset's details, in points.
+const PICKED_RESERVE: f32 = 96.0;
+/// The grid is never shorter than this, in points.
+const GRID_MIN_HEIGHT: f32 = 120.0;
 
 #[derive(Default)]
 pub(crate) struct AssetBrowser {
@@ -25,6 +28,8 @@ pub(crate) struct AssetBrowser {
     /// The category shown, or every category.
     category: Option<String>,
     search: String,
+    /// "Open Asset packs" was clicked since the last [`AssetBrowser::take_open_packs`].
+    open_packs: bool,
     /// `None` records art that could not be loaded.
     thumbnails: HashMap<AssetRef, Option<ThumbArt>>,
 }
@@ -106,9 +111,32 @@ fn thumbnail_label(
 }
 
 impl AssetBrowser {
+    /// Whether "Open Asset packs" was clicked since the last call.
+    pub(crate) fn take_open_packs(&mut self) -> bool {
+        std::mem::take(&mut self.open_packs)
+    }
+
+    /// What the section says when no pack is installed, with the way to the Asset packs page.
+    fn no_packs(&mut self, ui: &mut egui::Ui) {
+        let palette = theme::palette(ui.ctx());
+        ui.add_space(theme::SPACING[2]);
+        ui.label(
+            egui::RichText::new("No Asset packs are installed.")
+                .size(theme::BODY)
+                .color(palette.text_secondary),
+        );
+        if ui.button("Open Asset packs").clicked() {
+            self.open_packs = true;
+        }
+    }
+
     pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
-        let Some(library) = editor.sprites().map(|sprites| sprites.library().clone()) else {
-            ui.weak("No Asset packs are loaded.");
+        let Some(library) = editor
+            .sprites()
+            .map(|sprites| sprites.library().clone())
+            .filter(|library| !library.packs().is_empty())
+        else {
+            self.no_packs(ui);
             return;
         };
         if !self.default_applied {
@@ -189,15 +217,17 @@ impl AssetBrowser {
             self.empty_state(ui);
         } else {
             let gap = ui.spacing().item_spacing.x;
-            let side = ((ui.available_width() - gap * (COLUMNS - 1) as f32) / COLUMNS as f32)
+            let columns =
+                (((ui.available_width() + gap) / (MIN_THUMB + gap)).floor() as usize).max(1);
+            let side = ((ui.available_width() - gap * (columns - 1) as f32) / columns as f32)
                 .floor()
                 .max(24.0);
             egui::ScrollArea::vertical()
                 .id_salt("asset grid")
-                .max_height(GRID_MAX_HEIGHT)
+                .max_height((ui.available_height() - PICKED_RESERVE).max(GRID_MIN_HEIGHT))
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
-                    for row in shown_assets.chunks(COLUMNS) {
+                    for row in shown_assets.chunks(columns) {
                         ui.horizontal(|ui| {
                             for (pack, asset, reference) in row {
                                 let selected = editor.selected_asset.as_ref() == Some(reference);
@@ -226,6 +256,7 @@ impl AssetBrowser {
         }
         if let Some(reference) = chosen {
             editor.selected_asset = Some(reference);
+            editor.active_tool = ToolId::Stamp;
         }
         self.picked(ui, editor, &library);
     }
@@ -313,7 +344,7 @@ impl AssetBrowser {
             .or_insert_with(|| load_art(ui.ctx(), editor.sprites()?, reference))
             .clone();
         let response = paint_thumbnail(ui, texture, reference, asset, look);
-        // Dropped on a Map in any window, it is placed there.
+        // Dropped on the Canvas, it is placed there.
         if response.dragged() {
             response.dnd_set_drag_payload(reference.clone());
         }
@@ -435,6 +466,25 @@ pub(crate) struct Thumbnail {
     pub attribution: bool,
 }
 
+/// Installs the test pack into `editor`, with its attribution flag set as asked.
+#[cfg(test)]
+pub(crate) fn install_test_pack(editor: &mut Editor, attribution_required: bool) {
+    use ssmap_core::asset::{PackLibrary, PackSource, parse_manifest};
+    use ssmap_render::SpriteStore;
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../crates/core/tests/packs/test-pack/pack.toml");
+    let mut text = std::fs::read_to_string(&path).unwrap();
+    if attribution_required {
+        text = text.replacen("[pack]\n", "[pack]\nattribution_required = true\n", 1);
+    }
+    let pack = parse_manifest(&path, &text, PackSource::BuiltIn).unwrap();
+    let mut library = PackLibrary::default();
+    let mut problems = Vec::new();
+    library.add(pack, &mut problems);
+    assert!(problems.is_empty(), "{problems:?}");
+    editor.set_sprites(SpriteStore::new(std::sync::Arc::new(library)));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -505,5 +555,131 @@ mod tests {
         assert!(matches(&mountain, None, "COLD peak"), "any order, any case");
         assert!(!matches(&mountain, Some("forests"), ""));
         assert!(!matches(&mountain, None, "peak desert"));
+    }
+
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+    use ssmap_core::{Canvas, DistanceUnit, Map, Scale};
+
+    struct Fixture {
+        editor: Editor,
+        browser: AssetBrowser,
+    }
+
+    fn fixture(attribution_required: bool) -> Fixture {
+        let mut editor = Editor::new(Map::new(Canvas::new(
+            100,
+            100,
+            Scale::new(1.0, DistanceUnit::Miles),
+        )));
+        install_test_pack(&mut editor, attribution_required);
+        Fixture {
+            editor,
+            browser: AssetBrowser::default(),
+        }
+    }
+
+    fn harness(fixture: Fixture) -> Harness<'static, Fixture> {
+        let mut harness = Harness::builder()
+            .with_size(egui::vec2(280.0, 700.0))
+            .build_ui_state(
+                |ui, fixture: &mut Fixture| {
+                    theme::install(&ui.ctx().clone());
+                    fixture.browser.show(ui, &mut fixture.editor);
+                },
+                fixture,
+            );
+        harness.run();
+        harness
+    }
+
+    #[test]
+    fn picking_a_thumbnail_arms_its_asset_and_switches_to_the_stamp_tool() {
+        let mut fixture = fixture(false);
+        fixture.editor.active_tool = ToolId::Select;
+        let mut harness = harness(fixture);
+        assert_eq!(harness.state().editor.selected_asset, None);
+        harness.get_by_label("Tree (test-pack/tree)").click();
+        harness.run();
+        assert_eq!(
+            harness.state().editor.selected_asset,
+            Some("test-pack/tree".parse().unwrap())
+        );
+        assert_eq!(harness.state().editor.active_tool, ToolId::Stamp);
+        // The picked Asset's pack · author · licence.
+        assert!(
+            harness
+                .query_by_label_contains("Test pack · StarScript Map Maker contributors · CC0-1.0")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn variants_show_their_count_and_attribution_shows_the_dot() {
+        let mut harness = harness(fixture(true));
+        assert!(
+            harness
+                .query_by_label("Tree (test-pack/tree), attribution required")
+                .is_some()
+        );
+        assert!(
+            harness
+                .query_by_label("Mountain (test-pack/mountain-1), 2 variants, attribution required")
+                .is_some()
+        );
+        harness
+            .get_by_label("Tree (test-pack/tree), attribution required")
+            .click();
+        harness.run();
+        assert!(
+            harness
+                .query_by_label_contains("Attribution required")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn no_dot_without_attribution_and_an_empty_search_offers_a_way_out() {
+        let mut harness = harness(fixture(false));
+        assert!(
+            harness
+                .query_by_label_contains("attribution required")
+                .is_none()
+        );
+        for step in 0..2 {
+            let search = harness
+                .get_all_by_role(egui::accesskit::Role::TextInput)
+                .next()
+                .expect("the search field");
+            if step == 0 {
+                search.click();
+            } else {
+                search.type_text("zzz");
+            }
+            harness.run();
+        }
+        harness.run();
+        assert!(harness.query_by_label("No Assets match “zzz”").is_some());
+        harness.get_by_label("Clear search").click();
+        harness.run();
+        assert!(harness.query_by_label("Tree (test-pack/tree)").is_some());
+    }
+
+    #[test]
+    fn without_packs_the_section_offers_the_asset_packs_page() {
+        let editor = Editor::new(Map::new(Canvas::new(
+            100,
+            100,
+            Scale::new(1.0, DistanceUnit::Miles),
+        )));
+        let mut harness = harness(Fixture {
+            editor,
+            browser: AssetBrowser::default(),
+        });
+        harness.get_by_label("No Asset packs are installed.");
+        assert!(!harness.state_mut().browser.take_open_packs());
+        harness.get_by_label("Open Asset packs").click();
+        harness.run();
+        assert!(harness.state_mut().browser.take_open_packs());
     }
 }

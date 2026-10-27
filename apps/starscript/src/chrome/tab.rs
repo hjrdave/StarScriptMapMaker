@@ -25,6 +25,7 @@ use ssmap_core::{Canvas, DistanceUnit, Map, Scale};
 use ssmap_render::TessellationCache;
 
 use crate::app::{Pending, RecoveryPrompt};
+use crate::asset_browser::AssetBrowser;
 use crate::canvas_view::CanvasView;
 use crate::document::Document;
 use crate::editor::Editor;
@@ -37,6 +38,8 @@ pub struct MapTab {
     pub(crate) editor: Editor,
     pub(crate) document: Document,
     pub(crate) layer_tree: LayerTree,
+    /// The Assets section of the sidebar: its search and filters.
+    pub(crate) asset_browser: AssetBrowser,
     pub(crate) properties: PropertiesPanel,
     pub(crate) label_styles: LabelStylesPanel,
     pub(crate) canvas_view: CanvasView,
@@ -61,6 +64,7 @@ impl MapTab {
             editor: Editor::new(map),
             document: Document::default(),
             layer_tree: LayerTree::default(),
+            asset_browser: AssetBrowser::default(),
             properties: PropertiesPanel::default(),
             label_styles: LabelStylesPanel::default(),
             canvas_view: CanvasView::new(cache),

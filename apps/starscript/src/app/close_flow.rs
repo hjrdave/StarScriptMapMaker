@@ -19,8 +19,8 @@ pub(crate) enum Pending {
     Quit,
 }
 
-/// What every window shares of a quit: whether one was asked for, and whether closing the main
-/// window leaves the app running.
+/// What a quit needs: whether one was asked for, and whether closing the window leaves the app
+/// running.
 pub(super) struct QuitState {
     /// Quit was asked for (⌘Q) and is handled next frame.
     requested: bool,
@@ -52,7 +52,7 @@ impl QuitState {
         self.requested = false;
     }
 
-    /// Whether closing the main window leaves the app running.
+    /// Whether closing the window leaves the app running.
     pub(super) fn close_hides_window(&self) -> bool {
         self.close_hides_window
     }
@@ -62,7 +62,7 @@ impl QuitState {
     }
 }
 
-/// One window's close in progress.
+/// The window's close in progress.
 pub(super) struct CloseFlow {
     /// A tab's unsaved-changes question was answered Save for a Map never saved: what to do
     /// once the Save As dialog saves it. Closing that dialog instead cancels.
@@ -71,8 +71,6 @@ pub(super) struct CloseFlow {
     allowed: bool,
     /// What the close or quit in progress is for.
     leaving: Leaving,
-    /// The app is quitting and this popped-out window is asked to go first.
-    quit_asked: bool,
     /// Closing this window was asked for, as its close button does.
     requested: bool,
 }
@@ -84,7 +82,6 @@ impl CloseFlow {
             awaiting_save: None,
             allowed: false,
             leaving,
-            quit_asked: false,
             requested: false,
         }
     }
@@ -97,21 +94,6 @@ impl CloseFlow {
     /// Takes the window's close request, if any, so it is handled once.
     pub(super) fn take_request(&mut self) -> bool {
         std::mem::take(&mut self.requested)
-    }
-
-    /// Whether the app is quitting and this window is asked to go first.
-    pub(super) fn quit_asked(&self) -> bool {
-        self.quit_asked
-    }
-
-    /// Asks this popped-out window to go first because the app is quitting.
-    pub(super) fn ask_quit(&mut self) {
-        self.quit_asked = true;
-    }
-
-    /// Stops the quit for this window.
-    pub(super) fn cancel_quit(&mut self) {
-        self.quit_asked = false;
     }
 
     /// Whether the user chose to close despite unsaved changes.
@@ -179,16 +161,6 @@ mod tests {
         assert!(quit.close_hides_window());
         quit.set_close_hides_window(false);
         assert!(!quit.close_hides_window());
-    }
-
-    #[test]
-    fn asking_a_window_to_quit_is_undone_by_cancel() {
-        let mut flow = CloseFlow::new(Leaving::Window);
-        assert!(!flow.quit_asked());
-        flow.ask_quit();
-        assert!(flow.quit_asked());
-        flow.cancel_quit();
-        assert!(!flow.quit_asked());
     }
 
     #[test]

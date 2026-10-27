@@ -1,52 +1,14 @@
 //! One frame of a window: the panels around the Canvas, in the order they are laid out.
 
 use super::*;
-use crate::{tool_dock, window_chrome};
+use crate::tool_dock;
 
 impl MapMakerApp {
-    /// One frame of each window a tab was popped out into, each in a viewport of its own.
-    pub(super) fn show_popped(&mut self, ctx: &egui::Context) {
-        let mut windows = std::mem::take(&mut self.popped);
-        windows.retain(|window| !window.tabs.is_empty());
-        for window in &mut windows {
-            std::mem::swap(&mut self.win, window);
-            let builder = window_chrome(
-                egui::ViewportBuilder::default()
-                    .with_title(self.win.title.clone())
-                    .with_inner_size([1100.0, 760.0]),
-            );
-            let id = self.win.viewport;
-            ctx.show_viewport_immediate(id, builder, |ui, class| {
-                if class == egui::ViewportClass::EmbeddedWindow {
-                    // Without OS windows (UI tests) it floats over the main window.
-                    egui::Window::new(self.win.title.clone())
-                        .id(egui::Id::new(id))
-                        .default_size([1100.0, 760.0])
-                        .show(ui.ctx(), |ui| self.show(ui));
-                } else {
-                    self.show(ui);
-                }
-            });
-            std::mem::swap(&mut self.win, window);
-        }
-        // A window whose last tab left or closed is gone with its viewport.
-        windows.retain(|window| !window.tabs.is_empty());
-        windows.append(&mut self.popped);
-        self.popped = windows;
-        for tab in std::mem::take(&mut self.app.returning) {
-            self.win.tabs.push(tab);
-            self.win.active = self.win.tabs.len() - 1;
-            self.win.home_active = false;
-        }
-        self.settle_tab_drops();
-        self.settle_payload_drops();
-    }
-
     /// One frame of the editor.
     pub(super) fn show(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.begin_frame(&ctx);
-        let dialog_open = self.handle_input(ui, &ctx);
+        let dialog_open = self.handle_input(&ctx);
         let strip = egui::Frame::NONE.fill(theme::palette(&ctx).bg_chrome);
         egui::Panel::top("tabs")
             .exact_size(theme::metrics::TITLE_BAR_WITH_TABS)
@@ -55,12 +17,7 @@ impl MapMakerApp {
         if !self.native_menu_shown() {
             egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui));
         }
-        if self.win.tabs.is_empty() && !self.win.main {
-            // The last tab just left; the window goes after this frame.
-            return;
-        }
         self.win.canvas_zone = None;
-        self.win.layers_zone = None;
         if self.home_active() || self.start_page_showing() {
             self.home_screen(ui, !self.home_active());
             self.journal(&ctx);
@@ -70,10 +27,8 @@ impl MapMakerApp {
         let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
             return;
         };
-        if self.win.main {
-            self.app.credits.show(&ctx, Some(&mut tab.editor));
-            self.app.updates.show(&ctx);
-        }
+        self.app.credits.show(&ctx, Some(&mut tab.editor));
+        self.app.updates.show(&ctx);
         tab.label_styles.show(&ctx, &mut tab.editor);
         egui::Panel::bottom("status")
             .exact_size(theme::metrics::STATUS_BAR)
@@ -149,7 +104,6 @@ impl MapMakerApp {
             .frame(egui::Frame::NONE)
             .show(ui, |ui| tab.canvas_view.show(ui, &mut tab.editor));
         self.win.canvas_zone = Some(canvas.response.rect);
-        self.win.layers_zone = layers_divider;
         tool_dock::show(&ctx, canvas.response.rect, &mut tab.editor.active_tool);
         tab.editor.show_toasts(&ctx, canvas.response.rect);
         // After the Canvas, so the strips on its edges win the pointer over it.
@@ -163,20 +117,36 @@ impl MapMakerApp {
         }
         self.show_overlays(&ctx, canvas.response.rect, [layers_rail, properties_rail]);
         self.track_drag(&ctx);
+        self.sidebar_requests();
         self.journal(&ctx);
+    }
+
+    /// What the Stamp section and the Assets section asked for: the Assets section itself, or the
+    /// Asset packs page on Home.
+    fn sidebar_requests(&mut self) {
+        let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
+            return;
+        };
+        let open_assets = tab.properties.take_open_assets();
+        let open_packs = tab.asset_browser.take_open_packs();
+        if open_assets {
+            self.win.shell.show_section(shell::SidebarSection::Assets);
+        }
+        if open_packs {
+            self.show_slot(tab_strip::Slot::Home);
+            self.win.home.show_packs();
+        }
     }
 
     /// The start of a frame: the in-app overlay, egui's zoom held at 1, and what Copy or Cut
     /// took last frame, which goes to the system clipboard as text.
     fn begin_frame(&mut self, ctx: &egui::Context) {
-        if self.win.main {
-            self.app.overlay.begin_frame(ctx);
-            self.app.overlay.show(ctx);
-            // ⌘+ and ⌘− zoom the Canvas only: keep egui's whole-UI zoom off and the scale at 1.
-            ctx.options_mut(|o| o.zoom_with_keyboard = false);
-            if ctx.zoom_factor() != 1.0 {
-                ctx.set_zoom_factor(1.0);
-            }
+        self.app.overlay.begin_frame(ctx);
+        self.app.overlay.show(ctx);
+        // ⌘+ and ⌘− zoom the Canvas only: keep egui's whole-UI zoom off and the scale at 1.
+        ctx.options_mut(|o| o.zoom_with_keyboard = false);
+        if ctx.zoom_factor() != 1.0 {
+            ctx.set_zoom_factor(1.0);
         }
         // What Copy or Cut took last frame goes to the system clipboard as text.
         if let Some(text) = self
@@ -192,7 +162,7 @@ impl MapMakerApp {
 
     /// Handles close requests, drops, the Escape that closes a panel overlay and the shortcuts,
     /// then shows the dialogs and sets the window title. Returns whether a dialog is open.
-    fn handle_input(&mut self, ui: &egui::Ui, ctx: &egui::Context) -> bool {
+    fn handle_input(&mut self, ctx: &egui::Context) -> bool {
         // Dialogs take the keyboard while they are open.
         self.handle_close(ctx);
         let dialog_open = self.dialog_open();
@@ -204,12 +174,7 @@ impl MapMakerApp {
                 }
             });
         }
-        let window_width = if self.win.main {
-            ctx.content_rect().width()
-        } else {
-            ui.max_rect().width()
-        };
-        self.win.shell.set_window_width(window_width);
+        self.win.shell.set_window_width(ctx.content_rect().width());
         let panels_were_hidden = self.win.shell.panels_hidden();
         if !dialog_open && self.win.shell.overlay_open() {
             // Esc closes an open panel overlay before anything else sees it.
@@ -266,7 +231,6 @@ impl MapMakerApp {
                     });
                 });
             overlay_rect = Some(area.response.rect);
-            self.win.layers_zone = overlay_rect;
         } else if self.win.shell.properties_overlay() {
             const MARGIN: f32 = 8.0;
             let width = self.win.shell.width(shell::Side::Right);

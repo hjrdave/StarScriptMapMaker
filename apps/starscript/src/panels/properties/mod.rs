@@ -84,6 +84,11 @@ impl PropertiesPanel {
         std::mem::take(&mut self.manage_label_styles)
     }
 
+    /// Whether the Stamp section's "Choose Asset…" was clicked since the last call.
+    pub(crate) fn take_open_assets(&mut self) -> bool {
+        self.tool_section.take_open_assets()
+    }
+
     /// Returns true when the collapse control at the bottom was clicked.
     pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) -> bool {
         // A change ends when the pointer is released, or when Escape cancelled it.
