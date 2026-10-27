@@ -10,6 +10,7 @@ use thiserror::Error;
 
 use crate::asset::AssetRef;
 use crate::background::Background;
+use crate::board::ArtBoard;
 use crate::color::Color;
 use crate::embedded::{Blob, ContentHash, EmbeddedAsset, EmbeddedFont};
 use crate::geometry::{MultiPolygon, Point};
@@ -76,6 +77,57 @@ pub enum Op {
     SetBackground {
         /// The new background.
         background: Background,
+    },
+    /// Adds an Art board at `index` among the Art boards, lowest first.
+    AddBoard {
+        /// Where to insert among the Art boards.
+        index: usize,
+        /// The board. Its id must not belong to the Canvas or another Art board.
+        board: ArtBoard,
+    },
+    /// Removes an Art board. No Object may still belong to it.
+    RemoveBoard {
+        /// The Art board to remove.
+        id: Id,
+    },
+    /// Sets the size and workspace position of an Art board. No node changes: Objects keep
+    /// their positions and membership.
+    ResizeBoard {
+        /// The Art board to change.
+        id: Id,
+        /// Where its top-left corner sits, in workspace units.
+        origin: Point,
+        /// The new width, in Canvas units.
+        width: u32,
+        /// The new height, in Canvas units.
+        height: u32,
+    },
+    /// Replaces an Art board's background.
+    SetBoardBackground {
+        /// The Art board to change.
+        id: Id,
+        /// The new background.
+        background: Background,
+    },
+    /// Renames the Canvas or an Art board.
+    RenameBoard {
+        /// The board to rename.
+        id: Id,
+        /// Its new name.
+        name: String,
+    },
+    /// Moves an Art board to `index` among the Art boards, counted after it leaves its place.
+    MoveBoard {
+        /// The Art board to move.
+        id: Id,
+        /// The new place among the Art boards.
+        index: usize,
+    },
+    /// Makes an Art board the Canvas and the Canvas an Art board, in the place the new
+    /// Canvas had. Objects stay with the board they belong to.
+    SetPrimaryBoard {
+        /// The Art board to make the Canvas.
+        id: Id,
     },
     /// Replaces the Map-wide defaults.
     SetDefaults {
@@ -168,6 +220,12 @@ pub enum OpError {
     /// The node has no outline to replace.
     #[error("{0} has no geometry")]
     NoGeometry(Id),
+    /// No Art board has this id.
+    #[error("no Art board has id {0}")]
+    NoSuchBoard(Id),
+    /// Objects still belong to the Art board.
+    #[error("Art board {0} still has Objects")]
+    BoardInUse(Id),
     /// The embedded file's bytes do not match its content hash.
     #[error("the embedded file does not match its content hash {0}")]
     BlobHashMismatch(ContentHash),
@@ -288,6 +346,13 @@ impl Map {
             Op::SetBackground { background } => Op::SetBackground {
                 background: std::mem::replace(&mut self.canvas.background, background),
             },
+            op @ (Op::AddBoard { .. }
+            | Op::RemoveBoard { .. }
+            | Op::ResizeBoard { .. }
+            | Op::SetBoardBackground { .. }
+            | Op::RenameBoard { .. }
+            | Op::MoveBoard { .. }
+            | Op::SetPrimaryBoard { .. }) => self.apply_board_op(op),
             Op::SetDefaults { defaults } => Op::SetDefaults {
                 defaults: std::mem::replace(&mut self.defaults, defaults),
             },
@@ -321,6 +386,91 @@ impl Map {
         })
     }
 
+    /// Applies one of the board Ops and returns its inverse. [`Map::check`] has run.
+    #[allow(
+        clippy::expect_used,
+        reason = "Map::check verified the Art board exists"
+    )]
+    fn apply_board_op(&mut self, op: Op) -> Op {
+        match op {
+            Op::AddBoard { index, board } => {
+                let id = board.id;
+                self.art_boards.insert(index, board);
+                Op::RemoveBoard { id }
+            }
+            Op::RemoveBoard { id } => {
+                let index = self.board_index(id);
+                let board = self.art_boards.remove(index);
+                Op::AddBoard { index, board }
+            }
+            Op::ResizeBoard {
+                id,
+                origin,
+                width,
+                height,
+            } => {
+                let index = self.board_index(id);
+                let board = &mut self.art_boards[index];
+                let old = Op::ResizeBoard {
+                    id,
+                    origin: board.origin,
+                    width: board.width,
+                    height: board.height,
+                };
+                board.origin = origin;
+                board.width = width;
+                board.height = height;
+                old
+            }
+            Op::SetBoardBackground { id, background } => {
+                let index = self.board_index(id);
+                Op::SetBoardBackground {
+                    id,
+                    background: std::mem::replace(
+                        &mut self.art_boards[index].background,
+                        background,
+                    ),
+                }
+            }
+            Op::RenameBoard { id, name } => {
+                let slot = if id == self.canvas.id {
+                    &mut self.canvas.name
+                } else {
+                    let index = self.board_index(id);
+                    &mut self.art_boards[index].name
+                };
+                Op::RenameBoard {
+                    id,
+                    name: std::mem::replace(slot, name),
+                }
+            }
+            Op::MoveBoard { id, index } => {
+                let old_index = self.board_index(id);
+                let board = self.art_boards.remove(old_index);
+                self.art_boards.insert(index, board);
+                Op::MoveBoard {
+                    id,
+                    index: old_index,
+                }
+            }
+            Op::SetPrimaryBoard { id } => {
+                let index = self.board_index(id);
+                let old = self.canvas.id;
+                let board = &mut self.art_boards[index];
+                let canvas = &mut self.canvas;
+                std::mem::swap(&mut canvas.id, &mut board.id);
+                std::mem::swap(&mut canvas.name, &mut board.name);
+                std::mem::swap(&mut canvas.width, &mut board.width);
+                std::mem::swap(&mut canvas.height, &mut board.height);
+                std::mem::swap(&mut canvas.origin, &mut board.origin);
+                std::mem::swap(&mut canvas.background, &mut board.background);
+                self.swap_membership(old, id);
+                Op::SetPrimaryBoard { id: old }
+            }
+            _ => unreachable!("not a board Op"),
+        }
+    }
+
     /// Checks everything that could make `op` fail, so `apply` never changes the Map halfway.
     fn check(&self, op: &Op) -> Result<(), OpError> {
         match op {
@@ -332,6 +482,7 @@ impl Map {
                 self.check_destination(*parent, subtree.node.is_layer())?;
                 check_index(*index, self.children(*parent).len())?;
                 self.check_insertable(subtree)?;
+                self.check_memberships(subtree)?;
             }
             Op::Remove { id } => {
                 self.existing(*id)?;
@@ -339,6 +490,9 @@ impl Map {
             Op::SetProperty { id, property } => {
                 check_property(self.existing(*id)?, property)
                     .map_err(|name| OpError::NoSuchProperty(*id, name))?;
+                if let Property::Membership(Membership::Board(board)) = property {
+                    self.check_art_board(*board)?;
+                }
             }
             Op::ReplaceGeometry { id, .. } => match self.existing(*id)? {
                 Node::Object(object) if object.kind.geometry().is_some() => {}
@@ -362,6 +516,30 @@ impl Map {
                 hash,
                 data: Some(data),
             } if data.hash() != *hash => return Err(OpError::BlobHashMismatch(*hash)),
+            Op::AddBoard { index, board } => {
+                if board.id == self.canvas.id || self.art_board(board.id).is_some() {
+                    return Err(InvariantError::DuplicateBoard(board.id).into());
+                }
+                check_index(*index, self.art_boards.len())?;
+            }
+            Op::RemoveBoard { id } => {
+                self.check_art_board(*id)?;
+                if self.has_members(*id) {
+                    return Err(OpError::BoardInUse(*id));
+                }
+            }
+            Op::ResizeBoard { id, .. }
+            | Op::SetBoardBackground { id, .. }
+            | Op::SetPrimaryBoard { id } => self.check_art_board(*id)?,
+            Op::RenameBoard { id, .. } => {
+                if *id != self.canvas.id {
+                    self.check_art_board(*id)?;
+                }
+            }
+            Op::MoveBoard { id, index } => {
+                self.check_art_board(*id)?;
+                check_index(*index, self.art_boards.len() - 1)?;
+            }
             Op::SetDefaults { .. }
             | Op::SetBackground { .. }
             | Op::ResizeCanvas { .. }
@@ -374,6 +552,69 @@ impl Map {
 
     fn existing(&self, id: Id) -> Result<&Node, OpError> {
         self.node(id).ok_or(OpError::NotFound(id))
+    }
+
+    /// Fails unless `id` is an Art board of the Map (the Canvas is not one).
+    fn check_art_board(&self, id: Id) -> Result<(), OpError> {
+        if self.art_board(id).is_some() {
+            Ok(())
+        } else {
+            Err(OpError::NoSuchBoard(id))
+        }
+    }
+
+    /// Fails if an Object in `subtree` belongs to an Art board this Map does not have.
+    fn check_memberships(&self, subtree: &Subtree) -> Result<(), OpError> {
+        let mut stack = vec![subtree];
+        while let Some(tree) = stack.pop() {
+            if let Node::Object(object) = &tree.node
+                && let Membership::Board(board) = object.membership
+            {
+                self.check_art_board(board)?;
+            }
+            stack.extend(&tree.children);
+        }
+        Ok(())
+    }
+
+    /// Whether any Object belongs to the Art board `id`.
+    fn has_members(&self, id: Id) -> bool {
+        self.entries.values().any(|entry| {
+            matches!(&entry.node, Node::Object(object) if object.membership == Membership::Board(id))
+        })
+    }
+
+    /// The place of the Art board `id` among the Art boards.
+    #[allow(
+        clippy::expect_used,
+        reason = "Map::check verified the Art board exists"
+    )]
+    fn board_index(&self, id: Id) -> usize {
+        self.art_boards
+            .iter()
+            .position(|board| board.id == id)
+            .expect("Map::check verified the Art board exists")
+    }
+
+    /// Swaps the Canvas and the Art board `new` as primary: members of the Canvas become
+    /// members of `old` (the Canvas's former id), and members of `new` become members of the
+    /// Canvas. Doing it again with the ids swapped restores every Object.
+    fn swap_membership(&mut self, old: Id, new: Id) {
+        let revision = self.revision;
+        for entry in self.entries.values_mut() {
+            let Node::Object(object) = &mut entry.node else {
+                continue;
+            };
+            let swapped = match object.membership {
+                Membership::Canvas => Membership::Board(old),
+                Membership::Board(board) if board == new => Membership::Canvas,
+                other => other,
+            };
+            if swapped != object.membership {
+                object.membership = swapped;
+                entry.version = revision;
+            }
+        }
     }
 
     fn check_destination(&self, parent: Option<Id>, is_layer: bool) -> Result<(), OpError> {

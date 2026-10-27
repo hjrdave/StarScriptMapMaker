@@ -12,8 +12,8 @@ _Avoid_: Project, file
 The main, primary drawing area of a Map, with a fixed size and a real-world scale chosen when the Map is created. The tool and the Properties section that resize it are called Canvas too.
 _Avoid_: Board, page
 
-**Art board** (planned):
-A secondary area of a Map, separate from the Canvas, that the user draws on and places Assets in. A Map has one Canvas and may have several Art boards. Nothing in the app is an Art board yet (see issues 240 and 249); the term is reserved so it is never used for the Canvas.
+**Art board**:
+A secondary area of a Map, separate from the Canvas, that the user draws on and places Assets in. A Map has one Canvas and may have several Art boards, each with its own name, size, position and background. Objects can belong to one and are clipped at its edge; Export leaves them out. Any Art board can be made the Canvas, and the old Canvas becomes an Art board. The Map model and its Commands exist (ADR 0012); the app does not show Art boards yet (see issues 452 to 455).
 _Avoid_: Board, page, frame
 
 **Off-Canvas**:

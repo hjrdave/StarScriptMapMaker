@@ -324,6 +324,13 @@ fn op_bytes(op: &Op) -> usize {
             | Op::SetDefaults { .. }
             | Op::SetBackground { .. }
             | Op::ResizeCanvas { .. }
+            | Op::AddBoard { .. }
+            | Op::RemoveBoard { .. }
+            | Op::ResizeBoard { .. }
+            | Op::SetBoardBackground { .. }
+            | Op::RenameBoard { .. }
+            | Op::MoveBoard { .. }
+            | Op::SetPrimaryBoard { .. }
             | Op::SetEmbeddedAsset { .. }
             | Op::SetEmbeddedFont { .. } => 0,
         }

@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use crate::geometry::Affine;
 use crate::id::Id;
 use crate::map::{Map, Subtree};
-use crate::node::{Lake, Landmass, Node, ObjectKind};
+use crate::node::{Lake, Landmass, Membership, Node, ObjectKind};
 use crate::op::Op;
 
 use super::check::{existing, layer, unlocked};
@@ -276,6 +276,13 @@ fn pasted_subtree(
         };
     }
     let id = renamed[&source.id];
+    // A board of the Map the layers were copied from may not exist here: they join the Canvas.
+    if let Node::Object(object) = &mut node
+        && let Membership::Board(board) = object.membership
+        && map.art_board(board).is_none()
+    {
+        object.membership = Membership::Canvas;
+    }
     if let Node::Object(object) = &mut node
         && !is_zero(&offset)
     {

@@ -131,8 +131,8 @@ fn a_map_saved_with_a_user_pack_opens_identically_without_it() {
 }
 
 #[test]
-fn files_are_written_with_format_1_8() {
-    assert_eq!((FORMAT_VERSION.major, FORMAT_VERSION.minor), (1, 9));
+fn files_are_written_with_the_current_format() {
+    assert_eq!((FORMAT_VERSION.major, FORMAT_VERSION.minor), (1, 10));
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("world.ssmap");
     let (file, _) = MapFile::create(&path, &empty_map(), None).unwrap();

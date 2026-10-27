@@ -7,9 +7,9 @@
 
 use proptest::prelude::*;
 use ssmap_core::{
-    Canvas, Color, DistanceUnit, Halo, Id, Label, Lake, Landmass, Layer, Map, MapDefaults, MapView,
-    MultiPolygon, Node, Object, ObjectKind, Op, Point, Polygon, Property, Roughness, Scale, Stamp,
-    Subtree,
+    ArtBoard, Background, Canvas, Color, DistanceUnit, Halo, Id, Label, Lake, Landmass, Layer, Map,
+    MapDefaults, MapView, Membership, MultiPolygon, Node, Object, ObjectKind, Op, Point, Polygon,
+    Property, Roughness, Scale, Stamp, Subtree,
 };
 
 fn canvas() -> Canvas {
@@ -126,20 +126,60 @@ fn leaf(node: Node) -> Subtree {
     }
 }
 
-fn map() -> impl Strategy<Value = Map> {
-    (prop::collection::vec(layer_subtree(), 0..4), roughness()).prop_map(|(layers, roughness)| {
-        Map::from_view(MapView {
-            canvas: canvas(),
-            defaults: MapDefaults {
-                roughness,
-                ..Default::default()
-            },
-            layers,
-            embedded: Default::default(),
-            export_settings: Default::default(),
-        })
-        .expect("generated trees are valid")
+fn art_board() -> impl Strategy<Value = ArtBoard> {
+    ("[a-z ]{0,6}", point(), 1..200u32, 1..200u32).prop_map(|(name, origin, width, height)| {
+        ArtBoard::new(
+            Id::new(),
+            name,
+            origin,
+            width,
+            height,
+            Background::default(),
+        )
     })
+}
+
+fn map() -> impl Strategy<Value = Map> {
+    (
+        prop::collection::vec(layer_subtree(), 0..4),
+        roughness(),
+        prop::collection::vec(art_board(), 0..3),
+        prop::collection::vec((any::<usize>(), any::<usize>()), 0..6),
+    )
+        .prop_map(|(layers, roughness, art_boards, picks)| {
+            let mut map = Map::from_view(MapView {
+                canvas: canvas(),
+                art_boards,
+                defaults: MapDefaults {
+                    roughness,
+                    ..Default::default()
+                },
+                layers,
+                embedded: Default::default(),
+                export_settings: Default::default(),
+            })
+            .expect("generated trees are valid");
+            // Some Objects belong to Art boards, some to the Canvas, some to neither.
+            let boards: Vec<Id> = map.art_boards().iter().map(|board| board.id).collect();
+            let objects: Vec<Id> = ids(&map)
+                .into_iter()
+                .filter(|&id| matches!(map.node(id), Some(Node::Object(_))))
+                .collect();
+            if !boards.is_empty() && !objects.is_empty() {
+                for (object, board) in picks {
+                    let membership = match board % (boards.len() + 1) {
+                        n if n == boards.len() => Membership::OffCanvas,
+                        n => Membership::Board(boards[n]),
+                    };
+                    map.apply(Op::SetProperty {
+                        id: objects[object % objects.len()],
+                        property: Property::Membership(membership),
+                    })
+                    .expect("the board exists");
+                }
+            }
+            map
+        })
 }
 
 /// An Op described by selectors, resolved against whatever Map it meets. Selectors that miss
@@ -179,7 +219,115 @@ enum OpSpec {
     SetDefaults {
         roughness: Roughness,
     },
+    Board(BoardSpec),
+    Membership {
+        node: usize,
+        board: usize,
+    },
     Unknown,
+}
+
+/// A board Op described by selectors; `board` picks the Canvas, an Art board or, one past
+/// them, an id the Map does not have.
+#[derive(Clone, Debug)]
+enum BoardSpec {
+    Add {
+        index: usize,
+        board: ArtBoard,
+    },
+    Remove {
+        board: usize,
+    },
+    Resize {
+        board: usize,
+        origin: Point,
+        width: u32,
+        height: u32,
+    },
+    Background {
+        board: usize,
+    },
+    Rename {
+        board: usize,
+        name: String,
+    },
+    Move {
+        board: usize,
+        index: usize,
+    },
+    Primary {
+        board: usize,
+    },
+}
+
+fn board_spec() -> impl Strategy<Value = BoardSpec> {
+    let sel = || any::<usize>();
+    prop_oneof![
+        (sel(), art_board()).prop_map(|(index, board)| BoardSpec::Add { index, board }),
+        sel().prop_map(|board| BoardSpec::Remove { board }),
+        (sel(), point(), 1..200u32, 1..200u32).prop_map(|(board, origin, width, height)| {
+            BoardSpec::Resize {
+                board,
+                origin,
+                width,
+                height,
+            }
+        }),
+        sel().prop_map(|board| BoardSpec::Background { board }),
+        (sel(), "[a-z ]{0,6}").prop_map(|(board, name)| BoardSpec::Rename { board, name }),
+        (sel(), sel()).prop_map(|(board, index)| BoardSpec::Move { board, index }),
+        sel().prop_map(|board| BoardSpec::Primary { board }),
+    ]
+}
+
+impl BoardSpec {
+    fn resolve(self, map: &Map) -> Op {
+        let boards: Vec<Id> = std::iter::once(map.canvas().id)
+            .chain(map.art_boards().iter().map(|board| board.id))
+            .collect();
+        let pick = |sel: usize| {
+            boards
+                .get(sel % (boards.len() + 1))
+                .copied()
+                .unwrap_or_default()
+        };
+        // Indexes run up to two past the end, to cover out-of-range errors.
+        let index = |sel: usize| sel % (map.art_boards().len() + 3);
+        match self {
+            BoardSpec::Add { index: i, board } => Op::AddBoard {
+                index: index(i),
+                board,
+            },
+            BoardSpec::Remove { board } => Op::RemoveBoard { id: pick(board) },
+            BoardSpec::Resize {
+                board,
+                origin,
+                width,
+                height,
+            } => Op::ResizeBoard {
+                id: pick(board),
+                origin,
+                width,
+                height,
+            },
+            BoardSpec::Background { board } => Op::SetBoardBackground {
+                id: pick(board),
+                background: Background {
+                    water: Color::rgb(1, 2, 3),
+                    ..Background::default()
+                },
+            },
+            BoardSpec::Rename { board, name } => Op::RenameBoard {
+                id: pick(board),
+                name,
+            },
+            BoardSpec::Move { board, index: i } => Op::MoveBoard {
+                id: pick(board),
+                index: index(i),
+            },
+            BoardSpec::Primary { board } => Op::SetPrimaryBoard { id: pick(board) },
+        }
+    }
 }
 
 fn property() -> impl Strategy<Value = Property> {
@@ -218,6 +366,8 @@ fn op_spec() -> impl Strategy<Value = OpSpec> {
         }),
         (sel(), sel()).prop_map(|(layer, target)| OpSpec::Clip { layer, target }),
         roughness().prop_map(|roughness| OpSpec::SetDefaults { roughness }),
+        board_spec().prop_map(OpSpec::Board),
+        (sel(), sel()).prop_map(|(node, board)| OpSpec::Membership { node, board }),
         Just(OpSpec::Unknown),
     ]
 }
@@ -322,6 +472,21 @@ impl OpSpec {
                 Op::SetProperty {
                     id: pick(Node::is_layer, layer).unwrap_or_default(),
                     property: Property::Clip(pick(is_landmass, target)),
+                }
+            }
+            OpSpec::Board(spec) => spec.resolve(map),
+            OpSpec::Membership { node: n, board } => {
+                let boards: Vec<Id> = map.art_boards().iter().map(|b| b.id).collect();
+                // One past the boards: off the boards; two past: a board the Map lacks.
+                let membership = match board % (boards.len() + 3) {
+                    n if n < boards.len() => Membership::Board(boards[n]),
+                    n if n == boards.len() => Membership::OffCanvas,
+                    n if n == boards.len() + 1 => Membership::Canvas,
+                    _ => Membership::Board(Id::new()),
+                };
+                Op::SetProperty {
+                    id: node(n),
+                    property: Property::Membership(membership),
                 }
             }
             OpSpec::Unknown => Op::Remove { id: Id::new() },

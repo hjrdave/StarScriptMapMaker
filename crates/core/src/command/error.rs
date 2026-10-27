@@ -154,6 +154,16 @@ pub enum CommandError {
     /// The Canvas origin is not finite.
     #[error("the Canvas origin {0:?} is not finite")]
     InvalidCanvasOrigin(Point),
+    /// The Canvas and the Art boards have no board with this id.
+    #[error("no board has id {0}")]
+    NoSuchBoard(Id),
+    /// The Canvas is the primary board and cannot be deleted. Make another board the Canvas
+    /// first.
+    #[error("{0} is the Canvas and cannot be deleted")]
+    CannotDeleteCanvas(Id),
+    /// The Canvas is always the lowest board.
+    #[error("{0} is the Canvas and is always the lowest board")]
+    CannotReorderCanvas(Id),
     /// The background's texture strength or scale is out of range.
     #[error("the background's texture strength must be 0 to 1 and its scale above 0")]
     InvalidBackground,

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::background::Background;
+use crate::board::{ArtBoard, CANVAS_BOARD_ID, CANVAS_BOARD_NAME};
 use crate::color::Color;
 use crate::embedded::Embedded;
 use crate::export::ExportSettings;
@@ -14,13 +15,27 @@ use crate::extra::Extra;
 use crate::geometry::{Point, Rect};
 use crate::id::Id;
 use crate::label::{LabelStyles, ResolvedLabel};
-use crate::node::{Landmass, Node, Object, ObjectKind};
+use crate::node::{Landmass, Membership, Node, Object, ObjectKind};
 use crate::roughness::Roughness;
 use crate::shore::{ShoreKind, ShoreStyle};
 
-/// The bounded drawing area of a Map.
+/// The bounded drawing area of a Map: its primary board, the one Export draws. Other boards
+/// are [`ArtBoard`]s.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Canvas {
+    /// Names the board in Ops and in the membership of Objects. Files saved before Art boards
+    /// existed get the Canvas's own id.
+    #[serde(
+        default = "canvas_board_id",
+        skip_serializing_if = "is_canvas_board_id"
+    )]
+    pub id: Id,
+    /// The name shown on the board and in lists.
+    #[serde(
+        default = "canvas_board_name",
+        skip_serializing_if = "is_canvas_board_name"
+    )]
+    pub name: String,
     /// Width in nominal pixels (Canvas units).
     pub width: u32,
     /// Height in nominal pixels (Canvas units).
@@ -46,6 +61,22 @@ pub struct Canvas {
     pub extra: Extra,
 }
 
+fn canvas_board_id() -> Id {
+    CANVAS_BOARD_ID
+}
+
+fn is_canvas_board_id(id: &Id) -> bool {
+    *id == CANVAS_BOARD_ID
+}
+
+fn canvas_board_name() -> String {
+    CANVAS_BOARD_NAME.to_owned()
+}
+
+fn is_canvas_board_name(name: &String) -> bool {
+    name == CANVAS_BOARD_NAME
+}
+
 fn is_workspace_origin(origin: &Point) -> bool {
     *origin == [0.0, 0.0]
 }
@@ -65,6 +96,8 @@ impl Canvas {
     /// A Canvas `width` by `height` units at `scale`, at the workspace origin, with the default background and no template.
     pub fn new(width: u32, height: u32, scale: Scale) -> Self {
         Self {
+            id: CANVAS_BOARD_ID,
+            name: CANVAS_BOARD_NAME.to_owned(),
             width,
             height,
             origin: [0.0, 0.0],
@@ -187,6 +220,9 @@ pub struct Subtree {
 pub struct MapView {
     /// The Canvas.
     pub canvas: Canvas,
+    /// The Art boards besides the Canvas, lowest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub art_boards: Vec<ArtBoard>,
     /// The Map-wide defaults.
     #[serde(default)]
     pub defaults: MapDefaults,
@@ -211,8 +247,10 @@ pub(crate) struct Entry {
 /// One Map document. It is changed only by applying [`Op`](crate::Op)s.
 #[derive(Clone, Debug)]
 pub struct Map {
-    /// Changed only by the Canvas Ops.
+    /// Changed only by the Canvas Ops and the board Ops.
     pub(crate) canvas: Canvas,
+    /// The Art boards besides the Canvas, lowest first. Changed only by the board Ops.
+    pub(crate) art_boards: Vec<ArtBoard>,
     /// Changed only by [`Op::SetDefaults`](crate::Op::SetDefaults).
     pub(crate) defaults: MapDefaults,
     /// Changed only by the embed Ops.
@@ -232,6 +270,7 @@ impl Map {
     pub fn new(canvas: Canvas) -> Self {
         Self {
             canvas,
+            art_boards: Vec::new(),
             defaults: MapDefaults::default(),
             embedded: Embedded::default(),
             export_settings: ExportSettings::default(),
@@ -251,6 +290,11 @@ impl Map {
     /// Builds a Map from a read view, as when loading.
     pub fn from_view(view: MapView) -> Result<Self, InvariantError> {
         let mut map = Self::new(view.canvas);
+        let mut ids = HashSet::from([map.canvas.id]);
+        if let Some(board) = view.art_boards.iter().find(|board| !ids.insert(board.id)) {
+            return Err(InvariantError::DuplicateBoard(board.id));
+        }
+        map.art_boards = view.art_boards;
         map.defaults = view.defaults;
         map.embedded = view.embedded;
         map.export_settings = view.export_settings;
@@ -268,6 +312,7 @@ impl Map {
     pub fn view(&self) -> MapView {
         MapView {
             canvas: self.canvas.clone(),
+            art_boards: self.art_boards.clone(),
             defaults: self.defaults.clone(),
             layers: self.root.iter().map(|&id| self.subtree(id)).collect(),
             embedded: self.embedded.clone(),
@@ -283,6 +328,16 @@ impl Map {
     /// The Canvas: its size, scale and background.
     pub fn canvas(&self) -> &Canvas {
         &self.canvas
+    }
+
+    /// The Art boards besides the Canvas, lowest first.
+    pub fn art_boards(&self) -> &[ArtBoard] {
+        &self.art_boards
+    }
+
+    /// The Art board with this id. The Canvas is not one: ask [`Map::canvas`].
+    pub fn art_board(&self, id: Id) -> Option<&ArtBoard> {
+        self.art_boards.iter().find(|board| board.id == id)
     }
 
     /// Replaces the Canvas without a Command, so a test can set one up. Not for production code
@@ -612,6 +667,14 @@ impl Map {
         {
             return Err(InvariantError::Orphan(orphan));
         }
+        for (&id, entry) in &self.entries {
+            if let Node::Object(object) = &entry.node
+                && let Membership::Board(board) = object.membership
+                && self.art_board(board).is_none()
+            {
+                return Err(InvariantError::UnknownBoard { object: id, board });
+            }
+        }
         Ok(())
     }
 
@@ -730,4 +793,15 @@ pub enum InvariantError {
     /// The node cannot be reached from the top level.
     #[error("node {0} is not reachable from the top level")]
     Orphan(Id),
+    /// The id belongs to more than one board.
+    #[error("board id {0} appears more than once")]
+    DuplicateBoard(Id),
+    /// The Object belongs to a board that is not an Art board of the Map.
+    #[error("Object {object} belongs to board {board}, which is not an Art board of the Map")]
+    UnknownBoard {
+        /// The Object.
+        object: Id,
+        /// The board it names.
+        board: Id,
+    },
 }

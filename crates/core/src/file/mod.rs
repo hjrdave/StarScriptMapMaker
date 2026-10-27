@@ -17,6 +17,9 @@
 //!   Format 1.4 adds the optional `arch` to Labels and Label styles; older files get no arch.
 //!   Format 1.5 adds the optional `background` block to the Canvas; older files get the default.
 //!   Format 1.9 adds the optional `template` (the name of the template the Map was made from) to the Canvas.
+//!   Format 1.10 adds the optional `art_boards` meta key (a JSON array of the Art boards besides
+//!   the Canvas, lowest first) and the optional `id` and `name` of the Canvas; Objects can
+//!   belong to an Art board. Older files have the Canvas only.
 //!   Format 1.6 stores Groups: Layers nested inside Layers, with `parent` pointing at the
 //!   enclosing Layer. There is no compatibility with older files.
 //!
@@ -47,6 +50,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, Transactio
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::board::ArtBoard;
 use crate::export::ExportSettings;
 use crate::id::Id;
 use crate::map::{Canvas, Map, MapDefaults, MapView, Subtree};
@@ -54,7 +58,10 @@ use crate::node::{Node, Object};
 
 /// The format this version writes. A minor bump only adds optional fields; a major bump is
 /// anything else, and needs a migration.
-pub const FORMAT_VERSION: FormatVersion = FormatVersion { major: 1, minor: 9 };
+pub const FORMAT_VERSION: FormatVersion = FormatVersion {
+    major: 1,
+    minor: 10,
+};
 
 /// The longer side of the preview image stored in every save, in pixels.
 pub const PREVIEW_SIZE: u32 = 512;
@@ -197,6 +204,7 @@ pub struct MapFile {
     generation: Uuid,
     saved: HashMap<Id, SavedRow>,
     saved_canvas: Option<Canvas>,
+    saved_art_boards: Option<Vec<ArtBoard>>,
     saved_defaults: Option<MapDefaults>,
     saved_export: Option<ExportSettings>,
     saved_embedded: embed::SavedEmbedded,
@@ -223,6 +231,7 @@ impl MapFile {
                 generation: Uuid::nil(),
                 saved: HashMap::new(),
                 saved_canvas: None,
+                saved_art_boards: None,
                 saved_defaults: None,
                 saved_export: None,
                 saved_embedded: Default::default(),
@@ -258,6 +267,12 @@ impl MapFile {
             .ok_or_else(|| FileError::Damaged("the Canvas is missing".into()))?;
         let canvas: Canvas = serde_json::from_str(&canvas_json)
             .map_err(|err| FileError::Damaged(format!("the Canvas: {err}")))?;
+        // Absent from files saved before format 1.10 and from Maps with only the Canvas.
+        let art_boards: Vec<ArtBoard> = match read_meta::<String>(&conn, "art_boards")? {
+            Some(json) => serde_json::from_str(&json)
+                .map_err(|err| FileError::Damaged(format!("the Art boards: {err}")))?,
+            None => Vec::new(),
+        };
         // Absent from files saved before the Map had defaults.
         let defaults: MapDefaults = match read_meta::<String>(&conn, "defaults")? {
             Some(json) => serde_json::from_str(&json)
@@ -277,6 +292,7 @@ impl MapFile {
         let (embedded, saved_embedded) = embed::read(&conn)?;
         let map = Map::from_view(MapView {
             canvas: canvas.clone(),
+            art_boards: art_boards.clone(),
             defaults: defaults.clone(),
             layers,
             embedded,
@@ -290,6 +306,7 @@ impl MapFile {
             generation,
             saved,
             saved_canvas: Some(canvas),
+            saved_art_boards: Some(art_boards),
             saved_defaults: Some(defaults),
             saved_export: Some(export_settings),
             saved_embedded,
@@ -303,7 +320,7 @@ impl MapFile {
     /// preview is removed.
     #[allow(
         clippy::expect_used,
-        reason = "a Canvas serialises; settings serialise; defaults serialise"
+        reason = "a Canvas serialises; Art boards serialise; settings serialise; defaults serialise"
     )]
     pub fn save(&mut self, map: &Map, preview: Option<&[u8]>) -> Result<SaveStats, FileError> {
         let generation = Uuid::now_v7();
@@ -314,6 +331,14 @@ impl MapFile {
         if self.saved_canvas.as_ref() != Some(&map.canvas) {
             let canvas = serde_json::to_string(&map.canvas).expect("a Canvas serialises");
             write_meta(&tx, "canvas", &canvas)?;
+        }
+        if self.saved_art_boards.as_deref() != Some(map.art_boards()) {
+            if map.art_boards().is_empty() {
+                tx.execute("DELETE FROM meta WHERE key = 'art_boards'", [])?;
+            } else {
+                let boards = serde_json::to_string(map.art_boards()).expect("Art boards serialise");
+                write_meta(&tx, "art_boards", &boards)?;
+            }
         }
         if self.saved_export.as_ref() != Some(&map.export_settings) {
             let json = serde_json::to_string(&map.export_settings).expect("settings serialise");
@@ -336,6 +361,7 @@ impl MapFile {
 
         self.saved = saved;
         self.saved_canvas = Some(map.canvas.clone());
+        self.saved_art_boards = Some(map.art_boards().to_vec());
         self.saved_defaults = Some(map.defaults().clone());
         self.saved_export = Some(map.export_settings.clone());
         self.saved_embedded = saved_embedded;
@@ -369,6 +395,7 @@ impl MapFile {
                 generation: self.generation,
                 saved: self.saved.clone(),
                 saved_canvas: self.saved_canvas.clone(),
+                saved_art_boards: self.saved_art_boards.clone(),
                 saved_defaults: self.saved_defaults.clone(),
                 saved_export: self.saved_export.clone(),
                 saved_embedded: self.saved_embedded.clone(),
@@ -450,6 +477,7 @@ fn save_via_temp(
         generation,
         saved,
         saved_canvas,
+        saved_art_boards,
         saved_defaults,
         saved_export,
         saved_embedded,
@@ -468,6 +496,7 @@ fn save_via_temp(
         generation,
         saved,
         saved_canvas,
+        saved_art_boards,
         saved_defaults,
         saved_export,
         saved_embedded,

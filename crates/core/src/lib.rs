@@ -5,6 +5,7 @@
 
 pub mod asset;
 mod background;
+mod board;
 mod color;
 mod command;
 mod embedded;
@@ -29,6 +30,7 @@ mod template;
 
 pub use asset::AssetRef;
 pub use background::{Background, BackgroundTexture};
+pub use board::{ArtBoard, CANVAS_BOARD_ID, CANVAS_BOARD_NAME};
 pub use color::{Color, ParseColorError};
 pub use command::{Command, CommandError, PlacedStamp};
 pub use embedded::{

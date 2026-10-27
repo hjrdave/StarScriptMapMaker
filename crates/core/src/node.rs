@@ -16,6 +16,10 @@ use crate::shore::{ShoreKind, ShoreStyle};
 /// A Layer or an Object.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "Objects are most nodes; boxing them would put an indirection on every access"
+)]
 pub enum Node {
     /// A Layer.
     Layer(Layer),
@@ -131,8 +135,9 @@ impl Object {
     }
 }
 
-/// Whether an Object belongs to the Canvas or sits off it. A member is clipped at the Canvas edge
-/// and exported; an off-Canvas Object shows in full around the Canvas and is not exported.
+/// Which board an Object belongs to, or none. A member is clipped at its board's edge; the
+/// Canvas's members are exported, and an off-Canvas Object shows in full around the boards and
+/// is not exported.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Membership {
@@ -142,6 +147,8 @@ pub enum Membership {
     /// Sits off the Canvas. Saved as `pasteboard`, the name files and journals already use.
     #[serde(rename = "pasteboard")]
     OffCanvas,
+    /// Belongs to this Art board of the Map, never the Canvas (that is [`Membership::Canvas`]).
+    Board(Id),
 }
 
 impl Membership {

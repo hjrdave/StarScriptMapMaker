@@ -140,6 +140,11 @@ pub(super) fn set_membership(
     ids: &[Id],
     membership: Membership,
 ) -> Result<Vec<Op>, CommandError> {
+    if let Membership::Board(board) = membership
+        && map.art_board(board).is_none()
+    {
+        return Err(CommandError::NoSuchBoard(board));
+    }
     let mut seen = HashSet::new();
     let mut ops = Vec::with_capacity(ids.len());
     for &id in ids {

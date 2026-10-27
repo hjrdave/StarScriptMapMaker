@@ -411,7 +411,7 @@ fn unknown_fields_from_a_newer_minor_version_round_trip() {
     );
 
     let (mut file, mut opened) = MapFile::open(&file_path).unwrap();
-    assert_eq!(file.format_version().to_string(), "1.9");
+    assert_eq!(file.format_version().to_string(), "1.10");
     let Some(Node::Layer(layer)) = opened.node(land) else {
         panic!("a Layer")
     };
@@ -450,7 +450,7 @@ fn unknown_fields_from_a_newer_minor_version_round_trip() {
         let landmass_view = find(&view, landmass);
         assert_eq!(landmass_view["note"], "object field");
         assert_eq!(landmass_view["kind"]["tide"], json!({"height": 0.5}));
-        assert_eq!(meta(file_path, "format_version").as_deref(), Some("1.9"));
+        assert_eq!(meta(file_path, "format_version").as_deref(), Some("1.10"));
         assert_eq!(meta(file_path, "future_key").as_deref(), Some("kept"));
         let conn = Connection::open(file_path).unwrap();
         let kept: i64 = conn
