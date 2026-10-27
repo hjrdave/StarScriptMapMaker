@@ -11,7 +11,7 @@ pub struct GpuCapabilities {
 }
 
 /// The smallest `max_texture_dimension_2d` the app supports: the atlas page size floor.
-pub(crate) const MIN_TEXTURE_DIMENSION: u32 = 2048;
+const MIN_TEXTURE_DIMENSION: u32 = 2048;
 
 /// Whether the adapter is good enough, decided once at startup.
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -103,7 +103,7 @@ impl Affine {
         [a * x + c * y + e, b * x + d * y + f]
     }
 
-    pub(crate) fn determinant(&self) -> f64 {
+    fn determinant(&self) -> f64 {
         self.0[0] * self.0[3] - self.0[1] * self.0[2]
     }
 

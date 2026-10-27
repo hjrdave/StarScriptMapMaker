@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 pub const PACK_MANIFEST: &str = "pack.toml";
 
 /// Overrides [`assets_dir`] when set and non-empty.
-pub(crate) const ASSETS_DIR_ENV: &str = "SSMAP_ASSETS_DIR";
+const ASSETS_DIR_ENV: &str = "SSMAP_ASSETS_DIR";
 
 /// The application name the per-user data folder is derived from.
 const APP_NAME: &str = "StarScript Map Maker";

@@ -33,7 +33,7 @@ pub(crate) fn icon(tool: ToolId) -> Icon {
 }
 
 /// Whether the tool has settings to show.
-pub(crate) fn has_section(tool: ToolId) -> bool {
+fn has_section(tool: ToolId) -> bool {
     matches!(
         tool,
         ToolId::LandBrush | ToolId::WaterBrush | ToolId::Stamp | ToolId::StampEraser

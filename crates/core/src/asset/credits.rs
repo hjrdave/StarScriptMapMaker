@@ -53,7 +53,7 @@ pub struct AttributedAsset {
 
 impl AttributedAsset {
     /// The line crediting this Asset, such as `Sword by Lorc, Icons (CC-BY-3.0) https://...`.
-    pub(crate) fn credit_line(&self) -> String {
+    fn credit_line(&self) -> String {
         let mut line = format!(
             "{} by {}, {} ({})",
             self.asset_name, self.author, self.pack_name, self.licence

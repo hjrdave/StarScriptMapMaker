@@ -121,7 +121,7 @@ impl Scale {
     /// 1x only at 1 pixel per point (or less); 1.5 and up use 2x as the design asks, and so
     /// do the scales between, such as 125%, downsampling the 2x atlas linearly. The 1x atlas
     /// is never scaled up.
-    pub(crate) fn for_pixels_per_point(pixels_per_point: f32) -> Self {
+    fn for_pixels_per_point(pixels_per_point: f32) -> Self {
         if pixels_per_point > 1.0 + 1e-3 {
             Scale::X2
         } else {
@@ -141,7 +141,7 @@ impl Scale {
 const COLUMNS: u32 = 8;
 
 /// All icons rasterised at one scale: premultiplied RGBA8, white glyphs on transparent.
-pub(crate) struct Atlas {
+struct Atlas {
     scale: Scale,
     width: u32,
     height: u32,
@@ -177,7 +177,7 @@ impl Atlas {
 
     /// The icon's cell as `[x, y]` of its top-left pixel; the cell is `scale.cell()` square.
     #[allow(clippy::expect_used, reason = "every icon is in ALL")]
-    pub(crate) fn cell_origin(&self, icon: Icon) -> [u32; 2] {
+    fn cell_origin(&self, icon: Icon) -> [u32; 2] {
         let index = Icon::ALL
             .iter()
             .position(|&i| i == icon)
@@ -188,7 +188,7 @@ impl Atlas {
 
     /// The icon's cell as premultiplied RGBA8 rows.
     #[cfg(test)]
-    pub(crate) fn cell_pixels(&self, icon: Icon) -> Vec<u8> {
+    fn cell_pixels(&self, icon: Icon) -> Vec<u8> {
         let cell = self.scale.cell();
         let [x0, y0] = self.cell_origin(icon);
         let mut out = Vec::with_capacity((cell * cell * 4) as usize);
@@ -257,7 +257,7 @@ fn texture(ctx: &egui::Context, scale: Scale) -> Texture {
 
 /// Centres a square of `size` points in `container`, rounded to whole physical pixels so the
 /// glyph never straddles a pixel boundary.
-pub(crate) fn snapped_rect(container: egui::Rect, size: f32, pixels_per_point: f32) -> egui::Rect {
+fn snapped_rect(container: egui::Rect, size: f32, pixels_per_point: f32) -> egui::Rect {
     let pixels = (size * pixels_per_point).round().max(1.0);
     let min = container.center().to_vec2() * pixels_per_point - egui::Vec2::splat(pixels / 2.0);
     let min = egui::pos2(min.x.round(), min.y.round()) / pixels_per_point;

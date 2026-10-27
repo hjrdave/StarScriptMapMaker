@@ -12,7 +12,7 @@ use crate::view::View;
 
 /// Pixels rendered around each tile and then cropped, wide enough for halos, outlines and
 /// ripples that reach across a tile edge.
-pub(crate) const TILE_MARGIN: u32 = 64;
+const TILE_MARGIN: u32 = 64;
 
 /// Where an export stands, for the export dialog.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

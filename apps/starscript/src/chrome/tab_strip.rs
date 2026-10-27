@@ -99,7 +99,7 @@ pub(crate) struct Fit {
 
 impl Fit {
     /// The furthest the tabs can scroll.
-    pub(crate) fn max_scroll(&self, count: usize) -> f32 {
+    fn max_scroll(&self, count: usize) -> f32 {
         (count as f32 * self.tab_width - self.viewport).max(0.0)
     }
 }
@@ -131,7 +131,7 @@ pub(crate) fn fit(room: f32, count: usize) -> Fit {
 
 /// The scroll offset that shows the tab at `[left, left + width]` (relative to the first tab)
 /// in a viewport `viewport` wide, moving as little as it can from `offset`.
-pub(crate) fn scroll_into_view(offset: f32, viewport: f32, left: f32, width: f32) -> f32 {
+fn scroll_into_view(offset: f32, viewport: f32, left: f32, width: f32) -> f32 {
     if left < offset {
         left
     } else if left + width > offset + viewport {

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use eframe::egui;
 
 /// How many recent files are remembered.
-pub(crate) const MAX_RECENT: usize = 10;
+const MAX_RECENT: usize = 10;
 const STORAGE_KEY: &str = "recent_files";
 /// Thumbnail height in the menu, in points.
 const THUMBNAIL_HEIGHT: f32 = 48.0;

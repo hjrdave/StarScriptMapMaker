@@ -20,7 +20,7 @@ use eframe::egui;
 use serde::{Deserialize, Serialize};
 
 /// The `latest.json` of the newest release.
-pub(crate) const FEED_URL: &str =
+const FEED_URL: &str =
     "https://github.com/hjrdave/StarScriptMapMaker/releases/latest/download/latest.json";
 const STORAGE_KEY: &str = "check_for_updates";
 /// The feed is a few lines; anything bigger is not ours.
@@ -38,7 +38,7 @@ pub(crate) struct Feed {
 
 /// `X.Y.Z` as numbers, so `1.10.0` sorts after `1.9.0`. A leading `v` is dropped; anything
 /// else (pre-release suffixes, a missing part) is not a version we offer.
-pub(crate) fn parse_version(text: &str) -> Option<[u64; 3]> {
+fn parse_version(text: &str) -> Option<[u64; 3]> {
     let mut parts = text.trim().trim_start_matches('v').split('.');
     let mut version = [0; 3];
     for slot in &mut version {
@@ -48,7 +48,7 @@ pub(crate) fn parse_version(text: &str) -> Option<[u64; 3]> {
 }
 
 /// Whether `feed` names a version after `current`.
-pub(crate) fn is_newer(feed: &Feed, current: &str) -> bool {
+fn is_newer(feed: &Feed, current: &str) -> bool {
     match (parse_version(&feed.version), parse_version(current)) {
         (Some(latest), Some(current)) => latest > current,
         _ => false,
@@ -61,7 +61,7 @@ fn is_web_link(url: &str) -> bool {
 }
 
 /// Fetches and parses the feed at `url`.
-pub(crate) fn fetch(url: &str) -> Result<Feed, String> {
+fn fetch(url: &str) -> Result<Feed, String> {
     let roots: Vec<_> = rustls_native_certs::load_native_certs()
         .certs
         .iter()

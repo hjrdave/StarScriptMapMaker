@@ -13,11 +13,11 @@ use crate::icons::{self, Icon};
 use crate::theme;
 
 /// How long an info toast stays after it was last shown or hovered.
-pub(crate) const NOTICE_DURATION: Duration = Duration::from_secs(5);
+const NOTICE_DURATION: Duration = Duration::from_secs(5);
 /// How long an error toast stays: a few seconds longer than an info one.
-pub(crate) const ERROR_DURATION: Duration = Duration::from_secs(10);
+const ERROR_DURATION: Duration = Duration::from_secs(10);
 /// The most toasts shown at once; the oldest give way.
-pub(crate) const MAX_TOASTS: usize = 4;
+const MAX_TOASTS: usize = 4;
 /// The toast width, from the mockup.
 const WIDTH: f32 = 420.0;
 /// Gap between the Canvas's top edge (just under the menu bar) and the highest toast.
@@ -102,7 +102,7 @@ impl Toasts {
     }
 
     /// Drops the toasts whose time is up.
-    pub(crate) fn expire(&mut self, now: Instant) {
+    fn expire(&mut self, now: Instant) {
         self.items.retain(|toast| toast.expires > now);
     }
 
@@ -132,7 +132,7 @@ impl Toasts {
     }
 
     /// When the next toast runs out, for scheduling a repaint.
-    pub(crate) fn next_expiry(&self) -> Option<Instant> {
+    fn next_expiry(&self) -> Option<Instant> {
         self.items.iter().map(|toast| toast.expires).min()
     }
 }

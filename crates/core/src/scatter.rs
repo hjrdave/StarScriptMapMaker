@@ -89,7 +89,7 @@ impl Terrain {
     }
 
     /// Whether `point` is land: inside a Landmass and outside every Lake.
-    pub(crate) fn is_land(&self, point: Point) -> bool {
+    fn is_land(&self, point: Point) -> bool {
         self.land.iter().any(|outline| outline.contains(point))
             && !self.lakes.iter().any(|outline| outline.contains(point))
     }
@@ -132,7 +132,7 @@ impl Rng {
 }
 
 /// The most Stamps one stroke may place, so a huge brush can't hang the editor.
-pub(crate) const MAX_STAMPS_PER_STROKE: usize = 5000;
+const MAX_STAMPS_PER_STROKE: usize = 5000;
 
 /// One finished scatter stroke and what it scatters.
 #[derive(Clone, Copy, Debug)]
