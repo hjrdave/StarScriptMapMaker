@@ -27,10 +27,10 @@ impl Raster {
         }
     }
 
-    #[allow(clippy::expect_used, reason = "four channels")]
     pub fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
         let i = ((y * self.width + x) * 4) as usize;
-        self.pixels[i..i + 4].try_into().expect("four channels")
+        let channels = &self.pixels[i..i + 4];
+        [channels[0], channels[1], channels[2], channels[3]]
     }
 
     /// The same pixels with straight alpha, as PNG files store them.
@@ -148,7 +148,6 @@ impl Art {
 
     /// Rasterises an SVG `width` pixels wide, with the height following its aspect ratio,
     /// both capped at [`MAX_RASTER_SIZE`]. A PNG ignores `width` and keeps its own pixels.
-    #[allow(clippy::expect_used, reason = "a non-empty size")]
     pub fn rasterise(&self, width: u32) -> Raster {
         let tree = match self {
             Art::Png(raster) => return raster.clone(),
@@ -161,7 +160,14 @@ impl Art {
             width = ((width as f32 * MAX_RASTER_SIZE as f32 / height as f32).round() as u32).max(1);
             height = MAX_RASTER_SIZE;
         }
-        let mut pixmap = tiny_skia::Pixmap::new(width, height).expect("a non-empty size");
+        let Some(mut pixmap) = tiny_skia::Pixmap::new(width, height) else {
+            // Both sides are at least 1 and at most MAX_RASTER_SIZE, so this does not happen.
+            return Raster {
+                width,
+                height,
+                pixels: vec![0; (width * height * 4) as usize],
+            };
+        };
         let transform =
             tiny_skia::Transform::from_scale(width as f32 / art_width, height as f32 / art_height);
         resvg::render(tree, transform, &mut pixmap.as_mut());

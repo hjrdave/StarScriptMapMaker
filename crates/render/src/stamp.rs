@@ -258,7 +258,6 @@ impl StampRenderer {
     /// Uploads any art `stamps` need and builds their instances. Stamps whose Asset has no
     /// usable art draw nothing, and neither do those whose art is still being rasterised: they
     /// appear when [`StampRenderer::refresh_store`] next asks for them to be prepared again.
-    #[allow(clippy::expect_used, reason = "pushed above")]
     pub(crate) fn prepare(
         &mut self,
         device: &wgpu::Device,
@@ -320,13 +319,14 @@ impl StampRenderer {
                     batches: Vec::new(),
                 });
             }
-            let run = runs.last_mut().expect("pushed above");
-            match run.batches.last_mut() {
-                Some(batch) if batch.pages == pages => batch.instances.end = index + 1,
-                _ => run.batches.push(Batch {
-                    pages,
-                    instances: index..index + 1,
-                }),
+            if let Some(run) = runs.last_mut() {
+                match run.batches.last_mut() {
+                    Some(batch) if batch.pages == pages => batch.instances.end = index + 1,
+                    _ => run.batches.push(Batch {
+                        pages,
+                        instances: index..index + 1,
+                    }),
+                }
             }
             self.bind_group(device, pages);
         }

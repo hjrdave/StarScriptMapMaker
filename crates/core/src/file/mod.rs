@@ -561,7 +561,6 @@ fn write_meta(
 
 /// Writes rows for new and changed nodes, moves rows whose place changed, deletes rows of
 /// removed nodes, and returns the new saved state.
-#[allow(clippy::expect_used, reason = "a listed node exists")]
 fn write_nodes(
     tx: &Transaction<'_>,
     map: &Map,
@@ -576,7 +575,7 @@ fn write_nodes(
     while let Some(parent) = stack.pop() {
         for (ord, &id) in map.children(parent).iter().enumerate() {
             let row = SavedRow {
-                version: map.version(id).expect("a listed node exists"),
+                version: map.version(id).ok_or_else(|| unlisted(id))?,
                 parent,
                 ord,
             };
@@ -591,7 +590,7 @@ fn write_nodes(
                     stats.moved += 1;
                 }
                 _ => {
-                    let node = map.node(id).expect("a listed node exists");
+                    let node = map.node(id).ok_or_else(|| unlisted(id))?;
                     let (kind, props, geometry) = encode_node(node);
                     upsert.execute(rusqlite::params![
                         id_bytes(id),
@@ -617,6 +616,11 @@ fn write_nodes(
         stats.deleted += 1;
     }
     Ok((stats, next))
+}
+
+/// The error for a node its parent lists but the Map lacks, which a consistent Map never has.
+fn unlisted(id: Id) -> FileError {
+    FileError::Damaged(format!("node {id} is listed but missing"))
 }
 
 /// The `kind`, `props` and `geometry` columns of a node.

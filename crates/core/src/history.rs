@@ -278,10 +278,11 @@ impl History {
     }
 
     /// Drops the oldest steps until history fits the budget, always keeping the newest.
-    #[allow(clippy::expect_used, reason = "more than one step")]
     fn enforce_budget(&mut self) {
-        while self.used > self.budget && self.undo.len() > 1 {
-            let oldest = self.undo.pop_front().expect("more than one step");
+        while self.used > self.budget
+            && self.undo.len() > 1
+            && let Some(oldest) = self.undo.pop_front()
+        {
             self.used -= oldest.bytes;
         }
     }
