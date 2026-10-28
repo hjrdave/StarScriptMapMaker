@@ -5,7 +5,7 @@ use ssmap_core::{Canvas, Color, Command, DistanceUnit, Id, MapTemplate, ShoreKin
 
 use super::{Inherit, PropertiesPanel, caption, row};
 use crate::editor::Editor;
-use crate::prop_widgets::{self, Edit, Provenance, ScrubSpec, SectionHeader};
+use crate::prop_widgets::{self, Edit, Handle, Provenance, ScrubSpec, SectionHeader};
 
 impl PropertiesPanel {
     /// Width, height and the anchor they grow or shrink from, of the board `id` whose box is
@@ -24,11 +24,25 @@ impl PropertiesPanel {
         } else {
             ("Board width", "Board height")
         };
-        let spec = |label| ScrubSpec::new(label).range(1.0, 100_000.0).step(10.0);
+        // A drag is one gesture. Each frame's size is worked out from the Canvas as it was
+        // when the drag began, so the anchor holds still while the gesture is replaced.
+        let base = match &self.resize_base {
+            Some((board, base)) if *board == id => base.clone(),
+            _ => canvas.clone(),
+        };
+        let spec = |label, handle| {
+            ScrubSpec::new(label)
+                .handle(Handle::Text(handle))
+                .range(1.0, 100_000.0)
+                .step(10.0)
+        };
         let mut width = f64::from(canvas.width);
         let mut height = f64::from(canvas.height);
-        let width_edit = prop_widgets::number_field(ui, &mut width, &spec(width_label));
-        let height_edit = prop_widgets::number_field(ui, &mut height, &spec(height_label));
+        let (width_edit, height_edit) = prop_widgets::pair(
+            ui,
+            |ui| prop_widgets::scrub_field(ui, &mut width, &spec(width_label, "W")),
+            |ui| prop_widgets::scrub_field(ui, &mut height, &spec(height_label, "H")),
+        );
         row(ui, "Anchor", |ui| {
             egui::Grid::new("canvas anchor")
                 .spacing([2.0, 2.0])
@@ -59,12 +73,23 @@ impl PropertiesPanel {
                     }
                 });
         });
-        if width_edit.changed || height_edit.changed {
-            let (width, height) = (width.round() as u32, height.round() as u32);
-            if width > 0 && height > 0 {
-                let origin = anchored_origin(canvas, width, height, self.canvas_anchor);
-                let _ = editor.run(resize(editor, id, origin, width, height));
-            }
+        let edit = merge_edits(width_edit, height_edit);
+        if edit.began {
+            self.resize_base = Some((id, canvas.clone()));
+        }
+        let (width, height) = (width.round() as u32, height.round() as u32);
+        if width > 0 && height > 0 {
+            let origin = anchored_origin(&base, width, height, self.canvas_anchor);
+            let command = resize(editor, id, origin, width, height);
+            let name = if primary {
+                "Resize Canvas"
+            } else {
+                "Resize Board"
+            };
+            self.live.apply(editor, edit, name, || command);
+        }
+        if edit.finished {
+            self.resize_base = None;
         }
     }
 
@@ -124,7 +149,7 @@ impl PropertiesPanel {
         };
         merge(colour_field(ui, "Water colour", &mut next.water));
         let mut strength = f64::from(next.texture.strength);
-        merge(prop_widgets::slider(
+        merge(prop_widgets::scrub_field(
             ui,
             &mut strength,
             &ScrubSpec::new("Texture strength")
@@ -134,7 +159,7 @@ impl PropertiesPanel {
         ));
         next.texture.strength = strength as f32;
         let mut scale = f64::from(next.texture.scale);
-        merge(prop_widgets::slider(
+        merge(prop_widgets::scrub_field(
             ui,
             &mut scale,
             &ScrubSpec::new("Texture scale")
@@ -213,6 +238,16 @@ impl PropertiesPanel {
                 ui.push_id(title, |ui| self.shore_fields(ui, editor, &group));
             }
         });
+    }
+}
+
+/// Two edits made in one frame as one: began or changed or finished if either did.
+pub(super) fn merge_edits(a: Edit, b: Edit) -> Edit {
+    Edit {
+        began: a.began || b.began,
+        changed: a.changed || b.changed,
+        finished: a.finished || b.finished,
+        reset: false,
     }
 }
 

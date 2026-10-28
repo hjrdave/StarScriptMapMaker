@@ -76,6 +76,10 @@ impl Credits {
             .vscroll(true)
             .show(ctx, |ui| {
                 let palette = theme::palette(ui.ctx());
+                ui.vertical_centered(|ui| {
+                    crate::logo::show(ui, 96.0);
+                });
+                ui.add_space(6.0);
                 ui.label(
                     egui::RichText::new("Credits")
                         .size(theme::TITLE)

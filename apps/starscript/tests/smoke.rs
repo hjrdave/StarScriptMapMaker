@@ -28,6 +28,7 @@ fn app() -> Harness<'static, MapMakerApp> {
         Scale::new(0.25, DistanceUnit::Miles),
     ));
     harness.run();
+    common::expand_layers(&mut harness);
     harness
 }
 
@@ -165,6 +166,8 @@ fn a_layer_with_100k_objects_lays_out_only_visible_rows() {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1280.0, 800.0))
         .build_eframe(|cc| MapMakerApp::with_map(cc, map, None));
+    harness.run();
+    common::expand_layers(&mut harness);
     let started = std::time::Instant::now();
     harness.run();
     eprintln!("first frames with 100k rows: {:?}", started.elapsed());
@@ -299,8 +302,8 @@ fn the_label_tool_places_a_label_and_types_its_text_in_one_undo_step() {
         editor.map().node(parent),
         Some(ssmap_core::Node::Layer(layer)) if layer.name == "Labels"
     ));
-    // Its first line names it in the Layers panel.
-    harness.get_by_label("Ærendál");
+    // Its first line names it in the Layers panel and in the Properties header.
+    assert_eq!(harness.get_all_by_label("Ærendál").count(), 2);
 
     // Clicking empty Canvas deselects it, and clicking it picks it again.
     click_at(&mut harness, egui::pos2(300.0, 120.0));

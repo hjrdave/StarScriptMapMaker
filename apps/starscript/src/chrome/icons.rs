@@ -93,6 +93,11 @@ icons! {
     LockFilled, "Lock filled", "lock-filled";
     LockDashed, "Lock dashed", "lock-dashed";
     Link, "Link", "link";
+    Shuffle, "Shuffle", "shuffle";
+    Replace, "Replace", "replace";
+    FlipHorizontal, "Flip horizontal", "flip-horizontal";
+    FlipVertical, "Flip vertical", "flip-vertical";
+    Rotate, "Rotate", "rotate";
 }
 
 /// Hand-hinted 1x replacements, by icon. None yet: the thinned 1 px stroke is crisp enough

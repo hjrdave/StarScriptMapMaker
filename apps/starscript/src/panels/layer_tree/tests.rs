@@ -713,3 +713,131 @@ fn the_menu_cuts_groups_and_deletes_the_selection() {
     harness.run();
     assert!(!harness.state().editor.map().contains(inner));
 }
+
+fn layer_data(editor: &Editor, id: Id) -> Layer {
+    let Some(Node::Layer(layer)) = editor.map().node(id) else {
+        panic!("a Layer")
+    };
+    layer.clone()
+}
+
+fn pointer(harness: &mut Harness<'static, Fixture>, pos: egui::Pos2, pressed: Option<bool>) {
+    harness.event(egui::Event::PointerMoved(pos));
+    if let Some(pressed) = pressed {
+        harness.event(egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        });
+    }
+    harness.run();
+}
+
+#[test]
+fn the_layer_area_shows_the_selected_layer_and_edits_its_depth_sort() {
+    let (mut editor, a, b) = editor_with_two_layers();
+    editor.select(vec![a]);
+    let mut harness = harness(editor);
+    for label in ["Layer", "Opacity", "Depth sort", "Clip to", "Use selection"] {
+        assert!(harness.query_by_label(label).is_some(), "{label}");
+    }
+    // No Landmass is selected, so there is nothing to clip to.
+    assert!(
+        harness
+            .get_by_label("Use selection")
+            .accesskit_node()
+            .is_disabled()
+    );
+
+    harness.get_by_label("Depth sort").click();
+    harness.run();
+    let editor = &harness.state().editor;
+    assert!(layer_data(editor, a).depth_sort);
+    assert!(!layer_data(editor, b).depth_sort);
+}
+
+#[test]
+fn the_layer_area_follows_the_active_layer_when_no_layer_is_selected() {
+    let (mut editor, a, b) = editor_with_two_layers();
+    editor.select(vec![b]);
+    editor.select(Vec::new());
+    assert_eq!(editor.active_layer(), Some(b));
+    let mut harness = harness(editor);
+    harness.get_by_label("Depth sort").click();
+    harness.run();
+    let editor = &harness.state().editor;
+    assert!(layer_data(editor, b).depth_sort);
+    assert!(!layer_data(editor, a).depth_sort);
+}
+
+#[test]
+fn use_selection_clips_the_layer_to_the_selected_landmass() {
+    let (mut editor, a, _) = editor_with_two_layers();
+    let island = Id::new();
+    assert!(
+        editor
+            .run(Command::CreateLandmass {
+                id: island,
+                parent: a,
+                index: None,
+                geometry: ssmap_core::MultiPolygon(vec![ssmap_core::Polygon {
+                    exterior: vec![[0.0, 0.0], [40.0, 0.0], [40.0, 40.0], [0.0, 40.0]],
+                    holes: Vec::new(),
+                }]),
+                fill: None,
+            })
+            .is_ok()
+    );
+    // The Landmass is selected, so its Layer is the active one.
+    editor.select(vec![island]);
+    let mut harness = harness(editor);
+    harness.get_by_label("Use selection").click();
+    harness.run();
+    assert_eq!(layer_data(&harness.state().editor, a).clip, Some(island));
+}
+
+#[test]
+fn one_opacity_drag_in_the_layer_area_is_one_undo_step() {
+    let (mut editor, a, _) = editor_with_two_layers();
+    editor.select(vec![a]);
+    let mut harness = harness(editor);
+    let before = harness.state().editor.undo_label().map(str::to_owned);
+    let from = harness.get_by_label("Opacity").rect().center();
+    pointer(&mut harness, from, Some(true));
+    for step in 1..=4 {
+        pointer(
+            &mut harness,
+            from - egui::vec2(step as f32 * 10.0, 0.0),
+            None,
+        );
+    }
+    pointer(&mut harness, from - egui::vec2(40.0, 0.0), Some(false));
+    harness.run();
+
+    let state = harness.state_mut();
+    assert!(layer_data(&state.editor, a).opacity < 1.0);
+    assert_eq!(state.editor.undo_label(), Some("Change Opacity"));
+    state.editor.undo();
+    assert_eq!(layer_data(&state.editor, a).opacity, 1.0);
+    assert_eq!(state.editor.undo_label().map(str::to_owned), before);
+}
+
+#[test]
+fn a_rename_request_expands_the_row_and_opens_its_rename_box() {
+    let (editor, ids) = editor_with_a_group();
+    let mut harness = harness(editor);
+    let map = harness.state().editor.map();
+    let child = ids.iter().copied().find(|&id| map.parent(id).is_some());
+    let child = child.unwrap();
+    let group = map.parent(child).unwrap();
+    harness.state_mut().tree.collapsed.insert(group);
+    harness.state_mut().tree.collapse_generation += 1;
+    harness.run();
+    harness.state_mut().editor.request_rename(child);
+    harness.run();
+    let tree = &harness.state().tree;
+    assert!(!tree.collapsed.contains(&group));
+    assert_eq!(tree.renaming.as_ref().map(|(id, _)| *id), Some(child));
+    assert!(harness.state_mut().editor.take_rename_request().is_none());
+}

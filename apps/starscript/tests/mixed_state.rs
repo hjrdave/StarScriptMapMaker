@@ -1,4 +1,4 @@
-//! A setting that differs across a multi-selection shows "Mixed"; dragging the slider or typing
+//! A setting that differs across a multi-selection shows "Mixed"; scrubbing the field or typing
 //! a value sets every selected item, as one Undo step.
 #![allow(
     clippy::unwrap_used,
@@ -121,16 +121,16 @@ fn press(harness: &mut Harness<'static, MapMakerApp>, pos: egui::Pos2, pressed: 
     harness.run();
 }
 
-fn drag_to_the_end(harness: &mut Harness<'static, MapMakerApp>, label: &str) {
-    let track = harness.get_by_role_and_label(Role::Slider, label).rect();
-    let y = track.center().y;
-    press(harness, track.center(), true);
+/// Drags the scrub handle of the field called `label` by `dx` points.
+fn scrub(harness: &mut Harness<'static, MapMakerApp>, label: &str, dx: f32) {
+    let start = harness.get_by_label(label).rect().center();
+    press(harness, start, true);
     for step in 1..=4 {
-        let x = track.center().x + step as f32 * track.width() / 8.0;
-        harness.event(egui::Event::PointerMoved(egui::pos2(x, y)));
+        let x = start.x + step as f32 * dx / 4.0;
+        harness.event(egui::Event::PointerMoved(egui::pos2(x, start.y)));
         harness.run();
     }
-    press(harness, egui::pos2(track.right() + 40.0, y), false);
+    press(harness, egui::pos2(start.x + dx, start.y), false);
 }
 
 /// Types into the first box that shows `shown`; Roughness sits above Shore style on the panel.
@@ -160,10 +160,11 @@ fn a_setting_that_differs_shows_mixed_and_one_that_matches_shows_its_value() {
 }
 
 #[test]
-fn dragging_a_mixed_slider_sets_every_item_as_one_undo_step() {
+fn scrubbing_a_mixed_field_sets_every_item_as_one_undo_step() {
     let (mut harness, ids) = app();
     let steps = harness.state().editor().history_steps().0.len();
-    drag_to_the_end(&mut harness, "Amount");
+    // The scrub starts from the first item's 10; 80 points at 0.5 per point is 40 more.
+    scrub(&mut harness, "Amount", 80.0);
     assert_eq!(amounts(&harness, ids), [50.0, 50.0]);
     let (after, _) = harness.state().editor().history_steps();
     assert_eq!(after.len(), steps + 1);

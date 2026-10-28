@@ -33,6 +33,16 @@ fn app_sized(step_dt: f32, width: f32) -> Harness<'static, MapMakerApp> {
         Scale::new(0.25, DistanceUnit::Miles),
     ));
     harness.run();
+    // The sidebar starts collapsed; most tests here begin with it expanded. A narrow window
+    // shows the rail whatever the user chose.
+    if width >= 1180.0 {
+        harness.get_by_label("Expand Layers (⌘⌥1)").click();
+        harness.run();
+        // Let the panel finish opening, as the step is tiny in some tests.
+        for _ in 0..60 {
+            harness.step();
+        }
+    }
     harness
 }
 
@@ -234,9 +244,9 @@ fn a_narrow_window_shows_layers_as_a_rail_that_opens_over_the_canvas() {
     assert!(harness.query_by_label("Collapse Layers (⌘⌥1)").is_none());
     harness.get_by_label("Expand Layers (⌘⌥1)").click();
     harness.run();
-    // Open over the Canvas; the user's own choice is untouched.
+    // Open over the Canvas; the user's own choice (collapsed, the default) is untouched.
     assert!(harness.state().shell().layers_overlay());
-    assert!(!harness.state().shell().layers_collapsed());
+    assert!(harness.state().shell().layers_collapsed());
     assert!(harness.query_by_label("Collapse Layers (⌘⌥1)").is_some());
     harness.key_press(egui::Key::Escape);
     harness.run();
@@ -381,7 +391,12 @@ fn the_overlay_closes_from_every_sidebar_section() {
             .state_mut()
             .run_command(ssmap_app::menu::Command::NewArtBoard);
         harness.run();
-        // In a narrow window the shortcut opens the sidebar over the Canvas.
+        // The sidebar starts collapsed by the user's choice, and in that state the shortcut
+        // only expands it: a narrow window shows the rail either way. Expand it first.
+        harness.key_press_modifiers(BOTH, egui::Key::Num1);
+        harness.run();
+        assert!(!harness.state().shell().layers_collapsed(), "{section:?}");
+        // In a narrow window the shortcut then opens the sidebar over the Canvas.
         assert_eq!(show_section(&mut harness, key), section);
         assert!(harness.state().shell().layers_overlay(), "{section:?}");
         harness.get_by_label("Collapse Layers (⌘⌥1)").click();

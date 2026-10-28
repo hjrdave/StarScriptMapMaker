@@ -9,6 +9,7 @@ use ssmap_core::{Command, Id, Layer, Map, Node};
 
 use crate::editor::Editor;
 use crate::icons::{self, Icon};
+use crate::prop_widgets::{Edit, LiveEdit};
 use crate::theme::{self, Palette, metrics};
 
 const ROW_HEIGHT: f32 = metrics::LAYER_ROW;
@@ -22,6 +23,7 @@ pub(crate) const FOOTER_HEIGHT: f32 = 24.0;
 /// Why a Depth-sorted Layer's Stamps can't be reordered by hand.
 pub(crate) const DEPTH_SORT_HINT: &str = "Depth sort is on for this Layer: Stamps are listed in the order they draw, by Anchor height. Move a Stamp to re-sort it.";
 
+mod layer_area;
 mod model;
 mod row;
 use model::kind_icon;
@@ -37,11 +39,17 @@ pub(crate) struct LayerTree {
     collapsed: HashSet<Id>,
     /// The row being renamed and its text so far.
     renaming: Option<(Id, String)>,
+    /// A row to scroll to on the next frame.
+    scroll_to: Option<Id>,
     /// Rows cached by Map revision and collapse state, so huge trees aren't walked every frame.
     cache: Option<(u64, u64, Vec<Row>)>,
     /// Object and Layer counts by Map revision, for the same reason.
     counts: Option<(u64, (usize, usize))>,
     collapse_generation: u64,
+    /// Turns the Opacity slider into one Undo step per drag.
+    live: LiveEdit,
+    /// Height the Layer area took last frame, kept free below the list.
+    layer_area_height: f32,
     /// A delete waiting on the confirmation: the Group it names and how many nodes are inside.
     confirm_delete: Option<(Id, usize)>,
     /// The row a Shift-click range grows from: the last row clicked without Shift.
@@ -133,6 +141,11 @@ impl LayerTree {
     /// Shows the tree. The sidebar's bottom bar sits under it, so it is not drawn here.
     pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         let revision = editor.map().revision();
+        if let Some(id) = editor.take_rename_request()
+            && editor.map().contains(id)
+        {
+            self.start_rename_revealed(editor, id);
+        }
         let rows = match self.cache.take() {
             Some((r, g, rows)) if r == revision && g == self.collapse_generation => rows,
             _ => rows(editor.map(), &self.collapsed),
@@ -146,15 +159,32 @@ impl LayerTree {
 
         let mut actions = Vec::new();
         ui.spacing_mut().item_spacing.y = 0.0;
-        let list_height = ui.available_height().max(ROW_HEIGHT);
-        egui::ScrollArea::vertical()
+        // A change ends when the pointer is released, or when Escape cancelled it.
+        self.live.apply(editor, Edit::default(), "", || {
+            unreachable!("nothing changed")
+        });
+        // The sidebar's bottom bar sits under the tree, so only the Layer area comes off.
+        let list_height = (ui.available_height() - self.layer_area_height).max(ROW_HEIGHT);
+        let mut scroll = egui::ScrollArea::vertical()
             .auto_shrink(false)
-            .max_height(list_height)
-            .show_rows(ui, ROW_HEIGHT, rows.len(), |ui, range| {
-                for row in &rows[range] {
-                    self.row(ui, editor, *row, &mut actions);
-                }
-            });
+            .max_height(list_height);
+        if let Some(index) = self
+            .scroll_to
+            .take()
+            .and_then(|id| rows.iter().position(|row| row.id == id))
+        {
+            scroll = scroll.vertical_scroll_offset(index as f32 * ROW_HEIGHT);
+        }
+        scroll.show_rows(ui, ROW_HEIGHT, rows.len(), |ui, range| {
+            for row in &rows[range] {
+                self.row(ui, editor, *row, &mut actions);
+            }
+        });
+        let area_height = self.layer_area(ui, editor);
+        if (area_height - self.layer_area_height).abs() > 0.5 {
+            self.layer_area_height = area_height;
+            ui.ctx().request_repaint();
+        }
 
         for action in actions {
             match action {
@@ -253,6 +283,19 @@ impl LayerTree {
         }
         self.cache = Some((revision, self.collapse_generation, rows));
         self.confirm_delete_dialog(ui.ctx(), editor);
+    }
+
+    /// Opens the rename box on `id`, expanding the Layers around it and scrolling to its row.
+    fn start_rename_revealed(&mut self, editor: &Editor, id: Id) {
+        let mut parent = editor.map().parent(id);
+        while let Some(layer) = parent {
+            if self.collapsed.remove(&layer) {
+                self.collapse_generation += 1;
+            }
+            parent = editor.map().parent(layer);
+        }
+        self.scroll_to = Some(id);
+        self.renaming = Some((id, node_name(editor.map(), id)));
     }
 
     /// The confirmation before deleting a Group that holds something: it names the Group and

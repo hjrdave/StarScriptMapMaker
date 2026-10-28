@@ -19,7 +19,7 @@ pub use panels::prop_widgets;
 pub use workspace::{editor, shell, tools};
 
 use canvas::{handles, zoom};
-use chrome::{icons, native_menu, tab, toast};
+use chrome::{icons, logo, native_menu, tab, toast};
 use dialogs::{dialog, native_dialog, recovery};
 use export::export_region;
 use workspace::{clipboard, credits, document, home, update};
@@ -60,8 +60,13 @@ const CHROME_INSET: f32 = if CUSTOM_CHROME {
 };
 
 /// The window options for the title bar: on macOS the content runs under a transparent title
-/// bar with no title text, so the tab strip is drawn there.
+/// bar with no title text, so the tab strip is drawn there. Every platform gets the logo as
+/// the window icon.
 pub fn window_chrome(viewport: egui::ViewportBuilder) -> egui::ViewportBuilder {
+    let viewport = match logo::window_icon() {
+        Some(icon) => viewport.with_icon(icon),
+        None => viewport,
+    };
     if CUSTOM_CHROME {
         viewport
             .with_fullsize_content_view(true)

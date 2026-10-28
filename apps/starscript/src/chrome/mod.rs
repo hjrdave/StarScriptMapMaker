@@ -1,4 +1,5 @@
 pub(crate) mod icons;
+pub(crate) mod logo;
 pub mod menu;
 pub(crate) mod native_menu;
 pub(crate) mod tab;
