@@ -10,6 +10,7 @@ use thiserror::Error;
 
 use crate::asset::AssetRef;
 use crate::background::Background;
+use crate::changes::Change;
 use crate::color::Color;
 use crate::embedded::{Blob, ContentHash, EmbeddedAsset, EmbeddedFont};
 use crate::geometry::{MultiPolygon, Point};
@@ -248,7 +249,11 @@ impl Map {
     pub(crate) fn apply_op(&mut self, op: Op) -> Result<Op, OpError> {
         self.check(&op)?;
         self.revision += 1;
-        Ok(match op {
+        let change = match &op {
+            Op::SetProperty { id, .. } => Change::Property(*id),
+            _ => Change::Other,
+        };
+        let inverse = match op {
             Op::Insert {
                 parent,
                 index,
@@ -381,7 +386,9 @@ impl Map {
                     record: old.map(Box::new),
                 }
             }
-        })
+        };
+        self.changes.record(self.revision, change);
+        Ok(inverse)
     }
 
     /// Applies one of the board Ops, which `check` has already passed, and returns its inverse.

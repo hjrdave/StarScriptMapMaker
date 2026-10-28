@@ -92,6 +92,8 @@ stages (ms)      p50      p95      p99    worst
   the frame:
   - `edit`: applying the input to the Map: brush geometry, the Command, picking.
   - `scene`: rebuilding the scene from the Map: roughness generation and tessellation.
+    An edit that only sets properties of Stamps patches those Stamps' slots and keeps the rest
+    (`Map::changes_since`); any other edit, or shore rings landing, rebuilds it all.
     The rings shore ripples and shading follow are computed on a thread of their own, as in
     the editor, so an edit that changes an outline shows its old rings for a frame or a few
     until the new ones land. Their cost does not appear here; export waits for them.

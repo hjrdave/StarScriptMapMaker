@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::ops::Range;
+use std::sync::Arc;
 
 use ssmap_core::asset::AssetRef;
 use ssmap_core::{Color, Point};
@@ -40,7 +41,8 @@ pub struct PlacedStamp {
     /// Which board's edge clips the Stamp, or none when it sits off the boards and is drawn
     /// in full.
     pub placement: Placement,
-    pub draw: StampDraw,
+    /// Shared with [`MapScene`](crate::MapScene)'s cache, so an unchanged Stamp is not copied.
+    pub draw: Arc<StampDraw>,
 }
 
 #[repr(C)]
