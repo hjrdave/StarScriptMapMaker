@@ -17,7 +17,7 @@ mod select;
 mod test_util;
 
 use eframe::egui;
-use ssmap_core::{Command, ExportRegion, Point};
+use ssmap_core::{Command, ExportRegion, Id, Point};
 use ssmap_render::View;
 
 use crate::editor::{Editor, GestureId};
@@ -138,18 +138,22 @@ pub struct ToolState {
     lasso: Option<Lasso>,
     /// An Export Region drag in progress, with the region as it was before the drag.
     region_drag: Option<(RegionDrag, ExportRegion)>,
-    /// A Canvas resize in progress.
+    /// A board resize in progress.
     canvas_drag: Option<crate::canvas_resize::CanvasDrag>,
-    /// Where the Canvas's label was last drawn, in screen points, for clicking it.
-    canvas_label: Option<egui::Rect>,
+    /// A board being moved by its label.
+    board_move: Option<crate::canvas_resize::BoardMove>,
+    /// A board being drawn on empty pasteboard.
+    board_create: Option<crate::canvas_resize::BoardCreate>,
+    /// Where each board's label was last drawn, in screen points, for clicking it.
+    board_labels: Vec<(Id, egui::Rect)>,
     /// A box-select in node-edit mode: where it began and where the pointer is, in Canvas units.
     marquee: Option<(Point, Point)>,
     /// A box-select dragged from empty Canvas with the Select tool.
     select_box: Option<SelectBox>,
     /// The Label whose text is being typed in the overlay box.
     pub editing: Option<TextEditing>,
-    /// The gesture a `drag`, `stroke`, `node_drag` or `canvas_drag` holds open, and the tool
-    /// that opened it.
+    /// The gesture a `drag`, `stroke`, `node_drag`, `canvas_drag`, `board_move` or
+    /// `board_create` holds open, and the tool that opened it.
     held: Option<(ToolId, GestureId)>,
 }
 
@@ -241,6 +245,8 @@ impl ToolState {
             self.stroke = None;
             self.node_drag = None;
             self.canvas_drag = None;
+            self.board_move = None;
+            self.board_create = None;
         }
     }
 
@@ -249,11 +255,20 @@ impl ToolState {
         self.drag.is_some()
     }
 
-    /// The cursor HUD while the Canvas is being resized, such as "Canvas · 4096 × 2560".
+    /// The cursor HUD while a board is being resized or drawn, such as "Canvas · 4096 × 2560".
     pub fn canvas_hud(&self, editor: &Editor) -> Option<String> {
-        self.canvas_drag?;
-        let canvas = &editor.map().canvas();
-        Some(crate::canvas_resize::hud_text(canvas.width, canvas.height))
+        let board = self.canvas_drag.map(|drag| drag.board).or_else(|| {
+            self.board_create
+                .filter(|create| create.created)
+                .map(|create| create.board)
+        })?;
+        let map = editor.map();
+        let canvas = &map.board(board)?.canvas;
+        Some(crate::canvas_resize::hud_text(
+            &map.board_label(board)?,
+            canvas.width,
+            canvas.height,
+        ))
     }
 }
 
@@ -273,8 +288,8 @@ pub fn canvas_input(
     }
     state.drop_held_for_other_tool(editor);
     if editor.active_tool != ToolId::Canvas {
-        state.canvas_label = None;
-        editor.select_canvas(false);
+        state.board_labels.clear();
+        editor.select_board(None);
     }
     if pan::pan_tool(editor, view, &frame) {
         return;

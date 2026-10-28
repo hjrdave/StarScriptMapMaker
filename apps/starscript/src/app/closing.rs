@@ -138,6 +138,7 @@ impl MapMakerApp {
             || self.win.close.is_awaiting_save()
             || self.app.unsaved.is_asking()
             || self.win.delete_prompt.is_some()
+            || self.win.delete_board_prompt.is_some()
             || self.win.pack_delete_prompt.is_some()
             || self.win.template_prompt.is_some()
             || self.win.paste_prompt.is_some()

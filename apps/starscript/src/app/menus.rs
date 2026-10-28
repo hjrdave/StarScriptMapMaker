@@ -51,6 +51,8 @@ impl MapMakerApp {
         state.can_redo = editor.can_redo();
         state.redo_label = editor.redo_label().map(str::to_owned);
         state.has_selection = !editor.selection().is_empty();
+        state.board_selected = editor.selected_board().is_some();
+        state.multiple_boards = editor.map().boards().len() > 1;
         state.can_paste = self.app.clipboard.is_some() || editor.has_clipboard();
         state.can_select_all = !editor.active_layer_objects().is_empty();
         state.has_active_layer = editor
@@ -201,6 +203,13 @@ impl MapMakerApp {
         if !self.map_showing() {
             return;
         }
+        // With a board selected, Delete and Duplicate act on the board, not the Selection.
+        if matches!(command, C::Delete | C::Duplicate)
+            && let Some(board) = self.tab().and_then(|tab| tab.editor.selected_board())
+        {
+            self.board_command(command, board);
+            return;
+        }
         match command {
             C::Save => {
                 self.save();
@@ -254,6 +263,35 @@ impl MapMakerApp {
             C::ZoomOut => tab.canvas_view.request_zoom(zoom::Zoom::Out),
             C::ZoomFit => tab.canvas_view.request_zoom(zoom::Zoom::Fit),
             C::ZoomSelection => tab.canvas_view.request_zoom(zoom::Zoom::Selection),
+            C::ZoomBoard => {
+                if let Some(bounds) = editor
+                    .selected_board()
+                    .and_then(|id| board_bounds(editor, id))
+                {
+                    tab.canvas_view.request_zoom(zoom::Zoom::Area(bounds));
+                }
+            }
+            C::ZoomAll => {
+                let all = editor
+                    .map()
+                    .boards()
+                    .iter()
+                    .filter_map(|board| board_bounds(editor, board.id))
+                    .reduce(|a, b| crate::handles::Bounds {
+                        min: [a.min[0].min(b.min[0]), a.min[1].min(b.min[1])],
+                        max: [a.max[0].max(b.max[0]), a.max[1].max(b.max[1])],
+                    });
+                if let Some(bounds) = all {
+                    tab.canvas_view.request_zoom(zoom::Zoom::Area(bounds));
+                }
+            }
+            C::NewArtBoard => {
+                if let Some(board) = editor.new_art_board()
+                    && let Some(bounds) = board_bounds(editor, board)
+                {
+                    tab.canvas_view.request_zoom(zoom::Zoom::Area(bounds));
+                }
+            }
             C::ActualSize => tab.canvas_view.request_zoom(zoom::Zoom::Percent(1.0)),
             C::EmbedAssets => {
                 editor.end_open_gesture();
@@ -622,6 +660,15 @@ fn consume(
         modifiers,
         egui_key(shortcut.key),
     ))
+}
+
+/// The area of the board `id`, for framing it.
+fn board_bounds(editor: &Editor, id: ssmap_core::Id) -> Option<crate::handles::Bounds> {
+    let canvas = &editor.map().board(id)?.canvas;
+    Some(crate::handles::Bounds {
+        min: canvas.origin,
+        max: canvas.rect().max,
+    })
 }
 
 #[cfg(test)]

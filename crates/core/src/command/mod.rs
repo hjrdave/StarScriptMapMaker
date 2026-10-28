@@ -314,6 +314,14 @@ pub enum Command {
         /// The new name.
         name: Option<String>,
     },
+    /// Replaces the background of a board (the Canvas or an Art board): the water colour and
+    /// the texture over it. For the Canvas this is [`Command::SetBackground`].
+    SetBoardBackground {
+        /// The board to change.
+        id: Id,
+        /// The new background.
+        background: Background,
+    },
     /// Deletes an Art board. Its Objects are kept and go off-board. The Canvas is refused.
     DeleteBoard {
         /// The board to delete.
@@ -558,6 +566,7 @@ impl Command {
             Command::CreateBoard { .. } => "Add Art Board",
             Command::ResizeBoard { .. } => "Resize Board",
             Command::RenameBoard { .. } => "Rename Board",
+            Command::SetBoardBackground { .. } => "Change Board Background",
             Command::DeleteBoard { .. } => "Delete Board",
             Command::ReorderBoard { .. } => "Reorder Boards",
             Command::SetPrimaryBoard { .. } => "Change Canvas",
@@ -672,6 +681,9 @@ impl Command {
                 height,
             } => board::resize_board(map, *id, *origin, *width, *height),
             Command::RenameBoard { id, name } => board::rename_board(map, *id, name.as_deref()),
+            Command::SetBoardBackground { id, background } => {
+                board::set_board_background(map, *id, background)
+            }
             Command::DeleteBoard { id } => board::delete_board(map, *id),
             Command::ReorderBoard { id, index } => board::reorder_board(map, *id, *index),
             Command::SetPrimaryBoard { id } => board::set_primary_board(map, *id),

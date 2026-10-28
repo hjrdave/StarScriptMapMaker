@@ -1,26 +1,34 @@
 //! The Map section: Canvas, Scale, background and the Map-wide defaults.
 
 use eframe::egui;
-use ssmap_core::{Canvas, Color, Command, DistanceUnit, MapTemplate, ShoreKind};
+use ssmap_core::{Canvas, Color, Command, DistanceUnit, Id, MapTemplate, ShoreKind};
 
 use super::{Inherit, PropertiesPanel, caption, row};
 use crate::editor::Editor;
 use crate::prop_widgets::{self, Edit, Provenance, ScrubSpec, SectionHeader};
 
 impl PropertiesPanel {
-    /// Canvas width, height and the anchor they grow or shrink from. Each change is one
-    /// `ResizeCanvas`; Objects are never touched.
+    /// Width, height and the anchor they grow or shrink from, of the board `id` whose box is
+    /// `canvas`: the Canvas, or an Art board. Each change is one Command; Objects are never
+    /// touched.
     pub(super) fn canvas_fields(
         &mut self,
         ui: &mut egui::Ui,
         editor: &mut Editor,
+        id: Id,
         canvas: &Canvas,
     ) {
+        let primary = id == editor.map().primary_board();
+        let (width_label, height_label) = if primary {
+            ("Canvas width", "Canvas height")
+        } else {
+            ("Board width", "Board height")
+        };
         let spec = |label| ScrubSpec::new(label).range(1.0, 100_000.0).step(10.0);
         let mut width = f64::from(canvas.width);
         let mut height = f64::from(canvas.height);
-        let width_edit = prop_widgets::number_field(ui, &mut width, &spec("Canvas width"));
-        let height_edit = prop_widgets::number_field(ui, &mut height, &spec("Canvas height"));
+        let width_edit = prop_widgets::number_field(ui, &mut width, &spec(width_label));
+        let height_edit = prop_widgets::number_field(ui, &mut height, &spec(height_label));
         row(ui, "Anchor", |ui| {
             egui::Grid::new("canvas anchor")
                 .spacing([2.0, 2.0])
@@ -54,11 +62,8 @@ impl PropertiesPanel {
         if width_edit.changed || height_edit.changed {
             let (width, height) = (width.round() as u32, height.round() as u32);
             if width > 0 && height > 0 {
-                let _ = editor.run(Command::ResizeCanvas {
-                    origin: anchored_origin(canvas, width, height, self.canvas_anchor),
-                    width,
-                    height,
-                });
+                let origin = anchored_origin(canvas, width, height, self.canvas_anchor);
+                let _ = editor.run(resize(editor, id, origin, width, height));
             }
         }
     }
@@ -66,10 +71,29 @@ impl PropertiesPanel {
     /// The template the Map was made from, and its background: pick another template's look,
     /// or edit the water and texture fields. Either way the background changes on its own;
     /// the template shown stays the one the Map was made from.
-    fn background_fields(&mut self, ui: &mut egui::Ui, editor: &mut Editor, canvas: &Canvas) {
-        row(ui, "Template", |ui| {
-            ui.label(canvas.template.as_deref().unwrap_or("None"));
-        });
+    pub(super) fn background_fields(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        board: Id,
+        canvas: &Canvas,
+    ) {
+        let primary = board == editor.map().primary_board();
+        let set = move |background: ssmap_core::Background| {
+            if primary {
+                Command::SetBackground { background }
+            } else {
+                Command::SetBoardBackground {
+                    id: board,
+                    background,
+                }
+            }
+        };
+        if primary {
+            row(ui, "Template", |ui| {
+                ui.label(canvas.template.as_deref().unwrap_or("None"));
+            });
+        }
         caption(ui, "Background");
         let templates = self
             .templates
@@ -80,9 +104,7 @@ impl PropertiesPanel {
                 let same = *template.background() == canvas.background;
                 let name = format!("{} look", template.name());
                 if ui.selectable_label(same, name).clicked() {
-                    let _ = editor.run(Command::SetBackground {
-                        background: template.background().clone(),
-                    });
+                    let _ = editor.run(set(template.background().clone()));
                 }
             }
         });
@@ -123,11 +145,8 @@ impl PropertiesPanel {
         next.texture.scale = scale as f32;
         merge(colour_field(ui, "Texture light", &mut next.texture.light));
         merge(colour_field(ui, "Texture dark", &mut next.texture.dark));
-        self.live.apply(editor, edit, "Change Background", || {
-            Command::SetBackground {
-                background: next.clone(),
-            }
-        });
+        self.live
+            .apply(editor, edit, "Change Background", || set(next.clone()));
     }
 
     /// The Map: Canvas, Scale and the Map-wide defaults. Collapsed until opened.
@@ -140,7 +159,8 @@ impl PropertiesPanel {
             action: None,
         };
         prop_widgets::section(ui, header, |ui| {
-            self.canvas_fields(ui, editor, &canvas);
+            let primary = editor.map().primary_board();
+            self.canvas_fields(ui, editor, primary, &canvas);
             let unit = match canvas.scale.unit {
                 DistanceUnit::Miles => "mi",
                 DistanceUnit::Kilometres => "km",
@@ -152,7 +172,7 @@ impl PropertiesPanel {
                 ));
             });
 
-            self.background_fields(ui, editor, &canvas);
+            self.background_fields(ui, editor, primary, &canvas);
 
             caption(ui, "Default Roughness");
             let current = [editor.map().defaults().roughness.clone()];
@@ -193,6 +213,31 @@ impl PropertiesPanel {
                 ui.push_id(title, |ui| self.shore_fields(ui, editor, &group));
             }
         });
+    }
+}
+
+/// The Command that sets a board's origin and size: for the Canvas the one older Maps and
+/// journals already use, for an Art board the board's own.
+pub(super) fn resize(
+    editor: &Editor,
+    id: Id,
+    origin: [f64; 2],
+    width: u32,
+    height: u32,
+) -> Command {
+    if id == editor.map().primary_board() {
+        Command::ResizeCanvas {
+            origin,
+            width,
+            height,
+        }
+    } else {
+        Command::ResizeBoard {
+            id,
+            origin,
+            width,
+            height,
+        }
     }
 }
 

@@ -54,6 +54,7 @@ impl MapMakerApp {
         self.recovery_dialog(ctx);
         self.unsaved_dialog(ctx);
         self.delete_dialog(ctx);
+        self.delete_board_dialog(ctx);
         self.pack_delete_dialog(ctx);
         self.template_dialog(ctx);
         self.paste_dialog(ctx);
@@ -73,6 +74,72 @@ impl MapMakerApp {
             && let Some(tab) = self.win.tabs.get_mut(self.win.active)
         {
             tab.editor.paste(prompt.at);
+        }
+    }
+
+    /// Delete or Duplicate with a board selected: Duplicate acts at once, Delete asks first.
+    pub(super) fn board_command(&mut self, command: menu::Command, board: ssmap_core::Id) {
+        let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
+            return;
+        };
+        match command {
+            menu::Command::Duplicate => {
+                tab.editor.duplicate_board(board);
+            }
+            _ if board == tab.editor.map().primary_board() => {
+                // Refused with a message; there is nothing to confirm.
+                tab.editor.delete_board(board);
+            }
+            _ => self.win.delete_board_prompt = Some(board),
+        }
+    }
+
+    /// Confirms deleting an Art board. Its Objects stay, off the boards. Cancel is the
+    /// default: Enter and Esc cancel.
+    fn delete_board_dialog(&mut self, ctx: &egui::Context) {
+        let Some(board) = self.win.delete_board_prompt else {
+            return;
+        };
+        let Some(tab) = self.win.tabs.get(self.win.active) else {
+            self.win.delete_board_prompt = None;
+            return;
+        };
+        let Some(name) = tab.editor.map().board_label(board) else {
+            self.win.delete_board_prompt = None;
+            return;
+        };
+        let mut delete = false;
+        let mut cancel = false;
+        let shown = dialog::show(
+            ctx,
+            "delete_board",
+            &format!("Delete “{name}”?"),
+            380.0,
+            |ui| {
+                ui.label("Its Objects are kept and stay where they are, off the boards.");
+                dialog::buttons(ui, |ui| {
+                    let danger = theme::palette(ui.ctx()).danger;
+                    let button =
+                        egui::Button::new(egui::RichText::new("Delete").strong()).fill(danger);
+                    if ui.add(button).clicked() {
+                        delete = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        cancel = true;
+                    }
+                });
+            },
+        );
+        if shown.cancelled || dialog::enter_confirms(ctx) {
+            cancel = true;
+        }
+        if delete {
+            self.win.delete_board_prompt = None;
+            if let Some(tab) = self.win.tabs.get_mut(self.win.active) {
+                tab.editor.delete_board(board);
+            }
+        } else if cancel {
+            self.win.delete_board_prompt = None;
         }
     }
 
