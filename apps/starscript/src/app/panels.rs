@@ -180,8 +180,9 @@ impl MapMakerApp {
     }
 }
 
-/// The sidebar's panel: the section it shows (Layers with its tree and the bottom bar with the
-/// collapse control, Assets, or History). As an overlay, collapsing closes it.
+/// The sidebar's panel: the section it shows (Layers, Art boards, Assets, or History) over a
+/// bottom bar with the collapse control, whatever the section. As an overlay, collapsing
+/// closes it.
 pub(super) fn layers_panel(
     ui: &mut egui::Ui,
     shell: &mut shell::Shell,
@@ -189,48 +190,74 @@ pub(super) fn layers_panel(
     footer: bool,
     overlay: bool,
 ) {
-    if shell.sidebar_section() == shell::SidebarSection::Boards {
-        shell::panel_header(ui, "Art boards", |ui| {
-            if icons::icon_button(ui, icons::Icon::Add, "New Art Board").clicked()
-                && let Some(board) = tab.editor.new_art_board()
-            {
-                tab.board_list.jump_to(board);
-            }
-        });
-        tab.board_list.show(ui, &mut tab.editor);
-        return;
-    }
-    if shell.sidebar_section() == shell::SidebarSection::Assets {
-        shell::panel_header(ui, "Assets", |_| {});
-        egui::Frame::NONE
-            .inner_margin(egui::Margin::symmetric(theme::SPACING[3] as i8, 0))
-            .show(ui, |ui| tab.asset_browser.show(ui, &mut tab.editor));
-        return;
-    }
-    if shell.sidebar_section() == shell::SidebarSection::History {
-        shell::panel_header(ui, "History", |_| {});
-        let (steps, applied) = tab.editor.history_steps();
-        if let Some(target) = shell::history_list(ui, &steps, applied) {
-            tab.editor.jump_to_history(target);
-        }
-        return;
-    }
-    shell::panel_header(ui, "Layers", |ui| {
-        if icons::icon_button(ui, icons::Icon::Add, "New Layer (⇧⌘N)").clicked() {
-            tab.editor.new_layer();
-        }
-    });
-    let collapse = tab.layer_tree.show(ui, &mut tab.editor, footer);
-    if std::mem::take(&mut tab.layer_tree.paste_requested)
-        && let Some(at) = tab.canvas_view.paste_point(None)
-    {
-        tab.editor.paste(at);
-    }
-    if collapse {
+    let rect = ui.max_rect();
+    let height = crate::layer_tree::FOOTER_HEIGHT.min(rect.height());
+    let bar_top = rect.bottom() - height;
+    let mut body = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(egui::Rect::from_min_max(
+                rect.min,
+                egui::pos2(rect.right(), bar_top),
+            ))
+            .layout(*ui.layout()),
+    );
+    let section = shell.sidebar_section();
+    sidebar_section(&mut body, section, tab);
+    // The bar is pinned to the panel's bottom edge, so it doesn't move between sections.
+    let mut bar = ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_max(
+        egui::pos2(rect.left(), bar_top),
+        rect.max,
+    )));
+    let counts = (footer && section == shell::SidebarSection::Layers)
+        .then(|| tab.layer_tree.counts_text())
+        .flatten();
+    if crate::layer_tree::footer(&mut bar, counts.as_deref()) {
         if overlay {
             shell.close_overlays();
         } else {
             shell.set_layers_collapsed(true);
+        }
+    }
+}
+
+/// The content of one sidebar section, above the bottom bar.
+fn sidebar_section(ui: &mut egui::Ui, section: shell::SidebarSection, tab: &mut MapTab) {
+    match section {
+        shell::SidebarSection::Boards => {
+            shell::panel_header(ui, "Art boards", |ui| {
+                if icons::icon_button(ui, icons::Icon::Add, "New Art Board").clicked()
+                    && let Some(board) = tab.editor.new_art_board()
+                {
+                    tab.board_list.jump_to(board);
+                }
+            });
+            tab.board_list.show(ui, &mut tab.editor);
+        }
+        shell::SidebarSection::Assets => {
+            shell::panel_header(ui, "Assets", |_| {});
+            egui::Frame::NONE
+                .inner_margin(egui::Margin::symmetric(theme::SPACING[3] as i8, 0))
+                .show(ui, |ui| tab.asset_browser.show(ui, &mut tab.editor));
+        }
+        shell::SidebarSection::History => {
+            shell::panel_header(ui, "History", |_| {});
+            let (steps, applied) = tab.editor.history_steps();
+            if let Some(target) = shell::history_list(ui, &steps, applied) {
+                tab.editor.jump_to_history(target);
+            }
+        }
+        shell::SidebarSection::Layers => {
+            shell::panel_header(ui, "Layers", |ui| {
+                if icons::icon_button(ui, icons::Icon::Add, "New Layer (⇧⌘N)").clicked() {
+                    tab.editor.new_layer();
+                }
+            });
+            tab.layer_tree.show(ui, &mut tab.editor);
+            if std::mem::take(&mut tab.layer_tree.paste_requested)
+                && let Some(at) = tab.canvas_view.paste_point(None)
+            {
+                tab.editor.paste(at);
+            }
         }
     }
 }
