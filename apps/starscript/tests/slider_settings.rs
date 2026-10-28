@@ -1,6 +1,5 @@
-//! The Stamp scatter settings are scrub fields and the Label text settings sliders with a number
-//! box. Scatter settings are tool settings, so they make no Undo step; each drag on a Label
-//! setting is one named step.
+//! The Stamp scatter settings and the Label text settings are scrub fields. Scatter settings are
+//! tool settings, so they make no Undo step; each drag on a Label setting is one named step.
 
 use eframe::egui;
 use egui::accesskit::Role;
@@ -40,27 +39,6 @@ fn press(harness: &mut Harness<'static, MapMakerApp>, pos: egui::Pos2, pressed: 
     harness.run();
 }
 
-/// Drags the thumb of the slider called `label` from its middle to its right end.
-fn drag_to_the_end(harness: &mut Harness<'static, MapMakerApp>, label: &str) {
-    // The Layers panel has an Opacity slider too; the setting meant here is in Properties,
-    // the rightmost panel.
-    let Some(track) = harness
-        .get_all_by_role_and_label(Role::Slider, label)
-        .map(|n| n.rect())
-        .max_by(|a, b| a.left().total_cmp(&b.left()))
-    else {
-        panic!("a {label} slider")
-    };
-    let y = track.center().y;
-    press(harness, track.center(), true);
-    for step in 1..=4 {
-        let x = track.center().x + step as f32 * track.width() / 8.0;
-        harness.event(egui::Event::PointerMoved(egui::pos2(x, y)));
-        harness.run();
-    }
-    press(harness, egui::pos2(track.right() + 40.0, y), false);
-}
-
 fn type_into(harness: &mut Harness<'static, MapMakerApp>, shown: &str, text: &str) {
     harness.get_by_value(shown).click();
     harness.run();
@@ -86,7 +64,9 @@ fn stamp_app() -> Harness<'static, MapMakerApp> {
 
 /// Drags the scrub handle of the field called `label` by `dx` points.
 fn scrub(harness: &mut Harness<'static, MapMakerApp>, label: &str, dx: f32) {
-    let handle = harness.get_by_label(label).rect();
+    let handle = harness
+        .get_by_role_and_label(Role::SpinButton, label)
+        .rect();
     let start = handle.center();
     press(harness, start, true);
     for step in 1..=4 {
@@ -161,19 +141,20 @@ fn label_app() -> (Harness<'static, MapMakerApp>, Id) {
 }
 
 #[test]
-fn each_label_slider_is_one_named_undo_step_per_drag() {
-    for (label, name) in [
-        ("Size", "Change Label Size"),
-        ("Letter spacing", "Change Label Letter Spacing"),
-        ("Line height", "Change Label Line Height"),
-        ("Halo", "Change Label Halo"),
-        ("Opacity", "Change Label Opacity"),
-        ("Arch", "Change Label Arch"),
+fn each_label_field_is_one_named_undo_step_per_scrub() {
+    for (label, name, dx) in [
+        ("Size", "Change Label Size", 40.0),
+        ("Letter spacing", "Change Label Letter Spacing", 40.0),
+        ("Line height", "Change Label Line Height", 40.0),
+        ("Halo", "Change Label Halo", 40.0),
+        // Opacity starts at 100%, so it can only be dragged down.
+        ("Opacity", "Change Label Opacity", -40.0),
+        ("Arch", "Change Label Arch", 40.0),
     ] {
         let (mut harness, id) = label_app();
         let before = harness.state().editor().label(id).cloned().unwrap();
         assert_eq!(undo_label(&harness).as_deref(), Some("Add Label"));
-        drag_to_the_end(&mut harness, label);
+        scrub(&mut harness, label, dx);
         let after = harness.state().editor().label(id).cloned().unwrap();
         assert_ne!(after, before, "{label}");
         assert_eq!(undo_label(&harness).as_deref(), Some(name), "{label}");
@@ -194,15 +175,15 @@ fn each_label_slider_is_one_named_undo_step_per_drag() {
 }
 
 #[test]
-fn the_label_weight_is_a_number_box_with_arrows_only() {
+fn the_label_weight_is_a_scrub_field_without_a_slider() {
     let (mut harness, id) = label_app();
     assert!(
         harness
             .query_by_role_and_label(Role::Slider, "Weight")
             .is_none()
     );
-    harness.get_by_label("Increase Weight").click();
-    harness.run();
+    // Weight moves in hundreds, so two points is two steps.
+    scrub(&mut harness, "Weight", 2.0);
     assert_eq!(undo_label(&harness).as_deref(), Some("Change Label Weight"));
     let weight = harness.state().editor().label(id).unwrap().font.clone();
     assert!(weight.is_some());

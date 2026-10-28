@@ -5,7 +5,12 @@ use ssmap_core::{Command, Id, MAX_RIPPLES, Node, Roughness, ShoreStyle};
 
 use super::{Inherit, PropertiesPanel, caption};
 use crate::editor::Editor;
+use crate::icons::{self, Icon};
 use crate::prop_widgets::{self, Edit, Provenance, ScrubSpec, SectionHeader};
+use crate::theme::metrics;
+
+/// The room an icon button takes at the end of a row, with its gap.
+const ICON_SLOT: f32 = 24.0;
 
 impl PropertiesPanel {
     /// Applies what a field did. A reset goes back to the default; anything else is an edit of
@@ -96,27 +101,24 @@ impl PropertiesPanel {
         let provenance = group.provenance;
         let mut next = group.current().clone();
         let spec = |label| ScrubSpec::new(label).provenance(provenance);
-        let edit = prop_widgets::slider(
+        let edit = prop_widgets::scrub_field(
             ui,
             &mut next.amount,
             &spec("Amount")
                 .unit(" u")
                 .range(0.0, 1000.0)
-                .slider_max(50.0)
-                .default_value(0.0)
                 .step(0.5)
                 .decimals(1)
                 .mixed(group.mixed(|r| r.amount)),
         );
         let amount = next.amount;
         self.edit(editor, edit, group, |r| r.amount = amount);
-        let edit = prop_widgets::slider(
+        let edit = prop_widgets::scrub_field(
             ui,
             &mut next.scale,
             &spec("Scale")
                 .unit(" u")
                 .range(0.5, 10_000.0)
-                .slider_max(200.0)
                 .step(1.0)
                 .decimals(1)
                 .mixed(group.mixed(|r| r.scale)),
@@ -124,14 +126,22 @@ impl PropertiesPanel {
         let scale = next.scale;
         self.edit(editor, edit, group, |r| r.scale = scale);
         let mut seed = f64::from(next.seed);
-        let edit =
-            prop_widgets::scrub_field(ui, &mut seed, &spec("Seed").range(0.0, f64::from(u32::MAX)));
+        let mut reroll = false;
+        let mut edit = Edit::default();
+        ui.horizontal(|ui| {
+            let room = ui.available_width() - ICON_SLOT - ui.spacing().item_spacing.x;
+            ui.allocate_ui(egui::vec2(room, metrics::FIELD[0]), |ui| {
+                edit = prop_widgets::scrub_field(
+                    ui,
+                    &mut seed,
+                    &spec("Seed").range(0.0, f64::from(u32::MAX)),
+                );
+            });
+            reroll = icons::icon_button(ui, Icon::ReRoll, "Re-roll").clicked();
+        });
         let seed = seed as u32;
         self.edit(editor, edit, group, |r| r.seed = seed);
-        let reroll = ui
-            .button("Re-roll")
-            .on_hover_text("Pick another coastline with the same Amount and Scale");
-        if reroll.clicked() {
+        if reroll {
             let seed = Id::new().as_uuid().as_u128() as u32;
             self.edit(editor, Edit::instant(), group, |r| r.seed = seed);
         }
@@ -203,17 +213,10 @@ impl PropertiesPanel {
         let provenance = group.provenance;
         let mut style = group.current().clone();
         let spec = |label| ScrubSpec::new(label).provenance(provenance);
-        let length = |label, max: f64| {
-            spec(label)
-                .unit(" u")
-                .range(0.0, max)
-                .slider_max(max / 5.0)
-                .step(0.1)
-                .decimals(1)
-        };
+        let length = |label, max: f64| spec(label).unit(" u").range(0.0, max).step(0.1).decimals(1);
 
         caption(ui, "Outline");
-        let edit = prop_widgets::slider(
+        let edit = prop_widgets::scrub_field(
             ui,
             &mut style.outline.width,
             &length("Width", 100.0).mixed(group.mixed(|s| s.outline.width)),
@@ -227,7 +230,7 @@ impl PropertiesPanel {
 
         caption(ui, "Ripples");
         let mut count = f64::from(style.ripples.count);
-        let edit = prop_widgets::number_field(
+        let edit = prop_widgets::scrub_field(
             ui,
             &mut count,
             &spec("Count")
@@ -237,14 +240,14 @@ impl PropertiesPanel {
         );
         let count = count as u32;
         self.edit(editor, edit, group, |s| s.ripples.count = count);
-        let edit = prop_widgets::slider(
+        let edit = prop_widgets::scrub_field(
             ui,
             &mut style.ripples.spacing,
             &length("Spacing", 500.0).mixed(group.mixed(|s| s.ripples.spacing)),
         );
         let spacing = style.ripples.spacing;
         self.edit(editor, edit, group, |s| s.ripples.spacing = spacing);
-        let edit = prop_widgets::slider(
+        let edit = prop_widgets::scrub_field(
             ui,
             &mut style.ripples.width,
             &length("Line width", 50.0).mixed(group.mixed(|s| s.ripples.width)),
@@ -255,7 +258,7 @@ impl PropertiesPanel {
         let edit = prop_widgets::swatch(ui, "Line colour", &mut colour, false, provenance).edit;
         let colour = colour.unwrap_or(style.ripples.color);
         self.edit(editor, edit, group, |s| s.ripples.color = colour);
-        let edit = prop_widgets::slider(
+        let edit = prop_widgets::scrub_field(
             ui,
             &mut style.ripples.fade,
             &spec("Fade")
@@ -268,7 +271,7 @@ impl PropertiesPanel {
         self.edit(editor, edit, group, |s| s.ripples.fade = fade);
 
         caption(ui, "Inner shade");
-        let edit = prop_widgets::slider(
+        let edit = prop_widgets::scrub_field(
             ui,
             &mut style.shading.width,
             &length("Shade width", 500.0).mixed(group.mixed(|s| s.shading.width)),

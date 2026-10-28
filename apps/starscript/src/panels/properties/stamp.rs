@@ -20,10 +20,9 @@ const DEFAULT_TINT: Color = Color::rgb(0x7A, 0x2E, 0x2E);
 /// Side of the Asset card's thumbnail.
 const THUMB: f32 = 40.0;
 
-/// A selected Stamp: its id, whether it is locked, and its settings.
+/// A selected Stamp: its id and its settings.
 pub(super) struct Member {
     id: Id,
-    locked: bool,
     stamp: Stamp,
 }
 
@@ -37,7 +36,6 @@ pub(super) fn stamps(map: &Map, ids: &[Id]) -> Option<Vec<Member>> {
             Some(Node::Object(object)) => match &object.kind {
                 ObjectKind::Stamp(stamp) => Some(Member {
                     id,
-                    locked: object.locked,
                     stamp: stamp.clone(),
                 }),
                 _ => None,
@@ -120,7 +118,12 @@ impl PropertiesPanel {
         let Some(first) = members.first() else {
             return;
         };
-        self.stamp_header(ui, editor, members);
+        let ids: Vec<Id> = members.iter().map(|m| m.id).collect();
+        let (title, noun) = match members {
+            [single] => (node_name(editor.map(), single.id), "Stamp"),
+            _ => (format!("{} Stamps", members.len()), "Stamps"),
+        };
+        self.object_header(ui, editor, &ids, &title, noun);
         if let [single] = members {
             self.asset_card(ui, editor, &single.stamp.asset);
         }
@@ -128,65 +131,6 @@ impl PropertiesPanel {
         let first = first.stamp.clone();
         self.stamp_transform(ui, editor, members, &first);
         self.stamp_appearance(ui, editor, members, &first);
-    }
-
-    /// "Layer › Stamp" with the lock at the right end.
-    fn stamp_header(&mut self, ui: &mut egui::Ui, editor: &mut Editor, members: &[Member]) {
-        let palette = theme::palette(ui.ctx());
-        let map = editor.map();
-        let layer = members
-            .first()
-            .and_then(|m| map.parent(m.id))
-            .filter(|&layer| members.iter().all(|m| map.parent(m.id) == Some(layer)));
-        let name = match members {
-            [single] => node_name(map, single.id),
-            _ => format!("{} Stamps", members.len()),
-        };
-        let locked = members.iter().all(|m| m.locked);
-        let lock_label = match (locked, members.len()) {
-            (true, 1) => "Unlock Stamp",
-            (true, _) => "Unlock Stamps",
-            (false, 1) => "Lock Stamp",
-            (false, _) => "Lock Stamps",
-        };
-        let mut toggled = false;
-        ui.horizontal(|ui| {
-            ui.add_space(theme::SPACING[3]);
-            ui.spacing_mut().item_spacing.x = theme::SPACING[1];
-            if let Some(layer) = layer {
-                ui.label(
-                    egui::RichText::new(node_name(map, layer))
-                        .size(theme::CAPTION)
-                        .color(palette.text_tertiary),
-                );
-                ui.label(
-                    egui::RichText::new("›")
-                        .size(theme::CAPTION)
-                        .color(palette.text_tertiary),
-                );
-            }
-            ui.label(
-                egui::RichText::new(name)
-                    .size(theme::CAPTION)
-                    .color(palette.text_secondary),
-            );
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let icon = if locked { Icon::LockFilled } else { Icon::Lock };
-                toggled = icons::icon_button(ui, icon, lock_label).clicked();
-            });
-        });
-        if toggled {
-            let commands = members
-                .iter()
-                .map(|m| Command::SetLocked {
-                    id: m.id,
-                    locked: !locked,
-                })
-                .collect();
-            let label = if locked { "Unlock" } else { "Lock" };
-            self.live
-                .apply_all(editor, Edit::instant(), label, || commands);
-        }
     }
 
     /// The Asset's thumbnail, name and variant, with Shuffle variant and Replace Asset.

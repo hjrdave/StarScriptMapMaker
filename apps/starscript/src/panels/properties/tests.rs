@@ -790,3 +790,75 @@ fn several_stamps_share_one_section_with_mixed_fields_and_one_undo_step() {
     harness.state_mut().editor.undo();
     assert!(!stamp_of(&harness, a).flip && !stamp_of(&harness, b).flip);
 }
+
+#[test]
+fn a_selected_landmass_has_a_lock_in_its_header_and_no_locked_checkbox() {
+    let (mut fixture, _, island) = fixture();
+    fixture.editor.select(vec![island]);
+    let mut harness = harness(fixture);
+    for label in [
+        "Lock Landmass",
+        "Appearance",
+        "Fill",
+        "Roughness",
+        "Amount",
+        "Re-roll",
+    ] {
+        assert!(harness.query_by_label(label).is_some(), "{label}");
+    }
+    // Union, Subtract and Split Apart are icon buttons with their names.
+    for label in ["Union", "Subtract", "Split Apart"] {
+        assert!(harness.query_by_label(label).is_some(), "{label}");
+    }
+    assert!(harness.query_by_label("Locked").is_none());
+
+    harness.get_by_label("Lock Landmass").click();
+    harness.run();
+    assert!(harness.query_by_label("Unlock Landmass").is_some());
+    assert_eq!(harness.state().editor.undo_label(), Some("Lock"));
+    harness.state_mut().editor.undo();
+    harness.run();
+    assert!(harness.query_by_label("Lock Landmass").is_some());
+}
+
+#[test]
+fn a_labels_halo_colour_appears_with_a_halo_and_overrides_can_be_reset_from_the_header() {
+    let (mut fixture, layer, _) = fixture();
+    let id = Id::new();
+    fixture
+        .editor
+        .run(Command::CreateLabel {
+            id,
+            parent: layer,
+            index: None,
+            label: Box::new(Label {
+                text: "Hello".to_owned(),
+                size: Some(40.0),
+                ..Label::default()
+            }),
+        })
+        .expect("a Label is made");
+    fixture.editor.select(vec![id]);
+    let mut harness = harness(fixture);
+    for label in [
+        "Lock Label",
+        "Manage Label styles…",
+        "Italic",
+        "All caps",
+        "Align",
+    ] {
+        assert!(harness.query_by_label(label).is_some(), "{label}");
+    }
+    assert!(harness.query_by_label("Locked").is_none());
+    // No halo yet, so no colour for it.
+    assert!(harness.query_by_label("Halo colour").is_none());
+
+    // One field is overridden, so the header offers the reset and says so.
+    harness.get_by_label("Reset overrides").click();
+    harness.run();
+    assert_eq!(
+        harness.state().editor.label(id).expect("a Label").size,
+        None
+    );
+    assert!(harness.query_by_label("Reset overrides").is_none());
+}

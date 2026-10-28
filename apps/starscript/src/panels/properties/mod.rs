@@ -1,6 +1,7 @@
 //! The properties panel: shows and edits what is selected, through Commands.
 
 mod board;
+mod header;
 pub(crate) use board::BoardRequest;
 mod label;
 mod map;
@@ -14,6 +15,7 @@ use ssmap_core::{AssetRef, Color, Command, Id, Map, MapTemplate, Node, ObjectKin
 
 use crate::asset_browser::ThumbArt;
 use crate::editor::Editor;
+use crate::icons::Icon;
 use crate::layer_tree::node_name;
 use crate::prop_widgets::{self, Edit, LiveEdit, Provenance, SectionHeader};
 use crate::theme;
@@ -153,15 +155,19 @@ impl PropertiesPanel {
             }
             [id] => {
                 let id = *id;
-                breadcrumb(ui, editor.map(), id);
                 match editor.map().node(id).cloned() {
                     // A Layer's own fields are edited in the Layers panel.
-                    Some(Node::Layer(_)) => self.map_properties(ui, editor),
+                    Some(Node::Layer(_)) => {
+                        breadcrumb(ui, editor.map(), id);
+                        self.map_properties(ui, editor);
+                    }
                     Some(Node::Object(object)) if matches!(object.kind, ObjectKind::Label(_)) => {
                         let ObjectKind::Label(label) = object.kind else {
                             unreachable!("matched above")
                         };
-                        self.label_properties(ui, editor, id, object.locked, &label);
+                        let title = node_name(editor.map(), id);
+                        self.object_header(ui, editor, &[id], &title, "Label");
+                        self.label_properties(ui, editor, id, &label);
                     }
                     Some(Node::Object(object)) => {
                         self.object_properties(ui, editor, id, &object);
@@ -170,10 +176,18 @@ impl PropertiesPanel {
                 }
             }
             many => {
-                heading(ui, &selection_summary(editor.map(), many));
+                let many = many.to_vec();
+                let summary = selection_summary(editor.map(), &many);
+                let all_objects = many
+                    .iter()
+                    .all(|&id| matches!(editor.map().node(id), Some(Node::Object(_))));
+                if all_objects {
+                    self.object_header(ui, editor, &many, &summary, "Objects");
+                } else {
+                    heading(ui, &summary);
+                }
                 // Landmasses and Lakes share Roughness and Shore style; a setting that differs
                 // between them shows "Mixed", and an edit sets all of them.
-                let many = many.to_vec();
                 self.object_roughness(ui, editor, &many);
                 self.object_shore(ui, editor, &many);
                 self.combine(ui, editor);
@@ -182,8 +196,8 @@ impl PropertiesPanel {
         self.membership_row(ui, editor);
     }
 
-    /// A Landmass or Lake: Locked and Fill, then Roughness and Shore style, and Combine for a
-    /// Landmass.
+    /// A Landmass or Lake: the header with the lock, its Fill, then Roughness and Shore style,
+    /// and Combine for a Landmass.
     fn object_properties(
         &mut self,
         ui: &mut egui::Ui,
@@ -192,21 +206,20 @@ impl PropertiesPanel {
         object: &ssmap_core::Object,
     ) {
         let title = node_name(editor.map(), id);
-        let header = SectionHeader {
-            kind: "object",
-            title: &title,
-            badge: None,
-            action: None,
+        let noun = match object.kind {
+            ObjectKind::Lake(_) => "Lake",
+            _ => "Landmass",
         };
-        prop_widgets::section(ui, header, |ui| {
-            let mut locked = object.locked;
-            if prop_widgets::checkbox_row(ui, "Locked", &mut locked) {
-                let _ = editor.run(Command::SetLocked { id, locked });
-            }
-            if let Some(fill) = object.kind.fill() {
-                self.fill(ui, editor, id, fill);
-            }
-        });
+        self.object_header(ui, editor, &[id], &title, noun);
+        if let Some(fill) = object.kind.fill() {
+            let header = SectionHeader {
+                kind: "appearance",
+                title: "Appearance",
+                badge: None,
+                action: None,
+            };
+            prop_widgets::section(ui, header, |ui| self.fill(ui, editor, id, fill));
+        }
         self.object_roughness(ui, editor, &[id]);
         self.object_shore(ui, editor, &[id]);
         if matches!(object.kind, ObjectKind::Landmass(_)) {
@@ -237,27 +250,33 @@ impl PropertiesPanel {
         };
         prop_widgets::section(ui, header, |ui| {
             ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(editor.can_combine(), egui::Button::new("Union"))
-                    .on_hover_text("Merge the selected Landmasses into the topmost one")
-                    .clicked()
-                {
+                ui.add_space(theme::SPACING[1]);
+                let combine = editor.can_combine();
+                if prop_widgets::icon_action_enabled(
+                    ui,
+                    Icon::Union,
+                    "Union",
+                    combine,
+                    "Merge the selected Landmasses into the topmost one",
+                ) {
                     editor.union_selection();
                 }
-                if ui
-                    .add_enabled(editor.can_combine(), egui::Button::new("Subtract"))
-                    .on_hover_text("Cut the topmost selected Landmass out of the others")
-                    .clicked()
-                {
+                if prop_widgets::icon_action_enabled(
+                    ui,
+                    Icon::Subtract,
+                    "Subtract",
+                    combine,
+                    "Cut the topmost selected Landmass out of the others",
+                ) {
                     editor.subtract_selection();
                 }
-                if ui
-                    .add_enabled(editor.can_split(), egui::Button::new("Split Apart"))
-                    .on_hover_text(
-                        "Make each part of the selected Landmasses a Landmass of its own",
-                    )
-                    .clicked()
-                {
+                if prop_widgets::icon_action_enabled(
+                    ui,
+                    Icon::SplitApart,
+                    "Split Apart",
+                    editor.can_split(),
+                    "Make each part of the selected Landmasses a Landmass of its own",
+                ) {
                     editor.split_selection();
                 }
             });
