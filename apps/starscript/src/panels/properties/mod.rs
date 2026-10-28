@@ -180,6 +180,7 @@ impl PropertiesPanel {
                 self.combine(ui, editor);
             }
         }
+        self.membership_row(ui, editor);
     }
 
     /// A Landmass or Lake: Locked and Fill, then Roughness and Shore style, and Combine for a

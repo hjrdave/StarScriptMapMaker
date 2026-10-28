@@ -581,3 +581,48 @@ fn a_file_saved_before_boards_that_is_not_changed_still_gets_the_new_shape() {
         .unwrap();
     assert_eq!(count, 1);
 }
+
+#[test]
+fn membership_at_picks_the_topmost_board_under_the_point() {
+    let mut map = new_map();
+    // The Canvas covers 0..100 by 0..80. Two Art boards: one beside it, one over its corner.
+    let beside = create_board(&mut map, 200.0);
+    let over = Id::new();
+    map.execute(&Command::CreateBoard {
+        id: over,
+        name: None,
+        origin: [80.0, 60.0],
+        width: 50,
+        height: 40,
+        index: None,
+    })
+    .unwrap();
+    assert_eq!(map.membership_at([10.0, 10.0]), Membership::Canvas);
+    assert_eq!(map.membership_at([220.0, 20.0]), Membership::Board(beside));
+    // Where the later board overlaps the Canvas, the later board wins.
+    assert_eq!(map.membership_at([90.0, 70.0]), Membership::Board(over));
+    // The edges belong to the board; past them is off the boards.
+    assert_eq!(map.membership_at([0.0, 0.0]), Membership::Canvas);
+    assert_eq!(map.membership_at([150.0, 20.0]), Membership::OffCanvas);
+    assert_eq!(map.membership_at([-1.0, 10.0]), Membership::OffCanvas);
+
+    // Reordering puts the Art board under the Canvas, so the Canvas wins the overlap.
+    map.execute(&Command::ReorderBoard { id: over, index: 0 })
+        .unwrap();
+    assert_eq!(map.membership_at([90.0, 70.0]), Membership::Canvas);
+}
+
+#[test]
+fn membership_at_follows_a_new_canvas() {
+    let mut map = new_map();
+    let art = create_board(&mut map, 200.0);
+    map.execute(&Command::SetPrimaryBoard { id: art }).unwrap();
+    assert_eq!(map.membership_at([220.0, 20.0]), Membership::Canvas);
+    let old = map
+        .boards()
+        .iter()
+        .find(|board| board.id != map.primary_board())
+        .unwrap()
+        .id;
+    assert_eq!(map.membership_at([10.0, 10.0]), Membership::Board(old));
+}

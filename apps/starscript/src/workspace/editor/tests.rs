@@ -2,7 +2,7 @@
 //! the way a tool would.
 
 use super::*;
-use ssmap_core::{Canvas, DistanceUnit, Scale};
+use ssmap_core::{Canvas, DistanceUnit, Membership, Scale};
 
 fn editor() -> Editor {
     Editor::new(Map::new(Canvas::new(
@@ -76,6 +76,41 @@ fn a_paste_puts_the_middle_of_the_copied_objects_under_the_point() {
     assert_eq!(editor.undo_label(), Some("Paste"));
     editor.undo();
     assert_eq!(editor.map.children(Some(layer)), &[a, b]);
+}
+
+fn member(editor: &Editor, id: Id) -> Membership {
+    match editor.map.node(id) {
+        Some(Node::Object(object)) => object.membership,
+        _ => panic!("an Object"),
+    }
+}
+
+#[test]
+fn a_paste_joins_the_board_under_the_paste_point_in_one_undo_step() {
+    let mut editor = editor();
+    let board = editor.new_art_board().unwrap();
+    let layer = editor.new_layer().unwrap();
+    let a = add_stamp(&mut editor, layer, 10.0, 10.0);
+    editor.select(vec![a]);
+    assert!(editor.copy_selection());
+    assert_eq!(member(&editor, a), Membership::Canvas);
+
+    // The Art board starts 256 units right of the 100 wide Canvas.
+    let on_board = editor.paste([400.0, 50.0]).unwrap();
+    assert_eq!(member(&editor, on_board[0]), Membership::Board(board));
+    assert_eq!(editor.undo_label(), Some("Paste"));
+    editor.undo();
+    assert!(
+        editor.map.node(on_board[0]).is_none(),
+        "one undo removes it"
+    );
+
+    let on_canvas = editor.paste([20.0, 20.0]).unwrap();
+    assert_eq!(member(&editor, on_canvas[0]), Membership::Canvas);
+    let off = editor.paste([200.0, 50.0]).unwrap();
+    assert_eq!(member(&editor, off[0]), Membership::OffCanvas);
+    // The original did not change.
+    assert_eq!(member(&editor, a), Membership::Canvas);
 }
 
 #[test]

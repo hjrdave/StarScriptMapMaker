@@ -2,9 +2,9 @@
 //! and background, and making it the Canvas, duplicating or deleting it.
 
 use eframe::egui;
-use ssmap_core::{Command, Id};
+use ssmap_core::{Command, Id, Map, Membership, Node};
 
-use super::{PropertiesPanel, caption, heading, map::resize};
+use super::{PropertiesPanel, caption, heading, map::resize, row};
 use crate::editor::Editor;
 use crate::prop_widgets::{self, ScrubSpec};
 
@@ -63,6 +63,55 @@ impl PropertiesPanel {
         });
     }
 
+    /// For the selected Objects: which board they belong to, and a way to move them to
+    /// another, to the Canvas, or off the boards. One Undo step. Nothing for a selection that
+    /// is not all Objects.
+    pub(super) fn membership_row(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+        let ids: Vec<Id> = editor.selection().to_vec();
+        let memberships: Vec<Membership> = ids
+            .iter()
+            .filter_map(|&id| match editor.map().node(id) {
+                Some(Node::Object(object)) => Some(object.membership),
+                _ => None,
+            })
+            .collect();
+        if ids.is_empty() || memberships.len() != ids.len() {
+            return;
+        }
+        let map = editor.map();
+        let same = memberships.iter().all(|m| *m == memberships[0]);
+        let shown = if same {
+            membership_name(map, memberships[0])
+        } else {
+            "Mixed".to_owned()
+        };
+        let mut options = vec![Membership::Canvas];
+        options.extend(
+            map.boards()
+                .iter()
+                .filter(|board| board.id != map.primary_board())
+                .map(|board| Membership::Board(board.id)),
+        );
+        options.push(Membership::OffCanvas);
+        let names: Vec<String> = options.iter().map(|&m| membership_name(map, m)).collect();
+        let mut chosen = None;
+        row(ui, "Board", |ui| {
+            egui::ComboBox::from_id_salt("object board")
+                .selected_text(shown)
+                .show_ui(ui, |ui| {
+                    for (option, name) in options.iter().zip(&names) {
+                        let current = same && memberships[0] == *option;
+                        if ui.selectable_label(current, name).clicked() && !current {
+                            chosen = Some(*option);
+                        }
+                    }
+                });
+        });
+        if let Some(membership) = chosen {
+            let _ = editor.run(Command::SetMembership { ids, membership });
+        }
+    }
+
     /// The board's name; empty goes back to the default "Art board N". Committed when the
     /// field loses focus.
     fn board_name(&mut self, ui: &mut egui::Ui, editor: &mut Editor, id: Id, shown: &str) {
@@ -99,5 +148,16 @@ impl PropertiesPanel {
                 let _ = editor.run(Command::RenameBoard { id, name });
             }
         }
+    }
+}
+
+/// What a membership is called in lists: the board's name, "Canvas", or "Off the boards".
+fn membership_name(map: &Map, membership: Membership) -> String {
+    match membership {
+        Membership::Canvas => "Canvas".to_owned(),
+        Membership::OffCanvas => "Off the boards".to_owned(),
+        Membership::Board(id) => map
+            .board_label(id)
+            .unwrap_or_else(|| "Unknown board".to_owned()),
     }
 }

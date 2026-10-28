@@ -343,6 +343,69 @@ fn the_stamp_section_names_the_chosen_asset_and_asks_for_the_assets_section() {
 }
 
 #[test]
+fn the_board_row_moves_selected_objects_between_boards_in_one_undo_step() {
+    use ssmap_core::Membership;
+    let (mut fixture, _, island) = fixture();
+    let board = fixture.editor.new_art_board().unwrap();
+    fixture.editor.select_board(None);
+    fixture.editor.select(vec![island]);
+    let member = |fixture: &Fixture| match fixture.editor.map().node(island) {
+        Some(Node::Object(object)) => object.membership,
+        _ => panic!("an Object"),
+    };
+    let mut harness = harness(fixture);
+    assert_eq!(member(harness.state()), Membership::Canvas);
+    harness.get_by_label("Board");
+    harness.get_by_role(egui::accesskit::Role::ComboBox).click();
+    harness.run();
+    harness.get_by_label("Art board 1").click();
+    harness.run();
+    assert_eq!(member(harness.state()), Membership::Board(board));
+    assert_eq!(
+        harness.state().editor.undo_label(),
+        Some("Move On or Off Canvas")
+    );
+
+    harness.get_by_role(egui::accesskit::Role::ComboBox).click();
+    harness.run();
+    harness.get_by_label("Off the boards").click();
+    harness.run();
+    assert_eq!(member(harness.state()), Membership::OffCanvas);
+    harness.state_mut().editor.undo();
+    assert_eq!(member(harness.state()), Membership::Board(board));
+}
+
+#[test]
+fn the_board_row_says_mixed_for_objects_on_different_boards() {
+    use ssmap_core::Membership;
+    let (mut fixture, layer, island) = fixture();
+    let board = fixture.editor.new_art_board().unwrap();
+    let lake = Id::new();
+    fixture
+        .editor
+        .run(Command::CreateLake {
+            id: lake,
+            parent: layer,
+            index: None,
+            geometry: square(50.0, 10.0),
+            fill: None,
+        })
+        .unwrap();
+    fixture
+        .editor
+        .run(Command::SetMembership {
+            ids: vec![lake],
+            membership: Membership::Board(board),
+        })
+        .unwrap();
+    fixture.editor.select_board(None);
+    fixture.editor.select(vec![island, lake]);
+    let harness = harness(fixture);
+    let combo = harness.get_by_role(egui::accesskit::Role::ComboBox);
+    assert_eq!(combo.accesskit_node().value().as_deref(), Some("Mixed"));
+}
+
+#[test]
 fn the_land_brush_section_sets_the_default_mode() {
     let (mut fixture, _, _) = fixture();
     fixture.editor.active_tool = ToolId::LandBrush;

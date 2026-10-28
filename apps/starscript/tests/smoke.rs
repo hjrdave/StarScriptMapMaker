@@ -538,34 +538,38 @@ fn dragging_an_object_on_and_off_the_canvas_changes_its_membership_in_one_undo_s
     harness.run();
     assert_eq!(membership(&harness, island), Membership::Canvas);
 
-    // Across the edge with the pointer still on the Canvas: it stays a member.
+    // Across the right edge with its centre still on the Canvas: it stays a member.
     let from = screen(&harness, [50.0, 300.0]);
-    let to = screen(&harness, [10.0, 300.0]);
+    let to = screen(&harness, [700.0, 300.0]);
     drag(&mut harness, from, to, true);
     assert!(
-        outline_start(&harness, island)[0] < 0.0,
+        outline_start(&harness, island)[0] + 400.0 > 1000.0,
         "straddles the edge"
     );
     assert_eq!(membership(&harness, island), Membership::Canvas);
 
-    // The pointer off the Canvas: it becomes an off-Canvas object, in one undo step.
-    let from = screen(&harness, [10.0, 300.0]);
-    let off = screen(&harness, [-30.0, 300.0]);
+    // Its centre past the edge: it becomes an off-Canvas object, in one undo step.
+    let from = screen(&harness, [700.0, 300.0]);
+    let off = screen(&harness, [900.0, 300.0]);
     drag(&mut harness, from, off, true);
     assert_eq!(membership(&harness, island), Membership::OffCanvas);
     assert_eq!(harness.state().editor().undo_label(), Some("Move"));
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
     harness.run();
     assert_eq!(membership(&harness, island), Membership::Canvas);
-    assert!(outline_start(&harness, island)[0] < 0.0, "undo is one step");
+    assert_eq!(
+        outline_start(&harness, island)[0],
+        650.0,
+        "undo is one step"
+    );
 
     // Dropping it off the Canvas again, then back on, makes it a member again.
-    let from = screen(&harness, [10.0, 300.0]);
-    let off = screen(&harness, [-30.0, 300.0]);
+    let from = screen(&harness, [700.0, 300.0]);
+    let off = screen(&harness, [900.0, 300.0]);
     drag(&mut harness, from, off, true);
     assert_eq!(membership(&harness, island), Membership::OffCanvas);
-    let from = screen(&harness, [-30.0, 300.0]);
-    let on = screen(&harness, [60.0, 300.0]);
+    let from = screen(&harness, [900.0, 300.0]);
+    let on = screen(&harness, [500.0, 300.0]);
     drag(&mut harness, from, on, true);
     assert_eq!(membership(&harness, island), Membership::Canvas);
 }
