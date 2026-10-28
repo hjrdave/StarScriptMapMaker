@@ -14,7 +14,7 @@ use crate::extra::Extra;
 use crate::geometry::{Point, Rect};
 use crate::id::Id;
 use crate::label::{LabelStyles, ResolvedLabel};
-use crate::node::{Landmass, Node, Object, ObjectKind};
+use crate::node::{Landmass, Membership, Node, Object, ObjectKind};
 use crate::roughness::Roughness;
 use crate::shore::{ShoreKind, ShoreStyle};
 
@@ -373,6 +373,26 @@ impl Map {
 
     pub(crate) fn board_mut(&mut self, id: Id) -> Option<&mut Board> {
         self.boards.iter_mut().find(|board| board.id == id)
+    }
+
+    /// The membership an Object has when it is dropped with its centre at `point`: the topmost
+    /// board that contains the point (a later board in the Map's order draws over an earlier
+    /// one), the Canvas if that is the primary board, or none when no board does.
+    pub fn membership_at(&self, point: Point) -> Membership {
+        let inside = |rect: Rect| {
+            (rect.min[0]..=rect.max[0]).contains(&point[0])
+                && (rect.min[1]..=rect.max[1]).contains(&point[1])
+        };
+        match self
+            .boards
+            .iter()
+            .rev()
+            .find(|board| inside(board.canvas.rect()))
+        {
+            Some(board) if board.id == self.primary => Membership::Canvas,
+            Some(board) => Membership::Board(board.id),
+            None => Membership::OffCanvas,
+        }
     }
 
     /// The name a board shows under: "Canvas" for the primary, otherwise its own name or

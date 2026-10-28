@@ -189,16 +189,34 @@ impl Editor {
         let offset = clipboard
             .centre
             .map_or([0.0, 0.0], |c| [at[0] - c[0], at[1] - c[1]]);
+        // What is pasted belongs to the board it lands on: the one under the paste point.
+        let membership = self.map.membership_at(at);
         let command = Command::Paste {
             parent,
             index,
             subtrees: clipboard.subtrees,
-            new_ids,
+            new_ids: new_ids.clone(),
             offset,
         };
-        self.run_selecting(command, tops.clone())
-            .is_ok()
-            .then_some(tops)
+        let label = command.label();
+        let done = self.in_gesture(label, |g| {
+            if !g.run(command) {
+                return Err(());
+            }
+            let moved: Vec<Id> = new_ids
+                .into_iter()
+                .filter(|&id| {
+                    matches!(g.editor.map.node(id), Some(Node::Object(o)) if o.membership != membership)
+                        && !g.editor.map.is_locked(id)
+                })
+                .collect();
+            if !moved.is_empty() && !g.run(Command::SetMembership { ids: moved, membership }) {
+                return Err(());
+            }
+            g.editor.select(tops.clone());
+            Ok(())
+        });
+        done.is_some_and(|result| result.is_ok()).then_some(tops)
     }
 
     /// The Layer (`None` for the root) and position pasted items go in. Layers go just above

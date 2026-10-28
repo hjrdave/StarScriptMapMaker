@@ -1,6 +1,6 @@
 //! Select-tool drags on the selection: move, scale, rotate and Option-drag copy.
 
-use ssmap_core::{Affine, Command, Id, Label, LabelStyles, Membership, Node, Stamp};
+use ssmap_core::{Affine, Command, Id, Label, LabelStyles, Node, Stamp};
 
 use super::{ToolId, ToolState};
 use crate::editor::Editor;
@@ -125,23 +125,20 @@ pub(super) fn start_drag(
     });
 }
 
-/// The `SetMembership` Command a move drag ends each frame with: the pointer at `point`
-/// decides whether the dragged Objects belong to the Canvas or sit off it, as in Figma.
-/// `None` when nothing changes membership, or for a resize or rotation.
+/// The `SetMembership` Command a move drag ends each frame with: the centre of the dragged
+/// selection, moved by the drag to the pointer at `point`, decides which board the dragged
+/// Objects belong to (the topmost one under it), or none when it is over no board. The whole
+/// selection goes to one board, so a group is never split. `None` when nothing changes
+/// membership, or for a resize or rotation.
 pub(super) fn membership_command(editor: &Editor, drag: &Drag, point: [f64; 2]) -> Option<Command> {
     if drag.grip.is_some() {
         return None;
     }
-    let canvas = editor.map().canvas().rect();
-    let inside = point[0] >= canvas.min[0]
-        && point[0] <= canvas.max[0]
-        && point[1] >= canvas.min[1]
-        && point[1] <= canvas.max[1];
-    let target = if inside {
-        Membership::Canvas
-    } else {
-        Membership::OffCanvas
-    };
+    let centre = drag.bounds.centre();
+    let target = editor.map().membership_at([
+        centre[0] + point[0] - drag.start[0],
+        centre[1] + point[1] - drag.start[1],
+    ]);
     let moved: Vec<Id> = match &drag.copies {
         Some((_, new_ids)) => new_ids.clone(),
         None => drag
