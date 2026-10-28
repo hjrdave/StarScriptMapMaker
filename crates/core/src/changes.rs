@@ -14,7 +14,11 @@ pub(crate) enum Change {
     /// This node was edited in place: a property set, or its outline replaced. It is not
     /// moved, added or removed.
     Edited(Id),
-    /// Anything else: nodes added, removed or moved, boards, Canvas, defaults, files.
+    /// This node, with nothing below it, was added.
+    Inserted(Id),
+    /// The Map-wide defaults were replaced.
+    Defaults,
+    /// Anything else: nodes removed or moved, boards, Canvas, files.
     Other,
 }
 
@@ -48,9 +52,13 @@ impl ChangeLog {
             match change {
                 Change::Edited(id) if seen.insert(id) => changes.edited.push(id),
                 Change::Edited(_) => {}
+                Change::Inserted(id) => changes.inserted.push(id),
+                Change::Defaults => changes.defaults = true,
                 Change::Other => changes.other = true,
             }
         }
+        let inserted: std::collections::HashSet<Id> = changes.inserted.iter().copied().collect();
+        changes.edited.retain(|id| !inserted.contains(id));
         Some(changes)
     }
 }
@@ -61,7 +69,12 @@ pub struct Changes {
     /// The nodes edited in place (a property set, or an outline replaced), each once, in the
     /// order they were first edited.
     pub edited: Vec<Id>,
-    /// Something else changed: a node was added, removed or moved, or a Map-wide setting did.
-    /// Derived data should rebuild.
+    /// The nodes added with nothing below them, in the order they were added. A node added
+    /// and edited since is listed here and not in `edited`.
+    pub inserted: Vec<Id>,
+    /// The Map-wide defaults (Roughness, Shore styles, Label styles) were replaced.
+    pub defaults: bool,
+    /// Something else changed: a node was removed or moved, a Layer or board did, or a file
+    /// was embedded. Derived data should rebuild.
     pub other: bool,
 }

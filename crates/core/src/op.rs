@@ -251,6 +251,10 @@ impl Map {
         self.revision += 1;
         let change = match &op {
             Op::SetProperty { id, .. } | Op::ReplaceGeometry { id, .. } => Change::Edited(*id),
+            Op::Insert { subtree, .. } if subtree.children.is_empty() => {
+                Change::Inserted(subtree.id)
+            }
+            Op::SetDefaults { .. } => Change::Defaults,
             _ => Change::Other,
         };
         let inverse = match op {
