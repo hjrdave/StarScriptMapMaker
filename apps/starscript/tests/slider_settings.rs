@@ -1,6 +1,6 @@
-//! The Stamp scatter settings and the Label text settings use the slider with a number box.
-//! Scatter settings are tool settings, so they make no Undo step; each drag on a Label setting
-//! is one named step.
+//! The Stamp scatter settings are scrub fields and the Label text settings sliders with a number
+//! box. Scatter settings are tool settings, so they make no Undo step; each drag on a Label
+//! setting is one named step.
 
 use eframe::egui;
 use egui::accesskit::Role;
@@ -76,33 +76,46 @@ fn stamp_app() -> Harness<'static, MapMakerApp> {
     harness
 }
 
+/// Drags the scrub handle of the field called `label` by `dx` points.
+fn scrub(harness: &mut Harness<'static, MapMakerApp>, label: &str, dx: f32) {
+    let handle = harness.get_by_label(label).rect();
+    let start = handle.center();
+    press(harness, start, true);
+    for step in 1..=4 {
+        let x = start.x + step as f32 * dx / 4.0;
+        harness.event(egui::Event::PointerMoved(egui::pos2(x, start.y)));
+        harness.run();
+    }
+    press(harness, egui::pos2(start.x + dx, start.y), false);
+}
+
 #[test]
-fn each_scatter_slider_takes_a_drag_without_an_undo_step() {
+fn each_scatter_field_takes_a_scrub_without_an_undo_step() {
     for label in ["Density", "Spacing", "Size jitter", "Rotation jitter"] {
         let mut harness = stamp_app();
         let before = undo_label(&harness);
         let scatter = harness.state().editor().scatter.clone();
-        drag_to_the_end(&mut harness, label);
+        scrub(&mut harness, label, 40.0);
         assert_ne!(harness.state().editor().scatter, scatter, "{label}");
         assert_eq!(undo_label(&harness), before, "{label}");
     }
 }
 
 #[test]
-fn the_scatter_sliders_reach_their_track_ends() {
+fn the_scatter_fields_stop_at_their_range_ends() {
     let mut harness = stamp_app();
     for label in ["Density", "Spacing", "Size jitter", "Rotation jitter"] {
-        drag_to_the_end(&mut harness, label);
+        scrub(&mut harness, label, 4000.0);
     }
     let scatter = &harness.state().editor().scatter;
     assert_eq!(scatter.density, 100.0);
-    assert_eq!(scatter.spacing, 200.0);
+    assert_eq!(scatter.spacing, 2000.0);
     assert!((scatter.size_jitter - 0.9).abs() < 1e-9);
     assert_eq!(scatter.rotation_jitter, 180.0);
 }
 
 #[test]
-fn a_typed_spacing_may_pass_the_slider_end_up_to_the_hard_maximum() {
+fn a_typed_spacing_stops_at_the_hard_maximum() {
     let mut harness = stamp_app();
     type_into(&mut harness, "10", "500");
     assert_eq!(harness.state().editor().scatter.spacing, 500.0);

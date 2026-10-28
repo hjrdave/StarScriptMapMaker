@@ -25,6 +25,18 @@ pub struct ScrubSpec<'a> {
     /// The setting differs across the selection: the box says "Mixed" and the thumb is neutral.
     /// Any edit sets every item, even to the value shown.
     pub mixed: bool,
+    /// The scrub handle drawn inside the box (X, S, ↻) in place of the label beside it, for
+    /// fields laid out in a [`pair`](super::pair). The label stays the accessible name.
+    pub handle: Option<Handle<'a>>,
+}
+
+/// What the scrub handle inside a compact field shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Handle<'a> {
+    /// A letter, such as "X" or "S".
+    Text(&'a str),
+    /// A glyph, such as the rotate arrow.
+    Icon(Icon),
 }
 
 impl<'a> ScrubSpec<'a> {
@@ -41,7 +53,14 @@ impl<'a> ScrubSpec<'a> {
             default: None,
             log: false,
             mixed: false,
+            handle: None,
         }
+    }
+
+    /// Draws the scrub handle inside the box, as `handle`, instead of the label beside it.
+    pub fn handle(mut self, handle: Handle<'a>) -> Self {
+        self.handle = Some(handle);
+        self
     }
 
     /// Marks the setting as differing across the selection.
@@ -105,6 +124,14 @@ impl<'a> ScrubSpec<'a> {
         format!("{value:.*}{}", self.decimals, self.unit)
     }
 
+    /// [`Self::format`] without the unit, which a compact field draws at its right edge.
+    fn format_bare(&self, value: f64) -> String {
+        if self.mixed {
+            return MIXED.to_owned();
+        }
+        format!("{value:.*}", self.decimals)
+    }
+
     /// What typing starts from: nothing when mixed.
     fn typing_start(&self, value: f64) -> String {
         if self.mixed {
@@ -129,102 +156,24 @@ struct ScrubState {
     dragging: bool,
 }
 
+/// The width of the handle inside a compact field.
+const HANDLE_WIDTH: f32 = 22.0;
+
 /// A numeric field whose label is the scrub handle. Dragging the label changes the value
 /// (⇧ ×10, ⌥ ×0.1); clicking the value types one, with arithmetic, on Enter; Esc cancels.
+/// With a [`Handle`] the handle sits inside the box and the unit at its right edge.
 pub fn scrub_field(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit {
-    let palette = theme::palette(ui.ctx());
     let id = ui.make_persistent_id(("scrub", spec.label));
     let mut state: ScrubState = ui.data(|d| d.get_temp(id)).unwrap_or_default();
     let mut edit = Edit::default();
-    let enabled = ui.is_enabled();
 
     ui.horizontal(|ui| {
-        let (label_rect, handle) = ui.allocate_exact_size(
-            Vec2::new(label_width(ui, spec.label, spec.provenance), spec.height),
-            Sense::drag(),
-        );
-        handle.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::DragValue, enabled, spec.label)
-        });
-        paint_label(ui, label_rect, spec.label, spec.provenance);
-        if enabled {
-            handle
-                .clone()
-                .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
-        }
-
-        if handle.drag_started() {
-            state.start = *value;
-            state.travel = 0.0;
-            state.dragging = true;
-            edit.began = true;
-        }
-        if handle.dragged() && state.dragging {
-            state.travel += f64::from(handle.drag_delta().x);
-            let speed = Speed::from_modifiers(ui.input(|i| i.modifiers));
-            let next = scrub_value(state.start, state.travel, spec.step, speed, spec.range);
-            let next = round_to(next, spec.decimals);
-            if next != *value {
-                *value = next;
-                edit.changed = true;
-            }
-        }
-        if handle.drag_stopped() && state.dragging {
-            state.dragging = false;
-            edit.finished = true;
-        }
-
-        let field_w = (ui.available_width() - gap_before_trailing(ui, spec.provenance)).max(40.0);
-        let (field_rect, field) =
-            ui.allocate_exact_size(Vec2::new(field_w, spec.height), Sense::click());
-        ui.painter().rect(
-            field_rect,
-            theme::RADIUS_FIELD,
-            palette.bg_field,
-            Stroke::new(1.0, palette.border_subtle),
-            StrokeKind::Inside,
-        );
-        if let Some(text) = state.typing.as_mut() {
-            let response = ui.put(
-                field_rect,
-                egui::TextEdit::singleline(text)
-                    .frame(egui::Frame::NONE)
-                    .margin(egui::Margin::symmetric(6, 0))
-                    .font(egui::FontId::new(theme::MONO, theme::mono_family())),
-            );
-            if !response.has_focus() && !response.lost_focus() {
-                response.request_focus();
-            }
-            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                state.typing = None;
-            } else if response.lost_focus() {
-                if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    let typed = state.typing.take().unwrap_or_default();
-                    if let Some(result) = eval_expression(&typed, *value) {
-                        let result = round_to(spec.range.clamp(result), spec.decimals.max(3));
-                        if result != *value {
-                            *value = result;
-                            edit = Edit::instant();
-                        }
-                    }
-                }
-                state.typing = None;
-            }
-        } else {
-            paint_value(
-                ui,
-                field_rect,
-                &spec.format(*value),
-                spec.provenance,
-                egui::Align2::LEFT_CENTER,
-            );
-            field.widget_info(|| {
-                egui::WidgetInfo::text_edit(enabled, spec.format(*value), spec.format(*value), "")
-            });
-            if enabled && field.clicked() {
-                state.typing = Some(format!("{value:.*}", spec.decimals));
-            }
-        }
+        let (handle, value_rect, field) = match spec.handle {
+            None => labelled_parts(ui, spec),
+            Some(glyph) => compact_parts(ui, spec, glyph),
+        };
+        scrub_drag(ui, &handle, &mut state, value, spec, &mut edit);
+        scrub_value_box(ui, value_rect, &field, &mut state, value, spec, &mut edit);
         if trailing(ui, spec.label, spec.provenance) {
             edit.reset = true;
         }
@@ -232,6 +181,192 @@ pub fn scrub_field(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> 
 
     ui.data_mut(|d| d.insert_temp(id, state));
     edit
+}
+
+/// The label beside the box as the handle, then the box: the handle's response, where the
+/// value goes and the box's response.
+fn labelled_parts(
+    ui: &mut egui::Ui,
+    spec: &ScrubSpec<'_>,
+) -> (egui::Response, egui::Rect, egui::Response) {
+    let palette = theme::palette(ui.ctx());
+    let (label_rect, handle) = ui.allocate_exact_size(
+        Vec2::new(label_width(ui, spec.label, spec.provenance), spec.height),
+        Sense::drag(),
+    );
+    paint_label(ui, label_rect, spec.label, spec.provenance);
+    let field_w = (ui.available_width() - gap_before_trailing(ui, spec.provenance)).max(40.0);
+    let (field_rect, field) =
+        ui.allocate_exact_size(Vec2::new(field_w, spec.height), Sense::click());
+    ui.painter().rect(
+        field_rect,
+        theme::RADIUS_FIELD,
+        palette.bg_field,
+        Stroke::new(1.0, palette.border_subtle),
+        StrokeKind::Inside,
+    );
+    (handle, field_rect, field)
+}
+
+/// One box with the handle at its left and the unit at its right: the handle's response,
+/// where the value goes and the response of the value part.
+fn compact_parts(
+    ui: &mut egui::Ui,
+    spec: &ScrubSpec<'_>,
+    glyph: Handle<'_>,
+) -> (egui::Response, egui::Rect, egui::Response) {
+    let palette = theme::palette(ui.ctx());
+    let width = (ui.available_width() - gap_before_trailing(ui, spec.provenance)).max(40.0);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, spec.height), Sense::hover());
+    ui.painter().rect(
+        rect,
+        theme::RADIUS_FIELD,
+        palette.bg_field,
+        Stroke::new(1.0, palette.border_subtle),
+        StrokeKind::Inside,
+    );
+    let handle_rect = egui::Rect::from_min_size(rect.min, Vec2::new(HANDLE_WIDTH, rect.height()));
+    let handle = ui.interact(
+        handle_rect,
+        ui.id().with(("scrub handle", spec.label)),
+        Sense::drag(),
+    );
+    let colour = palette.text_tertiary;
+    match glyph {
+        Handle::Text(text) => {
+            ui.painter().text(
+                handle_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                text,
+                egui::FontId::proportional(theme::CAPTION),
+                colour,
+            );
+        }
+        Handle::Icon(icon) => icons::paint(ui, handle_rect, icon, 12.0, colour),
+    }
+    let mut value_rect =
+        egui::Rect::from_min_max(egui::pos2(handle_rect.right() - 6.0, rect.top()), rect.max);
+    if !spec.unit.is_empty() && !spec.mixed {
+        let unit = ui.painter().text(
+            egui::pos2(rect.right() - 6.0, rect.center().y),
+            egui::Align2::RIGHT_CENTER,
+            spec.unit.trim(),
+            egui::FontId::proportional(theme::CAPTION),
+            colour,
+        );
+        value_rect.max.x = unit.left() - 2.0;
+    }
+    let field = ui.interact(
+        value_rect,
+        ui.id().with(("scrub value", spec.label)),
+        Sense::click(),
+    );
+    (handle, value_rect, field)
+}
+
+/// Dragging the handle: one gesture from press to release.
+fn scrub_drag(
+    ui: &egui::Ui,
+    handle: &egui::Response,
+    state: &mut ScrubState,
+    value: &mut f64,
+    spec: &ScrubSpec<'_>,
+    edit: &mut Edit,
+) {
+    let enabled = ui.is_enabled();
+    handle.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::DragValue, enabled, spec.label)
+    });
+    if enabled {
+        handle
+            .clone()
+            .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+    }
+    if handle.drag_started() {
+        state.start = *value;
+        state.travel = 0.0;
+        state.dragging = true;
+        edit.began = true;
+    }
+    if handle.dragged() && state.dragging {
+        state.travel += f64::from(handle.drag_delta().x);
+        let speed = Speed::from_modifiers(ui.input(|i| i.modifiers));
+        let next = scrub_value(state.start, state.travel, spec.step, speed, spec.range);
+        let next = round_to(next, spec.decimals);
+        if next != *value || spec.mixed {
+            *value = next;
+            edit.changed = true;
+        }
+    }
+    if handle.drag_stopped() && state.dragging {
+        state.dragging = false;
+        edit.finished = true;
+    }
+}
+
+/// The value, or the text box while one is typed. Enter commits, Esc cancels.
+fn scrub_value_box(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    field: &egui::Response,
+    state: &mut ScrubState,
+    value: &mut f64,
+    spec: &ScrubSpec<'_>,
+    edit: &mut Edit,
+) {
+    let enabled = ui.is_enabled();
+    let compact = spec.handle.is_some();
+    if let Some(text) = state.typing.as_mut() {
+        let response = ui.put(
+            rect,
+            egui::TextEdit::singleline(text)
+                .frame(egui::Frame::NONE)
+                .margin(egui::Margin::symmetric(6, 0))
+                .font(egui::FontId::new(theme::MONO, theme::mono_family())),
+        );
+        if !response.has_focus() && !response.lost_focus() {
+            response.request_focus();
+        }
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            state.typing = None;
+        } else if response.lost_focus() {
+            if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                let typed = state.typing.take().unwrap_or_default();
+                if let Some(result) = eval_expression(&typed, *value) {
+                    let result = round_to(spec.range.clamp(result), spec.decimals.max(3));
+                    if result != *value || spec.mixed {
+                        *value = result;
+                        *edit = Edit::instant();
+                    }
+                }
+            }
+            state.typing = None;
+        }
+        return;
+    }
+    let shown = if compact {
+        spec.format_bare(*value)
+    } else {
+        spec.format(*value)
+    };
+    if spec.mixed {
+        let palette = theme::palette(ui.ctx());
+        ui.painter().text(
+            egui::pos2(rect.left() + 6.0, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            &shown,
+            egui::FontId::proportional(theme::BODY),
+            palette.text_tertiary,
+        );
+    } else {
+        paint_value(ui, rect, &shown, spec.provenance, egui::Align2::LEFT_CENTER);
+    }
+    field.widget_info(|| {
+        egui::WidgetInfo::text_edit(enabled, spec.format(*value), spec.format(*value), "")
+    });
+    if enabled && field.clicked() {
+        state.typing = Some(spec.typing_start(*value));
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

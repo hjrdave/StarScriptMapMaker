@@ -2,16 +2,18 @@
 
 mod board;
 pub(crate) use board::BoardRequest;
-mod label_stamp;
+mod label;
 mod layer;
 mod map;
 mod object_style;
+mod stamp;
 #[cfg(test)]
 mod tests;
 
 use eframe::egui;
-use ssmap_core::{Color, Command, Id, Map, MapTemplate, Node, ObjectKind};
+use ssmap_core::{AssetRef, Color, Command, Id, Map, MapTemplate, Node, ObjectKind};
 
+use crate::asset_browser::ThumbArt;
 use crate::editor::Editor;
 use crate::layer_tree::node_name;
 use crate::prop_widgets::{self, Edit, LiveEdit, Provenance, SectionHeader};
@@ -30,6 +32,10 @@ pub(crate) struct PropertiesPanel {
     board_requests: Vec<board::BoardRequest>,
     /// The active tool's settings, above the selection.
     tool_section: ToolSection,
+    /// The Stamp section's "Replace Asset" was clicked; the window opens the Assets section.
+    open_assets: bool,
+    /// The selected Stamp's Asset and its thumbnail, loaded once per Asset.
+    stamp_thumb: Option<(AssetRef, Option<ThumbArt>)>,
     /// The Canvas point that stays put when it is resized, as (column, row) of the 3×3
     /// anchor grid: 0 is left / top, 1 the middle, 2 right / bottom.
     canvas_anchor: (u8, u8),
@@ -88,9 +94,11 @@ impl PropertiesPanel {
         std::mem::take(&mut self.manage_label_styles)
     }
 
-    /// Whether the Stamp section's "Choose Asset…" was clicked since the last call.
+    /// Whether the Stamp tool's Asset card or "Replace Asset" on a selected Stamp was clicked
+    /// since the last call.
     pub(crate) fn take_open_assets(&mut self) -> bool {
-        self.tool_section.take_open_assets()
+        let replace = std::mem::take(&mut self.open_assets);
+        self.tool_section.take_open_assets() || replace
     }
 
     /// Returns true when the collapse control at the bottom was clicked.
@@ -132,6 +140,11 @@ impl PropertiesPanel {
     }
 
     fn selection(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+        // Stamps name themselves in their header and show the board under Transform.
+        if let Some(members) = stamp::stamps(editor.map(), editor.selection()) {
+            self.stamp_properties(ui, editor, &members);
+            return;
+        }
         match editor.selection() {
             [] if let Some(board) = editor.selected_board() => {
                 self.board_properties(ui, editor, board);
@@ -157,12 +170,6 @@ impl PropertiesPanel {
                             unreachable!("matched above")
                         };
                         self.label_properties(ui, editor, id, object.locked, &label);
-                    }
-                    Some(Node::Object(object)) if matches!(object.kind, ObjectKind::Stamp(_)) => {
-                        let ObjectKind::Stamp(stamp) = object.kind else {
-                            unreachable!("matched above")
-                        };
-                        self.stamp_properties(ui, editor, id, object.locked, &stamp);
                     }
                     Some(Node::Object(object)) => {
                         self.object_properties(ui, editor, id, &object);

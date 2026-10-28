@@ -1,10 +1,10 @@
-//! The Label and Stamp sections of the properties panel.
+//! The Label section of the properties panel.
 
 use eframe::egui;
-use ssmap_core::{Align, Command, Id, Label, LabelStyles, Landmass, ResolvedLabel, Stamp};
+use ssmap_core::{Align, Command, Id, Label, LabelStyles, ResolvedLabel};
 use ssmap_fonts::LABEL_FAMILIES;
 
-use super::{PropertiesPanel, row};
+use super::PropertiesPanel;
 use crate::editor::Editor;
 use crate::prop_widgets::{self, Edit, Provenance, ScrubSpec, SectionHeader};
 
@@ -449,116 +449,6 @@ impl PropertiesPanel {
             label: Box::new(ctx.label.with_resolved(ctx.styles, next)),
         });
     }
-
-    /// Every field of a Stamp. A scrub is one gesture, a click one step.
-    pub(super) fn stamp_properties(
-        &mut self,
-        ui: &mut egui::Ui,
-        editor: &mut Editor,
-        id: Id,
-        locked: bool,
-        stamp: &Stamp,
-    ) {
-        let caption = editor.asset_caption(&stamp.asset);
-        let header = SectionHeader {
-            kind: "stamp",
-            title: "Stamp",
-            badge: None,
-            action: None,
-        };
-        prop_widgets::section(ui, header, |ui| {
-            row(ui, "Asset", |ui| {
-                ui.label(&caption);
-            });
-            let mut next = stamp.clone();
-
-            let spec = |label| ScrubSpec::new(label).step(0.5).decimals(1);
-            let edit = prop_widgets::scrub_field(ui, &mut next.position[0], &spec("Position X"));
-            self.stamp_apply(editor, id, edit, &next);
-            let edit = prop_widgets::scrub_field(ui, &mut next.position[1], &spec("Position Y"));
-            self.stamp_apply(editor, id, edit, &next);
-
-            let mut percent = next.scale * 100.0;
-            let edit = prop_widgets::scrub_field(
-                ui,
-                &mut percent,
-                &ScrubSpec::new("Scale").unit("%").range(1.0, 10_000.0),
-            );
-            if edit.changed {
-                next.scale = percent / 100.0;
-            }
-            self.stamp_apply(editor, id, edit, &next);
-
-            let edit = prop_widgets::scrub_field(
-                ui,
-                &mut next.rotation,
-                &ScrubSpec::new("Rotation").unit("°").step(0.5).decimals(1),
-            );
-            self.stamp_apply(editor, id, edit, &next);
-
-            prop_widgets::field_row(ui, "Flip", Provenance::Plain, |ui| {
-                if prop_widgets::checkbox_row(ui, "Horizontal", &mut next.flip) {
-                    self.stamp_apply(editor, id, Edit::instant(), &next);
-                }
-            });
-
-            let mut tint = next.tint;
-            let response = prop_widgets::swatch(ui, "Tint", &mut tint, true, Provenance::Plain);
-            if response.edit.changed {
-                next.tint = tint;
-            }
-            self.stamp_apply(editor, id, response.edit, &next);
-
-            let mut own = next.fill.is_some();
-            prop_widgets::field_row(ui, "Fill", Provenance::Plain, |ui| {
-                if prop_widgets::checkbox_row(ui, "Own colour", &mut own) {
-                    next.fill = own.then_some(Landmass::DEFAULT_FILL);
-                    self.stamp_apply(editor, id, Edit::instant(), &next);
-                }
-            });
-            if let Some(fill) = next.fill {
-                let mut colour = Some(fill);
-                let response =
-                    prop_widgets::swatch(ui, "Fill colour", &mut colour, false, Provenance::Plain);
-                if response.edit.changed {
-                    next.fill = colour;
-                }
-                self.stamp_apply(editor, id, response.edit, &next);
-            }
-
-            let mut percent = f64::from(next.opacity) * 100.0;
-            let edit = prop_widgets::slider(
-                ui,
-                &mut percent,
-                &ScrubSpec::new("Opacity").unit("%").range(0.0, 100.0),
-            );
-            if edit.changed {
-                next.opacity = (percent / 100.0).clamp(0.0, 1.0) as f32;
-            }
-            self.stamp_apply(editor, id, edit, &next);
-
-            let mut lock = locked;
-            if prop_widgets::checkbox_row(ui, "Locked", &mut lock) {
-                let _ = editor.run(Command::SetLocked { id, locked: lock });
-            }
-
-            if ui
-                .add_enabled(editor.can_shuffle(), egui::Button::new("Shuffle variant"))
-                .on_hover_text("Re-roll this Stamp within its Variant group")
-                .clicked()
-            {
-                editor.shuffle_variants();
-            }
-        });
-    }
-
-    fn stamp_apply(&mut self, editor: &mut Editor, id: Id, edit: Edit, next: &Stamp) {
-        self.live
-            .apply(editor, edit, "Edit Stamp", || Command::SetStamp {
-                id,
-                stamp: Box::new(next.clone()),
-            });
-    }
 }
 
 #[cfg(test)]
@@ -643,30 +533,5 @@ mod tests {
         assert_eq!(editor.undo_label(), Some("Edit Label"));
         editor.undo();
         assert_eq!(editor.label(id).expect("a Label").size, Some(40.0));
-    }
-
-    #[test]
-    fn a_stamp_edit_is_one_named_undo_step() {
-        let (mut editor, layer) = editor_with_layer();
-        let id = Id::new();
-        let stamp = Stamp::new("pack/asset".parse().expect("an Asset ref"), [10.0, 10.0]);
-        assert!(
-            editor
-                .run(Command::CreateStamp {
-                    id,
-                    parent: layer,
-                    index: None,
-                    stamp: Box::new(stamp.clone()),
-                })
-                .is_ok()
-        );
-        let next = Stamp {
-            scale: 2.0,
-            ..stamp
-        };
-        let mut panel = PropertiesPanel::default();
-        panel.stamp_apply(&mut editor, id, Edit::instant(), &next);
-        assert_eq!(editor.stamp(id).expect("a Stamp").scale, 2.0);
-        assert_eq!(editor.undo_label(), Some("Edit Stamp"));
     }
 }
