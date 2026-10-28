@@ -70,7 +70,7 @@ fn tessellate(
         Paint::Fill(rule) => {
             let options = FillOptions::tolerance(TOLERANCE).with_fill_rule(rule);
             let _ = fill.tessellate_path(
-                &shape.path,
+                &*shape.path,
                 &options,
                 &mut BuffersBuilder::new(geometry, |vertex: FillVertex| Vertex {
                     position: vertex.position().to_array(),
@@ -84,7 +84,7 @@ fn tessellate(
                 .with_line_join(LineJoin::Round)
                 .with_line_cap(LineCap::Round);
             let _ = stroke.tessellate_path(
-                &shape.path,
+                &*shape.path,
                 &options,
                 &mut BuffersBuilder::new(geometry, |vertex: StrokeVertex| Vertex {
                     position: vertex.position().to_array(),
@@ -476,7 +476,7 @@ mod tests {
     fn stroke(x: f32, object: ObjectRef) -> VectorGroup {
         VectorGroup {
             shapes: vec![VectorShape {
-                path: square(x),
+                path: Arc::new(square(x)),
                 color: Color::rgb(200, 0, 0),
                 paint: Paint::Stroke { width: 2.0 },
             }],

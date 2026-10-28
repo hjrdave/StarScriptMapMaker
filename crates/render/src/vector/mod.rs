@@ -4,6 +4,8 @@ mod cache;
 mod chunk;
 mod renderer;
 
+use std::sync::Arc;
+
 use lyon::path::Path;
 use ssmap_core::Id;
 
@@ -42,7 +44,8 @@ pub enum Paint {
 /// One painted path in Canvas units.
 #[derive(Clone, Debug)]
 pub struct VectorShape {
-    pub path: Path,
+    /// Shared, so a group is cheap to copy when part of the content is replaced.
+    pub path: Arc<Path>,
     pub color: Color,
     pub paint: Paint,
 }
@@ -83,7 +86,7 @@ impl VectorGroup {
     pub fn fill(path: Path, color: Color, rule: FillRule) -> Self {
         Self {
             shapes: vec![VectorShape {
-                path,
+                path: Arc::new(path),
                 color,
                 paint: Paint::Fill(rule),
             }],

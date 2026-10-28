@@ -3,6 +3,7 @@
 //! [`RoughnessCache`], which picking shares.
 
 use std::collections::{HashMap, HashSet};
+use std::ops::Range;
 use std::sync::Arc;
 
 use lyon::math::point;
@@ -47,10 +48,46 @@ pub struct MapScene {
     slot_ids: Vec<Id>,
     /// Where each of `slot_ids` is, made when an edit first needs it.
     slots: Option<HashMap<Id, usize>>,
+    /// Where each Object that draws vector groups has them among the groups of `built`.
+    objects: HashMap<Id, ObjectGroups>,
     /// The Labels the build in progress has drawn, to forget the layouts of the rest.
     seen: HashSet<Id>,
     /// Counts builds, to tell the entries of `stamps` the last build used from the rest.
     build: u64,
+}
+
+/// Where a stretch of groups is among the content's, and where it comes in draw order.
+#[derive(Clone, Debug, Default)]
+struct Slot {
+    /// The groups, which may be none.
+    range: Range<usize>,
+    /// Counts the stretches in the order the build emitted them, empty ones included.
+    ord: usize,
+    /// How many Stamps the build had placed before it. A Stamp is drawn after the stretch
+    /// when its number is at least this.
+    stamps: usize,
+}
+
+/// Where an Object's vector groups are among the content's, so an edit can replace just them.
+#[derive(Clone, Debug, Default)]
+struct ObjectGroups {
+    /// The groups of its fill, shading and outline, or of its text.
+    own: Slot,
+    /// The groups of its ripples, which draw beneath every fill of its Layer. Only Objects
+    /// with a Shore have them.
+    ripples: Option<Slot>,
+    /// Whether it has a Shore, whose rings can land in the background.
+    shore: bool,
+    /// The serial of its rings when it was drawn.
+    serial: u64,
+}
+
+/// A stretch of the content's groups, and the groups that now go there.
+struct Replacement {
+    id: Id,
+    ripples: bool,
+    slot: Slot,
+    new: Vec<VectorGroup>,
 }
 
 /// A Stamp's draw, and what it was built from.
@@ -79,6 +116,7 @@ impl MapScene {
             seen: HashSet::new(),
             slot_ids: Vec::new(),
             slots: None,
+            objects: HashMap::new(),
             build: 0,
         }
     }
@@ -153,10 +191,9 @@ impl MapScene {
         let previous = self
             .built
             .as_ref()
-            .filter(|(_, rings, _)| *rings == generation)
-            .map(|(revision, _, content)| (*revision, content.clone()));
-        if let Some((since, previous)) = previous
-            && let Some(patched) = self.patch_stamps(map, since, &previous)
+            .map(|(revision, rings, content)| (*revision, *rings != generation, content.clone()));
+        if let Some((since, landed, previous)) = previous
+            && let Some(patched) = self.patch(map, roughness, since, landed, &previous)
         {
             self.built = Some((map.revision(), generation, patched.clone()));
             return patched;
@@ -164,6 +201,8 @@ impl MapScene {
         let mut groups = Vec::new();
         let mut stamps = Vec::new();
         let mut slot_ids = Vec::new();
+        let mut objects: HashMap<Id, ObjectGroups> = HashMap::new();
+        let mut emitted = 0;
         self.seen.clear();
         let mut clips: Vec<ClipScope> = Vec::new();
         // The Landmass the last scope is clipped to, while that scope is still growing.
@@ -208,23 +247,15 @@ impl MapScene {
                     .iter()
                     .filter(|&&other| map.parent(other) == Some(layer))
                 {
-                    if let (Some(shore), Some(outline)) =
-                        (map.shore(sibling), outline(roughness, map, sibling))
-                    {
-                        let first = groups.len();
-                        self.rings.prepare(sibling, &outline, shore, self.complete);
-                        ripple_groups(
-                            &mut |distance| self.rings.ring(sibling, distance),
-                            shore,
-                            layer_opacity(map, sibling),
-                            &mut groups,
-                        );
-                        mark_object(
-                            map,
-                            sibling,
-                            placement_of(map, sibling),
-                            &mut groups[first..],
-                        );
+                    let (first, placed) = (groups.len(), stamps.len());
+                    self.ripples(map, roughness, sibling, &mut groups);
+                    if map.shore(sibling).is_some() {
+                        objects.entry(sibling).or_default().ripples = Some(Slot {
+                            range: first..groups.len(),
+                            ord: emitted,
+                            stamps: placed,
+                        });
+                        emitted += 1;
                     }
                 }
             }
@@ -233,6 +264,17 @@ impl MapScene {
             let place = Place { opacity, placement };
             self.draw(map, roughness, id, place, &mut groups, &mut stamps);
             mark_object(map, id, placement, &mut groups[first_group..]);
+            if !matches!(object.kind, ObjectKind::Stamp(_)) {
+                let slot = objects.entry(id).or_default();
+                slot.own = Slot {
+                    range: first_group..groups.len(),
+                    ord: emitted,
+                    stamps: first_stamp,
+                };
+                emitted += 1;
+                slot.shore = map.shore(id).is_some();
+                slot.serial = self.rings.serial(id);
+            }
             for placed in &mut stamps[first_stamp..] {
                 placed.clip = clip;
             }
@@ -252,19 +294,86 @@ impl MapScene {
         self.rings.end_build();
         self.slot_ids = slot_ids;
         self.slots = None;
+        self.objects = objects;
         let content = Content::with_clips(groups, stamps, clips);
         self.built = Some((map.revision(), generation, content.clone()));
         content
     }
 
-    /// `previous`, built when the Map was at revision `since`, with the Stamps that were edited
-    /// since drawn anew, if that is all the edits did. `None` when anything else changed, and
-    /// the content must be built again.
-    fn patch_stamps(&mut self, map: &Map, since: u64, previous: &Content) -> Option<Content> {
+    /// `previous`, built when the Map was at revision `since`, brought up to date by redrawing
+    /// only the Objects that were edited in place since (or whose rings have landed since, if
+    /// `landed`), if that is all that changed. `None` when anything else changed, and the
+    /// content must be built again.
+    fn patch(
+        &mut self,
+        map: &Map,
+        roughness: &mut RoughnessCache,
+        since: u64,
+        landed: bool,
+        previous: &Content,
+    ) -> Option<Content> {
         let changes = map.changes_since(since)?;
-        if changes.other || changes.properties.is_empty() {
+        // Clip scopes hold copies of outlines and refer to groups by index.
+        if changes.other || !previous.clips().is_empty() {
             return None;
         }
+        let mut stamp_ids = Vec::new();
+        let mut dirty = Vec::new();
+        for &id in &changes.edited {
+            match map.node(id) {
+                Some(Node::Object(object)) if matches!(object.kind, ObjectKind::Stamp(_)) => {
+                    stamp_ids.push(id);
+                }
+                Some(Node::Object(_)) if self.objects.contains_key(&id) => dirty.push(id),
+                _ => return None,
+            }
+        }
+        if landed {
+            self.pick_up_landed_rings(map, roughness, &mut dirty)?;
+        }
+        let stamps = if stamp_ids.is_empty() {
+            None
+        } else {
+            Some(self.patch_stamps(map, &stamp_ids, previous)?)
+        };
+        let replacements = self.replacements(map, roughness, &dirty)?;
+        if stamps.is_none() && replacements.is_empty() {
+            return Some(previous.clone());
+        }
+        self.splice(previous, stamps, replacements)
+    }
+
+    /// Adds to `dirty` the Objects whose rings have landed in the background since they were
+    /// drawn. `None` if one of them can no longer be drawn.
+    fn pick_up_landed_rings(
+        &mut self,
+        map: &Map,
+        roughness: &mut RoughnessCache,
+        dirty: &mut Vec<Id>,
+    ) -> Option<()> {
+        let shored: Vec<(Id, u64)> = self
+            .objects
+            .iter()
+            .filter(|(_, slot)| slot.shore)
+            .map(|(&id, slot)| (id, slot.serial))
+            .collect();
+        for (id, serial) in shored {
+            let (shore, outline) = (map.shore(id)?, outline(roughness, map, id)?);
+            self.rings.prepare(id, &outline, shore, false);
+            if self.rings.serial(id) != serial && !dirty.contains(&id) {
+                dirty.push(id);
+            }
+        }
+        Some(())
+    }
+
+    /// The Stamps of `previous` with those of `ids` drawn anew in the same slots.
+    fn patch_stamps(
+        &mut self,
+        map: &Map,
+        ids: &[Id],
+        previous: &Content,
+    ) -> Option<Vec<PlacedStamp>> {
         if previous.stamps().len() != self.slot_ids.len() {
             return None;
         }
@@ -283,7 +392,7 @@ impl MapScene {
                 .collect()
         });
         let mut placed = previous.stamps().to_vec();
-        for &id in &changes.properties {
+        for &id in ids {
             let Some(Node::Object(object)) = map.node(id) else {
                 return None;
             };
@@ -311,7 +420,157 @@ impl MapScene {
             slot.draw = draw;
             slot.placement = placement_in(map, object.membership);
         }
-        Some(previous.with_stamps_replaced(placed))
+        Some(placed)
+    }
+
+    /// What the Objects `ids` draw now, in place of what they drew. `None` if one of them is
+    /// not one the build recorded.
+    fn replacements(
+        &mut self,
+        map: &Map,
+        roughness: &mut RoughnessCache,
+        ids: &[Id],
+    ) -> Option<Vec<Replacement>> {
+        let mut out = Vec::new();
+        for &id in ids {
+            let Some(Node::Object(object)) = map.node(id) else {
+                return None;
+            };
+            let slot = self.objects.get(&id)?.clone();
+            let place = Place {
+                opacity: layer_opacity(map, id),
+                placement: placement_in(map, object.membership),
+            };
+            let mut ripples = Vec::new();
+            self.ripples(map, roughness, id, &mut ripples);
+            let mut own = Vec::new();
+            self.draw(map, roughness, id, place, &mut own, &mut Vec::new());
+            mark_object(map, id, place.placement, &mut own);
+            self.objects.get_mut(&id)?.serial = self.rings.serial(id);
+            let stretches = [(true, slot.ripples, ripples), (false, Some(slot.own), own)];
+            for (is_ripples, old, new) in stretches {
+                let Some(old) = old else { continue };
+                if old.range.is_empty() && new.is_empty() {
+                    continue;
+                }
+                out.push(Replacement {
+                    id,
+                    ripples: is_ripples,
+                    slot: old,
+                    new,
+                });
+            }
+        }
+        Some(out)
+    }
+
+    /// `previous` with `replacements` swapped in for the groups they name, `stamps` for its
+    /// Stamps if given, and the Stamps and `self.objects` moved to follow.
+    fn splice(
+        &mut self,
+        previous: &Content,
+        stamps: Option<Vec<PlacedStamp>>,
+        mut replacements: Vec<Replacement>,
+    ) -> Option<Content> {
+        replacements.sort_by_key(|r| r.slot.ord);
+        if !replacements
+            .windows(2)
+            .all(|pair| pair[0].slot.range.end <= pair[1].slot.range.start)
+        {
+            return None;
+        }
+        if replacements.is_empty() {
+            return Some(previous.replaced(None, stamps));
+        }
+        let before = previous.groups();
+        let mut groups = Vec::with_capacity(before.len());
+        let mut cursor = 0;
+        for replacement in &replacements {
+            groups.extend_from_slice(&before[cursor..replacement.slot.range.start]);
+            groups.extend(replacement.new.iter().cloned());
+            cursor = replacement.slot.range.end;
+        }
+        groups.extend_from_slice(&before[cursor..]);
+        // What comes after a replaced stretch moves by how much it grew.
+        let grew = |r: &Replacement| r.new.len() as isize - r.slot.range.len() as isize;
+        let mut placed = stamps.unwrap_or_else(|| previous.stamps().to_vec());
+        for r in &replacements {
+            // Stamps drawn before a stretch end before it starts, and the rest begin after it.
+            let (earlier, later) = (r.slot.stamps.checked_sub(1), placed.get(r.slot.stamps));
+            let ok = earlier.is_none_or(|i| placed[i].after <= r.slot.range.start)
+                && later.is_none_or(|stamp| stamp.after >= r.slot.range.end);
+            if !ok {
+                return None;
+            }
+        }
+        if replacements.iter().any(|r| grew(r) != 0) {
+            let (mut next, mut moved) = (0, 0isize);
+            for (number, stamp) in placed.iter_mut().enumerate() {
+                while next < replacements.len() && replacements[next].slot.stamps <= number {
+                    moved += grew(&replacements[next]);
+                    next += 1;
+                }
+                stamp.after = stamp.after.checked_add_signed(moved)?;
+            }
+        }
+        let replaced: HashMap<(Id, bool), usize> = replacements
+            .iter()
+            .map(|r| ((r.id, r.ripples), r.new.len()))
+            .collect();
+        let moved_before = |ord: usize| -> isize {
+            replacements
+                .iter()
+                .take_while(|r| r.slot.ord < ord)
+                .map(grew)
+                .sum()
+        };
+        for (&id, object) in &mut self.objects {
+            let slots = [
+                (false, Some(&mut object.own)),
+                (true, object.ripples.as_mut()),
+            ];
+            for (is_ripples, slot) in slots {
+                let Some(slot) = slot else { continue };
+                let start = slot
+                    .range
+                    .start
+                    .checked_add_signed(moved_before(slot.ord))?;
+                let len = replaced
+                    .get(&(id, is_ripples))
+                    .copied()
+                    .unwrap_or_else(|| slot.range.len());
+                slot.range = start..start + len;
+            }
+        }
+        Some(previous.replaced(Some(groups), Some(placed)))
+    }
+
+    /// Adds the ripples of `sibling`, which draw beneath every fill of its Layer.
+    fn ripples(
+        &mut self,
+        map: &Map,
+        roughness: &mut RoughnessCache,
+        sibling: Id,
+        groups: &mut Vec<VectorGroup>,
+    ) {
+        let (Some(shore), Some(outline)) = (map.shore(sibling), outline(roughness, map, sibling))
+        else {
+            return;
+        };
+        let first = groups.len();
+        self.rings.prepare(sibling, &outline, shore, self.complete);
+        ripple_groups(
+            &mut |distance| self.rings.ring(sibling, distance),
+            shore,
+            layer_opacity(map, sibling),
+            groups,
+        );
+        mark_object(
+            map,
+            sibling,
+            placement_of(map, sibling),
+            &mut groups[first..],
+        );
     }
 
     /// The shaped text of a Label, shaping it only if its text or typography changed.
@@ -538,7 +797,7 @@ fn layer_opacity(map: &Map, id: Id) -> f32 {
 fn stroke(path: Path, color: Color, width: f32, opacity: f32) -> VectorGroup {
     VectorGroup {
         shapes: vec![VectorShape {
-            path,
+            path: Arc::new(path),
             color: color.faded(opacity),
             paint: Paint::Stroke { width },
         }],
@@ -647,7 +906,7 @@ fn polygon_path(polygon: &Polygon) -> Path {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ssmap_core::{Canvas, Command, DistanceUnit, Label, Scale};
+    use ssmap_core::{Canvas, Command, DistanceUnit, Label, MultiPolygon, Polygon, Scale};
 
     fn map_with_label() -> (Map, Id, Id) {
         let mut map = Map::new(Canvas::new(800, 600, Scale::new(1.0, DistanceUnit::Miles)));
@@ -1027,5 +1286,249 @@ mod tests {
         let fresh = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
         assert_same_stamps(&patched, &fresh);
         assert_eq!(patched.stamps()[3].draw.position, [0.0, 500.0]);
+    }
+
+    fn square(x: f64, size: f64) -> MultiPolygon {
+        MultiPolygon(vec![Polygon {
+            exterior: vec![
+                [x, 100.0],
+                [x + size, 100.0],
+                [x + size, 100.0 + size],
+                [x, 100.0 + size],
+            ],
+            holes: Vec::new(),
+        }])
+    }
+
+    /// Stamps under, three Landmasses in the middle and Stamps above with a Label.
+    fn map_with_land() -> (Map, Vec<Id>) {
+        let mut map = Map::new(Canvas::new(800, 600, Scale::new(1.0, DistanceUnit::Miles)));
+        let layer = |map: &mut Map, name: &str| {
+            let id = Id::new();
+            map.execute(&Command::CreateLayer {
+                id,
+                parent: None,
+                index: None,
+                name: name.into(),
+            })
+            .unwrap();
+            id
+        };
+        let stamp = |map: &mut Map, parent: Id, x: f64| {
+            map.execute(&Command::CreateStamp {
+                id: Id::new(),
+                parent,
+                index: None,
+                stamp: Box::new(ssmap_core::Stamp::new(
+                    "base/tree".parse().unwrap(),
+                    [x, 10.0],
+                )),
+            })
+            .unwrap();
+        };
+        let (below, land, above) = (
+            layer(&mut map, "Below"),
+            layer(&mut map, "Land"),
+            layer(&mut map, "Above"),
+        );
+        for x in [1.0, 2.0] {
+            stamp(&mut map, below, x);
+        }
+        let lands: Vec<Id> = (0..3).map(|_| Id::new()).collect();
+        for (i, &id) in lands.iter().enumerate() {
+            map.execute(&Command::CreateLandmass {
+                id,
+                parent: land,
+                index: None,
+                geometry: square(i as f64 * 200.0, 100.0),
+                fill: None,
+            })
+            .unwrap();
+        }
+        for x in [3.0, 4.0] {
+            stamp(&mut map, above, x);
+        }
+        map.execute(&Command::CreateLabel {
+            id: Id::new(),
+            parent: above,
+            index: None,
+            label: Box::new(Label {
+                text: "Thule".into(),
+                ..Label::default()
+            }),
+        })
+        .unwrap();
+        (map, lands)
+    }
+
+    fn assert_same_content(a: &Content, b: &Content) {
+        assert_eq!(a.groups().len(), b.groups().len(), "group count");
+        for (i, (x, y)) in a.groups().iter().zip(b.groups()).enumerate() {
+            assert_eq!(x, y, "group {i}");
+        }
+        assert_same_stamps(a, b);
+    }
+
+    #[test]
+    fn editing_a_landmass_redraws_only_it() {
+        let (mut map, lands) = map_with_land();
+        let mut scene = MapScene::new(Fonts::bundled());
+        let mut roughness = RoughnessCache::new();
+        let before = scene.content(&map, &mut roughness);
+        map.execute(&Command::Translate {
+            ids: vec![lands[1]],
+            offset: [30.0, 20.0],
+        })
+        .unwrap();
+        let after = scene.content(&map, &mut roughness);
+        let fresh = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
+        assert_same_content(&after, &fresh);
+        // The others' paths are the very ones built before; the moved one's are new.
+        let shared = |id: Id| {
+            let own = |content: &Content| {
+                content
+                    .groups()
+                    .iter()
+                    .filter(|g| g.object.is_some_and(|o| o.id == id) && !g.effect)
+                    .map(|g| g.shapes[0].path.clone())
+                    .collect::<Vec<_>>()
+            };
+            own(&before)
+                .iter()
+                .zip(own(&after))
+                .all(|(x, y)| Arc::ptr_eq(x, &y))
+        };
+        assert!(shared(lands[0]) && shared(lands[2]));
+        assert!(!shared(lands[1]));
+    }
+
+    #[test]
+    fn a_landmass_that_draws_more_groups_moves_the_stamps_after_it() {
+        let (mut map, lands) = map_with_land();
+        let mut scene = MapScene::new(Fonts::bundled());
+        let mut roughness = RoughnessCache::new();
+        let before = scene.content(&map, &mut roughness);
+        let mut shore = map.shore(lands[1]).unwrap().clone();
+        shore.ripples.count += 3;
+        map.execute(&Command::SetShore {
+            ids: vec![lands[1]],
+            shore: Some(shore),
+        })
+        .unwrap();
+        let after = scene.content(&map, &mut roughness);
+        assert!(after.groups().len() > before.groups().len());
+        let fresh = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
+        assert_same_content(&after, &fresh);
+        // Edit again, to check the places it recorded moved too.
+        map.execute(&Command::Translate {
+            ids: vec![lands[0], lands[2]],
+            offset: [5.0, 5.0],
+        })
+        .unwrap();
+        let again = scene.content(&map, &mut roughness);
+        let fresh = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
+        assert_same_content(&again, &fresh);
+    }
+
+    #[test]
+    fn editing_land_and_stamps_together_patches_both() {
+        let (mut map, lands) = map_with_land();
+        let mut scene = MapScene::new(Fonts::bundled());
+        let mut roughness = RoughnessCache::new();
+        let stamp_ids: Vec<Id> = map
+            .draw_order()
+            .into_iter()
+            .filter(|&id| matches!(map.node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Stamp(_))))
+            .collect();
+        scene.content(&map, &mut roughness);
+        move_stamp(&mut map, stamp_ids[0], [77.0, 7.0]);
+        map.execute(&Command::Translate {
+            ids: vec![lands[2]],
+            offset: [-20.0, 0.0],
+        })
+        .unwrap();
+        move_stamp(&mut map, stamp_ids[3], [88.0, 8.0]);
+        let patched = scene.content(&map, &mut roughness);
+        let fresh = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
+        assert_same_content(&patched, &fresh);
+    }
+
+    #[test]
+    fn editing_a_clipped_map_rebuilds() {
+        let (mut map, lands) = map_with_land();
+        let layers: Vec<Id> = map.children(None).to_vec();
+        map.execute(&Command::SetClip {
+            id: layers[0],
+            target: Some(lands[0]),
+        })
+        .unwrap();
+        let mut scene = MapScene::new(Fonts::bundled());
+        let mut roughness = RoughnessCache::new();
+        scene.content(&map, &mut roughness);
+        map.execute(&Command::Translate {
+            ids: vec![lands[0]],
+            offset: [10.0, 10.0],
+        })
+        .unwrap();
+        let rebuilt = scene.content(&map, &mut roughness);
+        let fresh = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
+        assert_eq!(rebuilt.clips().len(), fresh.clips().len());
+        assert_same_content(&rebuilt, &fresh);
+    }
+
+    #[test]
+    fn rings_that_land_after_an_edit_patch_only_that_landmass() {
+        let (mut map, lands) = map_with_land();
+        map.execute(&Command::SetDefaultRoughness {
+            roughness: ssmap_core::Roughness::new(8.0, 16.0, 3),
+        })
+        .unwrap();
+        let (sender, landed) = std::sync::mpsc::channel();
+        let sender = std::sync::Mutex::new(sender);
+        let mut scene = MapScene::new(Fonts::bundled());
+        scene.compute_rings_in_background(move || {
+            let _ = sender.lock().unwrap().send(());
+        });
+        let mut roughness = RoughnessCache::new();
+        // Let every Landmass's rings land.
+        for _ in 0..30 {
+            scene.content(&map, &mut roughness);
+            if landed
+                .recv_timeout(std::time::Duration::from_millis(300))
+                .is_err()
+            {
+                break;
+            }
+        }
+        let settled = scene.content(&map, &mut roughness);
+        let mut shore = map.shore(lands[1]).unwrap().clone();
+        shore.ripples.spacing += 7.0;
+        map.execute(&Command::SetShore {
+            ids: vec![lands[1]],
+            shore: Some(shore),
+        })
+        .unwrap();
+        scene.content(&map, &mut roughness);
+        landed
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("the moved Landmass's rings land");
+        let after = scene.content(&map, &mut roughness);
+        let fresh = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
+        assert_same_content(&after, &fresh);
+        let first_path = |content: &Content, id: Id| {
+            content
+                .groups()
+                .iter()
+                .find(|g| g.object.is_some_and(|o| o.id == id) && !g.effect)
+                .map(|g| g.shapes[0].path.clone())
+                .unwrap()
+        };
+        assert!(
+            Arc::ptr_eq(
+                &first_path(&settled, lands[0]),
+                &first_path(&after, lands[0])
+            ),
+            "the Landmass nobody touched was not drawn again"
+        );
     }
 }

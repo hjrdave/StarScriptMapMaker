@@ -142,13 +142,20 @@ impl Content {
         }
     }
 
-    /// This content with its Stamps replaced by `stamps`, which must be the same Stamps in the
-    /// same slots with other draws. The groups and clip scopes are shared, not copied.
-    pub(crate) fn with_stamps_replaced(&self, stamps: Vec<PlacedStamp>) -> Self {
-        debug_assert_eq!(stamps.len(), self.stamps.len());
+    /// This content with its groups and Stamps replaced by those given, where it shares the
+    /// ones left `None` and the clip scopes, which must not depend on what changed.
+    pub(crate) fn replaced(
+        &self,
+        groups: Option<Vec<VectorGroup>>,
+        stamps: Option<Vec<PlacedStamp>>,
+    ) -> Self {
+        let groups: Arc<[VectorGroup]> = groups.map_or_else(|| self.groups.clone(), Into::into);
+        let stamps: Arc<[PlacedStamp]> = stamps.map_or_else(|| self.stamps.clone(), Into::into);
+        debug_assert!(stamps.windows(2).all(|pair| pair[0].after <= pair[1].after));
+        debug_assert!(stamps.iter().all(|stamp| stamp.after <= groups.len()));
         Self {
-            groups: self.groups.clone(),
-            stamps: stamps.into(),
+            groups,
+            stamps,
             clips: self.clips.clone(),
         }
     }
