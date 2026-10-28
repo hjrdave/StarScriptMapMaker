@@ -65,8 +65,8 @@ fn new_art_board_adds_and_selects_a_board_beside_the_canvas() {
     assert!(editor.map().board(board).unwrap().canvas.origin[0] > 4096.0);
     assert_eq!(editor.undo_label(), Some("Add Art board"));
     // Properties shows the board.
-    harness.get_by_label("Increase Board width");
-    harness.get_by_label("Increase Board X");
+    harness.get_by_role_and_label(egui::accesskit::Role::SpinButton, "Board width");
+    harness.get_by_role_and_label(egui::accesskit::Role::SpinButton, "Board X");
 }
 
 #[test]

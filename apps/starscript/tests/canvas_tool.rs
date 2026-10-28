@@ -138,18 +138,45 @@ fn clicking_the_edge_or_the_label_selects_the_canvas_but_not_the_inside() {
     assert!(harness.state().editor().canvas_selected());
 }
 
+/// Types `text` into the `n`th number box that shows `shown`.
+fn type_size(harness: &mut Harness<'static, MapMakerApp>, shown: &str, n: usize, text: &str) {
+    harness
+        .get_all_by_value(shown)
+        .nth(n)
+        .expect("a box showing that value")
+        .click();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.run();
+    harness
+        .get_by(|n| n.role() == egui::accesskit::Role::TextInput && n.is_focused())
+        .type_text(text);
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+}
+
 #[test]
 fn the_canvas_shows_its_width_and_height_in_properties() {
     let (mut harness, _) = app();
     select_canvas(&mut harness);
     harness.run();
-    // The same stepper buttons the Map section's fields have.
-    harness.get_by_label("Increase Canvas width").click();
-    harness.run();
-    assert_eq!(canvas(&harness).1, WIDTH as u32 + 10);
-    harness.get_by_label("Increase Canvas height").click();
-    harness.run();
-    assert_eq!(canvas(&harness).2, HEIGHT as u32 + 10);
+    // The same fields the Map section has: typing a size sets it.
+    let width = WIDTH as u32;
+    type_size(
+        &mut harness,
+        &width.to_string(),
+        0,
+        &(width + 10).to_string(),
+    );
+    assert_eq!(canvas(&harness).1, width + 10);
+    let height = HEIGHT as u32;
+    type_size(
+        &mut harness,
+        &height.to_string(),
+        0,
+        &(height + 10).to_string(),
+    );
+    assert_eq!(canvas(&harness).2, height + 10);
 }
 
 #[test]

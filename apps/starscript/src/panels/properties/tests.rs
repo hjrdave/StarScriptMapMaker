@@ -478,6 +478,23 @@ fn geometry_of(fixture: &Fixture, id: Id) -> String {
     format!("{:?}", fixture.editor.map().node(id))
 }
 
+/// Types `text` into the `n`th number box (from the top) that shows `shown`.
+fn type_into_nth(harness: &mut Harness<'static, Fixture>, shown: &str, n: usize, text: &str) {
+    harness
+        .get_all_by_value(shown)
+        .nth(n)
+        .expect("a box showing that value")
+        .click();
+    harness.run();
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
+    harness.run();
+    harness
+        .get_by(|n| n.role() == egui::accesskit::Role::TextInput && n.is_focused())
+        .type_text(text);
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+}
+
 #[test]
 fn resizing_from_each_anchor_keeps_that_point_fixed_and_moves_no_object() {
     for y in 0..3u8 {
@@ -487,8 +504,9 @@ fn resizing_from_each_anchor_keeps_that_point_fixed_and_moves_no_object() {
             let mut harness = harness(fixture);
             open_map_section(&mut harness);
             click(&mut harness, &anchor_name(x, y));
-            click(&mut harness, "Decrease Canvas width");
-            click(&mut harness, "Increase Canvas height");
+            // The width box is the first showing 100, the height box the second.
+            type_into_nth(&mut harness, "100", 0, "90");
+            type_into_nth(&mut harness, "100", 0, "110");
             let state = harness.state();
             let canvas = &state.editor.map().canvas();
             assert_eq!((canvas.width, canvas.height), (90, 110));
@@ -507,33 +525,73 @@ fn shrinking_past_objects_and_growing_back_then_undo_and_redo_touch_no_object() 
     open_map_section(&mut harness);
     // Anchor bottom-right: shrinking pulls the left edge past the Landmass at 0..40.
     click(&mut harness, &anchor_name(2, 2));
-    for _ in 0..7 {
-        click(&mut harness, "Decrease Canvas width");
-    }
+    type_into_nth(&mut harness, "100", 0, "30");
     let state = harness.state();
     assert_eq!(state.editor.map().canvas().width, 30);
     assert_eq!(state.editor.map().canvas().origin[0], 70.0);
     assert_eq!(geometry_of(state, island), before);
-    for _ in 0..7 {
-        click(&mut harness, "Increase Canvas width");
-    }
+    type_into_nth(&mut harness, "30", 0, "100");
     let state = harness.state();
     assert_eq!(state.editor.map().canvas().width, 100);
     assert_eq!(state.editor.map().canvas().origin[0], 0.0);
     assert_eq!(geometry_of(state, island), before);
 
-    // Each click was one undo step, and undo only moves the Canvas.
+    // Each typed size was one undo step, and undo only moves the Canvas.
     harness.state_mut().editor.undo();
-    assert_eq!(harness.state().editor.map().canvas().width, 90);
-    for _ in 0..13 {
-        harness.state_mut().editor.undo();
-        assert_eq!(geometry_of(harness.state(), island), before);
-    }
+    assert_eq!(harness.state().editor.map().canvas().width, 30);
+    assert_eq!(geometry_of(harness.state(), island), before);
+    harness.state_mut().editor.undo();
     assert_eq!(harness.state().editor.map().canvas().width, 100);
-    for _ in 0..14 {
+    assert_eq!(geometry_of(harness.state(), island), before);
+    for _ in 0..2 {
         harness.state_mut().editor.redo();
         assert_eq!(geometry_of(harness.state(), island), before);
     }
+    assert_eq!(harness.state().editor.map().canvas().width, 100);
+}
+
+#[test]
+fn scrubbing_the_canvas_width_is_one_undo_step_that_holds_the_anchor() {
+    let (fixture, _, island) = fixture();
+    let before = geometry_of(&fixture, island);
+    let mut harness = harness(fixture);
+    open_map_section(&mut harness);
+    click(&mut harness, &anchor_name(2, 1));
+    let steps = harness.state().editor.history_steps().0.len();
+    let start = harness
+        .get_by_role_and_label(egui::accesskit::Role::SpinButton, "Canvas width")
+        .rect()
+        .center();
+    harness.event(egui::Event::PointerMoved(start));
+    harness.run();
+    let button = |pressed| egui::Event::PointerButton {
+        pos: start,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    harness.event(button(true));
+    harness.run();
+    for step in 1..=4 {
+        harness.event(egui::Event::PointerMoved(
+            start - egui::vec2(step as f32, 0.0),
+        ));
+        harness.run();
+    }
+    harness.event(egui::Event::PointerButton {
+        pos: start - egui::vec2(4.0, 0.0),
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.run();
+    // Four points left at ten per point is 40 narrower, with the right edge held still.
+    let canvas = harness.state().editor.map().canvas();
+    assert_eq!(canvas.width, 60);
+    assert_eq!(canvas.origin[0], 40.0);
+    assert_eq!(geometry_of(harness.state(), island), before);
+    assert_eq!(harness.state().editor.history_steps().0.len(), steps + 1);
+    harness.state_mut().editor.undo();
     assert_eq!(harness.state().editor.map().canvas().width, 100);
 }
 
