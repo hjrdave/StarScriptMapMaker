@@ -1,6 +1,7 @@
 //! Editor state around one Map: history, Selection, the active Layer and tool, and the
 //! message bar. Every change to the Map goes through a Command here.
 
+mod boards;
 mod caches;
 mod clipboard;
 mod gesture;
@@ -69,7 +70,8 @@ pub struct Editor {
     pub erase_default: bool,
     node_edit: Option<NodeEdit>,
     /// Whether the Canvas is what's selected, rather than layers or Objects.
-    canvas_selected: bool,
+    /// The board selected with the Art board tool: the Canvas or an Art board.
+    selected_board: Option<Id>,
     /// Set by a tool while it holds something Escape should drop (a lasso half drawn).
     pub tool_busy: bool,
     /// Set by Escape for the busy tool to act on.
@@ -150,7 +152,7 @@ impl Editor {
             scene: MapScene::new(Fonts::bundled()),
             history,
             selection: Vec::new(),
-            canvas_selected: false,
+            selected_board: None,
             active_layer: None,
             default_layers: DefaultLayers::default(),
             active_tool: ToolId::Select,
@@ -270,7 +272,7 @@ impl Editor {
             self.node_edit = None;
         }
         self.selection = ids;
-        self.canvas_selected = false;
+        self.selected_board = None;
         if let Some(&last) = self.selection.last() {
             self.active_layer = match self.map.node(last) {
                 Some(Node::Layer(_)) => Some(last),
@@ -279,17 +281,30 @@ impl Editor {
         }
     }
 
-    /// Whether the Canvas itself is selected (by the Canvas tool).
+    /// The board selected with the Art board tool: the Canvas or an Art board. A board that
+    /// no longer exists (deleted, or undone away) is not selected.
+    pub fn selected_board(&self) -> Option<Id> {
+        self.selected_board
+            .filter(|&id| self.map.board(id).is_some())
+    }
+
+    /// Selects the board `id`, which empties the Selection; `None` deselects.
+    pub fn select_board(&mut self, id: Option<Id>) {
+        if id.is_some() {
+            self.select(Vec::new());
+        }
+        self.selected_board = id.filter(|&id| self.map.board(id).is_some());
+    }
+
+    /// Whether the Canvas itself is selected (by the Art board tool).
     pub fn canvas_selected(&self) -> bool {
-        self.canvas_selected
+        self.selected_board() == Some(self.map.primary_board())
     }
 
     /// Selects the Canvas, which empties the Selection; `false` deselects it.
     pub fn select_canvas(&mut self, selected: bool) {
-        if selected {
-            self.select(Vec::new());
-        }
-        self.canvas_selected = selected;
+        let canvas = selected.then(|| self.map.primary_board());
+        self.select_board(canvas);
     }
 
     /// The topmost unlocked Landmass or Lake drawn at `point`, in Canvas units.
@@ -545,10 +560,10 @@ impl Editor {
         // Undo and redo can renumber nodes.
         self.select_nodes(Vec::new());
         selection.retain(|&id| self.map.contains(id));
-        // A selected Canvas stays selected through its own edits, and undo and redo of them.
-        let canvas = self.canvas_selected && selection.is_empty();
+        // A selected board stays selected through its own edits, and undo and redo of them.
+        let board = self.selected_board().filter(|_| selection.is_empty());
         self.select(selection);
-        self.canvas_selected = canvas;
+        self.selected_board = board;
         if self.active_layer.is_some_and(|id| !self.map.contains(id)) {
             self.active_layer = None;
         }

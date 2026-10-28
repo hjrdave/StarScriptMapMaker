@@ -89,6 +89,22 @@ pub(super) fn rename_board(map: &Map, id: Id, name: Option<&str>) -> Result<Vec<
     }])
 }
 
+/// Replaces the background of a board. The texture strength must be 0 to 1 and its scale
+/// above 0, as for the Canvas.
+pub(super) fn set_board_background(
+    map: &Map,
+    id: Id,
+    background: &Background,
+) -> Result<Vec<Op>, CommandError> {
+    existing_board(map, id)?;
+    // The same checks as the Canvas's background; its Op is replaced by the board's.
+    super::defaults::set_background(background)?;
+    Ok(vec![Op::SetBoardBackground {
+        id,
+        background: background.clone(),
+    }])
+}
+
 /// Deletes an Art board. Its Objects go off-board instead of being deleted. The primary
 /// board is refused.
 pub(super) fn delete_board(map: &Map, id: Id) -> Result<Vec<Op>, CommandError> {

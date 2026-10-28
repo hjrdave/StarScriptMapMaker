@@ -323,14 +323,17 @@ impl CanvasView {
             let select = crate::theme::palette(ui.ctx()).select;
             handles::paint(&painter, &bounds, &view, rect.min, ppp, rotatable, select);
         }
-        paint_board_labels(
-            &painter,
-            editor.map(),
-            &view,
-            rect.min,
-            ppp,
-            crate::theme::palette(ui.ctx()).text_secondary,
-        );
+        // The Art board tool names the boards itself, in the colour of the selection.
+        if editor.active_tool != tools::ToolId::Canvas {
+            paint_board_labels(
+                &painter,
+                editor.map(),
+                &view,
+                rect.min,
+                ppp,
+                crate::theme::palette(ui.ctx()).text_secondary,
+            );
+        }
         paint_missing_names(&painter, editor, &view, rect.min, ppp);
         tools::paint_overlay(
             &painter,

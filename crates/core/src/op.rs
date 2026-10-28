@@ -102,6 +102,13 @@ pub enum Op {
         /// Its new name.
         name: Option<String>,
     },
+    /// Replaces the background of a board.
+    SetBoardBackground {
+        /// The board to change.
+        id: Id,
+        /// The new background.
+        background: Background,
+    },
     /// Moves a board to `index` among the boards, counted after it leaves its old place.
     MoveBoard {
         /// The board to move.
@@ -338,6 +345,7 @@ impl Map {
             | Op::RemoveBoard { .. }
             | Op::SetBoardRect { .. }
             | Op::SetBoardName { .. }
+            | Op::SetBoardBackground { .. }
             | Op::MoveBoard { .. }
             | Op::SetPrimary { .. }) => self.apply_board_op(op),
             Op::SetBackground { background } => Op::SetBackground {
@@ -422,6 +430,16 @@ impl Map {
                     name: std::mem::replace(&mut board.name, name),
                 }
             }
+            Op::SetBoardBackground { id, background } => {
+                let canvas = &mut self
+                    .board_mut(id)
+                    .expect("Map::check verified the board exists")
+                    .canvas;
+                Op::SetBoardBackground {
+                    id,
+                    background: std::mem::replace(&mut canvas.background, background),
+                }
+            }
             Op::MoveBoard { id, index } => {
                 let old = board_position(&self.boards, id);
                 let board = self.boards.remove(old);
@@ -488,7 +506,10 @@ impl Map {
                     return Err(OpError::RemovePrimaryBoard(*id));
                 }
             }
-            Op::SetBoardRect { id, .. } | Op::SetBoardName { id, .. } | Op::SetPrimary { id } => {
+            Op::SetBoardRect { id, .. }
+            | Op::SetBoardName { id, .. }
+            | Op::SetBoardBackground { id, .. }
+            | Op::SetPrimary { id } => {
                 self.existing_board(*id)?;
             }
             Op::MoveBoard { id, index } => {

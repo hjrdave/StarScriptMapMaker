@@ -24,6 +24,8 @@ pub(crate) enum Zoom {
     Percent(f64),
     Fit,
     Selection,
+    /// Frames this area, such as a board or all of them.
+    Area(Bounds),
 }
 
 /// Sets the zoom to `target` (physical pixels per Canvas unit, clamped), keeping the Canvas
@@ -60,6 +62,7 @@ pub(crate) fn apply(
             let Some(bounds) = bounds else { return false };
             *view = frame(&bounds, view.size, FRAME_MARGIN * pixels_per_point);
         }
+        Zoom::Area(area) => *view = frame(&area, view.size, FRAME_MARGIN * pixels_per_point),
     }
     true
 }

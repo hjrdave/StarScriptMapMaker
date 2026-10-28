@@ -1,6 +1,7 @@
 //! One frame of a window: the panels around the Canvas, in the order they are laid out.
 
 use super::*;
+use crate::properties::BoardRequest;
 use crate::tool_dock;
 
 impl MapMakerApp {
@@ -129,6 +130,16 @@ impl MapMakerApp {
         };
         let open_assets = tab.properties.take_open_assets();
         let open_packs = tab.asset_browser.take_open_packs();
+        for request in tab.properties.take_board_requests() {
+            match request {
+                BoardRequest::Delete(board) => {
+                    self.win.delete_board_prompt = Some(board);
+                }
+                BoardRequest::Duplicate(board) => {
+                    tab.editor.duplicate_board(board);
+                }
+            }
+        }
         if open_assets {
             self.win.shell.show_section(shell::SidebarSection::Assets);
         }

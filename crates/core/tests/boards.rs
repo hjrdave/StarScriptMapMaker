@@ -8,8 +8,8 @@
 
 use ssmap_core::file::MapFile;
 use ssmap_core::{
-    Board, Canvas, Command, CommandError, DistanceUnit, History, Id, Map, Membership, MultiPolygon,
-    Node, Op, OpError, Polygon, Scale, Selection,
+    Background, Board, Canvas, Command, CommandError, DistanceUnit, History, Id, Map, Membership,
+    MultiPolygon, Node, Op, OpError, Polygon, Scale, Selection,
 };
 
 fn square(x: f64, y: f64, size: f64) -> MultiPolygon {
@@ -139,6 +139,81 @@ fn set_board_name_and_its_inverse() {
             name: Some("Harbour".into()),
         },
     );
+}
+
+fn teal() -> Background {
+    Background {
+        water: ssmap_core::Color::rgb(0, 128, 128),
+        ..Background::default()
+    }
+}
+
+#[test]
+fn set_board_background_and_its_inverse() {
+    let mut map = new_map();
+    let id = create_board(&mut map, 200.0);
+    round_trip(
+        &mut map,
+        Op::SetBoardBackground {
+            id,
+            background: teal(),
+        },
+    );
+    // The primary board is a board too.
+    let primary = map.primary_board();
+    round_trip(
+        &mut map,
+        Op::SetBoardBackground {
+            id: primary,
+            background: teal(),
+        },
+    );
+}
+
+#[test]
+fn the_board_background_command_changes_one_board_in_one_undo_step() {
+    let mut map = new_map();
+    let id = create_board(&mut map, 200.0);
+    let canvas_before = map.canvas().background.clone();
+    let before = map.view();
+    let undo = map
+        .execute(&Command::SetBoardBackground {
+            id,
+            background: teal(),
+        })
+        .unwrap();
+    assert_eq!(map.board(id).unwrap().canvas.background, teal());
+    assert_eq!(
+        map.canvas().background,
+        canvas_before,
+        "the Canvas is not touched"
+    );
+    assert_eq!(
+        Command::SetBoardBackground {
+            id,
+            background: teal()
+        }
+        .label(),
+        "Change Board Background"
+    );
+    map.revert(undo);
+    assert_eq!(map.view(), before);
+
+    let mut bad = teal();
+    bad.texture.strength = 2.0;
+    for command in [
+        Command::SetBoardBackground {
+            id,
+            background: bad,
+        },
+        Command::SetBoardBackground {
+            id: Id::new(),
+            background: teal(),
+        },
+    ] {
+        assert!(map.execute(&command).is_err(), "{command:?}");
+    }
+    assert_eq!(map.view(), before);
 }
 
 #[test]

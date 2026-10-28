@@ -127,6 +127,8 @@ struct WindowState {
     pack_install: pack_install::PackInstall,
     /// The Map file a Home card's Delete asked about; the dialog confirms before it is trashed.
     delete_prompt: Option<PathBuf>,
+    /// The Art board a Delete asked about; the dialog confirms before it is deleted.
+    delete_board_prompt: Option<ssmap_core::Id>,
     /// The id of the Asset pack a card's Delete asked about; the dialog confirms first.
     pack_delete_prompt: Option<String>,
     /// Moves a pack folder to the Trash; tests swap it for one that touches nothing.
@@ -251,6 +253,7 @@ impl MapMakerApp {
             canvas_zone: None,
             home: home::Home::default(),
             delete_prompt: None,
+            delete_board_prompt: None,
             pack_delete_prompt: None,
             pack_trash: file_actions::move_to_trash,
             template_prompt: None,

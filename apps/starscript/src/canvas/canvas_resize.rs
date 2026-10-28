@@ -1,16 +1,19 @@
-//! The maths behind the Canvas tool's resize: dragging a handle of the Canvas, with Shift
-//! keeping the aspect ratio and Alt resizing from the centre. Kept in Canvas units and free
-//! of any window so it can be tested headlessly.
+//! The maths behind the Art board tool: resizing a board by dragging a handle, with Shift
+//! keeping the aspect ratio and Alt resizing from the centre, moving it, and drawing a new
+//! one. Kept in Canvas units and free of any window so it can be tested headlessly.
+
+use ssmap_core::Id;
 
 use crate::handles::Handle;
 
 /// The smallest side, in Canvas units, the Canvas may be dragged to.
 const MIN_SIDE: f64 = 1.0;
 
-/// A handle drag on the Canvas, remembering the Canvas as it was when the drag began so that
+/// A handle drag on a board, remembering the board as it was when the drag began so that
 /// every frame works from the start and nothing drifts.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) struct CanvasDrag {
+    pub board: Id,
     pub handle: Handle,
     pub start: [f64; 2],
     pub origin: [f64; 2],
@@ -90,9 +93,42 @@ pub(crate) fn resized(
     (origin, width, height)
 }
 
-/// The text of the cursor HUD while the Canvas is being resized.
-pub(crate) fn hud_text(width: u32, height: u32) -> String {
-    format!("Canvas · {width} × {height}")
+/// A board being moved by its label, remembering where it was when the drag began.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) struct BoardMove {
+    pub board: Id,
+    pub start: [f64; 2],
+    pub origin: [f64; 2],
+    pub size: [u32; 2],
+}
+
+impl BoardMove {
+    /// The board's origin with the pointer at `pointer`.
+    pub(crate) fn moved(&self, pointer: [f64; 2]) -> [f64; 2] {
+        [0, 1].map(|axis| self.origin[axis] + pointer[axis] - self.start[axis])
+    }
+}
+
+/// A new board being drawn on empty pasteboard from `start` to the pointer.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(crate) struct BoardCreate {
+    pub board: Id,
+    pub start: [f64; 2],
+    /// The pointer has moved far enough that the board exists.
+    pub created: bool,
+}
+
+/// The origin and size of a board drawn from `start` to `pointer`, at least 1 unit a side.
+pub(crate) fn drawn(start: [f64; 2], pointer: [f64; 2]) -> ([f64; 2], u32, u32) {
+    let origin = [0, 1].map(|axis| start[axis].min(pointer[axis]));
+    let side = |axis: usize| (start[axis] - pointer[axis]).abs().round().max(MIN_SIDE) as u32;
+    (origin, side(0), side(1))
+}
+
+/// The text of the cursor HUD while a board is being resized or drawn, such as
+/// "Canvas · 4096 × 2560".
+pub(crate) fn hud_text(label: &str, width: u32, height: u32) -> String {
+    format!("{label} · {width} × {height}")
 }
 
 #[cfg(test)]
@@ -157,6 +193,7 @@ mod tests {
 
     #[test]
     fn the_hud_names_the_canvas_and_its_size() {
-        assert_eq!(hud_text(4096, 2560), "Canvas · 4096 × 2560");
+        assert_eq!(hud_text("Canvas", 4096, 2560), "Canvas · 4096 × 2560");
+        assert_eq!(hud_text("Art board 2", 10, 20), "Art board 2 · 10 × 20");
     }
 }

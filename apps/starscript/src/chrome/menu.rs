@@ -34,6 +34,10 @@ pub enum Command {
     ZoomOut,
     ZoomFit,
     ZoomSelection,
+    /// Frames the selected board (the Canvas or an Art board).
+    ZoomBoard,
+    /// Frames every board.
+    ZoomAll,
     ActualSize,
     ToggleLayers,
     ToggleProperties,
@@ -46,6 +50,8 @@ pub enum Command {
     /// ⌘`n` for `n` in 2 to 9.
     Tab(u8),
     LabelStyles,
+    /// Adds an Art board the size of the Canvas, beside the other boards.
+    NewArtBoard,
     EmbedAssets,
     UpdateFromPacks,
     NewLayer,
@@ -222,6 +228,10 @@ pub struct State {
     pub redo_label: Option<String>,
     pub can_redo: bool,
     pub has_selection: bool,
+    /// A board is selected with the Art board tool.
+    pub board_selected: bool,
+    /// The Map has Art boards besides the Canvas.
+    pub multiple_boards: bool,
     /// Copy or Cut has taken something Paste can put back.
     pub can_paste: bool,
     /// The active Layer has Objects to select.
@@ -324,6 +334,8 @@ pub fn menus(state: &State) -> Vec<Menu> {
         item(ExportPng, "Export PNG…", map),
         item(ReExport, "Re-export", map && state.can_re_export),
     ];
+    // Delete and Duplicate act on the Selection, or on the board the Art board tool selected.
+    let acts = map && (state.has_selection || state.board_selected);
     let mut edit = vec![
         item(
             Undo,
@@ -339,8 +351,8 @@ pub fn menus(state: &State) -> Vec<Menu> {
         item(Cut, "Cut", map && state.has_selection),
         item(Copy, "Copy", map && state.has_selection),
         item(Paste, "Paste", map && state.can_paste),
-        item(Duplicate, "Duplicate", map && state.has_selection),
-        item(Delete, "Delete", map && state.has_selection),
+        item(Duplicate, "Duplicate", acts),
+        item(Delete, "Delete", acts),
         item(SelectAll, "Select All", map && state.can_select_all),
         item(Deselect, "Deselect", map && state.has_selection),
     ];
@@ -361,6 +373,8 @@ pub fn menus(state: &State) -> Vec<Menu> {
             "Zoom to Selection",
             map && state.has_selection,
         ),
+        item(ZoomBoard, "Zoom to Art Board", map && state.board_selected),
+        item(ZoomAll, "Zoom to All Boards", map && state.multiple_boards),
         item(ActualSize, "Actual Size", map),
         Separator,
         item(ToggleLayers, "Toggle Layers", map),
@@ -398,6 +412,8 @@ pub fn menus(state: &State) -> Vec<Menu> {
             title: "Map",
             entries: vec![
                 item(LabelStyles, "Label Styles…", map),
+                Separator,
+                item(NewArtBoard, "New Art Board", map),
                 Separator,
                 item(EmbedAssets, "Embed Assets", map),
                 item(UpdateFromPacks, "Update from Packs", map),
@@ -586,7 +602,12 @@ mod tests {
         let titles: Vec<_> = map.items().map(|item| item.title.as_str()).collect();
         assert_eq!(
             titles,
-            ["Label Styles…", "Embed Assets", "Update from Packs"]
+            [
+                "Label Styles…",
+                "New Art Board",
+                "Embed Assets",
+                "Update from Packs"
+            ]
         );
         assert!(map.items().all(|item| item.enabled));
     }

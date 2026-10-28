@@ -1,5 +1,7 @@
 //! The properties panel: shows and edits what is selected, through Commands.
 
+mod board;
+pub(crate) use board::BoardRequest;
 mod label_stamp;
 mod layer;
 mod map;
@@ -24,6 +26,8 @@ pub(crate) struct PropertiesPanel {
     live: LiveEdit,
     /// "Manage Label styles…" was clicked; the window is opened by the owner of the tab.
     manage_label_styles: bool,
+    /// What the board buttons asked the window for.
+    board_requests: Vec<board::BoardRequest>,
     /// The active tool's settings, above the selection.
     tool_section: ToolSection,
     /// The Canvas point that stays put when it is resized, as (column, row) of the 3×3
@@ -129,10 +133,8 @@ impl PropertiesPanel {
 
     fn selection(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         match editor.selection() {
-            [] if editor.canvas_selected() => {
-                let canvas = editor.map().canvas().clone();
-                heading(ui, "Canvas");
-                self.canvas_fields(ui, editor, &canvas);
+            [] if let Some(board) = editor.selected_board() => {
+                self.board_properties(ui, editor, board);
             }
             [] => {
                 if let Some(layer) = editor

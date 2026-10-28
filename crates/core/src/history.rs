@@ -328,6 +328,7 @@ fn op_bytes(op: &Op) -> usize {
             | Op::RemoveBoard { .. }
             | Op::SetBoardRect { .. }
             | Op::SetBoardName { .. }
+            | Op::SetBoardBackground { .. }
             | Op::MoveBoard { .. }
             | Op::SetPrimary { .. }
             | Op::SetEmbeddedAsset { .. }
