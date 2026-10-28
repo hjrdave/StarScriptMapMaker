@@ -189,6 +189,17 @@ pub(super) fn layers_panel(
     footer: bool,
     overlay: bool,
 ) {
+    if shell.sidebar_section() == shell::SidebarSection::Boards {
+        shell::panel_header(ui, "Art boards", |ui| {
+            if icons::icon_button(ui, icons::Icon::Add, "New Art Board").clicked()
+                && let Some(board) = tab.editor.new_art_board()
+            {
+                tab.board_list.jump_to(board);
+            }
+        });
+        tab.board_list.show(ui, &mut tab.editor);
+        return;
+    }
     if shell.sidebar_section() == shell::SidebarSection::Assets {
         shell::panel_header(ui, "Assets", |_| {});
         egui::Frame::NONE

@@ -173,6 +173,7 @@ impl MapMakerApp {
             C::Home => self.show_slot(tab_strip::Slot::Home),
             C::ToggleLayers => self.win.shell.toggle_layers(),
             C::ToggleProperties => self.win.shell.toggle_properties(),
+            C::ShowBoards => self.win.shell.show_section(shell::SidebarSection::Boards),
             C::ShowAssets => self.win.shell.show_section(shell::SidebarSection::Assets),
             C::ShowHistory => self.win.shell.show_section(shell::SidebarSection::History),
             C::HidePanels => self.win.shell.toggle_panels(),
@@ -362,6 +363,7 @@ impl MapMakerApp {
             [
                 menu::Command::ToggleLayers,
                 menu::Command::ToggleProperties,
+                menu::Command::ShowBoards,
                 menu::Command::ShowAssets,
                 menu::Command::ShowHistory,
                 menu::Command::HidePanels,
@@ -663,7 +665,7 @@ fn consume(
 }
 
 /// The area of the board `id`, for framing it.
-fn board_bounds(editor: &Editor, id: ssmap_core::Id) -> Option<crate::handles::Bounds> {
+pub(super) fn board_bounds(editor: &Editor, id: ssmap_core::Id) -> Option<crate::handles::Bounds> {
     let canvas = &editor.map().board(id)?.canvas;
     Some(crate::handles::Bounds {
         min: canvas.origin,

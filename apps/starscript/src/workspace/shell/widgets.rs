@@ -141,18 +141,18 @@ pub fn properties_collapse_button(ui: &mut egui::Ui, collapsed: bool) -> egui::R
 
 /// The 40 pt rail Layers collapses to: only the section icons, with the expand control pinned
 /// to the bottom. Returns what was clicked, which expands the sidebar.
-pub fn layers_rail(
-    ui: &mut egui::Ui,
-    path: &[String],
-    current: SidebarSection,
-) -> Option<RailClick> {
+pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<RailClick> {
+    let current = shell.sidebar_section();
     let palette = theme::palette(ui.ctx());
     let rect = ui.max_rect();
     let mut clicked = None;
     let step = icons::GRID + 8.0 + theme::SPACING[1];
     let mut layers_y = rect.top() + metrics::PANEL_HEADER / 2.0;
     let mut count = 0.0;
-    for section in SidebarSection::ALL.into_iter().filter(|s| s.available()) {
+    for section in SidebarSection::ALL
+        .into_iter()
+        .filter(|&s| shell.section_available(s))
+    {
         let slot = egui::Rect::from_center_size(
             egui::pos2(rect.center().x, layers_y + count * step),
             egui::Vec2::splat(icons::GRID + 8.0),

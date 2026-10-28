@@ -32,11 +32,12 @@ const BOTH: egui::Modifiers = egui::Modifiers {
 };
 
 #[test]
-fn the_icon_strip_lists_layers_assets_and_history_in_that_order() {
+fn the_icon_strip_lists_layers_boards_assets_and_history_in_that_order() {
     assert_eq!(
         SidebarSection::ALL,
         [
             SidebarSection::Layers,
+            SidebarSection::Boards,
             SidebarSection::Assets,
             SidebarSection::History
         ]
