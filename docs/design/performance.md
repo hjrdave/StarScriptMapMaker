@@ -63,6 +63,11 @@ Map-wide Roughness (amount 60, scale 200) and frame one landmass at about 4x zoo
 The editing scripts run 90 frames. A first frame is rendered before measuring, to upload the Map
 and roughen every outline once; it isn't counted.
 
+`slider-amount` and `slider-scale` compute the new outlines on a thread of their own, as the
+editor does when the Map-wide Roughness changes: the `roughness` stage stays small, and frames
+draw the outlines they had until the new ones land. Each outline that lands redraws only its
+Object.
+
 Not measured yet: resizing the Canvas with many objects (issue #239), because there is no
 resize Command yet. Add a script when there is.
 

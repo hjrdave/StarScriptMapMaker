@@ -40,8 +40,8 @@ pub struct MapScene {
     rings: RingStore,
     /// Set while a build must not draw rings still being computed in the background.
     complete: bool,
-    /// The content last built, and the Map revision and ring generation it was built from.
-    built: Option<(u64, u64, Content)>,
+    /// The content last built, and what it was built from.
+    built: Option<Built>,
     /// What each Stamp last drew, so an edit that leaves a Stamp alone does not rebuild it.
     stamps: HashMap<Id, CachedStamp>,
     /// The Stamps of `built`, in the order of its Stamps.
@@ -56,6 +56,17 @@ pub struct MapScene {
     seen: HashSet<Id>,
     /// Counts builds, to tell the entries of `stamps` the last build used from the rest.
     build: u64,
+}
+
+/// The content last built, and the state of everything it was built from.
+struct Built {
+    /// The Map revision.
+    revision: u64,
+    /// The generation of the shore rings, which changes as they land in the background.
+    rings: u64,
+    /// The generation of the roughened outlines, which changes as they land in the background.
+    outlines: u64,
+    content: Content,
 }
 
 /// Where a stretch of groups is among the content's, and where it comes in draw order.
@@ -80,6 +91,8 @@ struct ObjectGroups {
     ripples: Option<Slot>,
     /// Whether it has a Shore, whose rings can land in the background.
     shore: bool,
+    /// The roughened outline it was drawn from, which is another once a better one lands.
+    outline: Option<Arc<MultiPolygon>>,
     /// The serial of its rings when it was drawn.
     serial: u64,
 }
@@ -185,34 +198,51 @@ impl MapScene {
         self.built = None;
     }
 
+    /// The content built last, if it is still current, or brought up to date by redrawing only
+    /// what changed. `None` when it must be built again.
+    fn reuse(&mut self, map: &Map, roughness: &mut RoughnessCache) -> Option<Content> {
+        if self
+            .built
+            .as_ref()
+            .is_none_or(|built| built.revision != map.revision())
+        {
+            self.use_embedded_fonts(map);
+        }
+        let rings = self.rings.generation();
+        let outlines = roughness.generation();
+        if let Some(built) = &self.built
+            && built.revision == map.revision()
+            && built.rings == rings
+            && built.outlines == outlines
+        {
+            return Some(built.content.clone());
+        }
+        let previous = self.built.as_ref().map(|built| {
+            let landed = built.rings != rings || built.outlines != outlines;
+            (built.revision, landed, built.content.clone())
+        });
+        if let Some((since, landed, previous)) = previous
+            && let Some(patched) = self.patch(map, roughness, since, landed, &previous)
+        {
+            self.built = Some(Built {
+                revision: map.revision(),
+                rings,
+                outlines,
+                content: patched.clone(),
+            });
+            return Some(patched);
+        }
+        None
+    }
+
     /// What the Canvas draws for `map`, rebuilt only when the Map has changed since.
     /// Landmasses and Lakes use their roughened outlines from `roughness`.
     pub fn content(&mut self, map: &Map, roughness: &mut RoughnessCache) -> Content {
         let _stage = profile::stage(Stage::Update);
-        if self
-            .built
-            .as_ref()
-            .is_none_or(|(r, _, _)| *r != map.revision())
-        {
-            self.use_embedded_fonts(map);
+        if let Some(content) = self.reuse(map, roughness) {
+            return content;
         }
-        let generation = self.rings.generation();
-        if let Some((revision, rings, content)) = &self.built
-            && *revision == map.revision()
-            && *rings == generation
-        {
-            return content.clone();
-        }
-        let previous = self
-            .built
-            .as_ref()
-            .map(|(revision, rings, content)| (*revision, *rings != generation, content.clone()));
-        if let Some((since, landed, previous)) = previous
-            && let Some(patched) = self.patch(map, roughness, since, landed, &previous)
-        {
-            self.built = Some((map.revision(), generation, patched.clone()));
-            return patched;
-        }
+        let (rings, outlines) = (self.rings.generation(), roughness.generation());
         let mut groups = Vec::new();
         let mut stamps = Vec::new();
         let mut slot_ids = Vec::new();
@@ -291,6 +321,7 @@ impl MapScene {
                 emitted += 1;
                 slot.shore = map.shore(id).is_some();
                 slot.serial = self.rings.serial(id);
+                slot.outline = slot.shore.then(|| outline(roughness, map, id)).flatten();
             }
             for placed in &mut stamps[first_stamp..] {
                 placed.clip = clip;
@@ -335,13 +366,18 @@ impl MapScene {
         self.objects = objects;
         self.ends = ends;
         let content = Content::with_clips(groups, stamps, clips);
-        self.built = Some((map.revision(), generation, content.clone()));
+        self.built = Some(Built {
+            revision: map.revision(),
+            rings,
+            outlines,
+            content: content.clone(),
+        });
         content
     }
 
     /// `previous`, built when the Map was at revision `since`, brought up to date by redrawing
-    /// only the Objects that were edited in place since (or whose rings have landed since, if
-    /// `landed`), if that is all that changed. `None` when anything else changed, and the
+    /// only the Objects that were edited in place since (or whose rings or outlines have landed
+    /// since, if `landed`), if that is all that changed. `None` when anything else changed, and the
     /// content must be built again.
     fn patch(
         &mut self,
@@ -374,7 +410,7 @@ impl MapScene {
             dirty.extend(self.objects.keys().filter(|id| !have.contains(id)).copied());
         }
         if landed {
-            self.pick_up_landed_rings(map, roughness, &mut dirty)?;
+            self.pick_up_landed(map, roughness, &mut dirty)?;
         }
         let stamps = if stamp_ids.is_empty() {
             None
@@ -486,24 +522,41 @@ impl MapScene {
         })
     }
 
-    /// Adds to `dirty` the Objects whose rings have landed in the background since they were
-    /// drawn. `None` if one of them can no longer be drawn.
-    fn pick_up_landed_rings(
+    /// Adds to `dirty` the Objects whose outlines or rings have landed in the background since
+    /// they were drawn. `None` if one of them can no longer be drawn.
+    fn pick_up_landed(
         &mut self,
         map: &Map,
         roughness: &mut RoughnessCache,
         dirty: &mut Vec<Id>,
     ) -> Option<()> {
-        let shored: Vec<(Id, u64)> = self
+        let shored: Vec<(Id, u64, Option<Arc<MultiPolygon>>)> = self
             .objects
             .iter()
             .filter(|(_, slot)| slot.shore)
-            .map(|(&id, slot)| (id, slot.serial))
+            .map(|(&id, slot)| (id, slot.serial, slot.outline.clone()))
             .collect();
-        for (id, serial) in shored {
-            let (shore, outline) = (map.shore(id)?, outline(roughness, map, id)?);
-            self.rings.prepare(id, &outline, shore, false);
-            if self.rings.serial(id) != serial && !dirty.contains(&id) {
+        for (id, serial, drawn) in shored {
+            if dirty.contains(&id) {
+                continue;
+            }
+            let (shore, latest) = (map.shore(id)?, outline(roughness, map, id)?);
+            // Until the roughened outline is ready, what was drawn stands.
+            let ready = roughness.is_ready(map, id);
+            let current = match (&drawn, ready) {
+                (Some(drawn), false) => drawn.clone(),
+                _ => latest,
+            };
+            if ready
+                && !drawn
+                    .as_ref()
+                    .is_some_and(|drawn| Arc::ptr_eq(drawn, &current))
+            {
+                dirty.push(id);
+                continue;
+            }
+            self.rings.prepare(id, &current, shore, false);
+            if self.rings.serial(id) != serial {
                 dirty.push(id);
             }
         }
@@ -589,7 +642,10 @@ impl MapScene {
             let mut own = Vec::new();
             self.draw(map, roughness, id, place, &mut own, &mut Vec::new());
             mark_object(map, id, place.placement, &mut own);
-            self.objects.get_mut(&id)?.serial = self.rings.serial(id);
+            let latest = outline(roughness, map, id);
+            let recorded = self.objects.get_mut(&id)?;
+            recorded.serial = self.rings.serial(id);
+            recorded.outline = recorded.shore.then_some(latest).flatten();
             let stretches = [(true, slot.ripples, ripples), (false, Some(slot.own), own)];
             for (is_ripples, old, new) in stretches {
                 let Some(old) = old else { continue };
@@ -1832,5 +1888,56 @@ mod tests {
         .unwrap();
         let grown = assert_matches_fresh(&mut scene, &map, &mut roughness);
         assert!(grown.groups().len() > before.groups().len());
+    }
+
+    #[test]
+    fn outlines_that_land_redraw_only_their_objects_and_until_then_the_last_ones_stand() {
+        let (mut map, lands) = map_with_land();
+        // One Landmass has its own Roughness, so a change to the default is not its.
+        map.execute(&Command::SetRoughness {
+            ids: vec![lands[0]],
+            roughness: Some(ssmap_core::Roughness::new(4.0, 20.0, 9)),
+        })
+        .unwrap();
+        map.execute(&Command::SetDefaultRoughness {
+            roughness: ssmap_core::Roughness::new(6.0, 14.0, 2),
+        })
+        .unwrap();
+        let mut scene = MapScene::new(Fonts::bundled());
+        let mut roughness = RoughnessCache::new();
+        let before = scene.content(&map, &mut roughness);
+        // The default changes, and a rebuild is started but not yet run.
+        map.execute(&Command::SetDefaultRoughness {
+            roughness: ssmap_core::Roughness::new(11.0, 22.0, 4),
+        })
+        .unwrap();
+        let rebuild = roughness.rebuild(&map);
+        assert_eq!(rebuild.len(), 2, "the two without their own Roughness");
+        let meanwhile = scene.content(&map, &mut roughness);
+        assert_same_content(&meanwhile, &before);
+        // The outlines land.
+        rebuild.run(|| {});
+        let after = scene.content(&map, &mut roughness);
+        let fresh = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
+        assert_same_content(&after, &fresh);
+        let first_path = |content: &Content, id: Id| {
+            content
+                .groups()
+                .iter()
+                .find(|g| g.object.is_some_and(|o| o.id == id) && !g.effect)
+                .map(|g| g.shapes[0].path.clone())
+                .unwrap()
+        };
+        assert!(
+            Arc::ptr_eq(
+                &first_path(&meanwhile, lands[0]),
+                &first_path(&after, lands[0])
+            ),
+            "the Landmass with its own Roughness was not drawn again"
+        );
+        assert!(!Arc::ptr_eq(
+            &first_path(&meanwhile, lands[1]),
+            &first_path(&after, lands[1])
+        ));
     }
 }
