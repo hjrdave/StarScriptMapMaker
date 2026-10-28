@@ -700,7 +700,8 @@ mod tests {
     fn the_canvas_centre_is_unchanged_when_the_layers_panel_collapses() {
         let ppp = 2.0;
         let window = 1440.0_f32;
-        let shell = crate::shell::Shell::default();
+        let mut shell = crate::shell::Shell::default();
+        shell.set_layers_collapsed(false);
         let width_with = shell.layout(window).canvas_width(window);
         let mut collapsed = shell.clone();
         collapsed.set_layers_collapsed(true);

@@ -64,8 +64,6 @@ fn the_shortcut_shows_the_history_section() {
 #[test]
 fn the_shortcut_expands_a_collapsed_sidebar() {
     let mut harness = app();
-    harness.key_press_modifiers(BOTH, egui::Key::Num1);
-    harness.run();
     assert!(harness.state().shell().layers_collapsed());
     show_history(&mut harness);
     assert!(!harness.state().shell().layers_collapsed());

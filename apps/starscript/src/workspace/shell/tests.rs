@@ -37,9 +37,22 @@ fn the_sidebar_section_defaults_to_layers_and_is_stored() {
     assert!(json.contains("sidebar_section"));
 }
 
+fn expanded() -> Shell {
+    let mut shell = Shell::default();
+    shell.set_layers_collapsed(false);
+    shell
+}
+
+#[test]
+fn the_left_sidebar_starts_collapsed_to_its_rail() {
+    let shell = Shell::default();
+    assert!(shell.layers_collapsed());
+    assert_eq!(shell.layout(1500.0).layers, PanelMode::Rail);
+}
+
 #[test]
 fn hiding_both_panels_keeps_what_the_user_collapsed() {
-    let mut shell = Shell::default();
+    let mut shell = expanded();
     shell.toggle_layers();
     shell.toggle_properties();
     shell.toggle_panels();
@@ -55,17 +68,17 @@ fn full(width: f32) -> PanelMode {
 
 #[test]
 fn at_1360_and_wider_both_panels_show_in_full() {
-    let layout = Shell::default().layout(1360.0);
+    let layout = expanded().layout(1360.0);
     assert_eq!(layout.layers, full(232.0));
     assert_eq!(layout.properties, full(288.0));
     assert!(layout.layers_footer && layout.real_world_coordinates);
-    assert_eq!(Shell::default().layout(2400.0).layers, full(232.0));
+    assert_eq!(expanded().layout(2400.0).layers, full(232.0));
 }
 
 #[test]
 fn from_1180_to_1359_layers_narrows_and_loses_its_footer() {
     for width in [1180.0, 1359.0] {
-        let layout = Shell::default().layout(width);
+        let layout = expanded().layout(width);
         assert_eq!(layout.layers, full(200.0));
         assert_eq!(layout.properties, full(288.0));
         assert!(!layout.layers_footer && layout.real_world_coordinates);
@@ -92,7 +105,7 @@ fn at_the_minimum_both_panels_are_rails() {
 
 #[test]
 fn the_canvas_keeps_480_points() {
-    let mut shell = Shell::default();
+    let mut shell = expanded();
     shell.set_width(Side::Right, 360.0);
     for width in [600.0, 700.0, 900.0, 1024.0, 1250.0, 1500.0] {
         let layout = shell.layout(width);
@@ -110,7 +123,7 @@ fn the_canvas_keeps_480_points() {
 
 #[test]
 fn a_panel_the_user_collapsed_stays_collapsed_when_the_window_grows() {
-    let mut shell = Shell::default();
+    let mut shell = expanded();
     shell.toggle_layers();
     shell.toggle_properties();
     for width in [1024.0, 1250.0, 1400.0, 3000.0] {
@@ -124,7 +137,7 @@ fn a_panel_the_user_collapsed_stays_collapsed_when_the_window_grows() {
 
 #[test]
 fn narrowing_the_window_leaves_the_users_state_alone() {
-    let shell = Shell::default();
+    let shell = expanded();
     let before = shell.clone();
     let _ = shell.layout(1024.0);
     assert_eq!(shell, before);
@@ -135,7 +148,7 @@ fn narrowing_the_window_leaves_the_users_state_alone() {
 
 #[test]
 fn the_layers_shortcut_opens_the_overlay_when_the_window_is_too_narrow() {
-    let mut shell = Shell::default();
+    let mut shell = expanded();
     shell.set_window_width(1100.0);
     shell.toggle_layers();
     assert!(shell.layers_overlay() && !shell.layers_collapsed());

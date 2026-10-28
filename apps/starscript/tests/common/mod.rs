@@ -18,6 +18,12 @@ pub(crate) fn item_label(title: &str, command: Command) -> String {
     }
 }
 
+/// Expands the left sidebar, which starts collapsed to its rail.
+pub(crate) fn expand_layers<S>(harness: &mut Harness<'_, S>) {
+    harness.get_by_label("Expand Layers (⌘⌥1)").click();
+    harness.run();
+}
+
 /// Opens the menu bar's `menu` and clicks the item with the label `item`.
 pub(crate) fn choose<S>(harness: &mut Harness<'_, S>, menu: &str, item: &str) {
     open_menu(harness, menu);
