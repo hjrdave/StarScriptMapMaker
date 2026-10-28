@@ -67,7 +67,7 @@ fn the_stamp_section_opens_the_assets_section() {
         harness.state().shell().sidebar_section(),
         SidebarSection::Layers
     );
-    harness.get_by_label("Choose Asset…").click();
+    harness.get_by_label("Choose Asset").click();
     harness.run();
     assert_eq!(
         harness.state().shell().sidebar_section(),

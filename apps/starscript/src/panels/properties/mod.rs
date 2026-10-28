@@ -94,8 +94,8 @@ impl PropertiesPanel {
         std::mem::take(&mut self.manage_label_styles)
     }
 
-    /// Whether "Choose Asset…" in the Stamp tool's section or "Replace Asset" on a selected
-    /// Stamp was clicked since the last call.
+    /// Whether the Stamp tool's Asset card or "Replace Asset" on a selected Stamp was clicked
+    /// since the last call.
     pub(crate) fn take_open_assets(&mut self) -> bool {
         let replace = std::mem::take(&mut self.open_assets);
         self.tool_section.take_open_assets() || replace

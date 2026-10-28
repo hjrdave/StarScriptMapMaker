@@ -503,10 +503,13 @@ pub fn field_row(
     body: impl FnOnce(&mut egui::Ui),
 ) -> bool {
     ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(
+        let (rect, response) = ui.allocate_exact_size(
             Vec2::new(label_width(ui, label, provenance), metrics::FIELD[0]),
             Sense::hover(),
         );
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), label)
+        });
         paint_label(ui, rect, label, provenance);
         ui.scope(|ui| {
             let room = (ui.available_width() - gap_before_trailing(ui, provenance)).max(40.0);

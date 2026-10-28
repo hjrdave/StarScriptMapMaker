@@ -304,17 +304,17 @@ fn stamp_shows_its_asset_and_scatter_settings_and_select_shows_no_tool_section()
     let mut harness = harness(fixture);
     for label in [
         "Stamp",
-        "Asset",
         "None chosen",
-        "Choose Asset…",
+        "Choose Asset",
         "Size",
+        "Rotation jitter",
         "Place on",
+        "Randomise",
+        "Flip",
+        "Variant",
         "Density",
         "Spacing",
         "Size jitter",
-        "Rotation jitter",
-        "Random flip",
-        "Random variant",
     ] {
         assert!(harness.query_by_label(label).is_some(), "{label}");
     }
@@ -323,7 +323,7 @@ fn stamp_shows_its_asset_and_scatter_settings_and_select_shows_no_tool_section()
 
     harness.state_mut().editor.active_tool = ToolId::Select;
     harness.run();
-    for label in ["Density", "Choose Asset…"] {
+    for label in ["Density", "Choose Asset"] {
         assert!(harness.query_by_label(label).is_none(), "{label}");
     }
 }
@@ -337,7 +337,7 @@ fn the_stamp_section_names_the_chosen_asset_and_asks_for_the_assets_section() {
     let mut harness = harness(fixture);
     harness.get_by_label("Tree");
     assert!(!harness.state_mut().panel.take_open_assets());
-    harness.get_by_label("Choose Asset…").click();
+    harness.get_by_label("Choose Asset: Tree").click();
     harness.run();
     assert!(harness.state_mut().panel.take_open_assets());
     assert!(!harness.state_mut().panel.take_open_assets());
