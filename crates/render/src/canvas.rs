@@ -172,6 +172,11 @@ impl Content {
         &self.stamps
     }
 
+    /// The Stamps, shared, so a renderer can tell which changed since it last saw them.
+    pub(crate) fn shared_stamps(&self) -> &Arc<[PlacedStamp]> {
+        &self.stamps
+    }
+
     fn is_empty(&self) -> bool {
         self.groups.is_empty() && self.stamps.is_empty()
     }
@@ -300,6 +305,12 @@ struct Target {
 }
 
 impl CanvasRenderer {
+    /// How many times the Stamps were brought up to date by changing only some instances.
+    #[cfg(test)]
+    pub(crate) fn stamp_patches(&self) -> u64 {
+        self.stamps.patches
+    }
+
     pub fn new(device: &wgpu::Device, capabilities: GpuCapabilities) -> Self {
         let samples = capabilities.msaa_samples;
         let view_layout = uniform_layout(device, "view");
@@ -445,7 +456,8 @@ impl CanvasRenderer {
         let building = self.content.cache().is_building();
         let content_changed = new_art || self.drawn_content.as_ref() != Some(&scene.content);
         if content_changed {
-            self.stamps.prepare(device, queue, scene.content.stamps());
+            self.stamps
+                .prepare(device, queue, scene.content.shared_stamps());
             let clips = scene.content.clips();
             let cuts: Vec<usize> = {
                 let mut cuts: Vec<usize> = self
@@ -463,11 +475,18 @@ impl CanvasRenderer {
                 cuts.dedup();
                 cuts
             };
+            // Only the Stamps changed: the very same groups, cut in the same places, with nothing
+            // new tessellated, are already merged.
+            let same_groups = self.drawn_content.as_ref().is_some_and(|drawn| {
+                std::ptr::eq(drawn.groups(), scene.content.groups())
+                    && std::ptr::eq(drawn.clips(), clips)
+            }) && cuts == self.content_cuts
+                && tessellation == self.drawn_tessellation;
             // While a rebuild runs (or a carried apply is unfinished), take the new content in
             // chunks within the frame budget; otherwise merge it all at once.
             if building || self.carry {
                 self.content.start_chunks(scene.content.groups(), &cuts);
-            } else {
+            } else if !same_groups {
                 self.content.set_runs(device, scene.content.groups(), &cuts);
             }
             // Run 2n of the masks is scope n's land and run 2n + 1 its Lakes.
@@ -479,7 +498,9 @@ impl CanvasRenderer {
                 mask_groups.extend_from_slice(&clip.holes);
                 mask_cuts.push(mask_groups.len());
             }
-            self.masks.set_runs(device, &mask_groups, &mask_cuts);
+            if !same_groups {
+                self.masks.set_runs(device, &mask_groups, &mask_cuts);
+            }
             self.content_cuts = cuts;
             self.drawn_content = Some(scene.content.clone());
         }
