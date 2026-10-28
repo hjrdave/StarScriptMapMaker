@@ -384,7 +384,7 @@ impl LabelLayout {
     /// the Layers above it) as well as the Label's own.
     pub fn group(&self, label: &ResolvedLabel, opacity: f32) -> VectorGroup {
         let opacity = opacity * label.opacity;
-        let path = self.outlines.clone().transformed(&transform(label));
+        let path = Arc::new(self.outlines.clone().transformed(&transform(label)));
         let mut shapes = vec![VectorShape {
             path: path.clone(),
             color: label.fill.faded(opacity),

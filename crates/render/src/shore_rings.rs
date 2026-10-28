@@ -81,6 +81,8 @@ struct ShoreRings {
     stale: Vec<OffsetRing>,
     /// Whether the build in progress has drawn the Object.
     drawn: bool,
+    /// Counts the changes to what [`ShoreRings::ring`] returns.
+    serial: u64,
 }
 
 #[derive(Clone)]
@@ -98,6 +100,7 @@ impl ShoreRings {
             rings: Vec::new(),
             stale: Vec::new(),
             drawn: false,
+            serial: 0,
         }
     }
 
@@ -123,6 +126,7 @@ impl ShoreRings {
             }
         }
         self.outline = outline.clone();
+        self.serial += 1;
     }
 
     fn has_all(&self, distances: &[f64]) -> bool {
@@ -132,6 +136,7 @@ impl ShoreRings {
     }
 
     fn install(&mut self, rings: Vec<OffsetRing>) {
+        self.serial += 1;
         for ring in rings {
             if !self
                 .rings
@@ -239,6 +244,7 @@ impl RingStore {
             .copied()
             .filter(|&d| !entry.rings.iter().any(|kept| same(kept.distance, d)))
             .collect();
+        entry.serial += 1;
         for distance in missing {
             let ring = Arc::new(grow(outline, &entry.rings, distance));
             entry.rings.push(OffsetRing {
@@ -254,6 +260,12 @@ impl RingStore {
     /// it is being computed and no earlier ring can stand in.
     pub(crate) fn ring(&mut self, id: Id, distance: f64) -> Option<Arc<MultiPolygon>> {
         self.objects.get_mut(&id)?.ring(distance)
+    }
+
+    /// Changes whenever the rings [`RingStore::ring`] returns for `id` do. Rings that landed in
+    /// the background count only once [`RingStore::prepare`] has picked them up.
+    pub(crate) fn serial(&self, id: Id) -> u64 {
+        self.objects.get(&id).map_or(0, |entry| entry.serial)
     }
 
     /// Ends a build: forgets the rings of Objects and distances it did not draw.

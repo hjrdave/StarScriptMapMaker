@@ -250,7 +250,7 @@ impl Map {
         self.check(&op)?;
         self.revision += 1;
         let change = match &op {
-            Op::SetProperty { id, .. } => Change::Property(*id),
+            Op::SetProperty { id, .. } | Op::ReplaceGeometry { id, .. } => Change::Edited(*id),
             _ => Change::Other,
         };
         let inverse = match op {

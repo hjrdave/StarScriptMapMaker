@@ -11,9 +11,10 @@ const CAPACITY: usize = 16_384;
 /// What one Op did, as far as patching derived data is concerned.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Change {
-    /// A property of this node was set. The node is not moved, added or removed.
-    Property(Id),
-    /// Anything else: nodes added, removed or moved, geometry, boards, Canvas, defaults, files.
+    /// This node was edited in place: a property set, or its outline replaced. It is not
+    /// moved, added or removed.
+    Edited(Id),
+    /// Anything else: nodes added, removed or moved, boards, Canvas, defaults, files.
     Other,
 }
 
@@ -45,8 +46,8 @@ impl ChangeLog {
         let mut seen = std::collections::HashSet::new();
         for &(_, change) in self.entries.iter().skip(self.entries.len() - wanted) {
             match change {
-                Change::Property(id) if seen.insert(id) => changes.properties.push(id),
-                Change::Property(_) => {}
+                Change::Edited(id) if seen.insert(id) => changes.edited.push(id),
+                Change::Edited(_) => {}
                 Change::Other => changes.other = true,
             }
         }
@@ -57,9 +58,10 @@ impl ChangeLog {
 /// What changed in a Map between a revision and now.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Changes {
-    /// The nodes that had a property set, each once, in the order they were first set.
-    pub properties: Vec<Id>,
-    /// Something other than a property was edited: a node was added, removed or moved, an
-    /// outline changed, or a Map-wide setting did. Derived data should rebuild.
+    /// The nodes edited in place (a property set, or an outline replaced), each once, in the
+    /// order they were first edited.
+    pub edited: Vec<Id>,
+    /// Something else changed: a node was added, removed or moved, or a Map-wide setting did.
+    /// Derived data should rebuild.
     pub other: bool,
 }

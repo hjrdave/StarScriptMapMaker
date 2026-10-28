@@ -5,7 +5,9 @@
     reason = "tests and benches may panic on failure"
 )]
 
-use ssmap_core::{Canvas, Changes, Command, DistanceUnit, Id, Map, Scale, Stamp};
+use ssmap_core::{
+    Canvas, Changes, Command, DistanceUnit, Id, Map, MultiPolygon, Polygon, Scale, Stamp,
+};
 
 fn new_map() -> Map {
     Map::new(Canvas::new(100, 80, Scale::new(1.0, DistanceUnit::Miles)))
@@ -45,12 +47,12 @@ fn nothing_changed_since_the_current_revision() {
     assert_eq!(
         map.changes_since(map.revision()),
         Some(Changes::default()),
-        "no properties, nothing else"
+        "nothing edited, nothing else"
     );
 }
 
 #[test]
-fn setting_a_stamp_is_a_property_change_of_that_stamp() {
+fn setting_a_stamp_is_a_edit_of_that_stamp() {
     let (mut map, _, ids) = with_stamps(3);
     let before = map.revision();
     map.execute(&Command::SetStamp {
@@ -59,7 +61,7 @@ fn setting_a_stamp_is_a_property_change_of_that_stamp() {
     })
     .unwrap();
     let changes = map.changes_since(before).unwrap();
-    assert_eq!(changes.properties, [ids[1]]);
+    assert_eq!(changes.edited, [ids[1]]);
     assert!(!changes.other);
 }
 
@@ -75,7 +77,7 @@ fn a_node_set_many_times_is_listed_once_in_the_order_first_set() {
         .unwrap();
     }
     let changes = map.changes_since(before).unwrap();
-    assert_eq!(changes.properties, [ids[2], ids[0]]);
+    assert_eq!(changes.edited, [ids[2], ids[0]]);
 }
 
 #[test]
@@ -129,6 +131,32 @@ fn undo_is_a_change_like_any_other() {
         .unwrap();
     map.revert(inverse);
     let changes = map.changes_since(before).unwrap();
-    assert_eq!(changes.properties, [ids[0]]);
+    assert_eq!(changes.edited, [ids[0]]);
+    assert!(!changes.other);
+}
+
+#[test]
+fn moving_an_outline_is_an_edit_of_that_landmass() {
+    let (mut map, layer, _) = with_stamps(1);
+    let land = Id::new();
+    map.execute(&Command::CreateLandmass {
+        id: land,
+        parent: layer,
+        index: None,
+        geometry: MultiPolygon(vec![Polygon {
+            exterior: vec![[0.0, 0.0], [40.0, 0.0], [40.0, 40.0], [0.0, 40.0]],
+            holes: vec![],
+        }]),
+        fill: None,
+    })
+    .unwrap();
+    let before = map.revision();
+    map.execute(&Command::Translate {
+        ids: vec![land],
+        offset: [5.0, 5.0],
+    })
+    .unwrap();
+    let changes = map.changes_since(before).unwrap();
+    assert_eq!(changes.edited, [land]);
     assert!(!changes.other);
 }
