@@ -94,8 +94,9 @@ stages (ms)      p50      p95      p99    worst
   - `scene`: rebuilding the scene from the Map: roughness generation and tessellation.
     An edit that changes Objects in place (a property set, an outline replaced) redraws only
     those Objects and keeps the rest (`Map::changes_since`), as does the landing of their shore
-    rings. Adding, removing or moving Objects, Layer and Map-wide edits, and Maps with clipped
-    Layers rebuild it all.
+    rings. So do Stamps added to the top of a Layer, and a change to the Map-wide Roughness,
+    Shore or Label styles, which redraws the Objects that draw groups and leaves the Stamps.
+    Removing or moving Objects, other Layer edits, and Maps with clipped Layers rebuild it all.
     The rings shore ripples and shading follow are computed on a thread of their own, as in
     the editor, so an edit that changes an outline shows its old rings for a frame or a few
     until the new ones land. Their cost does not appear here; export waits for them.

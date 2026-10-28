@@ -50,6 +50,8 @@ pub struct MapScene {
     slots: Option<HashMap<Id, usize>>,
     /// Where each Object that draws vector groups has them among the groups of `built`.
     objects: HashMap<Id, ObjectGroups>,
+    /// Where the Layers whose Objects are direct children end.
+    ends: HashMap<Id, LayerEnd>,
     /// The Labels the build in progress has drawn, to forget the layouts of the rest.
     seen: HashSet<Id>,
     /// Counts builds, to tell the entries of `stamps` the last build used from the rest.
@@ -80,6 +82,18 @@ struct ObjectGroups {
     shore: bool,
     /// The serial of its rings when it was drawn.
     serial: u64,
+}
+
+/// Where a Layer's output ends before its Lakes, which is where Stamps added to the top of the
+/// Layer go.
+#[derive(Clone, Copy, Debug)]
+struct LayerEnd {
+    /// How many Stamps the build had placed.
+    stamps: usize,
+    /// How many groups the build had emitted.
+    groups: usize,
+    /// How many stretches the build had emitted, as [`Slot::ord`] counts them.
+    ord: usize,
 }
 
 /// A stretch of the content's groups, and the groups that now go there.
@@ -117,6 +131,7 @@ impl MapScene {
             slot_ids: Vec::new(),
             slots: None,
             objects: HashMap::new(),
+            ends: HashMap::new(),
             build: 0,
         }
     }
@@ -203,6 +218,8 @@ impl MapScene {
         let mut slot_ids = Vec::new();
         let mut objects: HashMap<Id, ObjectGroups> = HashMap::new();
         let mut emitted = 0;
+        let mut ends: HashMap<Id, LayerEnd> = HashMap::new();
+        let mut latest: Option<(Id, LayerEnd)> = None;
         self.seen.clear();
         let mut clips: Vec<ClipScope> = Vec::new();
         // The Landmass the last scope is clipped to, while that scope is still growing.
@@ -284,6 +301,27 @@ impl MapScene {
             if let Some(scope) = clips.last_mut().filter(|_| open.is_some()) {
                 scope.groups.end = groups.len();
             }
+            if let Some(layer) = map.parent(id)
+                && !matches!(object.kind, ObjectKind::Lake(_))
+            {
+                let end = LayerEnd {
+                    stamps: stamps.len(),
+                    groups: groups.len(),
+                    ord: emitted,
+                };
+                // Objects of a Layer come in runs, so only a change of Layer needs recording.
+                match &mut latest {
+                    Some((last, at)) if *last == layer => *at = end,
+                    other => {
+                        if let Some((last, at)) = other.replace((layer, end)) {
+                            ends.insert(last, at);
+                        }
+                    }
+                }
+            }
+        }
+        if let Some((last, at)) = latest {
+            ends.insert(last, at);
         }
         let seen = &self.seen;
         self.layouts.retain(|id, _| seen.contains(id));
@@ -295,6 +333,7 @@ impl MapScene {
         self.slot_ids = slot_ids;
         self.slots = None;
         self.objects = objects;
+        self.ends = ends;
         let content = Content::with_clips(groups, stamps, clips);
         self.built = Some((map.revision(), generation, content.clone()));
         content
@@ -328,6 +367,12 @@ impl MapScene {
                 _ => return None,
             }
         }
+        if changes.defaults {
+            // Roughness, Shore and Label styles reach every Object that draws groups, and
+            // no Stamp.
+            let have: HashSet<Id> = dirty.iter().copied().collect();
+            dirty.extend(self.objects.keys().filter(|id| !have.contains(id)).copied());
+        }
         if landed {
             self.pick_up_landed_rings(map, roughness, &mut dirty)?;
         }
@@ -337,10 +382,108 @@ impl MapScene {
             Some(self.patch_stamps(map, &stamp_ids, previous)?)
         };
         let replacements = self.replacements(map, roughness, &dirty)?;
-        if stamps.is_none() && replacements.is_empty() {
-            return Some(previous.clone());
+        let content = if stamps.is_none() && replacements.is_empty() {
+            previous.clone()
+        } else {
+            self.splice(previous, stamps, replacements)?
+        };
+        if changes.inserted.is_empty() {
+            return Some(content);
         }
-        self.splice(previous, stamps, replacements)
+        self.insert_stamps(map, &changes.inserted, &content)
+    }
+
+    /// `content` with the Stamps `ids`, which were added to the top of their Layers, drawn
+    /// after what those Layers drew. `None` if any is somewhere else, or not a Stamp.
+    fn insert_stamps(&mut self, map: &Map, ids: &[Id], content: &Content) -> Option<Content> {
+        if content.stamps().len() != self.slot_ids.len() {
+            return None;
+        }
+        let mut by_layer: HashMap<Id, Vec<Id>> = HashMap::new();
+        for &id in ids {
+            let Some(Node::Object(object)) = map.node(id) else {
+                return None;
+            };
+            if !matches!(object.kind, ObjectKind::Stamp(_)) {
+                return None;
+            }
+            by_layer.entry(map.parent(id)?).or_default().push(id);
+        }
+        // Where each Layer's new Stamps go, in draw order.
+        let mut places: Vec<(LayerEnd, Id, Vec<Id>)> = Vec::new();
+        for (layer, added) in by_layer {
+            let Some(Node::Layer(held)) = map.node(layer) else {
+                return None;
+            };
+            if held.depth_sort {
+                return None;
+            }
+            let end = *self.ends.get(&layer)?;
+            places.push((end, layer, top_of_layer(map, layer, &added)?));
+        }
+        places.sort_by_key(|(end, _, _)| (end.ord, end.stamps));
+        let total: usize = places.iter().map(|(_, _, added)| added.len()).sum();
+        let mut stamps = Vec::with_capacity(content.stamps().len() + total);
+        let mut slot_ids = Vec::with_capacity(stamps.capacity());
+        let mut cursor = 0;
+        for (end, _, added) in &places {
+            stamps.extend_from_slice(&content.stamps()[cursor..end.stamps]);
+            slot_ids.extend_from_slice(&self.slot_ids[cursor..end.stamps]);
+            cursor = end.stamps;
+            for &id in added {
+                stamps.push(self.new_stamp(map, id, end.groups)?);
+                slot_ids.push(id);
+            }
+        }
+        stamps.extend_from_slice(&content.stamps()[cursor..]);
+        slot_ids.extend_from_slice(&self.slot_ids[cursor..]);
+        // What is drawn after an insertion point moves on by the Stamps put there.
+        let put_before = |ord: usize, stamps: usize| -> usize {
+            places
+                .iter()
+                .filter(|(end, _, _)| (end.ord, end.stamps) <= (ord, stamps))
+                .map(|(_, _, added)| added.len())
+                .sum()
+        };
+        for object in self.objects.values_mut() {
+            let slots = [Some(&mut object.own), object.ripples.as_mut()];
+            for slot in slots.into_iter().flatten() {
+                slot.stamps += put_before(slot.ord, usize::MAX);
+            }
+        }
+        for end in self.ends.values_mut() {
+            end.stamps += put_before(end.ord, end.stamps);
+        }
+        self.slot_ids = slot_ids;
+        self.slots = None;
+        Some(content.replaced(None, Some(stamps)))
+    }
+
+    /// The Stamp `id` as the content draws it, placed after `groups` groups.
+    fn new_stamp(&mut self, map: &Map, id: Id, groups: usize) -> Option<PlacedStamp> {
+        let Some(Node::Object(object)) = map.node(id) else {
+            return None;
+        };
+        let ObjectKind::Stamp(stamp) = &object.kind else {
+            return None;
+        };
+        let opacity = layer_opacity(map, id);
+        let draw = stamp_draw(stamp, opacity);
+        self.stamps.insert(
+            id,
+            CachedStamp {
+                version: map.version(id)?,
+                opacity,
+                build: self.build,
+                draw: draw.clone(),
+            },
+        );
+        Some(PlacedStamp {
+            after: groups,
+            clip: None,
+            placement: placement_in(map, object.membership),
+            draw,
+        })
     }
 
     /// Adds to `dirty` the Objects whose rings have landed in the background since they were
@@ -493,19 +636,21 @@ impl MapScene {
         groups.extend_from_slice(&before[cursor..]);
         // What comes after a replaced stretch moves by how much it grew.
         let grew = |r: &Replacement| r.new.len() as isize - r.slot.range.len() as isize;
-        let mut placed = stamps.unwrap_or_else(|| previous.stamps().to_vec());
+        let mut placed = stamps;
         for r in &replacements {
             // Stamps drawn before a stretch end before it starts, and the rest begin after it.
-            let (earlier, later) = (r.slot.stamps.checked_sub(1), placed.get(r.slot.stamps));
-            let ok = earlier.is_none_or(|i| placed[i].after <= r.slot.range.start)
+            let list = placed.as_deref().unwrap_or(previous.stamps());
+            let (earlier, later) = (r.slot.stamps.checked_sub(1), list.get(r.slot.stamps));
+            let ok = earlier.is_none_or(|i| list[i].after <= r.slot.range.start)
                 && later.is_none_or(|stamp| stamp.after >= r.slot.range.end);
             if !ok {
                 return None;
             }
         }
         if replacements.iter().any(|r| grew(r) != 0) {
+            let list = placed.get_or_insert_with(|| previous.stamps().to_vec());
             let (mut next, mut moved) = (0, 0isize);
-            for (number, stamp) in placed.iter_mut().enumerate() {
+            for (number, stamp) in list.iter_mut().enumerate() {
                 while next < replacements.len() && replacements[next].slot.stamps <= number {
                     moved += grew(&replacements[next]);
                     next += 1;
@@ -542,7 +687,10 @@ impl MapScene {
                 slot.range = start..start + len;
             }
         }
-        Some(previous.replaced(Some(groups), Some(placed)))
+        for end in self.ends.values_mut() {
+            end.groups = end.groups.checked_add_signed(moved_before(end.ord))?;
+        }
+        Some(previous.replaced(Some(groups), placed))
     }
 
     /// Adds the ripples of `sibling`, which draw beneath every fill of its Layer.
@@ -675,6 +823,26 @@ struct Place {
     /// The product of the opacities of the Layers above it.
     opacity: f32,
     placement: Placement,
+}
+
+/// The Stamps `added` in the order they draw, if they sit on top of Layer `layer`: after every
+/// other child that draws before its Lakes, the last of which is an Object, not a Layer.
+fn top_of_layer(map: &Map, layer: Id, added: &[Id]) -> Option<Vec<Id>> {
+    let new: HashSet<Id> = added.iter().copied().collect();
+    let mut top = Vec::with_capacity(added.len());
+    for &child in map.children(Some(layer)).iter().rev() {
+        if new.contains(&child) {
+            top.push(child);
+            continue;
+        }
+        match map.node(child) {
+            Some(Node::Object(object)) if matches!(object.kind, ObjectKind::Lake(_)) => {}
+            Some(Node::Object(_)) => break,
+            _ => return None,
+        }
+    }
+    top.reverse();
+    (top.len() == added.len()).then_some(top)
 }
 
 /// What the Stamp draws, faded by `opacity` as well as its own.
@@ -1530,5 +1698,139 @@ mod tests {
             ),
             "the Landmass nobody touched was not drawn again"
         );
+    }
+
+    fn place(map: &mut Map, parent: Id, xs: &[f64]) -> Vec<Id> {
+        let stamps: Vec<ssmap_core::PlacedStamp> = xs
+            .iter()
+            .map(|&x| ssmap_core::PlacedStamp {
+                id: Id::new(),
+                stamp: ssmap_core::Stamp::new("base/tree".parse().unwrap(), [x, 33.0]),
+            })
+            .collect();
+        let ids = stamps.iter().map(|placed| placed.id).collect();
+        map.execute(&Command::PlaceStamps { parent, stamps })
+            .unwrap();
+        ids
+    }
+
+    fn assert_matches_fresh(
+        scene: &mut MapScene,
+        map: &Map,
+        roughness: &mut RoughnessCache,
+    ) -> Content {
+        let content = scene.content(map, roughness);
+        let fresh = MapScene::new(Fonts::bundled()).content(map, &mut RoughnessCache::new());
+        assert_same_content(&content, &fresh);
+        content
+    }
+
+    #[test]
+    fn stamps_placed_on_top_of_layers_are_patched_in() {
+        let (mut map, lands) = map_with_land();
+        let layers: Vec<Id> = map.children(None).to_vec();
+        let mut scene = MapScene::new(Fonts::bundled());
+        let mut roughness = RoughnessCache::new();
+        let before = scene.content(&map, &mut roughness);
+        place(&mut map, layers[0], &[10.0, 11.0, 12.0]);
+        let after = assert_matches_fresh(&mut scene, &map, &mut roughness);
+        assert!(
+            std::ptr::eq(after.groups(), before.groups()),
+            "the groups are shared, not rebuilt"
+        );
+        assert_eq!(after.stamps().len(), before.stamps().len() + 3);
+        // Another Layer in the same patch, and one more patch after it.
+        place(&mut map, layers[2], &[20.0]);
+        place(&mut map, layers[0], &[30.0, 31.0]);
+        assert_matches_fresh(&mut scene, &map, &mut roughness);
+        // The places it recorded followed: edit land, a Stamp, and place again.
+        map.execute(&Command::Translate {
+            ids: vec![lands[0]],
+            offset: [3.0, 3.0],
+        })
+        .unwrap();
+        assert_matches_fresh(&mut scene, &map, &mut roughness);
+        let stamp_ids: Vec<Id> = map
+            .draw_order()
+            .into_iter()
+            .filter(|&id| matches!(map.node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Stamp(_))))
+            .collect();
+        move_stamp(&mut map, stamp_ids[4], [5.0, 5.0]);
+        place(&mut map, layers[2], &[40.0]);
+        assert_matches_fresh(&mut scene, &map, &mut roughness);
+    }
+
+    #[test]
+    fn placing_under_other_things_rebuilds() {
+        let (mut map, _) = map_with_land();
+        let layers: Vec<Id> = map.children(None).to_vec();
+        let mut scene = MapScene::new(Fonts::bundled());
+        let mut roughness = RoughnessCache::new();
+        scene.content(&map, &mut roughness);
+        // Below the Layer's other Stamps.
+        map.execute(&Command::CreateStamp {
+            id: Id::new(),
+            parent: layers[0],
+            index: Some(0),
+            stamp: Box::new(ssmap_core::Stamp::new(
+                "base/tree".parse().unwrap(),
+                [1.0, 2.0],
+            )),
+        })
+        .unwrap();
+        assert_matches_fresh(&mut scene, &map, &mut roughness);
+        // Into a Layer that holds a Layer on top of its Objects.
+        let inner = Id::new();
+        map.execute(&Command::CreateLayer {
+            id: inner,
+            parent: Some(layers[0]),
+            index: None,
+            name: "Inner".into(),
+        })
+        .unwrap();
+        scene.content(&map, &mut roughness);
+        place(&mut map, layers[0], &[8.0]);
+        assert_matches_fresh(&mut scene, &map, &mut roughness);
+        // A Landmass is not a Stamp.
+        map.execute(&Command::CreateLandmass {
+            id: Id::new(),
+            parent: layers[1],
+            index: None,
+            geometry: square(600.0, 50.0),
+            fill: None,
+        })
+        .unwrap();
+        assert_matches_fresh(&mut scene, &map, &mut roughness);
+    }
+
+    #[test]
+    fn changing_a_map_wide_default_redraws_the_land_and_leaves_the_stamps() {
+        let (mut map, _) = map_with_land();
+        let mut scene = MapScene::new(Fonts::bundled());
+        let mut roughness = RoughnessCache::new();
+        let before = scene.content(&map, &mut roughness);
+        for (amount, scale) in [(6.0, 12.0), (9.0, 18.0)] {
+            map.execute(&Command::SetDefaultRoughness {
+                roughness: ssmap_core::Roughness::new(amount, scale, 3),
+            })
+            .unwrap();
+            let after = assert_matches_fresh(&mut scene, &map, &mut roughness);
+            assert!(
+                std::ptr::eq(after.stamps(), before.stamps()),
+                "no Stamp is copied when no group count changes"
+            );
+        }
+        let mut shore = map
+            .shore(map.children(Some(map.children(None)[1]))[0])
+            .unwrap()
+            .clone();
+        shore.ripples.count += 2;
+        map.execute(&Command::SetDefaultShore {
+            kind: ssmap_core::ShoreKind::Landmass,
+            shore,
+        })
+        .unwrap();
+        let grown = assert_matches_fresh(&mut scene, &map, &mut roughness);
+        assert!(grown.groups().len() > before.groups().len());
     }
 }
