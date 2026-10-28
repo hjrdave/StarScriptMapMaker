@@ -142,6 +142,17 @@ impl Content {
         }
     }
 
+    /// This content with its Stamps replaced by `stamps`, which must be the same Stamps in the
+    /// same slots with other draws. The groups and clip scopes are shared, not copied.
+    pub(crate) fn with_stamps_replaced(&self, stamps: Vec<PlacedStamp>) -> Self {
+        debug_assert_eq!(stamps.len(), self.stamps.len());
+        Self {
+            groups: self.groups.clone(),
+            stamps: stamps.into(),
+            clips: self.clips.clone(),
+        }
+    }
+
     pub fn clips(&self) -> &[ClipScope] {
         &self.clips
     }

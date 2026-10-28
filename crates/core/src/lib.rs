@@ -5,6 +5,7 @@
 
 pub mod asset;
 mod background;
+mod changes;
 mod color;
 mod command;
 mod embedded;
@@ -29,6 +30,7 @@ mod template;
 
 pub use asset::AssetRef;
 pub use background::{Background, BackgroundTexture};
+pub use changes::Changes;
 pub use color::{Color, ParseColorError};
 pub use command::{Command, CommandError, PlacedStamp};
 pub use embedded::{

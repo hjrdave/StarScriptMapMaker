@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::background::Background;
+use crate::changes::{ChangeLog, Changes};
 use crate::color::Color;
 use crate::embedded::Embedded;
 use crate::export::ExportSettings;
@@ -256,6 +257,8 @@ pub struct Map {
     links: HashMap<Id, HashSet<Id>>,
     /// Increases with every applied Op; touched nodes take its new value as their version.
     pub(crate) revision: u64,
+    /// The last Ops applied, for [`Map::changes_since`].
+    pub(crate) changes: ChangeLog,
 }
 
 impl Map {
@@ -275,6 +278,7 @@ impl Map {
             entries: HashMap::new(),
             links: HashMap::new(),
             revision: 0,
+            changes: ChangeLog::default(),
         }
     }
 
@@ -511,6 +515,13 @@ impl Map {
     /// The number of Ops applied so far.
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// What changed since the Map was at `revision`, or `None` if that is too long ago (or not
+    /// a revision of this Map) to say. Lets data derived from the Map patch itself after a
+    /// small edit.
+    pub fn changes_since(&self, revision: u64) -> Option<Changes> {
+        self.changes.since(revision, self.revision)
     }
 
     /// The node and all its descendants. Panics if `id` is unknown.
