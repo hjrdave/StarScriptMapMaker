@@ -3,7 +3,6 @@
 mod board;
 pub(crate) use board::BoardRequest;
 mod label_stamp;
-mod layer;
 mod map;
 mod object_style;
 #[cfg(test)]
@@ -137,21 +136,14 @@ impl PropertiesPanel {
                 self.board_properties(ui, editor, board);
             }
             [] => {
-                if let Some(layer) = editor
-                    .active_layer()
-                    .filter(|&id| editor.map().contains(id))
-                    && let Some(Node::Layer(data)) = editor.map().node(layer).cloned()
-                {
-                    breadcrumb(ui, editor.map(), layer);
-                    self.layer_properties(ui, editor, layer, &data);
-                }
                 self.map_properties(ui, editor);
             }
             [id] => {
                 let id = *id;
                 breadcrumb(ui, editor.map(), id);
                 match editor.map().node(id).cloned() {
-                    Some(Node::Layer(layer)) => self.layer_properties(ui, editor, id, &layer),
+                    // A Layer's own fields are edited in the Layers panel.
+                    Some(Node::Layer(_)) => self.map_properties(ui, editor),
                     Some(Node::Object(object)) if matches!(object.kind, ObjectKind::Label(_)) => {
                         let ObjectKind::Label(label) = object.kind else {
                             unreachable!("matched above")

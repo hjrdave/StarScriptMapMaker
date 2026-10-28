@@ -72,17 +72,28 @@ fn layer_name_visibility_and_lock_are_managed_in_the_layers_panel() {
 }
 
 #[test]
-fn nothing_selected_shows_the_active_layer_and_a_collapsed_map_section() {
+fn nothing_selected_shows_only_a_collapsed_map_section() {
     let (fixture, _, _) = fixture();
     let harness = harness(fixture);
-    // The active Layer's fields.
+    // The Layer's fields are in the Layers panel.
     for label in ["Depth sort", "Opacity", "Clip to"] {
-        assert!(harness.query_by_label(label).is_some(), "{label}");
+        assert!(harness.query_by_label(label).is_none(), "{label}");
     }
     // The Map section is there, closed: its fields are not.
     assert!(harness.query_by_label("Map").is_some());
     assert!(harness.query_by_label("Canvas width").is_none());
     assert!(harness.query_by_label("Amount").is_none());
+}
+
+#[test]
+fn a_selected_layer_shows_the_map_section_and_no_layer_section() {
+    let (mut fixture, layer, _) = fixture();
+    fixture.editor.select(vec![layer]);
+    let harness = harness(fixture);
+    for label in ["Depth sort", "Opacity", "Clip to", "Layer"] {
+        assert!(harness.query_by_label(label).is_none(), "{label}");
+    }
+    assert!(harness.query_by_label("Map").is_some());
 }
 
 #[test]
