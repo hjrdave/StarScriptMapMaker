@@ -95,6 +95,62 @@ struct Uploaded {
     anchor: [f64; 2],
 }
 
+/// What the last [`StampRenderer::prepare`] built, kept so that the next can update only the
+/// Stamps that changed.
+struct Prepared {
+    stamps: Arc<[PlacedStamp]>,
+    /// The instances as uploaded, in draw order.
+    instances: Vec<Instance>,
+    /// For each Stamp, where its instance is, or [`NO_INSTANCE`] if it draws nothing.
+    slot: Vec<u32>,
+    /// The store generation and finished-raster count it was built at.
+    generation: u64,
+    completed: u64,
+    /// Whether it left a Stamp out for art that was not ready.
+    skipped: bool,
+}
+
+/// A Stamp with no instance, because its Asset has no usable art.
+const NO_INSTANCE: u32 = u32::MAX;
+
+/// How many unchanged instances a write to the GPU buffer will cover to join two changed ones.
+const WRITE_GAP: usize = 16;
+
+/// The instance for `draw` with `uploaded` art, and the Canvas area it covers.
+fn instance(draw: &StampDraw, uploaded: &Uploaded, page_size: u32) -> (Instance, [f32; 4]) {
+    let (sin, cos) = draw.rotation.to_radians().sin_cos();
+    let flip = if draw.flip { -1.0 } else { 1.0 };
+    let [width, height] = uploaded.size;
+    let column_x = [
+        (draw.scale * flip * cos) as f32,
+        (draw.scale * flip * sin) as f32,
+    ];
+    let column_y = [(-draw.scale * sin) as f32, (draw.scale * cos) as f32];
+    let rect_min = [
+        (-uploaded.anchor[0] * width) as f32,
+        (-uploaded.anchor[1] * height) as f32,
+    ];
+    let rect_size = [width as f32, height as f32];
+    let anchor: [f32; 2] = draw.position.map(|v| v as f32);
+    let bounds = quad_bounds(anchor, column_x, column_y, rect_min, rect_size);
+    let instance = Instance {
+        anchor,
+        column_x,
+        column_y,
+        rect_min,
+        rect_size,
+        art_uv: uploaded.art.uv(page_size),
+        silhouette_uv: uploaded.silhouette.uv(page_size),
+        tint: draw
+            .tint
+            .map_or([1.0; 4], |tint| tint.to_linear_premultiplied()),
+        fill: draw.fill.to_linear_premultiplied(),
+        opacity: draw.opacity,
+        _pad: [0.0; 3],
+    };
+    (instance, bounds)
+}
+
 /// Instances drawn with the same pair of atlas pages.
 pub(crate) struct Batch {
     pages: (u32, u32),
@@ -133,6 +189,10 @@ pub(crate) struct StampRenderer {
     /// draws only the Stamps in view.
     bounds: Vec<[f32; 4]>,
     runs: Vec<Run>,
+    prepared: Option<Prepared>,
+    /// How many prepares only updated instances.
+    #[cfg(test)]
+    pub(crate) patches: u64,
 }
 
 impl StampRenderer {
@@ -221,6 +281,9 @@ impl StampRenderer {
             instances: None,
             bounds: Vec::new(),
             runs: Vec::new(),
+            prepared: None,
+            #[cfg(test)]
+            patches: 0,
         }
     }
 
@@ -256,60 +319,42 @@ impl StampRenderer {
         self.uploaded.clear();
         self.placeholder = None;
         self.bind_groups.clear();
+        self.prepared = None;
     }
 
     /// Uploads any art `stamps` need and builds their instances. Stamps whose Asset has no
     /// usable art draw nothing, and neither do those whose art is still being rasterised: they
     /// appear when [`StampRenderer::refresh_store`] next asks for them to be prepared again.
+    ///
+    /// When the Stamps are the last ones with some changed only in what they look like, only
+    /// those instances are updated.
     pub(crate) fn prepare(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        stamps: &[PlacedStamp],
+        stamps: &Arc<[PlacedStamp]>,
     ) {
         // Read before polling: a raster that lands during the loop is then seen as new.
         self.completed = self.store.as_ref().map_or(0, SpriteStore::completed);
+        if self.patch(device, queue, stamps) {
+            return;
+        }
         self.skipped_pending = false;
         let page_size = self.atlas.page_size();
         let mut instances: Vec<Instance> = Vec::with_capacity(stamps.len());
         let mut bounds: Vec<[f32; 4]> = Vec::with_capacity(stamps.len());
+        let mut slot: Vec<u32> = Vec::with_capacity(stamps.len());
         let mut runs: Vec<Run> = Vec::new();
-        for placed in stamps {
+        for placed in stamps.iter() {
             let Some(uploaded) = self.upload(device, queue, &placed.draw.asset) else {
+                slot.push(NO_INSTANCE);
                 continue;
             };
-            let draw = &placed.draw;
-            let (sin, cos) = draw.rotation.to_radians().sin_cos();
-            let flip = if draw.flip { -1.0 } else { 1.0 };
-            let [width, height] = uploaded.size;
-            let column_x = [
-                (draw.scale * flip * cos) as f32,
-                (draw.scale * flip * sin) as f32,
-            ];
-            let column_y = [(-draw.scale * sin) as f32, (draw.scale * cos) as f32];
-            let rect_min = [
-                (-uploaded.anchor[0] * width) as f32,
-                (-uploaded.anchor[1] * height) as f32,
-            ];
-            let rect_size = [width as f32, height as f32];
-            let anchor: [f32; 2] = draw.position.map(|v| v as f32);
-            bounds.push(quad_bounds(anchor, column_x, column_y, rect_min, rect_size));
-            instances.push(Instance {
-                anchor,
-                column_x,
-                column_y,
-                rect_min,
-                rect_size,
-                art_uv: uploaded.art.uv(page_size),
-                silhouette_uv: uploaded.silhouette.uv(page_size),
-                tint: draw
-                    .tint
-                    .map_or([1.0; 4], |tint| tint.to_linear_premultiplied()),
-                fill: draw.fill.to_linear_premultiplied(),
-                opacity: draw.opacity,
-                _pad: [0.0; 3],
-            });
+            let (built, area) = instance(&placed.draw, &uploaded, page_size);
+            bounds.push(area);
+            instances.push(built);
             let index = instances.len() as u32 - 1;
+            slot.push(index);
             let pages = (uploaded.art.page, uploaded.silhouette.page);
             if runs.last().is_none_or(|run| {
                 (run.after, run.clip, run.placement)
@@ -337,11 +382,107 @@ impl StampRenderer {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("stamp instances"),
                 contents: bytemuck::cast_slice(&instances),
-                usage: wgpu::BufferUsages::VERTEX,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             })
         });
         self.bounds = bounds;
         self.runs = runs;
+        self.prepared = Some(Prepared {
+            stamps: stamps.clone(),
+            instances,
+            slot,
+            generation: self.generation,
+            completed: self.completed,
+            skipped: self.skipped_pending,
+        });
+    }
+
+    /// Brings the last prepare up to date with `stamps` if they are the same Stamps in the same
+    /// places and runs, with only some drawn differently, and says whether it did. Anything
+    /// else (Stamps added, removed or moved to another run, another Asset, art that has landed)
+    /// is left to a full prepare.
+    fn patch(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        stamps: &Arc<[PlacedStamp]>,
+    ) -> bool {
+        let Some(prepared) = self.prepared.take() else {
+            return false;
+        };
+        // Art that landed since only matters to a Stamp that was left out for want of it.
+        if prepared.stamps.len() != stamps.len()
+            || prepared.generation != self.generation
+            || (prepared.skipped && prepared.completed != self.completed)
+        {
+            return false;
+        }
+        let Prepared {
+            stamps: before,
+            mut instances,
+            slot,
+            generation,
+            skipped,
+            ..
+        } = prepared;
+        let page_size = self.atlas.page_size();
+        let mut changed: Vec<usize> = Vec::new();
+        for (number, (old, new)) in before.iter().zip(stamps.iter()).enumerate() {
+            if Arc::ptr_eq(&old.draw, &new.draw)
+                && (old.after, old.clip, old.placement) == (new.after, new.clip, new.placement)
+            {
+                continue;
+            }
+            if (old.after, old.clip, old.placement) != (new.after, new.clip, new.placement)
+                || old.draw.asset != new.draw.asset
+            {
+                // Prepared again from scratch, which replaces what was kept.
+                return false;
+            }
+            let Some(index) = Some(slot[number]).filter(|&index| index != NO_INSTANCE) else {
+                continue;
+            };
+            let Some(uploaded) = self.upload(device, queue, &new.draw.asset) else {
+                return false;
+            };
+            let (built, area) = instance(&new.draw, &uploaded, page_size);
+            instances[index as usize] = built;
+            self.bounds[index as usize] = area;
+            changed.push(index as usize);
+        }
+        if let Some(buffer) = &self.instances {
+            let size = std::mem::size_of::<Instance>();
+            // Instances are in draw order, which `changed` follows.
+            changed.sort_unstable();
+            let mut at = 0;
+            while at < changed.len() {
+                let first = changed[at];
+                let mut last = first;
+                while at + 1 < changed.len() && changed[at + 1] - last <= WRITE_GAP {
+                    at += 1;
+                    last = changed[at];
+                }
+                at += 1;
+                queue.write_buffer(
+                    buffer,
+                    (first * size) as u64,
+                    bytemuck::cast_slice(&instances[first..=last]),
+                );
+            }
+        }
+        self.prepared = Some(Prepared {
+            stamps: stamps.clone(),
+            instances,
+            slot,
+            generation,
+            completed: self.completed,
+            skipped,
+        });
+        #[cfg(test)]
+        {
+            self.patches += 1;
+        }
+        true
     }
 
     /// The vector-group counts that Stamps draw after, in order.
@@ -480,5 +621,191 @@ impl StampRenderer {
                 ],
             })
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use ssmap_core::asset::{PackLibrary, PackRoots};
+    use ssmap_core::{
+        Canvas, Command, DistanceUnit, Id, Map, Node, ObjectKind, RoughnessCache, Scale,
+        Stamp as MapStamp,
+    };
+
+    use crate::canvas::{CanvasRenderer, CanvasScene};
+    use crate::gpu::{GpuCapabilities, Headless};
+    use crate::scene::MapScene;
+    use crate::sprite::SpriteStore;
+    use crate::text::Fonts;
+    use crate::{RgbaImage, View, render_to_image};
+
+    fn gpu() -> Option<Headless> {
+        Headless::new(true).or_else(|_| Headless::new(false)).ok()
+    }
+
+    fn sprites() -> SpriteStore {
+        let roots = PackRoots {
+            built_in: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../core/tests/packs"),
+            user: None,
+        };
+        let (library, problems) = PackLibrary::load(&roots);
+        assert!(problems.is_empty(), "{problems:?}");
+        SpriteStore::synchronous(std::sync::Arc::new(library))
+    }
+
+    fn stamp(asset: &str, x: f64, y: f64) -> MapStamp {
+        MapStamp::new(asset.parse().unwrap(), [x, y])
+    }
+
+    fn renderer(headless: &Headless) -> CanvasRenderer {
+        let capabilities = GpuCapabilities::query(&headless.adapter);
+        let mut renderer = CanvasRenderer::new(&headless.device, capabilities);
+        renderer.set_sprites(sprites());
+        renderer
+    }
+
+    fn draw(
+        headless: &Headless,
+        renderer: &mut CanvasRenderer,
+        map: &Map,
+        scene: &mut MapScene,
+    ) -> RgbaImage {
+        let content = scene.content(map, &mut RoughnessCache::new());
+        let canvas = CanvasScene::new(map.canvas()).with_content(content);
+        let view = View::whole_canvas(canvas.canvas_size, 480);
+        render_to_image(&headless.device, &headless.queue, renderer, &canvas, &view).unwrap()
+    }
+
+    /// What a renderer that has never seen the Map draws for it.
+    fn fresh(headless: &Headless, map: &Map) -> RgbaImage {
+        draw(
+            headless,
+            &mut renderer(headless),
+            map,
+            &mut MapScene::new(Fonts::bundled()),
+        )
+    }
+
+    fn change(map: &mut Map, id: Id, edit: impl FnOnce(&mut MapStamp)) {
+        let Some(Node::Object(object)) = map.node(id) else {
+            panic!()
+        };
+        let ObjectKind::Stamp(stamp) = &object.kind else {
+            panic!()
+        };
+        let mut stamp = stamp.clone();
+        edit(&mut stamp);
+        map.execute(&Command::SetStamp {
+            id,
+            stamp: Box::new(stamp),
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn changed_stamps_are_updated_in_place_and_look_as_if_all_were_prepared() {
+        let Some(headless) = gpu() else { return };
+        let mut map = Map::new(Canvas::new(240, 160, Scale::new(1.0, DistanceUnit::Miles)));
+        let layer = Id::new();
+        map.execute(&Command::CreateLayer {
+            id: layer,
+            parent: None,
+            index: None,
+            name: "Assets".into(),
+        })
+        .unwrap();
+        let assets = ["test-pack/tree", "test-pack/castle", "test-pack/mountain-1"];
+        let ids: Vec<Id> = (0..30).map(|_| Id::new()).collect();
+        for (i, &id) in ids.iter().enumerate() {
+            map.execute(&Command::CreateStamp {
+                id,
+                parent: layer,
+                index: None,
+                stamp: Box::new(stamp(
+                    assets[i % 3],
+                    20.0 + (i % 10) as f64 * 20.0,
+                    30.0 + (i / 10) as f64 * 40.0,
+                )),
+            })
+            .unwrap();
+        }
+        let mut scene = MapScene::new(Fonts::bundled());
+        let mut renderer = renderer(&headless);
+        draw(&headless, &mut renderer, &map, &mut scene);
+        assert_eq!(
+            renderer.stamp_patches(),
+            0,
+            "the first frame prepares them all"
+        );
+        // Moved, scaled, flipped, tinted and faded, over several frames.
+        for step in 0..4u32 {
+            let at = f64::from(step);
+            change(&mut map, ids[3], |s| s.position = [50.0 + at * 9.0, 20.0]);
+            change(&mut map, ids[7], |s| {
+                s.scale = 1.0 + at * 0.3;
+                s.flip = step % 2 == 1;
+            });
+            change(&mut map, ids[20], |s| {
+                s.tint = Some(ssmap_core::Color::rgb(200, 40 + 30 * step as u8, 40));
+                s.opacity = 1.0 - at as f32 * 0.2;
+                s.rotation = at * 15.0;
+            });
+            let patched = draw(&headless, &mut renderer, &map, &mut scene);
+            assert_eq!(renderer.stamp_patches(), u64::from(step) + 1);
+            assert_eq!(patched.pixels, fresh(&headless, &map).pixels, "step {step}");
+        }
+    }
+
+    #[test]
+    fn other_changes_prepare_everything_again() {
+        let Some(headless) = gpu() else { return };
+        let mut map = Map::new(Canvas::new(240, 160, Scale::new(1.0, DistanceUnit::Miles)));
+        let layer = Id::new();
+        map.execute(&Command::CreateLayer {
+            id: layer,
+            parent: None,
+            index: None,
+            name: "Assets".into(),
+        })
+        .unwrap();
+        let ids: Vec<Id> = (0..6).map(|_| Id::new()).collect();
+        for (i, &id) in ids.iter().enumerate() {
+            map.execute(&Command::CreateStamp {
+                id,
+                parent: layer,
+                index: None,
+                stamp: Box::new(stamp("test-pack/tree", 20.0 + i as f64 * 30.0, 60.0)),
+            })
+            .unwrap();
+        }
+        let mut scene = MapScene::new(Fonts::bundled());
+        let mut renderer = renderer(&headless);
+        draw(&headless, &mut renderer, &map, &mut scene);
+        // Another Asset.
+        change(&mut map, ids[2], |s| {
+            s.asset = "test-pack/castle".parse().unwrap()
+        });
+        let image = draw(&headless, &mut renderer, &map, &mut scene);
+        assert_eq!(image.pixels, fresh(&headless, &map).pixels);
+        // A Stamp added, then one removed.
+        map.execute(&Command::CreateStamp {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            stamp: Box::new(stamp("test-pack/tree", 200.0, 100.0)),
+        })
+        .unwrap();
+        let image = draw(&headless, &mut renderer, &map, &mut scene);
+        assert_eq!(image.pixels, fresh(&headless, &map).pixels);
+        map.execute(&Command::Delete { ids: vec![ids[0]] }).unwrap();
+        let image = draw(&headless, &mut renderer, &map, &mut scene);
+        assert_eq!(image.pixels, fresh(&headless, &map).pixels);
+        assert_eq!(
+            renderer.stamp_patches(),
+            0,
+            "none of those could be patched"
+        );
     }
 }
