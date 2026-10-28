@@ -42,7 +42,15 @@ fn press(harness: &mut Harness<'static, MapMakerApp>, pos: egui::Pos2, pressed: 
 
 /// Drags the thumb of the slider called `label` from its middle to its right end.
 fn drag_to_the_end(harness: &mut Harness<'static, MapMakerApp>, label: &str) {
-    let track = harness.get_by_role_and_label(Role::Slider, label).rect();
+    // The Layers panel has an Opacity slider too; the setting meant here is in Properties,
+    // the rightmost panel.
+    let Some(track) = harness
+        .get_all_by_role_and_label(Role::Slider, label)
+        .map(|n| n.rect())
+        .max_by(|a, b| a.left().total_cmp(&b.left()))
+    else {
+        panic!("a {label} slider")
+    };
     let y = track.center().y;
     press(harness, track.center(), true);
     for step in 1..=4 {

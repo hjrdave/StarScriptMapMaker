@@ -9,6 +9,7 @@ use ssmap_core::{Command, Id, Layer, Map, Node};
 
 use crate::editor::Editor;
 use crate::icons::{self, Icon};
+use crate::prop_widgets::{Edit, LiveEdit};
 use crate::theme::{self, Palette, metrics};
 
 const ROW_HEIGHT: f32 = metrics::LAYER_ROW;
@@ -22,6 +23,7 @@ pub(crate) const FOOTER_HEIGHT: f32 = 24.0;
 /// Why a Depth-sorted Layer's Stamps can't be reordered by hand.
 pub(crate) const DEPTH_SORT_HINT: &str = "Depth sort is on for this Layer: Stamps are listed in the order they draw, by Anchor height. Move a Stamp to re-sort it.";
 
+mod layer_area;
 mod model;
 mod row;
 use model::kind_icon;
@@ -44,6 +46,10 @@ pub(crate) struct LayerTree {
     /// Object and Layer counts by Map revision, for the same reason.
     counts: Option<(u64, (usize, usize))>,
     collapse_generation: u64,
+    /// Turns the Opacity slider into one Undo step per drag.
+    live: LiveEdit,
+    /// Height the Layer area took last frame, kept free below the list.
+    layer_area_height: f32,
     /// A delete waiting on the confirmation: the Group it names and how many nodes are inside.
     confirm_delete: Option<(Id, usize)>,
     /// The row a Shift-click range grows from: the last row clicked without Shift.
@@ -158,7 +164,12 @@ impl LayerTree {
 
         let mut actions = Vec::new();
         ui.spacing_mut().item_spacing.y = 0.0;
-        let list_height = (ui.available_height() - FOOTER_HEIGHT).max(ROW_HEIGHT);
+        // A change ends when the pointer is released, or when Escape cancelled it.
+        self.live.apply(editor, Edit::default(), "", || {
+            unreachable!("nothing changed")
+        });
+        let list_height =
+            (ui.available_height() - FOOTER_HEIGHT - self.layer_area_height).max(ROW_HEIGHT);
         let mut scroll = egui::ScrollArea::vertical()
             .auto_shrink(false)
             .max_height(list_height);
@@ -174,6 +185,11 @@ impl LayerTree {
                 self.row(ui, editor, *row, &mut actions);
             }
         });
+        let area_height = self.layer_area(ui, editor);
+        if (area_height - self.layer_area_height).abs() > 0.5 {
+            self.layer_area_height = area_height;
+            ui.ctx().request_repaint();
+        }
         let text = footer_shown.then(|| footer_text(objects, layers));
         let collapse_clicked = footer(ui, text.as_deref());
 
