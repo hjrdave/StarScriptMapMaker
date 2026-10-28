@@ -26,17 +26,44 @@ pub fn swatch(
     optional: bool,
     provenance: Provenance,
 ) -> SwatchResponse {
+    swatch_row(ui, label, true, colour, optional, provenance)
+}
+
+/// [`swatch`] under the row that chose it (Colour: Tint): the label column stays empty and
+/// `label` is only the accessible name.
+pub fn swatch_unlabelled(
+    ui: &mut egui::Ui,
+    label: &str,
+    colour: &mut Option<Color>,
+    optional: bool,
+) -> SwatchResponse {
+    swatch_row(ui, label, false, colour, optional, Provenance::Plain)
+}
+
+fn swatch_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    show_label: bool,
+    colour: &mut Option<Color>,
+    optional: bool,
+    provenance: Provenance,
+) -> SwatchResponse {
     let palette = theme::palette(ui.ctx());
     let id = ui.make_persistent_id(("swatch", label));
     let mut edit = Edit::default();
     let enabled = ui.is_enabled();
     let response = ui
         .horizontal(|ui| {
-            let (label_rect, _) = ui.allocate_exact_size(
-                Vec2::new(label_width(ui, label, provenance), metrics::FIELD[0]),
-                Sense::hover(),
-            );
-            paint_label(ui, label_rect, label, provenance);
+            let label_w = if show_label {
+                label_width(ui, label, provenance)
+            } else {
+                LABEL_MIN
+            };
+            let (label_rect, _) =
+                ui.allocate_exact_size(Vec2::new(label_w, metrics::FIELD[0]), Sense::hover());
+            if show_label {
+                paint_label(ui, label_rect, label, provenance);
+            }
             let (rect, response) = ui.allocate_exact_size(
                 Vec2::new(44.0, metrics::FIELD[0]),
                 if enabled {
