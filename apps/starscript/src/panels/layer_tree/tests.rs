@@ -254,7 +254,11 @@ fn harness(editor: Editor) -> Harness<'static, Fixture> {
         .build_ui_state(
             |ui, fixture: &mut Fixture| {
                 theme::install(&ui.ctx().clone());
-                fixture.tree.show(ui, &mut fixture.editor, true);
+                fixture.tree.show(ui, &mut fixture.editor);
+                // The sidebar draws the counts in its bottom bar.
+                if let Some(counts) = fixture.tree.counts_text() {
+                    ui.label(counts);
+                }
             },
             Fixture {
                 editor,

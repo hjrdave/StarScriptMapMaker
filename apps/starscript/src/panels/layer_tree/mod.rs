@@ -124,34 +124,29 @@ pub(crate) fn delete_message(name: &str, inside: usize) -> String {
 }
 
 impl LayerTree {
-    /// `footer_shown` shows the Object and Layer counts in the bar under the list. The bar
-    /// always holds the collapse control; returns true when it was clicked.
-    pub(crate) fn show(
-        &mut self,
-        ui: &mut egui::Ui,
-        editor: &mut Editor,
-        footer_shown: bool,
-    ) -> bool {
+    /// The Object and Layer counts for the sidebar's bottom bar, as of the last `show`.
+    pub(crate) fn counts_text(&self) -> Option<String> {
+        self.counts
+            .map(|(_, (objects, layers))| footer_text(objects, layers))
+    }
+
+    /// Shows the tree. The sidebar's bottom bar sits under it, so it is not drawn here.
+    pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         let revision = editor.map().revision();
         let rows = match self.cache.take() {
             Some((r, g, rows)) if r == revision && g == self.collapse_generation => rows,
             _ => rows(editor.map(), &self.collapsed),
         };
-        let (objects, layers) = match self.counts {
-            Some((r, counts)) if r == revision => counts,
-            _ => {
-                let counts = counts(editor.map());
-                self.counts = Some((revision, counts));
-                counts
-            }
-        };
+        if !matches!(self.counts, Some((r, _)) if r == revision) {
+            self.counts = Some((revision, counts(editor.map())));
+        }
         if rows.is_empty() {
             ui.weak("No Layers yet. Use New Layer to add one.");
         }
 
         let mut actions = Vec::new();
         ui.spacing_mut().item_spacing.y = 0.0;
-        let list_height = (ui.available_height() - FOOTER_HEIGHT).max(ROW_HEIGHT);
+        let list_height = ui.available_height().max(ROW_HEIGHT);
         egui::ScrollArea::vertical()
             .auto_shrink(false)
             .max_height(list_height)
@@ -160,8 +155,6 @@ impl LayerTree {
                     self.row(ui, editor, *row, &mut actions);
                 }
             });
-        let text = footer_shown.then(|| footer_text(objects, layers));
-        let collapse_clicked = footer(ui, text.as_deref());
 
         for action in actions {
             match action {
@@ -260,7 +253,6 @@ impl LayerTree {
         }
         self.cache = Some((revision, self.collapse_generation, rows));
         self.confirm_delete_dialog(ui.ctx(), editor);
-        collapse_clicked
     }
 
     /// The confirmation before deleting a Group that holds something: it names the Group and
@@ -301,9 +293,9 @@ impl LayerTree {
     }
 }
 
-/// The bar under the list: the Object and Layer counts (when `text` is given) and, at its
+/// The sidebar's bottom bar: the Object and Layer counts (when `text` is given) and, at its
 /// end, the collapse control. Returns true when that was clicked.
-fn footer(ui: &mut egui::Ui, text: Option<&str>) -> bool {
+pub(crate) fn footer(ui: &mut egui::Ui, text: Option<&str>) -> bool {
     let palette = theme::palette(ui.ctx());
     let (rect, _) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), FOOTER_HEIGHT),
