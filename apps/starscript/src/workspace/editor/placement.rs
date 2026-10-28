@@ -256,18 +256,20 @@ impl Editor {
         matches!(shuffled, Some(Ok(())))
     }
 
-    /// "Pine cluster · v2": the Asset's name, and its place in its Variant group when it has
-    /// one. Falls back to the reference when the Asset is not in the library.
-    pub fn asset_caption(&self, asset: &AssetRef) -> String {
+    /// The Asset's name and what to say under it: "Variant 2 of 3" when it belongs to a
+    /// Variant group of two or more, else its pack's name. Its reference when the pack is
+    /// missing.
+    pub fn asset_card(&self, asset: &AssetRef) -> (String, String) {
         let library = self.caches.sprites().map(SpriteStore::library);
-        let Some((_, found)) = library.as_ref().and_then(|library| library.asset(asset)) else {
-            return asset.to_string();
+        let Some((pack, found)) = library.as_ref().and_then(|library| library.asset(asset)) else {
+            return (asset.to_string(), "Pack missing".to_owned());
         };
         let group = self.variant_group(asset);
-        match group.iter().position(|member| member == asset) {
-            Some(index) if group.len() > 1 => format!("{} · v{}", found.name, index + 1),
-            _ => found.name.clone(),
-        }
+        let subtitle = match group.iter().position(|member| member == asset) {
+            Some(index) if group.len() > 1 => format!("Variant {} of {}", index + 1, group.len()),
+            _ => pack.name.clone(),
+        };
+        (found.name.clone(), subtitle)
     }
 
     /// The Assets in the Variant group `asset` belongs to; empty when it has none.

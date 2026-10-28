@@ -6,6 +6,8 @@
     reason = "tests and benches may panic on failure"
 )]
 
+mod common;
+
 use eframe::egui;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
@@ -29,6 +31,7 @@ fn app() -> (Harness<'static, MapMakerApp>, [Id; 3]) {
         Scale::new(0.25, DistanceUnit::Miles),
     ));
     harness.run();
+    common::expand_layers(&mut harness);
     let editor = harness.state_mut().active_editor_mut().unwrap();
     let ids = [A, B, C].map(|at| {
         let (id, gesture) = editor.place_label(at).expect("a Label is placed");
@@ -163,8 +166,9 @@ fn a_box_drag_selects_what_it_touches() {
 #[test]
 fn a_box_drag_can_start_on_the_off_canvas() {
     let (mut harness, [a, b, _]) = app();
-    // Starting outside the Canvas edge, up and to the left of everything.
-    let origin = screen(&harness, [0.0, 0.0]) - egui::vec2(20.0, 20.0);
+    // Starting outside the Canvas edge, above everything. The Canvas's left edge now sits under
+    // the sidebar, so start past it.
+    let origin = screen(&harness, [0.0, 0.0]) + egui::vec2(100.0, -20.0);
     let to = screen(&harness, B) + egui::vec2(30.0, 30.0);
     box_drag(&mut harness, origin, to, egui::Modifiers::NONE);
     assert_eq!(selection(&harness), sorted(vec![a, b]));

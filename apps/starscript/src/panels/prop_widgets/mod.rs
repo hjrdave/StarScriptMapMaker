@@ -17,8 +17,8 @@ use ssmap_core::{Color, Command};
 use self::color::hex_text;
 pub use self::color::parse_hex;
 use self::expr::eval_expression;
-pub use self::number::{MIXED, ScrubSpec, number_field, scrub_field, slider};
-pub use self::swatch::{SwatchChange, SwatchResponse, swatch};
+pub use self::number::{Handle, MIXED, ScrubSpec, number_field, scrub_field, slider};
+pub use self::swatch::{SwatchChange, SwatchResponse, swatch, swatch_unlabelled};
 use crate::editor::{Editor, GestureId};
 use crate::icons::{self, Icon};
 use crate::theme::{self, metrics};
@@ -205,7 +205,8 @@ pub enum Provenance {
 }
 
 const DOT_WIDTH: f32 = 10.0;
-const LABEL_MIN: f32 = 56.0;
+/// The label column: labels line up across rows and sections.
+const LABEL_MIN: f32 = 64.0;
 
 /// The label of a field, with the gold dot when overridden.
 fn paint_label(ui: &egui::Ui, rect: egui::Rect, label: &str, provenance: Provenance) {
@@ -502,10 +503,13 @@ pub fn field_row(
     body: impl FnOnce(&mut egui::Ui),
 ) -> bool {
     ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(
+        let (rect, response) = ui.allocate_exact_size(
             Vec2::new(label_width(ui, label, provenance), metrics::FIELD[0]),
             Sense::hover(),
         );
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), label)
+        });
         paint_label(ui, rect, label, provenance);
         ui.scope(|ui| {
             let room = (ui.available_width() - gap_before_trailing(ui, provenance)).max(40.0);
@@ -524,6 +528,134 @@ pub fn checkbox_row(ui: &mut egui::Ui, label: &str, checked: &mut bool) -> bool 
         ui.checkbox(checked, label).changed()
     })
     .inner
+}
+
+// ---------------------------------------------------------------------------------------------
+// Two-column grid, icon toggles and chips
+
+/// Two fields side by side, each half the row (X / Y, Scale / Rotation).
+pub fn pair<A, B>(
+    ui: &mut egui::Ui,
+    left: impl FnOnce(&mut egui::Ui) -> A,
+    right: impl FnOnce(&mut egui::Ui) -> B,
+) -> (A, B) {
+    ui.columns(2, |columns| {
+        let (first, second) = columns.split_at_mut(1);
+        (left(&mut first[0]), right(&mut second[0]))
+    })
+}
+
+/// The side of an icon toggle or icon action: 26 × 24.
+const ICON_BUTTON: Vec2 = Vec2::new(26.0, 24.0);
+
+/// An outlined icon button that stays pressed while `on` (Flip horizontal). Its accessible
+/// name is `label` and it reads as checked or not. Returns whether it was clicked.
+pub fn icon_toggle(ui: &mut egui::Ui, icon: Icon, label: &str, on: bool) -> bool {
+    outlined_icon(ui, icon, label, Some(on)).clicked()
+}
+
+/// An outlined icon button for a one-off action next to icon toggles (Flip vertical).
+pub fn icon_action(ui: &mut egui::Ui, icon: Icon, label: &str) -> bool {
+    outlined_icon(ui, icon, label, None).clicked()
+}
+
+fn outlined_icon(ui: &mut egui::Ui, icon: Icon, label: &str, on: Option<bool>) -> egui::Response {
+    let palette = theme::palette(ui.ctx());
+    let enabled = ui.is_enabled();
+    let (rect, response) = ui.allocate_exact_size(ICON_BUTTON, Sense::click());
+    response.widget_info(|| match on {
+        Some(on) => egui::WidgetInfo::selected(egui::WidgetType::Checkbox, enabled, on, label),
+        None => egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label),
+    });
+    let pressed = on == Some(true);
+    let (fill, stroke, glyph) = if !enabled {
+        (
+            palette.bg_field,
+            palette.border_subtle,
+            palette.text_tertiary,
+        )
+    } else if pressed {
+        (palette.gold_subtle, palette.gold, palette.gold_text)
+    } else if response.hovered() {
+        (
+            palette.hover_fill,
+            palette.border_strong,
+            palette.text_primary,
+        )
+    } else {
+        (
+            palette.bg_raised,
+            palette.border_strong,
+            palette.text_secondary,
+        )
+    };
+    ui.painter().rect(
+        rect,
+        theme::RADIUS_FIELD,
+        fill,
+        Stroke::new(1.0, stroke),
+        StrokeKind::Inside,
+    );
+    icons::paint(ui, rect, icon, 14.0, glyph);
+    response.on_hover_text(label)
+}
+
+/// A rounded chip that is on or off ("Randomise: Flip · Variant"). Flips `on` and returns
+/// whether it was clicked.
+pub fn chip_toggle(ui: &mut egui::Ui, label: &str, on: &mut bool) -> bool {
+    let palette = theme::palette(ui.ctx());
+    let enabled = ui.is_enabled();
+    let font = egui::FontId::proportional(theme::BODY);
+    let text_w = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), font.clone(), Color32::WHITE)
+        .size()
+        .x;
+    let height = metrics::FIELD[0];
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(text_w + 20.0, height), Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Checkbox, enabled, *on, label)
+    });
+    let (fill, stroke, text) = if !enabled {
+        (
+            Color32::TRANSPARENT,
+            palette.border_subtle,
+            palette.text_tertiary,
+        )
+    } else if *on {
+        (palette.gold_subtle, palette.gold, palette.gold_text)
+    } else if response.hovered() {
+        (
+            palette.hover_fill,
+            palette.border_strong,
+            palette.text_primary,
+        )
+    } else {
+        (
+            Color32::TRANSPARENT,
+            palette.border_strong,
+            palette.text_secondary,
+        )
+    };
+    ui.painter().rect(
+        rect,
+        height / 2.0,
+        fill,
+        Stroke::new(1.0, stroke),
+        StrokeKind::Inside,
+    );
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        label,
+        font,
+        text,
+    );
+    let clicked = enabled && response.clicked();
+    if clicked {
+        *on = !*on;
+    }
+    clicked
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -600,6 +732,29 @@ impl Gallery {
             swatch(ui, "Fill", &mut self.colour, true, Provenance::Plain);
             segmented(ui, &["Paint", "Erase"], &mut self.segment);
             checkbox_row(ui, "Snap to grid", &mut self.check);
+            let (x, scale) = values.split_at_mut(1);
+            pair(
+                ui,
+                |ui| {
+                    scrub_field(
+                        ui,
+                        &mut x[0],
+                        &ScrubSpec::new("X").handle(Handle::Text("X")),
+                    )
+                },
+                |ui| {
+                    let spec = ScrubSpec::new("Scale")
+                        .unit("%")
+                        .handle(Handle::Text("S"))
+                        .mixed(true);
+                    scrub_field(ui, &mut scale[0], &spec)
+                },
+            );
+            ui.horizontal(|ui| {
+                icon_toggle(ui, Icon::FlipHorizontal, "Flip horizontal", self.check);
+                icon_action(ui, Icon::FlipVertical, "Flip vertical");
+                chip_toggle(ui, "Variant", &mut self.check);
+            });
         });
     }
 }
@@ -639,6 +794,30 @@ mod tests {
         assert_eq!(Speed::from_modifiers(shift), Speed::Coarse);
         assert_eq!(Speed::from_modifiers(alt), Speed::Fine);
         assert_eq!(Speed::from_modifiers(egui::Modifiers::NONE), Speed::Normal);
+    }
+
+    #[test]
+    fn icon_toggles_and_chips_read_as_checked_and_a_compact_field_keeps_its_name() {
+        use egui::accesskit::Toggled;
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::{NodeT as _, Queryable, by};
+
+        let mut harness = Harness::new_ui(|ui| {
+            icon_toggle(ui, Icon::FlipHorizontal, "Flip horizontal", true);
+            icon_action(ui, Icon::FlipVertical, "Flip vertical");
+            chip_toggle(ui, "Variant", &mut false);
+            let mut scale = 150.0;
+            let spec = ScrubSpec::new("Scale").unit("%").handle(Handle::Text("S"));
+            scrub_field(ui, &mut scale, &spec);
+        });
+        harness.run();
+        let toggled = |label| harness.get_by_label(label).accesskit_node().toggled();
+        assert_eq!(toggled("Flip horizontal"), Some(Toggled::True));
+        assert_eq!(toggled("Flip vertical"), None);
+        assert_eq!(toggled("Variant"), Some(Toggled::False));
+        // The handle inside the box keeps the field's name; the value carries the unit.
+        harness.get_by_label("Scale");
+        harness.get(by().value("150%"));
     }
 
     #[test]

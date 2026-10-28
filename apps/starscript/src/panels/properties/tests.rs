@@ -275,10 +275,11 @@ fn shuffle_variant_in_properties_stays_within_the_variant_group() {
     fixture.editor.select(vec![stamp]);
     // Placing picks any Asset of the Variant group.
     let before = fixture.editor.stamp(stamp).expect("a Stamp").asset.clone();
-    let caption = fixture.editor.asset_caption(&before);
-    assert!(caption == "Mountain · v1" || caption == "Mountain · v2");
+    let (name, variant) = fixture.editor.asset_card(&before);
+    assert_eq!(name, "Mountain");
+    assert!(variant == "Variant 1 of 2" || variant == "Variant 2 of 2");
     let mut harness = harness(fixture);
-    assert!(harness.query_by_label(&caption).is_some());
+    assert!(harness.query_by_label(&variant).is_some());
 
     // The pick is random and may repeat the same Variant, so click until it changes.
     let group: Vec<AssetRef> = ["test-pack/mountain-1", "test-pack/mountain-2"]
@@ -314,17 +315,17 @@ fn stamp_shows_its_asset_and_scatter_settings_and_select_shows_no_tool_section()
     let mut harness = harness(fixture);
     for label in [
         "Stamp",
-        "Asset",
         "None chosen",
-        "Choose Asset…",
+        "Choose Asset",
         "Size",
+        "Rotation jitter",
         "Place on",
+        "Randomise",
+        "Flip",
+        "Variant",
         "Density",
         "Spacing",
         "Size jitter",
-        "Rotation jitter",
-        "Random flip",
-        "Random variant",
     ] {
         assert!(harness.query_by_label(label).is_some(), "{label}");
     }
@@ -333,7 +334,7 @@ fn stamp_shows_its_asset_and_scatter_settings_and_select_shows_no_tool_section()
 
     harness.state_mut().editor.active_tool = ToolId::Select;
     harness.run();
-    for label in ["Density", "Choose Asset…"] {
+    for label in ["Density", "Choose Asset"] {
         assert!(harness.query_by_label(label).is_none(), "{label}");
     }
 }
@@ -347,7 +348,7 @@ fn the_stamp_section_names_the_chosen_asset_and_asks_for_the_assets_section() {
     let mut harness = harness(fixture);
     harness.get_by_label("Tree");
     assert!(!harness.state_mut().panel.take_open_assets());
-    harness.get_by_label("Choose Asset…").click();
+    harness.get_by_label("Choose Asset: Tree").click();
     harness.run();
     assert!(harness.state_mut().panel.take_open_assets());
     assert!(!harness.state_mut().panel.take_open_assets());
@@ -641,4 +642,151 @@ fn a_changed_background_and_the_template_name_survive_save_and_reopen() {
     assert_eq!(reopened.canvas().background, map.canvas().background);
     assert_ne!(reopened.canvas().background, look_of("Ocean"));
     assert_eq!(reopened.canvas().template.as_deref(), Some("Ocean"));
+}
+
+/// A Stamp of the test pack's tree on the fixture's Layer, at `x`.
+fn add_stamp(fixture: &mut Fixture, layer: Id, x: f64) -> Id {
+    let id = Id::new();
+    let stamp = ssmap_core::Stamp::new("test-pack/tree".parse().expect("an Asset ref"), [x, 10.0]);
+    fixture
+        .editor
+        .run(Command::CreateStamp {
+            id,
+            parent: layer,
+            index: None,
+            stamp: Box::new(stamp),
+        })
+        .expect("a Stamp is made");
+    id
+}
+
+fn stamp_of(harness: &Harness<'_, Fixture>, id: Id) -> ssmap_core::Stamp {
+    harness.state().editor.stamp(id).expect("a Stamp").clone()
+}
+
+#[test]
+fn a_selected_stamp_shows_the_header_transform_and_appearance_only() {
+    let (mut fixture, layer, _) = fixture();
+    install_test_pack(&mut fixture.editor, false);
+    let stamp = add_stamp(&mut fixture, layer, 10.0);
+    fixture.editor.select(vec![stamp]);
+    let mut harness = harness(fixture);
+    for label in [
+        "Tree",
+        "Lock Stamp",
+        "Shuffle variant",
+        "Replace Asset",
+        "Transform",
+        "X",
+        "Y",
+        "Scale",
+        "Rotation",
+        "Flip horizontal",
+        "Flip vertical",
+        "Board",
+        "Appearance",
+        "Original",
+        "Tint",
+        "Fill",
+        "Opacity",
+    ] {
+        assert!(harness.query_by_label(label).is_some(), "{label}");
+    }
+    // The old fields are gone: the lock is an icon and the colours hide until chosen.
+    for label in [
+        "Locked",
+        "Position X",
+        "Tint colour",
+        "Fill colour",
+        "Own colour",
+    ] {
+        assert!(harness.query_by_label(label).is_none(), "{label}");
+    }
+
+    harness.get_by_label("Lock Stamp").click();
+    harness.run();
+    assert!(harness.query_by_label("Unlock Stamp").is_some());
+    assert_eq!(harness.state().editor.undo_label(), Some("Lock"));
+
+    assert!(!harness.state_mut().panel.take_open_assets());
+    harness.get_by_label("Replace Asset").click();
+    harness.run();
+    assert!(harness.state_mut().panel.take_open_assets());
+}
+
+#[test]
+fn the_colour_control_reveals_the_colour_of_the_option_chosen() {
+    let (mut fixture, layer, _) = fixture();
+    let stamp = add_stamp(&mut fixture, layer, 10.0);
+    fixture.editor.select(vec![stamp]);
+    let mut harness = harness(fixture);
+
+    harness.get_by_label("Tint").click();
+    harness.run();
+    let placed = stamp_of(&harness, stamp);
+    assert!(placed.tint.is_some() && placed.fill.is_none());
+    assert!(harness.query_by_label("Tint colour").is_some());
+    assert!(harness.query_by_label("Fill colour").is_none());
+
+    harness.get_by_label("Fill").click();
+    harness.run();
+    let placed = stamp_of(&harness, stamp);
+    assert!(placed.tint.is_none() && placed.fill.is_some());
+    assert!(harness.query_by_label("Fill colour").is_some());
+    assert!(harness.query_by_label("Tint colour").is_none());
+
+    harness.get_by_label("Original").click();
+    harness.run();
+    let placed = stamp_of(&harness, stamp);
+    assert!(placed.tint.is_none() && placed.fill.is_none());
+    assert_eq!(harness.state().editor.undo_label(), Some("Edit Stamp"));
+}
+
+#[test]
+fn the_flip_buttons_mirror_the_stamp_each_in_one_undo_step() {
+    let (mut fixture, layer, _) = fixture();
+    let stamp = add_stamp(&mut fixture, layer, 10.0);
+    fixture.editor.select(vec![stamp]);
+    let mut harness = harness(fixture);
+
+    harness.get_by_label("Flip horizontal").click();
+    harness.run();
+    assert!(stamp_of(&harness, stamp).flip);
+    harness.get_by_label("Flip horizontal").click();
+    harness.run();
+    assert!(!stamp_of(&harness, stamp).flip);
+
+    harness.get_by_label("Flip vertical").click();
+    harness.run();
+    let placed = stamp_of(&harness, stamp);
+    assert!(placed.flip);
+    assert_eq!(placed.rotation, 180.0);
+    harness.state_mut().editor.undo();
+    let placed = stamp_of(&harness, stamp);
+    assert!(!placed.flip);
+    assert_eq!(placed.rotation, 0.0);
+}
+
+#[test]
+fn several_stamps_share_one_section_with_mixed_fields_and_one_undo_step() {
+    let (mut fixture, layer, _) = fixture();
+    let a = add_stamp(&mut fixture, layer, 10.0);
+    let b = add_stamp(&mut fixture, layer, 30.0);
+    fixture.editor.select(vec![a, b]);
+    let mut harness = harness(fixture);
+    assert!(harness.query_by_label("2 Stamps").is_some());
+    assert!(harness.query_by_label("Lock Stamps").is_some());
+    // No Asset card for several Stamps.
+    assert!(harness.query_by_label("Replace Asset").is_none());
+    // X differs, Y does not.
+    let mixed = harness
+        .query_all(egui_kittest::kittest::by().value(prop_widgets::MIXED))
+        .count();
+    assert_eq!(mixed, 1);
+
+    harness.get_by_label("Flip horizontal").click();
+    harness.run();
+    assert!(stamp_of(&harness, a).flip && stamp_of(&harness, b).flip);
+    harness.state_mut().editor.undo();
+    assert!(!stamp_of(&harness, a).flip && !stamp_of(&harness, b).flip);
 }

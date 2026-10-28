@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stamp properties — simplified</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#0B0C0E}
+a{color:#E3B85A;text-decoration:none}a:hover{color:#F0CF7A}
+.w{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,sans-serif;font-size:12px;line-height:16px;color:#ECE6D8;-webkit-font-smoothing:antialiased}
+.page{width:1100px;height:900px;box-sizing:border-box;background:#121418;padding:40px 48px;display:flex;flex-direction:column;gap:20px}
+.cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:28px;align-items:start}
+.cap{font-size:11px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:#E3B85A;margin-bottom:4px}
+.capd{font-size:12px;color:#B4AE9F;margin-bottom:12px}
+.panel{width:288px;background:#1B1E23;border:1px solid #2E333B;border-radius:8px;overflow:hidden}
+.phead{height:34px;display:flex;align-items:center;gap:6px;padding:0 10px 0 12px;font-weight:600;border-bottom:1px solid #272B32}
+.sp{flex:1}
+.meta{font-size:11px;color:#9D9788;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.sm{width:14px;height:14px}
+.kbd{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:11px;color:#C9C2B2;background:#1B1E23;border:1px solid #3B414B;border-radius:4px;padding:0 4px;line-height:15px}
+.sec{border-bottom:1px solid #272B32;padding:8px 12px 12px;display:flex;flex-direction:column;gap:8px}
+.sec.tool{background:#1F1D17}
+.sech{display:flex;align-items:center;gap:6px;height:24px;font-weight:600}
+.sech .tw{width:12px;display:flex;justify-content:center;color:#8F8A7C}
+.asset{display:flex;align-items:center;gap:10px;padding:6px;border-radius:6px;background:#23272E;border:1px solid #2E333B}
+.thumb{width:40px;height:40px;border-radius:5px;background:#EADCB3;display:flex;align-items:center;justify-content:center;flex:none}
+.g2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.num{display:flex;align-items:center;height:24px;background:#111317;border:1px solid #2E333B;border-radius:4px;padding:0 8px;gap:8px;font-variant-numeric:tabular-nums;box-sizing:border-box;min-width:0}
+.num i{font-style:normal;color:#9D9788;font-size:11px;width:14px;cursor:ew-resize}
+.num u{text-decoration:none;color:#9D9788;font-size:11px;margin-left:auto}
+.row{display:flex;align-items:center;gap:8px;min-height:26px}
+.row>label{width:64px;color:#B4AE9F;flex:none}
+.seg{display:flex;flex:1;background:#111317;border:1px solid #2E333B;border-radius:6px;padding:2px;gap:2px}
+.seg span{flex:1;text-align:center;padding:2px 6px;border-radius:4px;color:#B4AE9F;line-height:16px;display:flex;align-items:center;justify-content:center;gap:5px}
+.seg span.on{background:#3A3F47;color:#ECE6D8}
+.chipt{height:24px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border-radius:12px;border:1px solid #3B414B;background:transparent;color:#B4AE9F;font:inherit}
+.chipt.on{background:#3A311C;border-color:#8A6C2C;color:#F0CF7A}
+.ib{width:26px;height:24px;border-radius:5px;border:1px solid #3B414B;background:#262A31;color:#B4AE9F;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.ib.on{background:#3A311C;border-color:#8A6C2C;color:#F0CF7A}
+.ib.ghost{border-color:transparent;background:transparent}
+.crumb{display:flex;align-items:center;gap:4px;font-size:11px;color:#9D9788}
+.sw{width:18px;height:18px;border-radius:4px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.25);flex:none}
+.hint{font-size:11px;color:#9D9788}
+</style>
+</helmet>
+<div class="w page">
+  <div style="display:flex;align-items:baseline;gap:12px">
+    <div style="font-size:22px;font-weight:600;line-height:28px">Stamp properties — simplified</div>
+    <span class="meta" style="font-size:12px">Properties panel, 288 wide</span>
+  </div>
+
+  <div class="cols">
+    <!-- A: Stamp tool -->
+    <div>
+      <div class="cap">A · Stamp tool</div>
+      <div class="capd">Placing a new Stamp. Only what affects the next click.</div>
+      <div class="panel">
+        <div class="phead">Properties<span class="sp"></span><span class="meta">Nothing selected</span></div>
+        <div class="sec tool">
+          <div class="sech"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="color:#F0CF7A"><path d="M1.5 13 6 5l2.5 4 2-2.5 4 6.5Z"/></svg>Stamp<span class="sp"></span><span class="kbd">S</span></div>
+          <button class="asset" style="font:inherit;color:inherit;text-align:left;cursor:pointer" aria-label="Change Asset: Compass">
+            <span class="thumb"><svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><circle cx="16" cy="16" r="10" fill="none" stroke="#3B2F20" stroke-width="1.2"/><path d="M16 3l2.5 10.5L29 16l-10.5 2.5L16 29l-2.5-10.5L3 16l10.5-2.5Z" fill="#3B2F20"/></svg></span>
+            <span style="flex:1;min-width:0"><b style="font-weight:600;display:block">Compass</b><span class="meta">Classic Cartography · 3 variants</span></span>
+            <svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true" style="color:#9D9788"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg>
+          </button>
+          <div class="g2">
+            <span class="num"><i>S</i>48<u>px</u></span>
+            <span class="num"><i>↻</i>0<u>°</u></span>
+          </div>
+          <div class="row"><label>Place on</label><div class="seg" role="radiogroup" aria-label="Place on"><span>Land</span><span class="on">Water</span><span>Any</span></div></div>
+          <div class="row"><label>Randomise</label>
+            <button class="chipt on" aria-pressed="true">Flip</button>
+            <button class="chipt on" aria-pressed="true">Variant</button>
+          </div>
+          <div class="row"><label>Into</label><span class="num" style="flex:1;font-variant-numeric:normal">Decor<u><svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:12px;height:12px"><path d="M4.5 6.5 8 10l3.5-3.5"/></svg></u></span></div>
+          <div class="hint">Click to place · drag to size · <span class="kbd">⌥</span> drag to rotate</div>
+        </div>
+        <div class="sec" style="border-bottom:0;padding-bottom:8px">
+          <div class="sech"><span class="tw"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg></span>Layer · Decor<span class="sp"></span><span class="meta" style="font-weight:400">100%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- B: Stamp selected -->
+    <div>
+      <div class="cap">B · Placed Stamp selected</div>
+      <div class="capd">One section, grouped by what you're changing.</div>
+      <div class="panel">
+        <div class="phead">Properties<span class="sp"></span><span class="meta">1 Stamp</span></div>
+        <div class="sec">
+          <div class="crumb">Decor <svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:10px;height:10px"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg> <span style="color:#D9D3C4">Compass</span><span class="sp"></span>
+            <button class="ib ghost" aria-label="Lock Stamp" aria-pressed="false"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7.5h8v6H4ZM5.5 7.5v-2a2.5 2.5 0 0 1 5 0"/></svg></button>
+          </div>
+          <div class="asset">
+            <span class="thumb"><svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><circle cx="16" cy="16" r="10" fill="none" stroke="#3B2F20" stroke-width="1.2"/><path d="M16 3l2.5 10.5L29 16l-10.5 2.5L16 29l-2.5-10.5L3 16l10.5-2.5Z" fill="#3B2F20"/></svg></span>
+            <span style="flex:1;min-width:0"><b style="font-weight:600;display:block">Compass</b><span class="meta">Variant 2 of 3</span></span>
+            <button class="ib ghost" aria-label="Shuffle variant"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5h3l6 6h3M2 11h3l1.5-1.5M9.5 6.5 11 5h3M12 3l2 2-2 2M12 9l2 2-2 2"/></svg></button>
+            <button class="ib ghost" aria-label="Replace Asset"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6h9l-2.5-2.5M13 10H4l2.5 2.5"/></svg></button>
+          </div>
+        </div>
+        <div class="sec">
+          <div class="sech">Transform</div>
+          <div class="g2">
+            <span class="num"><i>X</i>367</span>
+            <span class="num"><i>Y</i>2,655</span>
+            <span class="num"><i>S</i>100<u>%</u></span>
+            <span class="num"><i>↻</i>0<u>°</u></span>
+          </div>
+          <div class="row"><label>Flip</label>
+            <button class="ib" aria-label="Flip horizontal" aria-pressed="false"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M6 4 2 12h4ZM10 4l4 8h-4Z"/></svg></button>
+            <button class="ib" aria-label="Flip vertical" aria-pressed="false"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h12M4 6l8-4v4ZM4 10l8 4v-4Z"/></svg></button>
+          </div>
+        </div>
+        <div class="sec" style="border-bottom:0">
+          <div class="sech">Appearance</div>
+          <div class="row"><label>Colour</label><div class="seg" role="radiogroup" aria-label="Colour"><span class="on">Original</span><span>Tint</span><span>Fill</span></div></div>
+          <div class="row"><label>Opacity</label><span class="num" style="flex:1">100<u>%</u></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- C: Tint chosen -->
+    <div>
+      <div class="cap">C · Colour set to Tint</div>
+      <div class="capd">Extra controls appear only for the option chosen.</div>
+      <div class="panel">
+        <div class="phead">Properties<span class="sp"></span><span class="meta">3 Stamps</span></div>
+        <div class="sec">
+          <div class="crumb">Decor <svg class="ic" viewBox="0 0 16 16" aria-hidden="true" style="width:10px;height:10px"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg> <span style="color:#D9D3C4">3 Stamps</span><span class="sp"></span>
+            <button class="ib ghost" aria-label="Lock Stamps" aria-pressed="false"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 7.5h8v6H4ZM5.5 7.5v-2a2.5 2.5 0 0 1 5 0"/></svg></button>
+          </div>
+        </div>
+        <div class="sec">
+          <div class="sech">Transform</div>
+          <div class="g2">
+            <span class="num" style="color:#9D9788;font-style:italic"><i style="font-style:normal">X</i>Mixed</span>
+            <span class="num" style="color:#9D9788;font-style:italic"><i style="font-style:normal">Y</i>Mixed</span>
+            <span class="num"><i>S</i>100<u>%</u></span>
+            <span class="num" style="color:#9D9788;font-style:italic"><i style="font-style:normal">↻</i>Mixed</span>
+          </div>
+          <div class="row"><label>Flip</label>
+            <button class="ib on" aria-label="Flip horizontal" aria-pressed="true"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M6 4 2 12h4ZM10 4l4 8h-4Z"/></svg></button>
+            <button class="ib" aria-label="Flip vertical" aria-pressed="false"><svg class="ic sm" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8h12M4 6l8-4v4ZM4 10l8 4v-4Z"/></svg></button>
+          </div>
+        </div>
+        <div class="sec" style="border-bottom:0">
+          <div class="sech">Appearance</div>
+          <div class="row"><label>Colour</label><div class="seg" role="radiogroup" aria-label="Colour"><span>Original</span><span class="on">Tint</span><span>Fill</span></div></div>
+          <div class="row"><label></label><span class="sw" style="background:#7A2E2E"></span><span class="num" style="flex:1">7A2E2E</span><span class="num" style="width:64px">40<u>%</u></span></div>
+          <div class="row"><label>Opacity</label><span class="num" style="flex:1">100<u>%</u></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1100,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

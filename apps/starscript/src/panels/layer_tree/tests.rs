@@ -818,3 +818,22 @@ fn one_opacity_drag_in_the_layer_area_is_one_undo_step() {
     assert_eq!(layer_data(&state.editor, a).opacity, 1.0);
     assert_eq!(state.editor.undo_label().map(str::to_owned), before);
 }
+
+#[test]
+fn a_rename_request_expands_the_row_and_opens_its_rename_box() {
+    let (editor, ids) = editor_with_a_group();
+    let mut harness = harness(editor);
+    let map = harness.state().editor.map();
+    let child = ids.iter().copied().find(|&id| map.parent(id).is_some());
+    let child = child.unwrap();
+    let group = map.parent(child).unwrap();
+    harness.state_mut().tree.collapsed.insert(group);
+    harness.state_mut().tree.collapse_generation += 1;
+    harness.run();
+    harness.state_mut().editor.request_rename(child);
+    harness.run();
+    let tree = &harness.state().tree;
+    assert!(!tree.collapsed.contains(&group));
+    assert_eq!(tree.renaming.as_ref().map(|(id, _)| *id), Some(child));
+    assert!(harness.state_mut().editor.take_rename_request().is_none());
+}

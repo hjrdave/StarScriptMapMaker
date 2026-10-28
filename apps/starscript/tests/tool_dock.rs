@@ -1,6 +1,8 @@
 //! The floating tool dock: clicking selects a tool, S is Stamp (C selects nothing), and
 //! the dock stays inside the Canvas when Layers collapses.
 
+mod common;
+
 use eframe::egui;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
@@ -22,6 +24,7 @@ fn app(size: egui::Vec2) -> Harness<'static, MapMakerApp> {
         Scale::new(0.25, DistanceUnit::Miles),
     ));
     harness.run();
+    common::expand_layers(&mut harness);
     harness
 }
 

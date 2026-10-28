@@ -28,6 +28,7 @@ fn app() -> Harness<'static, MapMakerApp> {
         Scale::new(0.25, DistanceUnit::Miles),
     ));
     harness.run();
+    common::expand_layers(&mut harness);
     harness
 }
 
@@ -165,6 +166,8 @@ fn a_layer_with_100k_objects_lays_out_only_visible_rows() {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1280.0, 800.0))
         .build_eframe(|cc| MapMakerApp::with_map(cc, map, None));
+    harness.run();
+    common::expand_layers(&mut harness);
     let started = std::time::Instant::now();
     harness.run();
     eprintln!("first frames with 100k rows: {:?}", started.elapsed());

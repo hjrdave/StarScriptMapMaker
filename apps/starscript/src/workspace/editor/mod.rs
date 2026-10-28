@@ -93,6 +93,8 @@ pub struct Editor {
     pub scatter: ScatterBrush,
     /// What Copy or Cut last took. Paste reads it back.
     clipboard: ClipboardSlot,
+    /// A node the Canvas menu asked the Layers panel to start renaming.
+    rename_request: Option<Id>,
 }
 
 /// What a new Object is, for choosing the Layer it goes into.
@@ -165,6 +167,7 @@ impl Editor {
             active_tool: ToolId::Select,
             scatter: ScatterBrush::default(),
             clipboard: ClipboardSlot::default(),
+            rename_request: None,
             brush_size: DEFAULT_BRUSH_SIZE,
             erase_default: false,
             node_edit: None,
@@ -175,6 +178,16 @@ impl Editor {
             caches: Caches::new(),
             selected_asset: None,
         }
+    }
+
+    /// Asks the Layers panel to reveal `id` and open its rename box.
+    pub fn request_rename(&mut self, id: Id) {
+        self.rename_request = Some(id);
+    }
+
+    /// The node waiting to be renamed, taken by the Layers panel.
+    pub fn take_rename_request(&mut self) -> Option<Id> {
+        self.rename_request.take()
     }
 
     /// The Map. Read-only: edits go through Commands.

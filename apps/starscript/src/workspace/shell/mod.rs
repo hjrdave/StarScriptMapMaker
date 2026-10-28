@@ -168,7 +168,7 @@ impl Default for Shell {
             board_count: one_board(),
             layers_width: metrics::LAYERS_PANEL_DEFAULT,
             properties_width: metrics::PROPERTIES_PANEL_DEFAULT,
-            layers_collapsed: false,
+            layers_collapsed: true,
             properties_collapsed: false,
             panels_hidden: false,
             window_width: FULL_WIDTH,
