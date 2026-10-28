@@ -336,6 +336,16 @@ impl Home {
     }
 
     fn rail(&mut self, ui: &mut egui::Ui, data: &Data<'_>, counts: Counts, out: &mut Vec<Action>) {
+        ui.horizontal(|ui| {
+            crate::logo::show(ui, 32.0);
+            ui.label(
+                egui::RichText::new("StarScript Map Maker")
+                    .size(theme::HEADING)
+                    .color(theme::palette(ui.ctx()).text_primary)
+                    .strong(),
+            );
+        });
+        ui.add_space(12.0);
         let lists = [
             (View::All, counts.all),
             (View::Recent, counts.recent),

@@ -4,6 +4,19 @@ How the installable packages are built and laid out (ADR 0008). The config is
 `[package.metadata.packager]` in `apps/starscript/Cargo.toml`. Files it uses are in
 `apps/starscript/packaging/`.
 
+## Icons
+
+The logo is `apps/starscript/packaging/StarScript_Logo.svg`. The same file is embedded for the
+window icon and the Home and Credits screens. The files in `packaging/icons/` are rendered
+from it (centred on a square canvas) with:
+
+```sh
+cargo run -p app --example gen_icons -- apps/starscript/packaging/icons
+```
+
+No `.icns` is checked in; `cargo packager` builds the macOS icon from the PNGs. The Dock,
+Finder and Windows taskbar rendering has not been checked on a real machine.
+
 ## Building
 
 ```sh
