@@ -6,6 +6,7 @@ use ssmap_fonts::LABEL_FAMILIES;
 
 use super::PropertiesPanel;
 use crate::editor::Editor;
+use crate::icons::{self, Icon};
 use crate::prop_widgets::{self, Edit, Provenance, ScrubSpec, SectionHeader};
 
 /// What a Label field needs to write its edit back.
@@ -29,7 +30,6 @@ impl PropertiesPanel {
         ui: &mut egui::Ui,
         editor: &mut Editor,
         id: Id,
-        locked: bool,
         label: &Label,
     ) {
         let overrides = [
@@ -51,11 +51,32 @@ impl PropertiesPanel {
             kind: "label",
             title: "Label",
             badge: (overrides > 0).then_some(badge.as_str()),
-            action: None,
+            action: (overrides > 0).then_some((Icon::Reset, "Reset overrides")),
         };
-        prop_widgets::section(ui, header, |ui| {
-            self.label_fields(ui, editor, id, locked, label, overrides);
+        let mut restyled = None;
+        let reset = prop_widgets::section(ui, header, |ui| {
+            self.label_fields(ui, editor, id, label, overrides, &mut restyled);
         });
+        if reset {
+            restyled = Some(Label {
+                font: None,
+                size: None,
+                letter_spacing: None,
+                line_height: None,
+                arch: None,
+                all_caps: None,
+                fill: None,
+                opacity: None,
+                halo: None,
+                ..label.clone()
+            });
+        }
+        if let Some(next) = restyled {
+            let _ = editor.run(Command::SetLabel {
+                id,
+                label: Box::new(next),
+            });
+        }
     }
 
     fn label_fields(
@@ -63,13 +84,14 @@ impl PropertiesPanel {
         ui: &mut egui::Ui,
         editor: &mut Editor,
         id: Id,
-        locked: bool,
         label: &Label,
         overrides: usize,
+        restyled: &mut Option<Label>,
     ) {
+        let _ = overrides;
         self.label_text_field(ui, editor, id, label);
         let styles = editor.map().label_styles().clone();
-        if self.label_style_row(ui, editor, id, label, overrides, &styles) {
+        if self.label_style_row(ui, label, &styles, restyled) {
             return;
         }
 
@@ -82,13 +104,9 @@ impl PropertiesPanel {
         };
 
         self.label_font_fields(ui, editor, &ctx, &mut next);
+        self.label_format_row(ui, editor, &ctx, &mut next);
         self.label_metric_fields(ui, editor, &ctx, &mut next);
         self.label_look_fields(ui, editor, &ctx, &mut next);
-
-        let mut lock = locked;
-        if prop_widgets::checkbox_row(ui, "Locked", &mut lock) {
-            let _ = editor.run(Command::SetLocked { id, locked: lock });
-        }
     }
 
     /// The Label's text box. Edits to it are one Undo step when it loses focus.
@@ -130,19 +148,16 @@ impl PropertiesPanel {
         }
     }
 
-    /// The Label style row: the style picker, resetting overrides and the Manage button. Returns
+    /// The Label style row: the style picker and the way to Manage Label styles. Returns
     /// whether it restyled the Label, in which case the fields below are stale this frame.
     fn label_style_row(
         &mut self,
         ui: &mut egui::Ui,
-        editor: &mut Editor,
-        id: Id,
         label: &Label,
-        overrides: usize,
         styles: &LabelStyles,
+        restyled: &mut Option<Label>,
     ) -> bool {
-        let mut restyled = None;
-        prop_widgets::field_row(ui, "Label style", Provenance::Plain, |ui| {
+        prop_widgets::field_row(ui, "Style", Provenance::Plain, |ui| {
             let current = styles
                 .get(label.style)
                 .unwrap_or_else(|| styles.default_style());
@@ -154,45 +169,18 @@ impl PropertiesPanel {
                             .selectable_label(style.id == current.id, &style.name)
                             .clicked()
                         {
-                            restyled = Some(Label {
+                            *restyled = Some(Label {
                                 style: style.id,
                                 ..label.clone()
                             });
                         }
                     }
                 });
-        });
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(overrides > 0, egui::Button::new("Reset overrides"))
-                .on_hover_text("Follow the style again")
-                .clicked()
-            {
-                restyled = Some(Label {
-                    font: None,
-                    size: None,
-                    letter_spacing: None,
-                    line_height: None,
-                    arch: None,
-                    all_caps: None,
-                    fill: None,
-                    opacity: None,
-                    halo: None,
-                    ..label.clone()
-                });
-            }
-            if ui.button("Manage Label styles…").clicked() {
+            if icons::icon_button(ui, Icon::More, "Manage Label styles…").clicked() {
                 self.manage_label_styles = true;
             }
         });
-        if let Some(next) = restyled {
-            let _ = editor.run(Command::SetLabel {
-                id,
-                label: Box::new(next),
-            });
-            return true;
-        }
-        false
+        restyled.is_some()
     }
 
     /// The font family, weight and italic.
@@ -224,7 +212,7 @@ impl PropertiesPanel {
         self.label_apply(editor, ctx, edit, &*next, |l| l.font = None);
 
         let mut weight = f64::from(next.font.weight);
-        let edit = prop_widgets::number_field(
+        let edit = prop_widgets::scrub_field(
             ui,
             &mut weight,
             &ScrubSpec::new("Weight")
@@ -238,8 +226,24 @@ impl PropertiesPanel {
         self.label_apply_as("Change Label Weight", editor, ctx, edit, &*next, |l| {
             l.font = None
         });
-        if prop_widgets::checkbox_row(ui, "Italic", &mut next.font.italic) {
-            self.label_apply(editor, ctx, Edit::instant(), &*next, |l| l.font = None);
+    }
+
+    /// Italic and All caps as chips on one row. They carry no reset of their own: the
+    /// section's Reset overrides clears them with the rest.
+    fn label_format_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        ctx: &LabelEdit<'_>,
+        next: &mut ResolvedLabel,
+    ) {
+        let mut changed = false;
+        prop_widgets::field_row(ui, "Format", Provenance::Plain, |ui| {
+            changed |= prop_widgets::chip_toggle(ui, "Italic", &mut next.font.italic);
+            changed |= prop_widgets::chip_toggle(ui, "All caps", &mut next.all_caps);
+        });
+        if changed {
+            self.label_apply(editor, ctx, Edit::instant(), &*next, |_| {});
         }
     }
 
@@ -252,14 +256,12 @@ impl PropertiesPanel {
         next: &mut ResolvedLabel,
     ) {
         let label = ctx.label;
-        let edit = prop_widgets::slider(
+        let edit = prop_widgets::scrub_field(
             ui,
             &mut next.size,
             &ScrubSpec::new("Size")
                 .unit(" u")
                 .range(0.1, 100_000.0)
-                .slider_max(500.0)
-                .logarithmic()
                 .step(0.5)
                 .decimals(1)
                 .provenance(provenance(label.size.is_some())),
@@ -268,14 +270,12 @@ impl PropertiesPanel {
             l.size = None
         });
 
-        let edit = prop_widgets::slider(
+        let edit = prop_widgets::scrub_field(
             ui,
             &mut next.letter_spacing,
             &ScrubSpec::new("Letter spacing")
                 .unit(" em")
                 .range(-1.0, 5.0)
-                .slider_max(1.0)
-                .default_value(0.0)
                 .step(0.005)
                 .decimals(3)
                 .provenance(provenance(label.letter_spacing.is_some())),
@@ -289,13 +289,12 @@ impl PropertiesPanel {
             |l| l.letter_spacing = None,
         );
 
-        let edit = prop_widgets::slider(
+        let edit = prop_widgets::scrub_field(
             ui,
             &mut next.line_height,
             &ScrubSpec::new("Line height")
                 .unit("×")
                 .range(0.1, 10.0)
-                .slider_max(3.0)
                 .step(0.01)
                 .decimals(2)
                 .provenance(provenance(label.line_height.is_some())),
@@ -305,13 +304,12 @@ impl PropertiesPanel {
         });
 
         let mut percent = next.arch * 100.0;
-        let edit = prop_widgets::slider(
+        let edit = prop_widgets::scrub_field(
             ui,
             &mut percent,
             &ScrubSpec::new("Arch")
                 .unit("%")
                 .range(-100.0, 100.0)
-                .default_value(0.0)
                 .decimals(0)
                 .provenance(provenance(label.arch.is_some())),
         );
@@ -332,22 +330,16 @@ impl PropertiesPanel {
         next: &mut ResolvedLabel,
     ) {
         let label = ctx.label;
-        let mut edit = Edit::default();
-        let reset =
-            prop_widgets::field_row(ui, "All caps", provenance(label.all_caps.is_some()), |ui| {
-                if prop_widgets::checkbox_row(ui, "On", &mut next.all_caps) {
-                    edit = Edit::instant();
-                }
-            });
-        edit.reset = reset;
-        self.label_apply(editor, ctx, edit, &*next, |l| l.all_caps = None);
-
         let mut align = match next.align {
             Align::Left => 0,
             Align::Centre => 1,
             Align::Right => 2,
         };
-        if prop_widgets::segmented(ui, &["Left", "Centre", "Right"], &mut align) {
+        let mut aligned = false;
+        prop_widgets::field_row(ui, "Align", Provenance::Plain, |ui| {
+            aligned = prop_widgets::segmented(ui, &["Left", "Centre", "Right"], &mut align);
+        });
+        if aligned {
             next.align = [Align::Left, Align::Centre, Align::Right][align];
             self.label_apply(editor, ctx, Edit::instant(), &*next, |_| {});
         }
@@ -373,7 +365,7 @@ impl PropertiesPanel {
         self.label_apply(editor, ctx, response.edit, &*next, |l| l.fill = None);
 
         let mut percent = f64::from(next.opacity) * 100.0;
-        let edit = prop_widgets::slider(
+        let edit = prop_widgets::scrub_field(
             ui,
             &mut percent,
             &ScrubSpec::new("Opacity")
@@ -389,14 +381,12 @@ impl PropertiesPanel {
         });
 
         let halo = provenance(label.halo.is_some());
-        let edit = prop_widgets::slider(
+        let edit = prop_widgets::scrub_field(
             ui,
             &mut next.halo.width,
             &ScrubSpec::new("Halo")
                 .unit(" u")
                 .range(0.0, 100_000.0)
-                .slider_max(100.0)
-                .default_value(0.0)
                 .step(0.1)
                 .decimals(1)
                 .provenance(halo),
@@ -404,12 +394,15 @@ impl PropertiesPanel {
         self.label_apply_as("Change Label Halo", editor, ctx, edit, &*next, |l| {
             l.halo = None
         });
-        let mut colour = Some(next.halo.color);
-        let response = prop_widgets::swatch(ui, "Halo colour", &mut colour, false, halo);
-        if response.edit.changed {
-            next.halo.color = colour.unwrap_or(next.halo.color);
+        // The halo's colour matters only once it has a width.
+        if next.halo.width > 0.0 {
+            let mut colour = Some(next.halo.color);
+            let response = prop_widgets::swatch(ui, "Halo colour", &mut colour, false, halo);
+            if response.edit.changed {
+                next.halo.color = colour.unwrap_or(next.halo.color);
+            }
+            self.label_apply(editor, ctx, response.edit, &*next, |l| l.halo = None);
         }
-        self.label_apply(editor, ctx, response.edit, &*next, |l| l.halo = None);
     }
 
     /// Applies what a Label field did: a reset clears that one override with `clear`, anything

@@ -367,6 +367,11 @@ pub fn section(
     });
     let mut clicked_action = false;
     let mut right = rect.right();
+    // The action takes one id when it is there; the fields below must keep theirs when it
+    // comes or goes in the middle of a drag.
+    if header.action.is_none() {
+        ui.skip_ahead_auto_ids(1);
+    }
     if let Some((icon, label)) = header.action {
         let button = egui::Rect::from_min_size(
             egui::pos2(right - 24.0, rect.center().y - 12.0),
@@ -551,15 +556,35 @@ const ICON_BUTTON: Vec2 = Vec2::new(26.0, 24.0);
 /// An outlined icon button that stays pressed while `on` (Flip horizontal). Its accessible
 /// name is `label` and it reads as checked or not. Returns whether it was clicked.
 pub fn icon_toggle(ui: &mut egui::Ui, icon: Icon, label: &str, on: bool) -> bool {
-    outlined_icon(ui, icon, label, Some(on)).clicked()
+    outlined_icon(ui, icon, label, Some(on), label).clicked()
 }
 
 /// An outlined icon button for a one-off action next to icon toggles (Flip vertical).
 pub fn icon_action(ui: &mut egui::Ui, icon: Icon, label: &str) -> bool {
-    outlined_icon(ui, icon, label, None).clicked()
+    outlined_icon(ui, icon, label, None, label).clicked()
 }
 
-fn outlined_icon(ui: &mut egui::Ui, icon: Icon, label: &str, on: Option<bool>) -> egui::Response {
+/// [`icon_action`] that can be disabled and says what it does on hover. Returns whether it
+/// was clicked.
+pub fn icon_action_enabled(
+    ui: &mut egui::Ui,
+    icon: Icon,
+    label: &str,
+    enabled: bool,
+    hint: &str,
+) -> bool {
+    ui.add_enabled_ui(enabled, |ui| outlined_icon(ui, icon, label, None, hint))
+        .inner
+        .clicked()
+}
+
+fn outlined_icon(
+    ui: &mut egui::Ui,
+    icon: Icon,
+    label: &str,
+    on: Option<bool>,
+    hint: &str,
+) -> egui::Response {
     let palette = theme::palette(ui.ctx());
     let enabled = ui.is_enabled();
     let (rect, response) = ui.allocate_exact_size(ICON_BUTTON, Sense::click());
@@ -597,7 +622,7 @@ fn outlined_icon(ui: &mut egui::Ui, icon: Icon, label: &str, on: Option<bool>) -
         StrokeKind::Inside,
     );
     icons::paint(ui, rect, icon, 14.0, glyph);
-    response.on_hover_text(label)
+    response.on_hover_text(hint)
 }
 
 /// A rounded chip that is on or off ("Randomise: Flip · Variant"). Flips `on` and returns

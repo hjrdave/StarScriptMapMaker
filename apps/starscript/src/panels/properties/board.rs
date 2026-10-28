@@ -4,9 +4,13 @@
 use eframe::egui;
 use ssmap_core::{Command, Id, Map, Membership, Node};
 
-use super::{PropertiesPanel, caption, heading, map::resize, row};
+use super::{
+    PropertiesPanel, caption, heading,
+    map::{merge_edits, resize},
+    row,
+};
 use crate::editor::Editor;
-use crate::prop_widgets::{self, ScrubSpec};
+use crate::prop_widgets::{self, Handle, ScrubSpec};
 
 /// What a board's buttons ask the window for, which owns the dialogs.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -37,17 +41,22 @@ impl PropertiesPanel {
             self.board_name(ui, editor, id, &label);
         }
         self.canvas_fields(ui, editor, id, &canvas);
-        let spec = |name| {
+        let spec = |name, handle| {
             ScrubSpec::new(name)
+                .handle(Handle::Text(handle))
                 .range(-1_000_000.0, 1_000_000.0)
                 .step(10.0)
         };
         let (mut x, mut y) = (canvas.origin[0], canvas.origin[1]);
-        let x_edit = prop_widgets::number_field(ui, &mut x, &spec("Board X"));
-        let y_edit = prop_widgets::number_field(ui, &mut y, &spec("Board Y"));
-        if x_edit.changed || y_edit.changed {
-            let _ = editor.run(resize(editor, id, [x, y], canvas.width, canvas.height));
-        }
+        let (x_edit, y_edit) = prop_widgets::pair(
+            ui,
+            |ui| prop_widgets::scrub_field(ui, &mut x, &spec("Board X", "X")),
+            |ui| prop_widgets::scrub_field(ui, &mut y, &spec("Board Y", "Y")),
+        );
+        let name = if primary { "Move Canvas" } else { "Move Board" };
+        let command = resize(editor, id, [x, y], canvas.width, canvas.height);
+        self.live
+            .apply(editor, merge_edits(x_edit, y_edit), name, || command);
         self.background_fields(ui, editor, id, &canvas);
         caption(ui, "Board");
         ui.horizontal_wrapped(|ui| {
