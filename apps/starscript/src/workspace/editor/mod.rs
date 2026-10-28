@@ -63,6 +63,11 @@ pub struct Editor {
     active_layer: Option<Id>,
     /// Where new Objects go while no Layer is active, as the Map's template names them.
     pub default_layers: DefaultLayers,
+    /// Asks the window to draw again, once there is one: set when the background workers are
+    /// started.
+    repaint: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// The Map revision [`Editor::rebuild_outlines_for_defaults`] last looked at.
+    outlines_checked: u64,
     pub active_tool: ToolId,
     /// The land brush's diameter, in Canvas units.
     pub brush_size: f64,
@@ -155,6 +160,8 @@ impl Editor {
             selected_board: None,
             active_layer: None,
             default_layers: DefaultLayers::default(),
+            repaint: None,
+            outlines_checked: 0,
             active_tool: ToolId::Select,
             scatter: ScatterBrush::default(),
             clipboard: ClipboardSlot::default(),
@@ -343,13 +350,36 @@ impl Editor {
     }
 
     /// Computes the rings shore ripples and shading follow on a thread of their own, so
-    /// dragging a Roughness slider over a rough coastline never waits for them. `repaint` is
-    /// called as each Object's rings land.
+    /// dragging a Roughness slider over a rough coastline never waits for them, and does the
+    /// same for the outlines when the Map-wide Roughness changes. `repaint` is called as each
+    /// Object's rings or outline land.
     pub fn compute_shore_rings_in_background(
         &mut self,
         repaint: impl Fn() + Send + Sync + 'static,
     ) {
-        self.scene.compute_rings_in_background(repaint);
+        let repaint: Arc<dyn Fn() + Send + Sync> = Arc::new(repaint);
+        let rings = repaint.clone();
+        self.scene.compute_rings_in_background(move || rings());
+        self.repaint = Some(repaint);
+    }
+
+    /// When the Map-wide defaults changed since last asked, computes the outlines that now need
+    /// it on a thread of their own, so a Roughness slider never waits for them: until they land,
+    /// Objects draw the outlines they had. Does nothing without a window to repaint.
+    fn rebuild_outlines_for_defaults(&mut self) {
+        let revision = self.map.revision();
+        let seen = std::mem::replace(&mut self.outlines_checked, revision);
+        if seen == revision {
+            return;
+        }
+        let changed = self
+            .map
+            .changes_since(seen)
+            .is_some_and(|changes| changes.defaults);
+        if let (true, Some(repaint)) = (changed, self.repaint.clone()) {
+            self.caches
+                .start_background_roughness(&self.map, move || repaint());
+        }
     }
 
     /// Whether roughened outlines are still being computed in the background.
@@ -357,17 +387,17 @@ impl Editor {
         self.caches.outlines_rebuilding()
     }
 
-    /// Drops what was built from placeholder outlines once the background ones have landed.
+    /// Drops the pick index once the background outlines have landed.
     fn sync_background_outlines(&mut self) {
-        if self.caches.sync_background_outlines() {
-            self.scene.invalidate();
-        }
+        // The scene notices the outlines that landed, and redraws only their Objects.
+        self.caches.sync_background_outlines();
     }
 
     /// What the Canvas draws for the Map, rebuilt only once it has changed. Drops roughened
     /// outlines of Objects that are gone.
     pub fn scene_content(&mut self) -> Content {
         self.sync_embedded();
+        self.rebuild_outlines_for_defaults();
         self.sync_background_outlines();
         self.caches.retain(&self.map);
         self.scene.content(&self.map, self.caches.roughness())

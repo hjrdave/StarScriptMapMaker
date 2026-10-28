@@ -317,6 +317,12 @@ pub(super) fn edit(script: Script, frame: usize, world: &mut World) {
                 &Command::SetDefaultRoughness { roughness },
                 "a valid Roughness",
             );
+            // As the editor does: the outlines are computed on a thread of their own, and
+            // frames draw the ones they had until they land.
+            let rebuild = world.cache.rebuild(&world.map);
+            if !rebuild.is_empty() {
+                std::thread::spawn(move || rebuild.run(|| {}));
+            }
         }
         Script::SliderShore => {
             let mut shore = ShoreStyle::landmass_default();

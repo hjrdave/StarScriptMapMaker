@@ -236,7 +236,9 @@ fn unit(hash: u64) -> f64 {
 ///
 /// Clones share one store, so a background thread can fill it (see [`RoughnessCache::rebuild`])
 /// while the editor keeps drawing. While a rebuild is running, an Object whose outline is not
-/// ready yet answers with its stored, un-roughened outline instead of computing it.
+/// ready yet answers with the outline it last had, if the Object itself has not changed since
+/// (only the settings did), and otherwise with its stored, un-roughened outline, instead of
+/// computing it. A newer rebuild supersedes an older one, which stops at its next outline.
 #[derive(Default, Debug, Clone)]
 pub struct RoughnessCache {
     shared: Arc<Shared>,
@@ -250,6 +252,8 @@ struct Shared {
     generation: AtomicU64,
     /// How many rebuilds are still running.
     rebuilding: AtomicUsize,
+    /// Counts the rebuilds started, so an older one can tell it has been superseded.
+    epoch: AtomicU64,
     /// Held while a rebuild ends, so a waiter never misses the wake-up.
     ended: Mutex<()>,
     ended_signal: Condvar,
@@ -316,7 +320,10 @@ impl RoughnessCache {
             return Some(outline);
         }
         if self.is_rebuilding() {
-            return Some(Arc::new(geometry.clone()));
+            return Some(
+                self.stale(id, version)
+                    .unwrap_or_else(|| Arc::new(geometry.clone())),
+            );
         }
         let outline = self
             .moved(id, geometry, roughness)
@@ -329,6 +336,13 @@ impl RoughnessCache {
             outline.clone(),
         );
         Some(outline)
+    }
+
+    /// The outline `id` last had under other settings, if the Object has not changed since.
+    fn stale(&self, id: Id, version: u64) -> Option<Arc<MultiPolygon>> {
+        let entries = self.shared.entries();
+        let entry = entries.get(&id)?;
+        (entry.version == version).then(|| entry.outline.clone())
     }
 
     /// The cached outline of `id` shifted along, when `geometry` is the outline it was made from
@@ -413,9 +427,16 @@ impl RoughnessCache {
             }
         }
         self.shared.rebuilding.fetch_add(1, Ordering::SeqCst);
+        // A rebuild with nothing to compute leaves an older one running.
+        let epoch = if jobs.is_empty() {
+            self.shared.epoch.load(Ordering::SeqCst)
+        } else {
+            self.shared.epoch.fetch_add(1, Ordering::SeqCst) + 1
+        };
         Rebuild {
             shared: self.shared.clone(),
             jobs,
+            epoch,
         }
     }
 
@@ -449,6 +470,8 @@ struct Job {
 pub struct Rebuild {
     shared: Arc<Shared>,
     jobs: Vec<Job>,
+    /// Which rebuild this is, counting from the first.
+    epoch: u64,
 }
 
 impl Rebuild {
@@ -463,9 +486,13 @@ impl Rebuild {
     }
 
     /// Computes each outline, calling `ready` after each lands in the cache and once more when
-    /// the rebuild is over. Computing holds no lock, so drawing is never blocked by it.
+    /// the rebuild is over. Computing holds no lock, so drawing is never blocked by it. Stops
+    /// early, leaving the rest to it, once a newer rebuild has started.
     pub fn run(mut self, mut ready: impl FnMut()) {
         for job in std::mem::take(&mut self.jobs) {
+            if self.shared.epoch.load(Ordering::SeqCst) != self.epoch {
+                break;
+            }
             let outline = Arc::new(roughen(&job.geometry, &job.roughness));
             self.shared
                 .store(job.id, job.version, job.roughness, job.geometry, outline);

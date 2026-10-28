@@ -230,3 +230,93 @@ fn a_rebuild_skips_outlines_that_are_ready() {
     rebuild.run(|| {});
     assert_eq!(cache.computed(), 3);
 }
+
+#[test]
+fn a_rebuild_after_a_settings_change_shows_the_last_outline_not_the_stored_one() {
+    let (mut map, west, east, _) = two_islands();
+    let mut cache = RoughnessCache::new();
+    let old_west = cache.outline(&map, west).unwrap();
+    cache.outline(&map, east).unwrap();
+    // Only the Map-wide settings change: the Objects are as they were.
+    map.apply(Op::SetDefaults {
+        defaults: MapDefaults {
+            roughness: Roughness::new(9.0, 25.0, 2),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    let rebuild = cache.rebuild(&map);
+    assert_eq!(rebuild.len(), 2);
+    assert!(!cache.is_ready(&map, west));
+    let shown = cache.outline(&map, west).unwrap();
+    assert!(Arc::ptr_eq(&shown, &old_west), "the last roughened outline");
+    // An Object that changed has no such outline, so its stored one stands in.
+    map.apply(Op::ReplaceGeometry {
+        id: east,
+        geometry: island(1100.0),
+    })
+    .unwrap();
+    assert_eq!(*cache.outline(&map, east).unwrap(), island(1100.0));
+    rebuild.run(|| {});
+    assert!(cache.is_ready(&map, west));
+    assert!(!Arc::ptr_eq(&cache.outline(&map, west).unwrap(), &old_west));
+}
+
+#[test]
+fn a_newer_rebuild_supersedes_an_older_one() {
+    let (mut map, west, east, _) = two_islands();
+    let mut cache = RoughnessCache::new();
+    let older = cache.rebuild(&map);
+    assert_eq!(older.len(), 2);
+    map.apply(Op::SetDefaults {
+        defaults: MapDefaults {
+            roughness: Roughness::new(3.0, 30.0, 5),
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    let newer = cache.rebuild(&map);
+    assert_eq!(newer.len(), 2);
+    older.run(|| {});
+    assert_eq!(
+        cache.computed(),
+        0,
+        "the older one stopped before computing"
+    );
+    assert!(cache.is_rebuilding(), "the newer one is still to run");
+    newer.run(|| {});
+    assert!(!cache.is_rebuilding());
+    assert_eq!(cache.computed(), 2);
+    let mut sync = RoughnessCache::new();
+    for id in [west, east] {
+        assert_eq!(cache.outline(&map, id), sync.outline(&map, id));
+    }
+}
+
+#[test]
+fn a_rebuild_with_nothing_to_do_does_not_supersede_an_older_one() {
+    let (mut map, west, east, original) = two_islands();
+    let mut cache = RoughnessCache::new();
+    cache.outline(&map, west).unwrap();
+    cache.outline(&map, east).unwrap();
+    let set = |map: &mut Map, roughness: Roughness| {
+        map.apply(Op::SetDefaults {
+            defaults: MapDefaults {
+                roughness,
+                ..Default::default()
+            },
+        })
+        .unwrap();
+    };
+    set(&mut map, Roughness::new(9.0, 25.0, 2));
+    let older = cache.rebuild(&map);
+    assert_eq!(older.len(), 2);
+    // Back to the settings the cached outlines are for: nothing to compute.
+    set(&mut map, original);
+    let empty = cache.rebuild(&map);
+    assert!(empty.is_empty());
+    older.run(|| {});
+    assert_eq!(cache.computed(), 4, "the older rebuild ran in full");
+    drop(empty);
+    assert!(!cache.is_rebuilding());
+}
