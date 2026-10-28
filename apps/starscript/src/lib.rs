@@ -27,7 +27,7 @@ use workspace::{clipboard, credits, document, home, update};
 use canvas::{canvas_controls, canvas_resize, canvas_view, tessellation};
 use chrome::{tab_strip, tool_dock, tool_section};
 use packs::pack_page;
-use panels::{asset_browser, label_styles, layer_tree, properties};
+use panels::{asset_browser, board_list, label_styles, layer_tree, properties};
 use workspace::{file_actions, recent};
 
 use eframe::egui;

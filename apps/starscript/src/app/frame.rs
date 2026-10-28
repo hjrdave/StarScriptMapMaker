@@ -31,6 +31,9 @@ impl MapMakerApp {
         self.app.credits.show(&ctx, Some(&mut tab.editor));
         self.app.updates.show(&ctx);
         tab.label_styles.show(&ctx, &mut tab.editor);
+        self.win
+            .shell
+            .set_board_count(tab.editor.map().boards().len());
         egui::Panel::bottom("status")
             .exact_size(theme::metrics::STATUS_BAR)
             .show(ui, |ui| self.status_bar(ui));
@@ -57,8 +60,7 @@ impl MapMakerApp {
                     .exact_size(layout.layers.width())
                     .show(ui, |ui| {
                         let path = shell::selection_path(tab.editor.map(), tab.editor.selection());
-                        let current = self.win.shell.sidebar_section();
-                        if let Some(click) = shell::layers_rail(ui, &path, current) {
+                        if let Some(click) = shell::layers_rail(ui, &path, &self.win.shell) {
                             self.win.shell.click_layers_rail(click);
                         }
                     });
@@ -130,7 +132,14 @@ impl MapMakerApp {
         };
         let open_assets = tab.properties.take_open_assets();
         let open_packs = tab.asset_browser.take_open_packs();
-        for request in tab.properties.take_board_requests() {
+        let jump = tab.board_list.take_jump();
+        let listed = tab.board_list.take_requests();
+        for request in tab
+            .properties
+            .take_board_requests()
+            .into_iter()
+            .chain(listed)
+        {
             match request {
                 BoardRequest::Delete(board) => {
                     self.win.delete_board_prompt = Some(board);
@@ -138,6 +147,15 @@ impl MapMakerApp {
                 BoardRequest::Duplicate(board) => {
                     tab.editor.duplicate_board(board);
                 }
+            }
+        }
+        if let Some(board) = jump {
+            // Any other tool drops the board selection, so the board's own tool takes over.
+            tab.editor.active_tool = ToolId::Canvas;
+            tab.editor.select_board(Some(board));
+            if let Some(bounds) = super::menus::board_bounds(&tab.editor, board) {
+                tab.canvas_view
+                    .request_zoom(crate::zoom::Zoom::Area(bounds));
             }
         }
         if open_assets {

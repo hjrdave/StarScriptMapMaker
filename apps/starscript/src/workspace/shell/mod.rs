@@ -24,17 +24,19 @@ pub enum Side {
 pub enum SidebarSection {
     #[default]
     Layers,
+    Boards,
     Assets,
     History,
 }
 
 impl SidebarSection {
     /// Every section, in the order of the icon strip.
-    pub const ALL: [Self; 3] = [Self::Layers, Self::Assets, Self::History];
+    pub const ALL: [Self; 4] = [Self::Layers, Self::Boards, Self::Assets, Self::History];
 
     pub fn icon(self) -> Icon {
         match self {
             Self::Layers => Icon::LayerGroup,
+            Self::Boards => Icon::ExportRegion,
             Self::Assets => Icon::Stamp,
             Self::History => Icon::History,
         }
@@ -43,6 +45,7 @@ impl SidebarSection {
     pub fn title(self) -> &'static str {
         match self {
             Self::Layers => "Layers",
+            Self::Boards => "Art boards",
             Self::Assets => "Assets",
             Self::History => "History",
         }
@@ -52,15 +55,10 @@ impl SidebarSection {
     pub fn label(self) -> &'static str {
         match self {
             Self::Layers => "Layers (⌘⌥1)",
+            Self::Boards => "Art boards (⌘⌥3)",
             Self::Assets => "Assets (⌘⌥4)",
             Self::History => "History (⌘⌥5)",
         }
-    }
-
-    /// Whether the section is offered now. Sections that depend on the Map (such as Art
-    /// boards) will return false when they have nothing to show.
-    pub fn available(self) -> bool {
-        true
     }
 }
 
@@ -78,6 +76,10 @@ pub enum RailClick {
 pub struct Shell {
     /// The sidebar section the left bar shows.
     sidebar_section: SidebarSection,
+    /// How many boards the shown Map has, to offer the Art boards section only when there are
+    /// Art boards besides the Canvas. Set each frame by the window.
+    #[serde(skip, default = "one_board")]
+    board_count: usize,
     layers_width: f32,
     properties_width: f32,
     /// The user collapsed Layers to its rail.
@@ -97,6 +99,10 @@ pub struct Shell {
     layers_overlay: bool,
     #[serde(skip)]
     properties_overlay: bool,
+}
+
+fn one_board() -> usize {
+    1
 }
 
 fn default_window_width() -> f32 {
@@ -159,6 +165,7 @@ impl Default for Shell {
     fn default() -> Self {
         Self {
             sidebar_section: SidebarSection::default(),
+            board_count: one_board(),
             layers_width: metrics::LAYERS_PANEL_DEFAULT,
             properties_width: metrics::PROPERTIES_PANEL_DEFAULT,
             layers_collapsed: false,
@@ -239,9 +246,24 @@ impl Shell {
         self.sidebar_section
     }
 
+    /// Whether the sidebar offers `section` now: Art boards only once the Map has some.
+    pub fn section_available(&self, section: SidebarSection) -> bool {
+        section != SidebarSection::Boards || self.board_count > 1
+    }
+
+    /// Tells the sidebar how many boards the shown Map has. If the Art boards section was
+    /// showing and the Map has none now (deleted, undone, or another tab), it goes back to
+    /// Layers.
+    pub fn set_board_count(&mut self, count: usize) {
+        self.board_count = count;
+        if !self.section_available(self.sidebar_section) {
+            self.sidebar_section = SidebarSection::Layers;
+        }
+    }
+
     /// Switches the sidebar to `section`, if it is available.
     pub fn set_sidebar_section(&mut self, section: SidebarSection) {
-        if section.available() {
+        if self.section_available(section) {
             self.sidebar_section = section;
         }
     }

@@ -81,6 +81,30 @@ impl Editor {
         self.run(Command::DeleteBoard { id }).is_ok()
     }
 
+    /// Names the Art board `id`; `None` or an empty name goes back to the default
+    /// "Art board N". One Undo step.
+    pub fn rename_board(&mut self, id: Id, name: Option<String>) -> bool {
+        let name = name
+            .map(|name| name.trim().to_owned())
+            .filter(|n| !n.is_empty());
+        self.run(Command::RenameBoard { id, name }).is_ok()
+    }
+
+    /// Moves the board `id` up (`delta` -1) or down (+1) among the boards, which draw in this
+    /// order, later ones over earlier. `false` at the ends. One Undo step.
+    pub fn move_board(&mut self, id: Id, delta: isize) -> bool {
+        let Some(at) = self.map.boards().iter().position(|board| board.id == id) else {
+            return false;
+        };
+        let Some(index) = at
+            .checked_add_signed(delta)
+            .filter(|&index| index < self.map.boards().len())
+        else {
+            return false;
+        };
+        self.run(Command::ReorderBoard { id, index }).is_ok()
+    }
+
     /// Makes the board `id` the Canvas, which exports. The old Canvas becomes an Art board and
     /// every Object stays on its board.
     pub fn make_canvas(&mut self, id: Id) -> bool {
@@ -171,5 +195,41 @@ mod tests {
         assert_eq!(editor.selected_board(), Some(board));
         assert_eq!(editor.undo_label(), Some("Change Canvas"));
         assert!(!editor.make_canvas(board), "it already is the Canvas");
+    }
+
+    #[test]
+    fn renaming_trims_and_an_empty_name_goes_back_to_the_default() {
+        let mut editor = editor();
+        let board = editor.new_art_board().unwrap();
+        assert!(editor.rename_board(board, Some("  Harbour  ".into())));
+        assert_eq!(editor.map().board_label(board).as_deref(), Some("Harbour"));
+        assert_eq!(editor.undo_label(), Some("Rename Board"));
+        assert!(editor.rename_board(board, Some("   ".into())));
+        assert_eq!(
+            editor.map().board_label(board).as_deref(),
+            Some("Art board 1")
+        );
+        editor.undo();
+        assert_eq!(editor.map().board_label(board).as_deref(), Some("Harbour"));
+    }
+
+    #[test]
+    fn boards_move_up_and_down_but_not_past_the_ends() {
+        let mut editor = editor();
+        let first = editor.new_art_board().unwrap();
+        let second = editor.new_art_board().unwrap();
+        let ids = |editor: &Editor| -> Vec<Id> {
+            editor.map().boards().iter().map(|board| board.id).collect()
+        };
+        let canvas = editor.map().primary_board();
+        assert_eq!(ids(&editor), [canvas, first, second]);
+        assert!(editor.move_board(second, -1));
+        assert_eq!(ids(&editor), [canvas, second, first]);
+        assert!(editor.move_board(canvas, 1));
+        assert_eq!(ids(&editor), [second, canvas, first]);
+        assert!(!editor.move_board(second, -1), "already first");
+        assert!(!editor.move_board(first, 1), "already last");
+        editor.undo();
+        assert_eq!(ids(&editor), [canvas, second, first]);
     }
 }
