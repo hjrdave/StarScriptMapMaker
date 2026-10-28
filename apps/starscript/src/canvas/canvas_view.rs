@@ -424,6 +424,18 @@ impl CanvasView {
                 editor.paste(centre);
                 ui.close();
             }
+            let single = match editor.selection() {
+                [id] => Some(*id),
+                _ => None,
+            };
+            if ui
+                .add_enabled(single.is_some(), egui::Button::new("Rename"))
+                .clicked()
+                && let Some(id) = single
+            {
+                editor.request_rename(id);
+                ui.close();
+            }
             if ui
                 .add_enabled(has_selection, egui::Button::new("Group"))
                 .clicked()

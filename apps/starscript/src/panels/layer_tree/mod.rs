@@ -37,6 +37,8 @@ pub(crate) struct LayerTree {
     collapsed: HashSet<Id>,
     /// The row being renamed and its text so far.
     renaming: Option<(Id, String)>,
+    /// A row to scroll to on the next frame.
+    scroll_to: Option<Id>,
     /// Rows cached by Map revision and collapse state, so huge trees aren't walked every frame.
     cache: Option<(u64, u64, Vec<Row>)>,
     /// Object and Layer counts by Map revision, for the same reason.
@@ -133,6 +135,11 @@ impl LayerTree {
         footer_shown: bool,
     ) -> bool {
         let revision = editor.map().revision();
+        if let Some(id) = editor.take_rename_request()
+            && editor.map().contains(id)
+        {
+            self.start_rename_revealed(editor, id);
+        }
         let rows = match self.cache.take() {
             Some((r, g, rows)) if r == revision && g == self.collapse_generation => rows,
             _ => rows(editor.map(), &self.collapsed),
@@ -152,14 +159,21 @@ impl LayerTree {
         let mut actions = Vec::new();
         ui.spacing_mut().item_spacing.y = 0.0;
         let list_height = (ui.available_height() - FOOTER_HEIGHT).max(ROW_HEIGHT);
-        egui::ScrollArea::vertical()
+        let mut scroll = egui::ScrollArea::vertical()
             .auto_shrink(false)
-            .max_height(list_height)
-            .show_rows(ui, ROW_HEIGHT, rows.len(), |ui, range| {
-                for row in &rows[range] {
-                    self.row(ui, editor, *row, &mut actions);
-                }
-            });
+            .max_height(list_height);
+        if let Some(index) = self
+            .scroll_to
+            .take()
+            .and_then(|id| rows.iter().position(|row| row.id == id))
+        {
+            scroll = scroll.vertical_scroll_offset(index as f32 * ROW_HEIGHT);
+        }
+        scroll.show_rows(ui, ROW_HEIGHT, rows.len(), |ui, range| {
+            for row in &rows[range] {
+                self.row(ui, editor, *row, &mut actions);
+            }
+        });
         let text = footer_shown.then(|| footer_text(objects, layers));
         let collapse_clicked = footer(ui, text.as_deref());
 
@@ -261,6 +275,19 @@ impl LayerTree {
         self.cache = Some((revision, self.collapse_generation, rows));
         self.confirm_delete_dialog(ui.ctx(), editor);
         collapse_clicked
+    }
+
+    /// Opens the rename box on `id`, expanding the Layers around it and scrolling to its row.
+    fn start_rename_revealed(&mut self, editor: &Editor, id: Id) {
+        let mut parent = editor.map().parent(id);
+        while let Some(layer) = parent {
+            if self.collapsed.remove(&layer) {
+                self.collapse_generation += 1;
+            }
+            parent = editor.map().parent(layer);
+        }
+        self.scroll_to = Some(id);
+        self.renaming = Some((id, node_name(editor.map(), id)));
     }
 
     /// The confirmation before deleting a Group that holds something: it names the Group and
