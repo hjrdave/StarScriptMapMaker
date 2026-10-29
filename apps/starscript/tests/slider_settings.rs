@@ -77,13 +77,26 @@ fn scrub(harness: &mut Harness<'static, MapMakerApp>, label: &str, dx: f32) {
     press(harness, egui::pos2(start.x + dx, start.y), false);
 }
 
+/// Drags the slider called `label` from the middle of its track by `dx` points.
+fn drag_slider(harness: &mut Harness<'static, MapMakerApp>, label: &str, dx: f32) {
+    let track = harness.get_by_role_and_label(Role::Slider, label).rect();
+    let start = track.center();
+    press(harness, start, true);
+    for step in 1..=4 {
+        let x = start.x + step as f32 * dx / 4.0;
+        harness.event(egui::Event::PointerMoved(egui::pos2(x, start.y)));
+        harness.run();
+    }
+    press(harness, egui::pos2(start.x + dx, start.y), false);
+}
+
 #[test]
 fn each_scatter_field_takes_a_scrub_without_an_undo_step() {
     for label in ["Density", "Spacing", "Size jitter", "Tilt jitter"] {
         let mut harness = stamp_app();
         let before = undo_label(&harness);
         let scatter = harness.state().editor().scatter.clone();
-        scrub(&mut harness, label, 40.0);
+        drag_slider(&mut harness, label, 40.0);
         assert_ne!(harness.state().editor().scatter, scatter, "{label}");
         assert_eq!(undo_label(&harness), before, "{label}");
     }
@@ -93,11 +106,12 @@ fn each_scatter_field_takes_a_scrub_without_an_undo_step() {
 fn the_scatter_fields_stop_at_their_range_ends() {
     let mut harness = stamp_app();
     for label in ["Density", "Spacing", "Size jitter", "Tilt jitter"] {
-        scrub(&mut harness, label, 4000.0);
+        drag_slider(&mut harness, label, 4000.0);
     }
     let scatter = &harness.state().editor().scatter;
     assert_eq!(scatter.density, 100.0);
-    assert_eq!(scatter.spacing, 2000.0);
+    // The track ends at 200; only typing goes on to the hard maximum.
+    assert_eq!(scatter.spacing, 200.0);
     assert!((scatter.size_jitter - 0.9).abs() < 1e-9);
     assert_eq!(scatter.rotation_jitter, 180.0);
 }

@@ -42,11 +42,6 @@ fn has_section(tool: ToolId) -> bool {
     )
 }
 
-/// A scrub field that writes straight to `value`. Returns whether it changed.
-fn field(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> bool {
-    prop_widgets::scrub_field(ui, value, spec).changed
-}
-
 impl ToolSection {
     /// Whether the Asset card was clicked since the last call.
     pub(crate) fn take_open_assets(&mut self) -> bool {
@@ -161,13 +156,6 @@ fn header(ui: &mut egui::Ui, tool: ToolId) {
     });
 }
 
-/// The brush diameter in Canvas units, which `[` and `]` also change.
-fn size_spec() -> ScrubSpec<'static> {
-    ScrubSpec::new("Size")
-        .unit(" u")
-        .range(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end())
-}
-
 /// The brush size of the Land Brush, Lake Brush and Stamp Eraser: a logarithmic slider,
 /// where dragging along the track is the point.
 fn size(ui: &mut egui::Ui, editor: &mut Editor) {
@@ -243,8 +231,6 @@ fn river(ui: &mut egui::Ui, editor: &mut Editor) {
 /// The Stamp tool's settings as the sections Properties uses for a selected Stamp: where and
 /// how densely it scatters, then what it randomises.
 pub(crate) fn scatter_sections(ui: &mut egui::Ui, editor: &mut Editor) {
-    let brush_size = &mut editor.brush_size;
-    let brush = &mut editor.scatter;
     let header = |kind, title| SectionHeader {
         kind,
         title,
@@ -252,6 +238,7 @@ pub(crate) fn scatter_sections(ui: &mut egui::Ui, editor: &mut Editor) {
         action: None,
     };
     prop_widgets::section(ui, header("scatter", "Scatter"), |ui| {
+        let brush = &mut editor.scatter;
         let mut place = match brush.placement {
             Placement::Land => 0,
             Placement::Water => 1,
@@ -262,20 +249,20 @@ pub(crate) fn scatter_sections(ui: &mut egui::Ui, editor: &mut Editor) {
                 brush.placement = [Placement::Land, Placement::Water, Placement::Anywhere][place];
             }
         });
-        field(ui, brush_size, &size_spec());
-        field(
-            ui,
-            &mut brush.density,
-            &ScrubSpec::new("Density")
-                .range(0.5, 100.0)
-                .decimals(1)
-                .step(0.1),
-        );
-        field(
-            ui,
-            &mut brush.spacing,
-            &ScrubSpec::new("Spacing").range(0.0, 2000.0),
-        );
+        size(ui, editor);
+        let brush = &mut editor.scatter;
+        let density = ScrubSpec::new("Density")
+            .range(0.5, 100.0)
+            .decimals(1)
+            .step(0.1)
+            .logarithmic()
+            .default_value(8.0);
+        prop_widgets::slider(ui, &mut brush.density, &density);
+        let spacing = ScrubSpec::new("Spacing")
+            .range(0.0, 2000.0)
+            .slider_max(200.0)
+            .default_value(10.0);
+        prop_widgets::slider(ui, &mut brush.spacing, &spacing);
         ui.label(
             egui::RichText::new("Click to place · drag to scatter")
                 .size(theme::CAPTION)
@@ -283,22 +270,23 @@ pub(crate) fn scatter_sections(ui: &mut egui::Ui, editor: &mut Editor) {
         );
     });
     prop_widgets::section(ui, header("randomise", "Randomise"), |ui| {
+        let brush = &mut editor.scatter;
         prop_widgets::field_row(ui, "Random", Provenance::Plain, |ui| {
             prop_widgets::chip_toggle(ui, "Flip", &mut brush.random_flip);
             prop_widgets::chip_toggle(ui, "Variant", &mut brush.random_variant);
         });
         let mut jitter = brush.size_jitter * 100.0;
-        if field(
-            ui,
-            &mut jitter,
-            &ScrubSpec::new("Size jitter").range(0.0, 90.0).unit("%"),
-        ) {
+        let spec = ScrubSpec::new("Size jitter")
+            .range(0.0, 90.0)
+            .unit("%")
+            .default_value(20.0);
+        if prop_widgets::slider(ui, &mut jitter, &spec).changed {
             brush.size_jitter = jitter / 100.0;
         }
-        field(
-            ui,
-            &mut brush.rotation_jitter,
-            &ScrubSpec::new("Tilt jitter").range(0.0, 180.0).unit("°"),
-        );
+        let tilt = ScrubSpec::new("Tilt jitter")
+            .range(0.0, 180.0)
+            .unit("°")
+            .default_value(0.0);
+        prop_widgets::slider(ui, &mut brush.rotation_jitter, &tilt);
     });
 }
