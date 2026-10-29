@@ -338,3 +338,29 @@ fn the_panel_shortcuts_are_not_also_taken_as_tab_shortcuts() {
     assert!(harness.state().home_active());
     assert!(harness.state().shell().properties_shown());
 }
+
+#[test]
+fn a_sidebar_shortcut_opens_the_overlay_on_the_first_press_in_a_narrow_window() {
+    use ssmap_app::shell::SidebarSection;
+    for (key, section) in [
+        (egui::Key::Num1, SidebarSection::Layers),
+        (egui::Key::Num3, SidebarSection::Boards),
+        (egui::Key::Num4, SidebarSection::Assets),
+        (egui::Key::Num5, SidebarSection::History),
+    ] {
+        // The sidebar starts collapsed.
+        let mut harness = app_sized(0.25, 1100.0);
+        assert!(harness.state().shell().layers_collapsed());
+        // The Art boards section needs an Art board.
+        harness
+            .state_mut()
+            .run_command(ssmap_app::menu::Command::NewArtBoard);
+        harness.run();
+        harness.key_press_modifiers(BOTH, key);
+        harness.run();
+        assert!(harness.state().shell().layers_overlay(), "{section:?}");
+        assert_eq!(harness.state().shell().sidebar_section(), section);
+        // The user's own choice is untouched.
+        assert!(harness.state().shell().layers_collapsed());
+    }
+}
