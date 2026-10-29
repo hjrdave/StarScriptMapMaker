@@ -333,7 +333,7 @@ impl MapScene {
                 scope.groups.end = groups.len();
             }
             if let Some(layer) = map.parent(id)
-                && !matches!(object.kind, ObjectKind::Lake(_))
+                && !object.kind.is_water()
             {
                 let end = LayerEnd {
                     stamps: stamps.len(),
@@ -853,15 +853,32 @@ impl MapScene {
                 }));
                 if let Some(shore) = map.shore(id) {
                     self.rings.prepare(id, &outline, shore, self.complete);
+                    // A River's mouth opens into the water it flows into, so its line and
+                    // shading run along the banks only.
+                    let river = match kind {
+                        ObjectKind::River(river) => Some(river),
+                        _ => None,
+                    };
+                    let reach = shore.shading.width / f64::from(SHADING_BANDS);
                     shading_groups(
                         &mut |distance| self.rings.ring(id, distance),
+                        &|ring: &MultiPolygon, distance: f64| match river {
+                            Some(river) => {
+                                lines_path(&river.away_from_mouth(ring, distance.abs() + reach))
+                            }
+                            None => region_path(ring),
+                        },
                         shore,
                         opacity,
                         groups,
                     );
                     if shore.outline.width > 0.0 {
+                        let path = match river {
+                            Some(river) => lines_path(&river.banks()),
+                            None => region_path(&outline),
+                        };
                         groups.push(stroke(
-                            region_path(&outline),
+                            path,
                             shore.outline.color,
                             shore.outline.width as f32,
                             opacity,
@@ -892,7 +909,7 @@ fn top_of_layer(map: &Map, layer: Id, added: &[Id]) -> Option<Vec<Id>> {
             continue;
         }
         match map.node(child) {
-            Some(Node::Object(object)) if matches!(object.kind, ObjectKind::Lake(_)) => {}
+            Some(Node::Object(object)) if object.kind.is_water() => {}
             Some(Node::Object(_)) => break,
             _ => return None,
         }
@@ -995,7 +1012,7 @@ fn clip_scope(
     let mut holes = Vec::new();
     for &id in &order[after..] {
         if let Some(Node::Object(object)) = map.node(id)
-            && matches!(object.kind, ObjectKind::Lake(_))
+            && object.kind.is_water()
             && let Some(outline) = outline(roughness, map, id)
         {
             holes.extend(fills(&outline));
@@ -1068,6 +1085,7 @@ fn ripple_groups(
 /// A glow inward from the coast: bands along rings inset from it, each fainter than the last.
 fn shading_groups(
     ring: &mut impl FnMut(f64) -> Option<Arc<MultiPolygon>>,
+    path: &impl Fn(&MultiPolygon, f64) -> Path,
     shore: &ShoreStyle,
     opacity: f32,
     groups: &mut Vec<VectorGroup>,
@@ -1084,7 +1102,7 @@ fn shading_groups(
         let middle = -distance / shading.width;
         groups.push(
             stroke(
-                region_path(&ring),
+                path(&ring, distance),
                 faded(shading.color, 1.0 - middle),
                 band as f32,
                 opacity,
@@ -1107,6 +1125,23 @@ fn region_path(region: &MultiPolygon) -> Path {
             builder.line_to(p);
         }
         builder.close();
+    }
+    builder.build()
+}
+
+/// Open lines, each drawn from its first point to its last.
+fn lines_path(lines: &[Vec<[f64; 2]>]) -> Path {
+    let mut builder = Path::builder();
+    for line in lines {
+        let mut points = line.iter().map(|&[x, y]| point(x as f32, y as f32));
+        let Some(first) = points.next() else {
+            continue;
+        };
+        builder.begin(first);
+        for p in points {
+            builder.line_to(p);
+        }
+        builder.end(false);
     }
     builder.build()
 }

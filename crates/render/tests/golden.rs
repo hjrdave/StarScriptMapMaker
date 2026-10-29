@@ -16,9 +16,11 @@
 use std::path::PathBuf;
 
 use ssmap_core::asset::{ArtFormat, PackSource, read_pack};
+use ssmap_core::scatter::Terrain;
 use ssmap_core::{
     Align, Canvas, Color, Command, DistanceUnit, FontFace, Id, Label, LabelStyle, LabelStyles,
-    Lake, Landmass, Map, Roughness, RoughnessCache, Scale, ShoreKind, ShoreRipples, ShoreStyle,
+    Lake, Landmass, Map, MultiPolygon, Polygon, River, RiverPoint, Roughness, RoughnessCache,
+    Scale, ShoreKind, ShoreRipples, ShoreStyle, ending_at_shore,
 };
 use ssmap_render::atlas::{Atlas, AtlasEntry, MIN_PAGE_SIZE};
 use ssmap_render::raster::{Art, Raster};
@@ -278,6 +280,119 @@ fn island_with_a_hole_and_a_lake() {
     }
     if let Gpu::Software(_) = gpu {
         assert_matches_golden("island_with_a_hole_and_a_lake", &image);
+    }
+}
+
+/// A Landmass with a Lake, two Rivers tapering into the Lake and one out to sea, all with the
+/// default Shore styles.
+fn rivers() -> Map {
+    let mut map = Map::new(Canvas::new(
+        1000,
+        1000,
+        Scale::new(1.0, DistanceUnit::Miles),
+    ));
+    let layer = Id::new();
+    let run = |map: &mut Map, command: Command| {
+        map.execute(&command).expect("the Command applies");
+    };
+    run(
+        &mut map,
+        Command::CreateLayer {
+            id: layer,
+            parent: None,
+            index: None,
+            name: "Land".into(),
+        },
+    );
+    let square = |points: &[[f64; 2]]| {
+        MultiPolygon(vec![Polygon {
+            exterior: points.to_vec(),
+            holes: Vec::new(),
+        }])
+    };
+    run(
+        &mut map,
+        Command::CreateLandmass {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            geometry: square(&[[80.0, 60.0], [920.0, 100.0], [880.0, 760.0], [120.0, 900.0]]),
+            fill: None,
+        },
+    );
+    run(
+        &mut map,
+        Command::CreateLake {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            geometry: square(&[
+                [560.0, 420.0],
+                [760.0, 400.0],
+                [800.0, 560.0],
+                [600.0, 600.0],
+            ]),
+            fill: None,
+        },
+    );
+    // Each path runs on into the water, and is cut at the shore as the River tool does.
+    let terrain = Terrain::of(&map, &mut RoughnessCache::new());
+    let river =
+        |path: &[RiverPoint], seed| River::new(ending_at_shore(path, &terrain)).with_seed(seed);
+    let from_the_west = river(
+        &[
+            RiverPoint::new([180.0, 160.0], 4.0),
+            RiverPoint::new([380.0, 300.0], 10.0),
+            RiverPoint::new([600.0, 470.0], 22.0),
+        ],
+        5,
+    );
+    let from_the_north = river(
+        &[
+            RiverPoint::new([700.0, 160.0], 5.0),
+            RiverPoint::new([640.0, 300.0], 9.0),
+            RiverPoint::new([620.0, 460.0], 14.0),
+        ],
+        2,
+    );
+    // Starting in the Lake, it reaches land at the Lake's edge and runs out to sea.
+    let to_the_sea = river(
+        &[
+            RiverPoint::new([660.0, 590.0], 12.0),
+            RiverPoint::new([560.0, 720.0], 22.0),
+            RiverPoint::new([520.0, 900.0], 36.0),
+        ],
+        11,
+    );
+    for river in [from_the_west, from_the_north, to_the_sea] {
+        run(
+            &mut map,
+            Command::CreateRiver {
+                id: Id::new(),
+                parent: layer,
+                index: None,
+                river: Box::new(river),
+            },
+        );
+    }
+    map
+}
+
+#[test]
+fn rivers_taper_and_bend_into_the_water() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let image = render(headless, &scene_of(&rivers()), &land_and_water_view());
+    let at = |x: f64, y: f64| pixel(&image, (16.0 + x * 0.4) as u32, (16.0 + y * 0.4) as u32);
+    let water = at(380.0, 300.0);
+    assert!(
+        water[2] > water[0],
+        "the River at a point it passes: {water:?}"
+    );
+    let land = at(300.0, 600.0);
+    assert!(land[0] > land[2], "land beside it: {land:?}");
+    if let Gpu::Software(_) = gpu {
+        assert_matches_golden("rivers", &image);
     }
 }
 

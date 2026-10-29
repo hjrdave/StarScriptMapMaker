@@ -1,6 +1,7 @@
 //! The Map: a Canvas and one ordered tree of Layers and Objects.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -429,13 +430,18 @@ impl Map {
         &self.defaults
     }
 
-    /// The Roughness a Landmass or Lake is drawn with: its own, or the Map-wide default.
-    /// `None` for anything without an outline.
+    /// The Roughness a Landmass or Lake is drawn with: its own, or the Map-wide default. A
+    /// River is always smooth: its bends and banks are its detail. `None` for anything without
+    /// an outline.
     pub fn roughness(&self, id: Id) -> Option<&Roughness> {
+        static SMOOTH: LazyLock<Roughness> = LazyLock::new(|| Roughness::new(0.0, 32.0, 0));
         let Node::Object(Object { kind, .. }) = self.node(id)? else {
             return None;
         };
         kind.geometry()?;
+        if matches!(kind, ObjectKind::River(_)) {
+            return Some(&SMOOTH);
+        }
         Some(kind.roughness().unwrap_or(&self.defaults.roughness))
     }
 
@@ -576,8 +582,8 @@ impl Map {
     }
 
     /// The Objects that draw, first lowest: the tree in Stacking order, skipping hidden
-    /// Layers, except that a Layer's Lakes draw above all its other content, so water always
-    /// lies over the land around it.
+    /// Layers, except that a Layer's Lakes and Rivers draw above all its other content, so
+    /// water always lies over the land around it.
     pub fn draw_order(&self) -> Vec<Id> {
         let mut out = Vec::new();
         for &layer in &self.root {
@@ -594,7 +600,7 @@ impl Map {
         for child in self.ordered_children(layer) {
             match self.node(child) {
                 Some(Node::Layer(_)) => self.collect_draw_order(child, out),
-                Some(Node::Object(object)) if matches!(object.kind, ObjectKind::Lake(_)) => {
+                Some(Node::Object(object)) if object.kind.is_water() => {
                     lakes.push(child);
                 }
                 Some(Node::Object(_)) => out.push(child),

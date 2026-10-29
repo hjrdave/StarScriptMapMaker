@@ -280,7 +280,7 @@ input_file: crates/core/tests/scripts/roughness.json
     },
     {
       "outcome": {
-        "error": "00000000-0000-7000-8000-000000000005 is not a Landmass or Lake"
+        "error": "00000000-0000-7000-8000-000000000005 is not a Landmass, Lake or River"
       },
       "step": {
         "step": {
@@ -298,7 +298,7 @@ input_file: crates/core/tests/scripts/roughness.json
     },
     {
       "outcome": {
-        "error": "00000000-0000-7000-8000-000000000001 is not a Landmass or Lake"
+        "error": "00000000-0000-7000-8000-000000000001 is not a Landmass, Lake or River"
       },
       "step": {
         "step": {

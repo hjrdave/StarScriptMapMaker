@@ -78,7 +78,7 @@ impl Terrain {
             };
             let target = match kind {
                 ObjectKind::Landmass(_) => &mut terrain.land,
-                ObjectKind::Lake(_) => &mut terrain.lakes,
+                ObjectKind::Lake(_) | ObjectKind::River(_) => &mut terrain.lakes,
                 _ => continue,
             };
             if let Some(outline) = cache.outline(map, id) {

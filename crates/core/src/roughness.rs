@@ -217,7 +217,7 @@ fn key_bits(k: (i64, i64)) -> u64 {
 }
 
 /// SplitMix64's finaliser over the combined state.
-fn mix(state: u64, value: u64) -> u64 {
+pub(crate) fn mix(state: u64, value: u64) -> u64 {
     let mut z = state
         .wrapping_add(value.wrapping_mul(0x9E37_79B9_7F4A_7C15))
         .wrapping_add(0x9E37_79B9_7F4A_7C15);
@@ -227,7 +227,7 @@ fn mix(state: u64, value: u64) -> u64 {
 }
 
 /// A value in `[0, 1)`, exact in `f64`.
-fn unit(hash: u64) -> f64 {
+pub(crate) fn unit(hash: u64) -> f64 {
     (hash >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
 }
 

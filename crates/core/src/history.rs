@@ -316,6 +316,10 @@ fn op_bytes(op: &Op) -> usize {
                 property: Property::Label(label),
                 ..
             } => std::mem::size_of::<Label>() + label.text.len(),
+            Op::SetProperty {
+                property: Property::River(river),
+                ..
+            } => river_bytes(river),
             Op::ReplaceGeometry { geometry, .. } => geometry_bytes(geometry),
             Op::SetBlob { data, .. } => data.as_ref().map_or(0, |data| data.len()),
             Op::Remove { .. }
@@ -341,10 +345,18 @@ fn subtree_bytes(subtree: &Subtree) -> usize {
         Node::Layer(layer) => layer.name.len(),
         Node::Object(object) => match &object.kind {
             ObjectKind::Label(label) => label.text.len(),
+            ObjectKind::River(river) => river_bytes(river),
             kind => kind.geometry().map_or(0, geometry_bytes),
         },
     };
     std::mem::size_of::<Subtree>() + own + subtree.children.iter().map(subtree_bytes).sum::<usize>()
+}
+
+/// A River holds its path and its generated outline.
+fn river_bytes(river: &crate::river::River) -> usize {
+    std::mem::size_of::<crate::river::River>()
+        + std::mem::size_of_val(river.path())
+        + geometry_bytes(river.outline())
 }
 
 fn geometry_bytes(geometry: &MultiPolygon) -> usize {

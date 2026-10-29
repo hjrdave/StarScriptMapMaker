@@ -10,6 +10,7 @@ use crate::extra::Extra;
 use crate::geometry::{MultiPolygon, Point};
 use crate::id::Id;
 use crate::label::Label;
+use crate::river::River;
 use crate::roughness::Roughness;
 use crate::shore::{ShoreKind, ShoreStyle};
 
@@ -172,6 +173,8 @@ pub enum ObjectKind {
     Stamp(Stamp),
     /// Boxed: a Label carries far more fields than other kinds, and Maps hold many nodes.
     Label(Box<Label>),
+    /// Water along a path from source to mouth. Boxed, as it holds its generated outline.
+    River(Box<River>),
 }
 
 impl ObjectKind {
@@ -180,8 +183,24 @@ impl ObjectKind {
         match self {
             ObjectKind::Landmass(landmass) => Some(&landmass.geometry),
             ObjectKind::Lake(lake) => Some(&lake.geometry),
+            ObjectKind::River(river) => Some(river.outline()),
             ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
         }
+    }
+
+    /// The outline of kinds that store one: Landmasses and Lakes. A River's is generated
+    /// from its path, so it is neither stored nor edited directly.
+    pub(crate) fn stored_geometry(&self) -> Option<&MultiPolygon> {
+        match self {
+            ObjectKind::Landmass(landmass) => Some(&landmass.geometry),
+            ObjectKind::Lake(lake) => Some(&lake.geometry),
+            ObjectKind::River(_) | ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
+        }
+    }
+
+    /// Whether this is water drawn above land: a Lake or a River.
+    pub fn is_water(&self) -> bool {
+        matches!(self, ObjectKind::Lake(_) | ObjectKind::River(_))
     }
 
     /// The fill colour of kinds that have an outline.
@@ -189,6 +208,7 @@ impl ObjectKind {
         match self {
             ObjectKind::Landmass(landmass) => Some(landmass.fill),
             ObjectKind::Lake(lake) => Some(lake.fill),
+            ObjectKind::River(river) => Some(river.fill()),
             ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
         }
     }
@@ -197,6 +217,7 @@ impl ObjectKind {
         match self {
             ObjectKind::Landmass(landmass) => Some(&mut landmass.fill),
             ObjectKind::Lake(lake) => Some(&mut lake.fill),
+            ObjectKind::River(river) => Some(river.fill_mut()),
             ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
         }
     }
@@ -205,16 +226,17 @@ impl ObjectKind {
         match self {
             ObjectKind::Landmass(landmass) => Some(&mut landmass.geometry),
             ObjectKind::Lake(lake) => Some(&mut lake.geometry),
-            ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
+            ObjectKind::River(_) | ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
         }
     }
 
-    /// The Roughness override of kinds that have an outline, if set.
+    /// The Roughness override of Landmasses and Lakes, if set. Rivers have none: their bends
+    /// and banks are their detail.
     pub fn roughness(&self) -> Option<&Roughness> {
         match self {
             ObjectKind::Landmass(landmass) => landmass.roughness.as_ref(),
             ObjectKind::Lake(lake) => lake.roughness.as_ref(),
-            ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
+            ObjectKind::River(_) | ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
         }
     }
 
@@ -222,25 +244,26 @@ impl ObjectKind {
         match self {
             ObjectKind::Landmass(landmass) => Some(&mut landmass.roughness),
             ObjectKind::Lake(lake) => Some(&mut lake.roughness),
-            ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
+            ObjectKind::River(_) | ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
         }
     }
 
-    /// A copy with an empty outline, for storing the outline separately.
     /// The Shore style override of kinds that have an outline, if set.
     pub fn shore(&self) -> Option<&ShoreStyle> {
         match self {
             ObjectKind::Landmass(landmass) => landmass.shore.as_ref(),
             ObjectKind::Lake(lake) => lake.shore.as_ref(),
+            ObjectKind::River(river) => river.shore(),
             ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
         }
     }
 
     /// Which Map-wide Shore style default this kind uses, for kinds that have an outline.
+    /// Rivers use the Lakes' default, so fresh water looks alike.
     pub fn shore_kind(&self) -> Option<ShoreKind> {
         match self {
             ObjectKind::Landmass(_) => Some(ShoreKind::Landmass),
-            ObjectKind::Lake(_) => Some(ShoreKind::Lake),
+            ObjectKind::Lake(_) | ObjectKind::River(_) => Some(ShoreKind::Lake),
             ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
         }
     }
@@ -249,10 +272,12 @@ impl ObjectKind {
         match self {
             ObjectKind::Landmass(landmass) => Some(&mut landmass.shore),
             ObjectKind::Lake(lake) => Some(&mut lake.shore),
+            ObjectKind::River(river) => Some(river.shore_mut()),
             ObjectKind::Stamp(_) | ObjectKind::Label(_) => None,
         }
     }
 
+    /// A copy with an empty stored outline, for storing the outline separately.
     pub(crate) fn without_geometry(&self) -> ObjectKind {
         match self {
             ObjectKind::Landmass(landmass) => ObjectKind::Landmass(Landmass {
@@ -269,7 +294,7 @@ impl ObjectKind {
                 shore: lake.shore.clone(),
                 extra: lake.extra.clone(),
             }),
-            ObjectKind::Stamp(_) | ObjectKind::Label(_) => self.clone(),
+            ObjectKind::River(_) | ObjectKind::Stamp(_) | ObjectKind::Label(_) => self.clone(),
         }
     }
 
@@ -280,6 +305,7 @@ impl ObjectKind {
             ObjectKind::Lake(_) => "lake",
             ObjectKind::Stamp(_) => "stamp",
             ObjectKind::Label(_) => "label",
+            ObjectKind::River(_) => "river",
         }
     }
 }

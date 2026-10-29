@@ -120,7 +120,7 @@ pub fn brush_command(
             .filter(|&id| matches!(map.node(id), Some(Node::Object(o)) if want(&o.kind)))
             .collect()
     };
-    let is_outline = |kind: &ObjectKind| kind.geometry().is_some();
+    let is_outline = |kind: &ObjectKind| kind.stored_geometry().is_some();
     let is_lake = |kind: &ObjectKind| matches!(kind, ObjectKind::Lake(_));
     let is_landmass = |kind: &ObjectKind| matches!(kind, ObjectKind::Landmass(_));
     let layer = active_layer.filter(|&id| matches!(map.node(id), Some(Node::Layer(_))));

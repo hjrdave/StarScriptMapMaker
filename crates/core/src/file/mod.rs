@@ -8,7 +8,7 @@
 //!   `parent` are 16-byte UUIDs, and `parent` is NULL for a top-level Layer. `ord` is the
 //!   index among siblings, 0 drawing lowest. `kind` is `layer` or the Object kind. `props` is
 //!   the node as JSON without its outline, and `geometry` is the outline of a Landmass or Lake
-//!   as a binary blob (see `blob.rs`).
+//!   as a binary blob (see `blob.rs`). A River has no blob.
 //!
 //! - `blobs (hash, data)` and `embedded (kind, key, props)`: the Assets and fonts the Map
 //!   embeds (see `embed.rs`). Added in format 1.1; a 1.0 file gains them on its next save.
@@ -20,6 +20,8 @@
 //!   Format 1.10 adds the `boards` meta key (JSON): the primary board's id and every board in
 //!   order, each with its id, name, size, origin and background. `canvas` keeps a copy of the
 //!   primary board for readers that know only one; a file without `boards` opens as one board.
+//!   Format 1.11 adds River Objects (`kind` `river`): their props hold the path, and their
+//!   outline is generated from it on open, so they have no `geometry` blob.
 //!   Format 1.6 stores Groups: Layers nested inside Layers, with `parent` pointing at the
 //!   enclosing Layer. There is no compatibility with older files.
 //!
@@ -60,7 +62,7 @@ use crate::node::{Node, Object};
 /// anything else, and needs a migration.
 pub const FORMAT_VERSION: FormatVersion = FormatVersion {
     major: 1,
-    minor: 10,
+    minor: 11,
 };
 
 /// What the `boards` meta key holds.
@@ -676,7 +678,7 @@ fn encode_node(node: &Node) -> (&'static str, String, Option<Vec<u8>>) {
     let to_json = |node: &Node| serde_json::to_string(node).expect("a node serialises");
     match node {
         Node::Layer(_) => ("layer", to_json(node), None),
-        Node::Object(object) => match object.kind.geometry() {
+        Node::Object(object) => match object.kind.stored_geometry() {
             None => (object.kind.name(), to_json(node), None),
             Some(geometry) => {
                 let stripped = Node::Object(Object {

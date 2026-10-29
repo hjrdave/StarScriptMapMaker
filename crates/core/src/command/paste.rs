@@ -287,6 +287,7 @@ fn pasted_subtree(
                     return Err(CommandError::InvalidGeometry { id, problem });
                 }
             }
+            ObjectKind::River(river) => **river = river.transformed(translate),
             ObjectKind::Stamp(stamp) => {
                 stamp.position = [stamp.position[0] + offset[0], stamp.position[1] + offset[1]];
             }
@@ -333,6 +334,7 @@ fn copied_subtree(
                     return Err(CommandError::InvalidGeometry { id, problem });
                 }
             }
+            ObjectKind::River(river) => **river = river.transformed(translate),
             ObjectKind::Stamp(stamp) => {
                 stamp.position = [stamp.position[0] + offset[0], stamp.position[1] + offset[1]];
             }

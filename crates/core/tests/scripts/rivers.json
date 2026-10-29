@@ -1,0 +1,45 @@
+{
+  "steps": [
+    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000001", "parent": null, "name": "Water"}},
+    {"step": {"command": "create_river", "id": "00000000-0000-7000-8000-000000000002", "parent": "00000000-0000-7000-8000-000000000001", "river": {
+      "path": [
+        {"position": [100, 100], "width": 4},
+        {"position": [300, 180], "width": 10},
+        {"position": [520, 160], "width": 24}
+      ],
+      "seed": 7
+    }}},
+    "snapshot",
+    {"step": {"command": "set_river", "id": "00000000-0000-7000-8000-000000000002", "river": {
+      "path": [
+        {"position": [100, 100], "width": 4},
+        {"position": [300, 180], "width": 10},
+        {"position": [520, 160], "width": 24}
+      ],
+      "meander": 0.9, "seed": 8, "fill": "#5f98b8"
+    }}},
+    {"begin": {"label": "Move Points", "selection": ["00000000-0000-7000-8000-000000000002"]}},
+    {"execute": {"command": "move_nodes", "id": "00000000-0000-7000-8000-000000000002", "nodes": [{"part": 0, "ring": 0, "index": 1}], "offset": [5, 0]}},
+    "rewind",
+    {"execute": {"command": "move_nodes", "id": "00000000-0000-7000-8000-000000000002", "nodes": [{"part": 0, "ring": 0, "index": 1}], "offset": [20, -40]}},
+    {"commit": {"selection": ["00000000-0000-7000-8000-000000000002"]}},
+    {"step": {"command": "insert_node", "id": "00000000-0000-7000-8000-000000000002", "edge": {"part": 0, "ring": 0, "index": 1}, "point": [420, 150]}},
+    {"step": {"command": "delete_nodes", "id": "00000000-0000-7000-8000-000000000002", "nodes": [{"part": 0, "ring": 0, "index": 0}]}},
+    {"step": {"command": "delete_nodes", "id": "00000000-0000-7000-8000-000000000002", "nodes": [{"part": 0, "ring": 0, "index": 0}, {"part": 0, "ring": 0, "index": 1}]}},
+    {"step": {"command": "move_nodes", "id": "00000000-0000-7000-8000-000000000002", "nodes": [{"part": 0, "ring": 1, "index": 0}], "offset": [1, 1]}},
+    {"step": {"command": "translate", "ids": ["00000000-0000-7000-8000-000000000002"], "offset": [10, 20]}},
+    {"step": {"command": "transform", "ids": ["00000000-0000-7000-8000-000000000002"], "transform": [2, 0, 0, 2, 0, 0]}},
+    {"step": {"command": "set_fill", "ids": ["00000000-0000-7000-8000-000000000002"], "fill": "#4f88a8"}},
+    {"step": {"command": "set_roughness", "ids": ["00000000-0000-7000-8000-000000000002"], "roughness": {"amount": 4, "scale": 20, "seed": 1}}},
+    {"step": {"command": "add_region", "id": "00000000-0000-7000-8000-000000000002", "region": [{"exterior": [[0, 0], [10, 0], [10, 10]]}]}},
+    {"step": {"command": "set_river", "id": "00000000-0000-7000-8000-000000000002", "river": {"path": [{"position": [0, 0], "width": 4}, {"position": [50, 0], "width": 0.1}]}}},
+    {"step": {"command": "set_river", "id": "00000000-0000-7000-8000-000000000001", "river": {"path": [{"position": [0, 0], "width": 4}, {"position": [50, 0], "width": 4}]}}},
+    {"step": {"command": "set_locked", "id": "00000000-0000-7000-8000-000000000002", "locked": true}},
+    {"step": {"command": "translate", "ids": ["00000000-0000-7000-8000-000000000002"], "offset": [1, 1]}},
+    "undo",
+    "undo",
+    "snapshot",
+    "undo",
+    "undo"
+  ]
+}
