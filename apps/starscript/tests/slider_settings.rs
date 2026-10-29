@@ -79,7 +79,7 @@ fn scrub(harness: &mut Harness<'static, MapMakerApp>, label: &str, dx: f32) {
 
 #[test]
 fn each_scatter_field_takes_a_scrub_without_an_undo_step() {
-    for label in ["Density", "Spacing", "Size jitter", "Rotation jitter"] {
+    for label in ["Density", "Spacing", "Size jitter", "Tilt jitter"] {
         let mut harness = stamp_app();
         let before = undo_label(&harness);
         let scatter = harness.state().editor().scatter.clone();
@@ -92,7 +92,7 @@ fn each_scatter_field_takes_a_scrub_without_an_undo_step() {
 #[test]
 fn the_scatter_fields_stop_at_their_range_ends() {
     let mut harness = stamp_app();
-    for label in ["Density", "Spacing", "Size jitter", "Rotation jitter"] {
+    for label in ["Density", "Spacing", "Size jitter", "Tilt jitter"] {
         scrub(&mut harness, label, 4000.0);
     }
     let scatter = &harness.state().editor().scatter;
