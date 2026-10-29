@@ -1,13 +1,14 @@
 //! The active tool's settings, at the top of Properties above the selection: the Land Brush's
-//! size and mode, the River's width and bending, the Stamp's chosen Asset and its scatter
-//! settings, and the Stamp Eraser's size. Tools without settings get no section.
+//! size and mode, the River's width and bending and the Stamp Eraser's size. Tools without
+//! settings get no section. The Stamp's own settings are sections of Properties, like a
+//! selected Stamp's, so they are laid out by [`ToolSection::stamp_asset`] and [`scatter_sections`].
 
 use eframe::egui;
 use ssmap_core::scatter::Placement;
 
 use crate::editor::Editor;
 use crate::icons::{self, Icon};
-use crate::prop_widgets::{self, Handle, Provenance, ScrubSpec};
+use crate::prop_widgets::{self, Provenance, ScrubSpec, SectionHeader};
 use crate::theme;
 use crate::tools::{self, ToolId};
 
@@ -37,17 +38,8 @@ pub(crate) fn icon(tool: ToolId) -> Icon {
 fn has_section(tool: ToolId) -> bool {
     matches!(
         tool,
-        ToolId::LandBrush
-            | ToolId::WaterBrush
-            | ToolId::River
-            | ToolId::Stamp
-            | ToolId::StampEraser
+        ToolId::LandBrush | ToolId::WaterBrush | ToolId::River | ToolId::StampEraser
     )
-}
-
-/// A scrub field that writes straight to `value`. Returns whether it changed.
-fn field(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> bool {
-    prop_widgets::scrub_field(ui, value, spec).changed
 }
 
 impl ToolSection {
@@ -75,11 +67,6 @@ impl ToolSection {
                 match tool {
                     ToolId::LandBrush | ToolId::WaterBrush => land_brush(ui, editor),
                     ToolId::River => river(ui, editor),
-                    ToolId::Stamp => {
-                        self.chosen_asset(ui, editor);
-                        ui.add_space(theme::SPACING[2]);
-                        scatter_settings(ui, editor);
-                    }
                     ToolId::StampEraser => size(ui, editor),
                     _ => {}
                 }
@@ -90,7 +77,8 @@ impl ToolSection {
 
 impl ToolSection {
     /// The Asset the Stamp places, as a card that opens the Assets section where it is chosen.
-    fn chosen_asset(&mut self, ui: &mut egui::Ui, editor: &Editor) {
+    /// Shown by the Stamp tool when no Stamp is selected; a selected Stamp has its own card.
+    pub(crate) fn stamp_asset(&mut self, ui: &mut egui::Ui, editor: &Editor) {
         let palette = theme::palette(ui.ctx());
         let card = editor
             .selected_asset
@@ -168,13 +156,6 @@ fn header(ui: &mut egui::Ui, tool: ToolId) {
     });
 }
 
-/// The brush diameter in Canvas units, which `[` and `]` also change.
-fn size_spec() -> ScrubSpec<'static> {
-    ScrubSpec::new("Size")
-        .unit(" u")
-        .range(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end())
-}
-
 /// The brush size of the Land Brush, Lake Brush and Stamp Eraser: a logarithmic slider,
 /// where dragging along the track is the point.
 fn size(ui: &mut egui::Ui, editor: &mut Editor) {
@@ -247,58 +228,65 @@ fn river(ui: &mut egui::Ui, editor: &mut Editor) {
     );
 }
 
-fn scatter_settings(ui: &mut egui::Ui, editor: &mut Editor) {
-    let brush_size = &mut editor.brush_size;
-    let brush = &mut editor.scatter;
-    prop_widgets::pair(
-        ui,
-        |ui| field(ui, brush_size, &size_spec().handle(Handle::Text("S"))),
-        |ui| {
-            let spec = ScrubSpec::new("Rotation jitter")
-                .handle(Handle::Icon(Icon::Rotate))
-                .range(0.0, 180.0)
-                .unit("°");
-            field(ui, &mut brush.rotation_jitter, &spec)
-        },
-    );
-    let mut place = match brush.placement {
-        Placement::Land => 0,
-        Placement::Water => 1,
-        Placement::Anywhere => 2,
+/// The Stamp tool's settings as the sections Properties uses for a selected Stamp: where and
+/// how densely it scatters, then what it randomises.
+pub(crate) fn scatter_sections(ui: &mut egui::Ui, editor: &mut Editor) {
+    let header = |kind, title| SectionHeader {
+        kind,
+        title,
+        badge: None,
+        action: None,
     };
-    prop_widgets::field_row(ui, "Place on", Provenance::Plain, |ui| {
-        if prop_widgets::segmented(ui, &["Land", "Water", "Any"], &mut place) {
-            brush.placement = [Placement::Land, Placement::Water, Placement::Anywhere][place];
-        }
-    });
-    prop_widgets::field_row(ui, "Randomise", Provenance::Plain, |ui| {
-        prop_widgets::chip_toggle(ui, "Flip", &mut brush.random_flip);
-        prop_widgets::chip_toggle(ui, "Variant", &mut brush.random_variant);
-    });
-    field(
-        ui,
-        &mut brush.density,
-        &ScrubSpec::new("Density")
+    prop_widgets::section(ui, header("scatter", "Scatter"), |ui| {
+        let brush = &mut editor.scatter;
+        let mut place = match brush.placement {
+            Placement::Land => 0,
+            Placement::Water => 1,
+            Placement::Anywhere => 2,
+        };
+        prop_widgets::field_row(ui, "Place on", Provenance::Plain, |ui| {
+            if prop_widgets::segmented(ui, &["Land", "Water", "Any"], &mut place) {
+                brush.placement = [Placement::Land, Placement::Water, Placement::Anywhere][place];
+            }
+        });
+        size(ui, editor);
+        let brush = &mut editor.scatter;
+        let density = ScrubSpec::new("Density")
             .range(0.5, 100.0)
             .decimals(1)
-            .step(0.1),
-    );
-    field(
-        ui,
-        &mut brush.spacing,
-        &ScrubSpec::new("Spacing").range(0.0, 2000.0),
-    );
-    let mut jitter = brush.size_jitter * 100.0;
-    if field(
-        ui,
-        &mut jitter,
-        &ScrubSpec::new("Size jitter").range(0.0, 90.0).unit("%"),
-    ) {
-        brush.size_jitter = jitter / 100.0;
-    }
-    ui.label(
-        egui::RichText::new("Click to place · drag to scatter")
-            .size(theme::CAPTION)
-            .color(theme::palette(ui.ctx()).text_tertiary),
-    );
+            .step(0.1)
+            .logarithmic()
+            .default_value(8.0);
+        prop_widgets::slider(ui, &mut brush.density, &density);
+        let spacing = ScrubSpec::new("Spacing")
+            .range(0.0, 2000.0)
+            .slider_max(200.0)
+            .default_value(10.0);
+        prop_widgets::slider(ui, &mut brush.spacing, &spacing);
+        ui.label(
+            egui::RichText::new("Click to place · drag to scatter")
+                .size(theme::CAPTION)
+                .color(theme::palette(ui.ctx()).text_tertiary),
+        );
+    });
+    prop_widgets::section(ui, header("randomise", "Randomise"), |ui| {
+        let brush = &mut editor.scatter;
+        prop_widgets::field_row(ui, "Random", Provenance::Plain, |ui| {
+            prop_widgets::chip_toggle(ui, "Flip", &mut brush.random_flip);
+            prop_widgets::chip_toggle(ui, "Variant", &mut brush.random_variant);
+        });
+        let mut jitter = brush.size_jitter * 100.0;
+        let spec = ScrubSpec::new("Size jitter")
+            .range(0.0, 90.0)
+            .unit("%")
+            .default_value(20.0);
+        if prop_widgets::slider(ui, &mut jitter, &spec).changed {
+            brush.size_jitter = jitter / 100.0;
+        }
+        let tilt = ScrubSpec::new("Tilt jitter")
+            .range(0.0, 180.0)
+            .unit("°")
+            .default_value(0.0);
+        prop_widgets::slider(ui, &mut brush.rotation_jitter, &tilt);
+    });
 }

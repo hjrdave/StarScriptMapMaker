@@ -127,7 +127,19 @@ impl PropertiesPanel {
             .show(ui, |ui| {
                 self.tool_section.show(ui, editor);
                 ui.add_space(theme::SPACING[1]);
+                // The Stamp tool's settings are sections like a selected Stamp's: with nothing
+                // selected they come first, with the Asset card; otherwise below the selection.
+                let stamp_tool = editor.active_tool == crate::tools::ToolId::Stamp;
+                let nothing_selected = editor.selection().is_empty();
+                if stamp_tool && nothing_selected {
+                    self.tool_section.stamp_asset(ui, editor);
+                    ui.add_space(theme::SPACING[2]);
+                    crate::tool_section::scatter_sections(ui, editor);
+                }
                 self.selection(ui, editor);
+                if stamp_tool && !nothing_selected {
+                    crate::tool_section::scatter_sections(ui, editor);
+                }
             });
         ui.painter().hline(
             rect.x_range(),
