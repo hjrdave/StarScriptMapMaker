@@ -17,6 +17,7 @@ mod layer;
 mod link;
 mod object;
 mod paste;
+mod river;
 mod stamp;
 
 use schemars::JsonSchema;
@@ -32,6 +33,7 @@ use crate::land as outlines;
 use crate::map::{Map, Subtree};
 use crate::node::{Membership, Stamp};
 use crate::op::Op;
+use crate::river::River;
 use crate::roughness::Roughness;
 use crate::shore::{ShoreKind, ShoreStyle};
 
@@ -186,17 +188,41 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         fill: Option<Color>,
     },
-    /// Moves the outlines of Landmasses and Lakes by `offset` Canvas units.
+    /// Creates a River with the given id inside Layer `parent`. `index` counts from the
+    /// bottom of the Stacking order; omitted, the River goes on top. Its outline is generated
+    /// from its path.
+    CreateRiver {
+        /// The id the new River gets.
+        id: Id,
+        /// The Layer to create it in.
+        parent: Id,
+        /// Where the node goes among its siblings, counted from the bottom of the Stacking order.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<usize>,
+        /// The River to create.
+        river: Box<River>,
+    },
+    /// Replaces every field of a River, as one edit: its points and widths, bending, seed,
+    /// colour or Shore style.
+    SetRiver {
+        /// The River to replace.
+        id: Id,
+        /// Its new content.
+        river: Box<River>,
+    },
+    /// Moves the outlines of Landmasses and Lakes, and the paths of Rivers, by `offset` Canvas
+    /// units.
     Translate {
-        /// The Landmasses and Lakes to move.
+        /// The Landmasses, Lakes and Rivers to move.
         ids: Vec<Id>,
         /// How far to move them, in Canvas units, as `[x, y]`.
         offset: [f64; 2],
     },
     /// Applies an affine transform to the outlines of Landmasses and Lakes, as dragging a
-    /// resize handle does. It must not collapse them to a line or a point.
+    /// resize handle does. It must not collapse them to a line or a point. A River's points
+    /// move with it, and its widths scale with its area.
     Transform {
-        /// The Landmasses and Lakes to transform.
+        /// The Landmasses, Lakes and Rivers to transform.
         ids: Vec<Id>,
         /// The affine transform to apply.
         transform: Affine,
@@ -219,9 +245,9 @@ pub enum Command {
         region: MultiPolygon,
     },
     /// Moves nodes of a Landmass or Lake by `offset` Canvas units. If that makes the outline
-    /// cross itself, it is repaired.
+    /// cross itself, it is repaired. For a River, the nodes are the points of its path.
     MoveNodes {
-        /// The Landmass or Lake the nodes belong to.
+        /// The Landmass, Lake or River the nodes belong to.
         id: Id,
         /// The nodes to move.
         nodes: Vec<NodeRef>,
@@ -229,17 +255,19 @@ pub enum Command {
         offset: [f64; 2],
     },
     /// Adds a node at `point` on the edge that runs from `edge` to the next point of its ring.
+    /// A point added to a River's path is as wide as the River is there.
     InsertNode {
-        /// The Landmass or Lake to add the node to.
+        /// The Landmass, Lake or River to add the node to.
         id: Id,
         /// The node the edge starts from.
         edge: NodeRef,
         /// Where the new node goes.
         point: Point,
     },
-    /// Deletes nodes. A ring cannot be left with fewer than three points.
+    /// Deletes nodes. A ring cannot be left with fewer than three points, nor a River's path
+    /// with fewer than two.
     DeleteNodes {
-        /// The Landmass or Lake the nodes belong to.
+        /// The Landmass, Lake or River the nodes belong to.
         id: Id,
         /// The nodes to delete.
         nodes: Vec<NodeRef>,
@@ -552,6 +580,8 @@ impl Command {
             Command::Delete { .. } => "Delete",
             Command::CreateLandmass { .. } => "Create Landmass",
             Command::CreateLake { .. } => "Create Lake",
+            Command::CreateRiver { .. } => "Add River",
+            Command::SetRiver { .. } => "Edit River",
             Command::Translate { .. } => "Move",
             Command::Transform { .. } => "Transform",
             Command::AddRegion { .. } => "Add Region",
@@ -649,6 +679,22 @@ impl Command {
             Command::Transform { ids, transform: t } => object::transform(map, ids, t),
             Command::AddRegion { id, region } => land::add_region(map, *id, region),
             Command::SubtractRegion { ids, region } => land::subtract_region(map, ids, region),
+            Command::CreateRiver {
+                id,
+                parent,
+                index,
+                river: new,
+            } => river::create_river(map, *id, *parent, *index, new),
+            Command::SetRiver { id, river: new } => river::set_river(map, *id, new),
+            Command::MoveNodes { id, nodes, offset } if river::river(map, *id).is_some() => {
+                river::move_points(map, *id, nodes, *offset)
+            }
+            Command::InsertNode { id, edge, point } if river::river(map, *id).is_some() => {
+                river::insert_point(map, *id, *edge, *point)
+            }
+            Command::DeleteNodes { id, nodes } if river::river(map, *id).is_some() => {
+                river::delete_points(map, *id, nodes)
+            }
             Command::MoveNodes { id, nodes, offset } => node_edit(map, *id, |outline| {
                 outlines::move_nodes(outline, nodes, *offset)
             }),

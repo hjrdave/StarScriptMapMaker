@@ -18,6 +18,7 @@ use crate::id::Id;
 use crate::label::Label;
 use crate::map::{Board, InvariantError, Map, MapDefaults, Subtree};
 use crate::node::{Membership, Node, ObjectKind, Stamp};
+use crate::river::River;
 use crate::roughness::Roughness;
 use crate::shore::ShoreStyle;
 
@@ -47,7 +48,8 @@ pub enum Op {
         /// The property and its new value.
         property: Property,
     },
-    /// Replaces the outline of a Landmass or Lake.
+    /// Replaces the outline of a Landmass or Lake. A River's is generated, so it has none to
+    /// replace.
     ReplaceGeometry {
         /// The Landmass or Lake to change.
         id: Id,
@@ -188,6 +190,8 @@ pub enum Property {
     Label(Box<Label>),
     /// Stamp Objects only: every field of the Stamp at once.
     Stamp(Box<Stamp>),
+    /// River Objects only: every field of the River at once.
+    River(Box<River>),
 }
 
 /// Why an Op did not apply. The Map is left unchanged.
@@ -483,8 +487,9 @@ impl Map {
                 check_property(self.existing(*id)?, property)
                     .map_err(|name| OpError::NoSuchProperty(*id, name))?;
             }
+            // A River's outline is generated from its path, so there is none to replace.
             Op::ReplaceGeometry { id, .. } => match self.existing(*id)? {
-                Node::Object(object) if object.kind.geometry().is_some() => {}
+                Node::Object(object) if object.kind.stored_geometry().is_some() => {}
                 _ => return Err(OpError::NoGeometry(*id)),
             },
             Op::Move { id, parent, index } => {
@@ -585,12 +590,15 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
         (Node::Layer(_), Property::Fill(_)) => Err("fill"),
         (Node::Layer(_), Property::Label(_)) => Err("label"),
         (Node::Layer(_), Property::Stamp(_)) => Err("stamp"),
+        (Node::Layer(_), Property::River(_)) => Err("river"),
         (Node::Layer(_), Property::Roughness(_)) => Err("roughness"),
         (Node::Layer(_), Property::Shore(_)) => Err("shore"),
         (Node::Object(object), Property::Shore(_)) if object.kind.geometry().is_none() => {
             Err("shore")
         }
-        (Node::Object(object), Property::Roughness(_)) if object.kind.geometry().is_none() => {
+        (Node::Object(object), Property::Roughness(_))
+            if object.kind.geometry().is_none() || matches!(object.kind, ObjectKind::River(_)) =>
+        {
             Err("roughness")
         }
         (Node::Object(object), Property::Label(_)) => match object.kind {
@@ -600,6 +608,10 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
         (Node::Object(object), Property::Stamp(_)) => match object.kind {
             ObjectKind::Stamp(_) => Ok(()),
             _ => Err("stamp"),
+        },
+        (Node::Object(object), Property::River(_)) => match object.kind {
+            ObjectKind::River(_) => Ok(()),
+            _ => Err("river"),
         },
         (Node::Layer(_), _)
         | (
@@ -687,6 +699,10 @@ fn set_property(node: &mut Node, property: Property) -> Property {
         },
         (Node::Object(object), Property::Stamp(stamp)) => match &mut object.kind {
             ObjectKind::Stamp(old) => Property::Stamp(Box::new(std::mem::replace(old, *stamp))),
+            _ => unreachable!("rejected by check_property"),
+        },
+        (Node::Object(object), Property::River(river)) => match &mut object.kind {
+            ObjectKind::River(old) => Property::River(std::mem::replace(old, river)),
             _ => unreachable!("rejected by check_property"),
         },
         (_, _) => unreachable!("rejected by check_property"),

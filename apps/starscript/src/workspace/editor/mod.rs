@@ -8,6 +8,7 @@ mod gesture;
 mod history;
 mod paste;
 mod placement;
+mod rivers;
 mod shapes;
 mod strokes;
 mod structure;
@@ -44,6 +45,7 @@ use caches::Caches;
 use clipboard::ClipboardSlot;
 use gesture::OpenGesture;
 pub use gesture::{Gesture, GestureId};
+pub use rivers::DEFAULT_RIVER_WIDTH;
 
 /// The land brush's starting diameter, in Canvas units.
 pub const DEFAULT_BRUSH_SIZE: f64 = 48.0;
@@ -73,6 +75,10 @@ pub struct Editor {
     pub brush_size: f64,
     /// Whether the land brush erases by default; holding the erase modifier gives the other.
     pub erase_default: bool,
+    /// The width the River tool gives the next point it places, in Canvas units.
+    pub river_width: f64,
+    /// How much the River tool's new Rivers bend, from 0 to 1.
+    pub river_meander: f64,
     node_edit: Option<NodeEdit>,
     /// Whether the Canvas is what's selected, rather than layers or Objects.
     /// The board selected with the Art board tool: the Canvas or an Art board.
@@ -142,8 +148,8 @@ fn group_of(library: &ssmap_core::asset::PackLibrary, asset: &AssetRef) -> Vec<A
         .collect()
 }
 
-/// Node-edit mode: one Landmass or Lake whose stored vertices show as nodes, and the nodes
-/// selected among them.
+/// Node-edit mode: one Landmass or Lake whose stored vertices show as nodes, or one River whose
+/// path's points do, and the nodes selected among them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NodeEdit {
     pub id: Id,
@@ -170,6 +176,8 @@ impl Editor {
             rename_request: None,
             brush_size: DEFAULT_BRUSH_SIZE,
             erase_default: false,
+            river_width: DEFAULT_RIVER_WIDTH,
+            river_meander: ssmap_core::River::DEFAULT_MEANDER,
             node_edit: None,
             tool_busy: false,
             cancel_tool: false,

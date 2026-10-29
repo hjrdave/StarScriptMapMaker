@@ -532,7 +532,11 @@ fn edit_shortcuts(editor: &mut Editor, input: &mut egui::InputState, off: &HashS
             editor.active_tool = tool;
         }
     }
-    if tools::uses_brush_size(editor.active_tool) {
+    let river_points = editor.node_edit().is_some() && editor.edited_is_path();
+    if tools::uses_brush_size(editor.active_tool)
+        || editor.active_tool == ToolId::River
+        || river_points
+    {
         let step = if input.consume_key(Modifiers::NONE, Key::OpenBracket) {
             1.0 / BRUSH_SIZE_STEP
         } else if input.consume_key(Modifiers::NONE, Key::CloseBracket) {
@@ -540,8 +544,18 @@ fn edit_shortcuts(editor: &mut Editor, input: &mut egui::InputState, off: &HashS
         } else {
             1.0
         };
-        editor.brush_size = (editor.brush_size * step)
-            .clamp(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end());
+        if editor.active_tool == ToolId::River {
+            editor.river_width = (editor.river_width * step)
+                .clamp(ssmap_core::MIN_RIVER_WIDTH, ssmap_core::MAX_RIVER_WIDTH);
+        } else if river_points {
+            // The selected points of a River being edited widen or narrow.
+            if step != 1.0 {
+                editor.scale_selected_river_widths(step);
+            }
+        } else {
+            editor.brush_size = (editor.brush_size * step)
+                .clamp(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end());
+        }
     }
 }
 

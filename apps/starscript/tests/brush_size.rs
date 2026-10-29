@@ -1,4 +1,4 @@
-//! The Size slider of the Land Brush, Water Brush and Stamp Eraser: a logarithmic slider over
+//! The Size slider of the Land Brush, Lake Brush and Stamp Eraser: a logarithmic slider over
 //! 2–200 with a number box that types up to 2000. Tool settings are not part of the Map, so
 //! none of this makes an Undo step.
 

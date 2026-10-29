@@ -48,7 +48,7 @@ icons! {
     Select, "Select", "select";
     Pan, "Pan", "pan";
     LandBrush, "Land Brush", "land-brush";
-    WaterBrush, "Water Brush", "water-brush";
+    LakeBrush, "Lake Brush", "lake-brush";
     Lasso, "Lasso", "lasso";
     Label, "Label", "label";
     Stamp, "Stamp", "stamp";
@@ -56,6 +56,7 @@ icons! {
     ExportRegion, "Export Region", "export-region";
     Landmass, "Landmass", "landmass";
     Lake, "Lake", "lake";
+    River, "River", "river";
     LabelKind, "Label kind", "label-kind";
     LayerGroup, "Layer / Group", "layer-group";
     History, "History", "history";

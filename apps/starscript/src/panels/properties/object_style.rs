@@ -1,7 +1,7 @@
 //! The Roughness and Shore style sections, for Landmasses and Lakes and for the Map defaults.
 
 use eframe::egui;
-use ssmap_core::{Command, Id, MAX_RIPPLES, Node, Roughness, ShoreStyle};
+use ssmap_core::{Command, Id, MAX_RIPPLES, Node, ObjectKind, Roughness, ShoreStyle};
 
 use super::{Inherit, PropertiesPanel, caption};
 use crate::editor::Editor;
@@ -33,7 +33,12 @@ impl PropertiesPanel {
     }
 
     /// The Roughness section of a Landmass or Lake: its own settings, or the Map default.
+    /// Rivers have none, so a selection with one shows none.
     pub(super) fn object_roughness(&mut self, ui: &mut egui::Ui, editor: &mut Editor, ids: &[Id]) {
+        let river = |id: Id| matches!(editor.map().node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::River(_)));
+        if ids.iter().any(|&id| river(id)) {
+            return;
+        }
         let ids: Vec<Id> = ids
             .iter()
             .copied()

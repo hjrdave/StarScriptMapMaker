@@ -21,7 +21,7 @@ pub(super) fn add_region(
     id: Id,
     region: &MultiPolygon,
 ) -> Result<Vec<Op>, CommandError> {
-    let [id] = outlined(map, &[id])?[..] else {
+    let [id] = stored_outlines(map, &[id])?[..] else {
         unreachable!("one id in, one id out")
     };
     valid_region(id, region)?;
@@ -37,7 +37,7 @@ pub(super) fn subtract_region(
     ids: &[Id],
     region: &MultiPolygon,
 ) -> Result<Vec<Op>, CommandError> {
-    let ids = outlined(map, ids)?;
+    let ids = stored_outlines(map, ids)?;
     if let Some(&first) = ids.first() {
         valid_region(first, region)?;
     }
@@ -202,7 +202,7 @@ pub(super) fn node_edit(
     id: Id,
     edit: impl FnOnce(&MultiPolygon) -> Result<MultiPolygon, land::NodeEditError>,
 ) -> Result<Vec<Op>, CommandError> {
-    let [id] = outlined(map, &[id])?[..] else {
+    let [id] = stored_outlines(map, &[id])?[..] else {
         unreachable!("one id in, one id out")
     };
     let geometry = edit(outline(map, id)).map_err(|e| CommandError::NodeEdit {
@@ -215,7 +215,20 @@ pub(super) fn node_edit(
     Ok(vec![Op::ReplaceGeometry { id, geometry }])
 }
 
-/// Checks that every id is an unlocked Landmass or Lake, and drops repeats.
+/// Like [`outlined`], but refuses Rivers, whose outlines follow their points: for edits to
+/// the stored outline of a Landmass or Lake.
+fn stored_outlines(map: &Map, ids: &[Id]) -> Result<Vec<Id>, CommandError> {
+    let ids = outlined(map, ids)?;
+    match ids
+        .iter()
+        .find(|&&id| super::river::river(map, id).is_some())
+    {
+        Some(&river) => Err(CommandError::RiverOutline(river)),
+        None => Ok(ids),
+    }
+}
+
+/// Checks that every id is an unlocked Landmass, Lake or River, and drops repeats.
 pub(super) fn outlined(map: &Map, ids: &[Id]) -> Result<Vec<Id>, CommandError> {
     let mut seen = HashSet::new();
     let mut unique = Vec::with_capacity(ids.len());
@@ -286,7 +299,7 @@ pub(super) fn set_roughness(
     if let Some(roughness) = roughness {
         valid_roughness(roughness)?;
     }
-    Ok(outlined(map, ids)?
+    Ok(stored_outlines(map, ids)?
         .into_iter()
         .map(|id| set(id, Property::Roughness(roughness.clone())))
         .collect())

@@ -19,6 +19,7 @@ const GROUPS: [&[ToolId]; 4] = [
     &[
         ToolId::LandBrush,
         ToolId::WaterBrush,
+        ToolId::River,
         ToolId::Lasso,
         ToolId::Label,
     ],

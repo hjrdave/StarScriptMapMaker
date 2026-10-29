@@ -61,9 +61,24 @@ pub enum CommandError {
     /// The opacity is outside 0 to 1.
     #[error("opacity must be from 0 to 1, not {0}")]
     InvalidOpacity(f32),
-    /// The node is not a Landmass or Lake, so it has no outline.
-    #[error("{0} is not a Landmass or Lake")]
+    /// The node is not a Landmass, Lake or River, so it has no outline.
+    #[error("{0} is not a Landmass, Lake or River")]
     NoOutline(Id),
+    /// The node is a River, whose outline follows its points: brushes, lassos and Roughness
+    /// do not apply to it.
+    #[error("{0} is a River: its outline follows its points, so edit those instead")]
+    RiverOutline(Id),
+    /// The node is not a River.
+    #[error("{0} is not a River")]
+    NotARiver(Id),
+    /// The River has a value out of range.
+    #[error("invalid River {id}: {problem}")]
+    InvalidRiver {
+        /// The River.
+        id: Id,
+        /// What is wrong with it.
+        problem: String,
+    },
     /// The outline is not a valid shape.
     #[error("the outline of {id} is invalid: {problem}")]
     InvalidGeometry {

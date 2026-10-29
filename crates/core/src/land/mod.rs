@@ -68,7 +68,7 @@ pub fn intersects(a: &MultiPolygon, b: &MultiPolygon) -> bool {
 }
 
 /// Exteriors counter-clockwise and holes clockwise, as stored outlines keep them.
-fn normalised(region: geo::MultiPolygon<f64>) -> MultiPolygon {
+pub(crate) fn normalised(region: geo::MultiPolygon<f64>) -> MultiPolygon {
     from_geo(&region.orient(Direction::Default))
 }
 

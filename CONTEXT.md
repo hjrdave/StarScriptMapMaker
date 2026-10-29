@@ -45,7 +45,7 @@ The single top-to-bottom order of the Map's tree that decides what draws above w
 _Avoid_: Z-order, depth
 
 **Clip**:
-A relationship that restricts a Layer to the shape of a Landmass, so its contents show only where there is land and not where a Lake covers it.
+A relationship that restricts a Layer to the shape of a Landmass, so its contents show only where there is land and not where a Lake or River covers it.
 _Avoid_: Mask
 
 ### Land and water
@@ -62,12 +62,16 @@ _Avoid_: Shore path, outline
 An Object that is a closed region of fresh water drawn above land, separate from any Landmass.
 _Avoid_: Pond, hole
 
+**River**:
+An Object of fresh water that follows a path of points from source to mouth, each point with its own width, so it tapers and bends between them. Its outline is generated from the path and is never edited directly; it draws with the Lakes and ends square at its mouth where it meets other water.
+_Avoid_: Stream, creek, water line
+
 **Roughness**:
 Generated fractal detail added to a Coastline from an amount, a scale and a seed, so a smooth stored outline renders as a jagged coast.
 _Avoid_: Noise, jitter, fractalisation
 
 **Shore style**:
-The set of effects drawn along a Coastline: outline, ripple lines and inner shading. A Map has a default, and each Landmass or Lake may override it.
+The set of effects drawn along a Coastline: outline, ripple lines and inner shading. A Map has a default, and each Landmass, Lake or River may override it. Rivers use the Lakes' default.
 _Avoid_: Coast effect, border style
 
 ### Assets

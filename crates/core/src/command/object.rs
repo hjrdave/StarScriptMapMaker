@@ -91,6 +91,14 @@ pub(super) fn transform(
     ));
     let mut ops = Vec::with_capacity(ids.len());
     for id in ids {
+        if let Some(river) = super::river::river(map, id) {
+            let moved = river.transformed(transform);
+            if let Some(problem) = moved.problem() {
+                return Err(CommandError::InvalidRiver { id, problem });
+            }
+            ops.push(set(id, Property::River(Box::new(moved))));
+            continue;
+        }
         let geometry = outline(map, id).transformed(transform);
         // Huge factors can overflow to infinity even when the transform itself is finite.
         if let Some(problem) = geometry.problem() {

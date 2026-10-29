@@ -1,3 +1,7 @@
+use std::borrow::Cow;
+
+use ssmap_core::Polygon;
+
 use super::*;
 
 impl Editor {
@@ -5,8 +9,33 @@ impl Editor {
         self.node_edit.as_ref()
     }
 
-    /// The stored outline (not the roughened one) of the Object in node-edit mode.
-    pub fn edited_outline(&self) -> Option<&MultiPolygon> {
+    /// The nodes of the Object in node-edit mode: the stored outline (not the roughened one)
+    /// of a Landmass or Lake, or a River's path as one ring, which
+    /// [`Self::edited_is_path`] says is open.
+    pub fn edited_outline(&self) -> Option<Cow<'_, MultiPolygon>> {
+        match self.map.node(self.node_edit.as_ref()?.id)? {
+            Node::Object(object) => match &object.kind {
+                ObjectKind::River(river) => Some(Cow::Owned(MultiPolygon(vec![Polygon {
+                    exterior: river.path().iter().map(|p| p.position).collect(),
+                    holes: Vec::new(),
+                }]))),
+                kind => kind.geometry().map(Cow::Borrowed),
+            },
+            Node::Layer(_) => None,
+        }
+    }
+
+    /// Whether the nodes being edited are a River's path: open, from source to mouth, so no
+    /// edge runs from the last point back to the first.
+    pub fn edited_is_path(&self) -> bool {
+        self.node_edit.as_ref().is_some_and(|edit| {
+            matches!(self.map.node(edit.id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::River(_)))
+        })
+    }
+
+    /// The area of the Object in node-edit mode: its outline, which for a River is the one
+    /// generated from its path. A click inside it keeps node-edit mode.
+    pub fn edited_area(&self) -> Option<&MultiPolygon> {
         match self.map.node(self.node_edit.as_ref()?.id)? {
             Node::Object(object) => object.kind.geometry(),
             Node::Layer(_) => None,

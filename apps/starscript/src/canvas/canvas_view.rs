@@ -20,6 +20,9 @@ use crate::zoom::{self, FRAME_MARGIN as FIT_MARGIN, MAX_ZOOM, MIN_ZOOM, Zoom};
 /// the Canvas redraws at full quality.
 const GESTURE_SETTLE: f64 = 0.15;
 
+/// How far the wheel scrolls, in points, for one notch: one River seed along.
+const RIVER_WHEEL_NOTCH: f32 = 40.0;
+
 /// GPU state shared with egui's renderer, created once at startup.
 struct CanvasResources {
     renderer: CanvasRenderer,
@@ -223,6 +226,41 @@ impl CanvasView {
         self.view.map(|view| view.zoom / pixels_per_point)
     }
 
+    /// Shift and the wheel over the Canvas with the River tool: other bends instead of a zoom.
+    /// Some platforms turn a shifted wheel sideways, so either direction counts, one seed per
+    /// notch. Returns whether the wheel was the River's.
+    fn river_wheel(
+        tools: &mut ToolState,
+        ui: &egui::Ui,
+        response: &egui::Response,
+        editor: &mut Editor,
+    ) -> bool {
+        if editor.active_tool != ToolId::River
+            || !response.hovered()
+            || !ui.input(|i| i.modifiers.shift)
+        {
+            return false;
+        }
+        let notches: f32 = ui.input(|i| {
+            i.raw
+                .events
+                .iter()
+                .map(|event| match event {
+                    egui::Event::MouseWheel { unit, delta, .. } => {
+                        let along = delta.x + delta.y;
+                        match unit {
+                            egui::MouseWheelUnit::Point => along / RIVER_WHEEL_NOTCH,
+                            egui::MouseWheelUnit::Line | egui::MouseWheelUnit::Page => along,
+                        }
+                    }
+                    _ => 0.0,
+                })
+                .sum()
+        });
+        tools.wheel_river_seed(editor, notches);
+        true
+    }
+
     pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         let (rect, response) =
             ui.allocate_exact_size(ui.available_size(), egui::Sense::click_and_drag());
@@ -260,7 +298,9 @@ impl CanvasView {
 
         tools::canvas_input(editor, view, &mut self.tools, &response, ppp);
         Self::context_menu(&mut self.menu_point, &response, editor, view, rect, ppp);
-        if let Some(pointer) = response.hover_pos() {
+        if !Self::river_wheel(&mut self.tools, ui, &response, editor)
+            && let Some(pointer) = response.hover_pos()
+        {
             let (scroll, pinch) = ui.input(|i| (i.smooth_scroll_delta.y, i.zoom_delta()));
             let factor = f64::from(pinch) * (f64::from(scroll) / 200.0).exp();
             let factor = (view.zoom * factor).clamp(MIN_ZOOM, MAX_ZOOM) / view.zoom;

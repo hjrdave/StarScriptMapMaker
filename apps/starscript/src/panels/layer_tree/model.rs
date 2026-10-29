@@ -145,6 +145,7 @@ pub(crate) fn node_name(map: &Map, id: Id) -> String {
         Some(Node::Object(object)) => match &object.kind {
             ObjectKind::Landmass(_) => "Landmass".to_owned(),
             ObjectKind::Lake(_) => "Lake".to_owned(),
+            ObjectKind::River(_) => "River".to_owned(),
             ObjectKind::Stamp(_) => "Stamp".to_owned(),
             // A Label goes by its first line.
             ObjectKind::Label(label) => label.text.lines().next().unwrap_or("Label").to_owned(),
@@ -217,6 +218,7 @@ pub(super) fn kind_icon(node: &Node) -> Icon {
         Node::Object(object) => match object.kind {
             ObjectKind::Landmass(_) => Icon::Landmass,
             ObjectKind::Lake(_) => Icon::Lake,
+            ObjectKind::River(_) => Icon::River,
             ObjectKind::Stamp(_) => Icon::Stamp,
             ObjectKind::Label(_) => Icon::LabelKind,
         },

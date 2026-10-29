@@ -11,6 +11,7 @@ mod label;
 mod lasso;
 mod node_edit;
 mod pan;
+mod river;
 mod scatter;
 mod select;
 #[cfg(test)]
@@ -28,6 +29,7 @@ use self::drag::Drag;
 use self::input::CanvasFrame;
 use self::lasso::Lasso;
 use self::node_edit::NodeDrag;
+use self::river::RiverDraft;
 use self::select::SelectBox;
 
 pub use self::export_region::custom_region;
@@ -40,6 +42,7 @@ pub enum ToolId {
     Pan,
     LandBrush,
     WaterBrush,
+    River,
     Lasso,
     Label,
     Stamp,
@@ -50,11 +53,12 @@ pub enum ToolId {
 }
 
 impl ToolId {
-    pub const ALL: [ToolId; 9] = [
+    pub const ALL: [ToolId; 10] = [
         ToolId::Select,
         ToolId::Pan,
         ToolId::LandBrush,
         ToolId::WaterBrush,
+        ToolId::River,
         ToolId::Lasso,
         ToolId::Label,
         ToolId::Stamp,
@@ -67,7 +71,8 @@ impl ToolId {
             ToolId::Select => "Select",
             ToolId::Pan => "Pan",
             ToolId::LandBrush => "Land Brush",
-            ToolId::WaterBrush => "Water Brush",
+            ToolId::WaterBrush => "Lake Brush",
+            ToolId::River => "River",
             ToolId::Lasso => "Lasso",
             ToolId::Label => "Label",
             ToolId::Stamp => "Stamp",
@@ -85,6 +90,7 @@ impl ToolId {
             ToolId::Pan => (none, egui::Key::H),
             ToolId::LandBrush => (none, egui::Key::B),
             ToolId::WaterBrush => (none, egui::Key::W),
+            ToolId::River => (none, egui::Key::R),
             ToolId::Lasso => (none, egui::Key::L),
             ToolId::Label => (none, egui::Key::T),
             ToolId::Stamp => (none, egui::Key::S),
@@ -134,6 +140,10 @@ const EDGE_GRAB: f64 = 6.0;
 pub struct ToolState {
     drag: Option<Drag>,
     stroke: Option<Stroke>,
+    /// A River being placed with the River tool.
+    river: Option<RiverDraft>,
+    /// Wheel notches turned with Shift held that have not yet made a whole one.
+    river_wheel: f32,
     node_drag: Option<NodeDrag>,
     lasso: Option<Lasso>,
     /// An Export Region drag in progress, with the region as it was before the drag.
@@ -250,6 +260,23 @@ impl ToolState {
         }
     }
 
+    /// Shift and the mouse wheel with the River tool: the bends of another seed for each whole
+    /// notch turned, for the River being placed, or else for the selected Rivers. Turning the
+    /// wheel down goes forward. A trackpad's small steps add up to notches.
+    pub fn wheel_river_seed(&mut self, editor: &mut Editor, notches: f32) {
+        self.river_wheel += notches;
+        let step = self.river_wheel.trunc();
+        if step == 0.0 {
+            return;
+        }
+        self.river_wheel -= step;
+        let step = -(step.clamp(-8.0, 8.0) as i32);
+        match &mut self.river {
+            Some(draft) => draft.step_seed(step),
+            None => editor.step_river_seeds(step),
+        }
+    }
+
     /// Whether a drag is moving, scaling or rotating the selection.
     pub fn dragging(&self) -> bool {
         self.drag.is_some()
@@ -303,6 +330,7 @@ pub fn canvas_input(
             let water = editor.active_tool == ToolId::WaterBrush;
             brush::land_brush(editor, view, state, &frame, water)
         }
+        ToolId::River => river::river_tool(editor, view, state, &frame),
         ToolId::Lasso => {
             lasso::lasso_tool(editor, view, state, &frame);
             frame.hovered.then_some(egui::CursorIcon::Crosshair)
@@ -328,11 +356,15 @@ pub fn canvas_input(
     if editor.active_tool != ToolId::Lasso {
         state.lasso = None;
     }
+    if editor.active_tool != ToolId::River {
+        state.river = None;
+    }
     let scattering = matches!(editor.active_tool, ToolId::Stamp | ToolId::StampEraser);
     if !scattering && !matches!(editor.active_tool, ToolId::LandBrush | ToolId::WaterBrush) {
         state.stroke = None;
     }
     editor.tool_busy = state.lasso.is_some()
+        || state.river.is_some()
         || state.region_drag.is_some()
         || (scattering && state.stroke.is_some());
 }
@@ -358,6 +390,10 @@ pub fn paint_overlay(
     export_region::paint_region(painter, editor, view, origin, ppp);
     if editor.active_tool == ToolId::Lasso {
         lasso::paint_lasso(painter, view, state, origin, hover, ppp);
+    }
+    if editor.active_tool == ToolId::River {
+        river::paint_river(painter, editor, view, state, origin, hover, ppp);
+        return;
     }
     if matches!(editor.active_tool, ToolId::Stamp | ToolId::StampEraser) {
         scatter::paint_scatter_cursor(painter, editor, view, state, origin, hover, ppp);
