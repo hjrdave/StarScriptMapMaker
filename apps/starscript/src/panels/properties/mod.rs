@@ -125,7 +125,8 @@ impl PropertiesPanel {
             .auto_shrink([false, false])
             .max_height((rect.top() - ui.cursor().top()).max(0.0))
             .show(ui, |ui| {
-                self.tool_section.show(ui, editor);
+                let stamp_selected = stamp::stamps(editor.map(), editor.selection()).is_some();
+                self.tool_section.show(ui, editor, stamp_selected);
                 ui.add_space(theme::SPACING[1]);
                 self.selection(ui, editor);
             });

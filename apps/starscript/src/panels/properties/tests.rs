@@ -340,6 +340,20 @@ fn stamp_shows_its_asset_and_scatter_settings_and_select_shows_no_tool_section()
 }
 
 #[test]
+fn a_selected_stamp_is_not_repeated_in_the_stamp_tool_section() {
+    let (mut fixture, layer, _) = fixture();
+    install_test_pack(&mut fixture.editor, false);
+    fixture.editor.active_tool = ToolId::Stamp;
+    let stamp = add_stamp(&mut fixture, layer, 10.0);
+    fixture.editor.select(vec![stamp]);
+    let harness = harness(fixture);
+    assert!(harness.query_by_label("Choose Asset").is_none());
+    for label in ["Density", "Rotation jitter"] {
+        assert!(harness.query_by_label(label).is_some(), "{label}");
+    }
+}
+
+#[test]
 fn the_stamp_section_names_the_chosen_asset_and_asks_for_the_assets_section() {
     let (mut fixture, _, _) = fixture();
     install_test_pack(&mut fixture.editor, false);

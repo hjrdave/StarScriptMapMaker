@@ -7,7 +7,7 @@ use ssmap_core::scatter::Placement;
 
 use crate::editor::Editor;
 use crate::icons::{self, Icon};
-use crate::prop_widgets::{self, Handle, Provenance, ScrubSpec};
+use crate::prop_widgets::{self, Provenance, ScrubSpec};
 use crate::theme;
 use crate::tools::{self, ToolId};
 
@@ -56,7 +56,7 @@ impl ToolSection {
         std::mem::take(&mut self.open_assets)
     }
 
-    pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+    pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor, stamp_selected: bool) {
         let tool = editor.active_tool;
         if !has_section(tool) {
             return;
@@ -76,8 +76,11 @@ impl ToolSection {
                     ToolId::LandBrush | ToolId::WaterBrush => land_brush(ui, editor),
                     ToolId::River => river(ui, editor),
                     ToolId::Stamp => {
-                        self.chosen_asset(ui, editor);
-                        ui.add_space(theme::SPACING[2]);
+                        // A selected Stamp shows its own Asset card below.
+                        if !stamp_selected {
+                            self.chosen_asset(ui, editor);
+                            ui.add_space(theme::SPACING[2]);
+                        }
                         scatter_settings(ui, editor);
                     }
                     ToolId::StampEraser => size(ui, editor),
@@ -250,16 +253,13 @@ fn river(ui: &mut egui::Ui, editor: &mut Editor) {
 fn scatter_settings(ui: &mut egui::Ui, editor: &mut Editor) {
     let brush_size = &mut editor.brush_size;
     let brush = &mut editor.scatter;
-    prop_widgets::pair(
+    field(ui, brush_size, &size_spec());
+    field(
         ui,
-        |ui| field(ui, brush_size, &size_spec().handle(Handle::Text("S"))),
-        |ui| {
-            let spec = ScrubSpec::new("Rotation jitter")
-                .handle(Handle::Icon(Icon::Rotate))
-                .range(0.0, 180.0)
-                .unit("°");
-            field(ui, &mut brush.rotation_jitter, &spec)
-        },
+        &mut brush.rotation_jitter,
+        &ScrubSpec::new("Rotation jitter")
+            .range(0.0, 180.0)
+            .unit("°"),
     );
     let mut place = match brush.placement {
         Placement::Land => 0,
