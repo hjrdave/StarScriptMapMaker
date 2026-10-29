@@ -57,6 +57,7 @@ impl PropertiesPanel {
         let command = resize(editor, id, [x, y], canvas.width, canvas.height);
         self.live
             .apply(editor, merge_edits(x_edit, y_edit), name, || command);
+        caption(ui, "Background");
         self.background_fields(ui, editor, id, &canvas);
         caption(ui, "Board");
         ui.horizontal_wrapped(|ui| {
