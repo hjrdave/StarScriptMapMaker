@@ -222,6 +222,9 @@ pub mod metrics {
     pub const LAYERS_PANEL_MIN: f32 = 200.0;
     pub const LAYERS_PANEL_MAX: f32 = 360.0;
     pub const LAYERS_PANEL_RAIL: f32 = 40.0;
+    /// The left bar while it shows the Map section, whose fields and look buttons need room.
+    pub const MAP_PANEL_DEFAULT: f32 = 320.0;
+    pub const MAP_PANEL_MAX: f32 = 480.0;
     pub const PROPERTIES_PANEL_DEFAULT: f32 = 288.0;
     pub const PROPERTIES_PANEL_MIN: f32 = 260.0;
     pub const PROPERTIES_PANEL_MAX: f32 = 360.0;

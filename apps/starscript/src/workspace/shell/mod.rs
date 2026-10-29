@@ -84,6 +84,9 @@ pub struct Shell {
     #[serde(skip, default = "one_board")]
     board_count: usize,
     layers_width: f32,
+    /// The width of the left bar while it shows the Map section, which has wide fields.
+    #[serde(default = "map_width_default")]
+    map_width: f32,
     properties_width: f32,
     /// The user collapsed Layers to its rail.
     layers_collapsed: bool,
@@ -108,6 +111,10 @@ fn one_board() -> usize {
     1
 }
 
+fn map_width_default() -> f32 {
+    metrics::MAP_PANEL_DEFAULT
+}
+
 fn default_window_width() -> f32 {
     FULL_WIDTH
 }
@@ -123,6 +130,8 @@ pub const MINIMUM_WIDTH: f32 = 1100.0;
 pub const CANVAS_MIN_WIDTH: f32 = 480.0;
 /// The Layers width in the 1180–1359 band.
 const LAYERS_NARROW: f32 = 200.0;
+/// The width of the Map section in that band.
+const MAP_NARROW: f32 = 264.0;
 
 /// How a panel takes part in the layout.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -170,6 +179,7 @@ impl Default for Shell {
             sidebar_section: SidebarSection::default(),
             board_count: one_board(),
             layers_width: metrics::LAYERS_PANEL_DEFAULT,
+            map_width: metrics::MAP_PANEL_DEFAULT,
             properties_width: metrics::PROPERTIES_PANEL_DEFAULT,
             layers_collapsed: true,
             properties_collapsed: false,
@@ -197,14 +207,21 @@ impl Shell {
     }
 
     fn clamped(mut self) -> Self {
-        self.set_width(Side::Left, self.layers_width);
+        let section = self.sidebar_section;
+        for each in SidebarSection::ALL {
+            self.sidebar_section = each;
+            self.set_width(Side::Left, self.width(Side::Left));
+        }
+        self.sidebar_section = section;
         self.set_width(Side::Right, self.properties_width);
         self
     }
 
-    /// The width of the column on `side`, as last set.
+    /// The width of the column on `side`, as last set. The left bar keeps one width for the
+    /// Map section and one for the others.
     pub fn width(&self, side: Side) -> f32 {
         match side {
+            Side::Left if self.sidebar_section == SidebarSection::Map => self.map_width,
             Side::Left => self.layers_width,
             Side::Right => self.properties_width,
         }
@@ -213,6 +230,10 @@ impl Shell {
     /// Sets a column's width, held to its range.
     pub fn set_width(&mut self, side: Side, width: f32) {
         let (range, slot) = match side {
+            Side::Left if self.sidebar_section == SidebarSection::Map => (
+                metrics::LAYERS_PANEL_MIN..=metrics::MAP_PANEL_MAX,
+                &mut self.map_width,
+            ),
             Side::Left => (
                 metrics::LAYERS_PANEL_MIN..=metrics::LAYERS_PANEL_MAX,
                 &mut self.layers_width,
@@ -233,6 +254,9 @@ impl Shell {
         self.set_width(
             side,
             match side {
+                Side::Left if self.sidebar_section == SidebarSection::Map => {
+                    metrics::MAP_PANEL_DEFAULT
+                }
                 Side::Left => metrics::LAYERS_PANEL_DEFAULT,
                 Side::Right => metrics::PROPERTIES_PANEL_DEFAULT,
             },
@@ -347,9 +371,13 @@ impl Shell {
             let layers = if self.layers_collapsed || window_width < NARROW_WIDTH {
                 PanelMode::Rail
             } else if window_width < FULL_WIDTH {
-                PanelMode::Full(LAYERS_NARROW)
+                PanelMode::Full(if self.sidebar_section == SidebarSection::Map {
+                    MAP_NARROW
+                } else {
+                    LAYERS_NARROW
+                })
             } else {
-                PanelMode::Full(self.layers_width)
+                PanelMode::Full(self.width(Side::Left))
             };
             let properties = if self.properties_collapsed || window_width < MINIMUM_WIDTH {
                 PanelMode::Rail

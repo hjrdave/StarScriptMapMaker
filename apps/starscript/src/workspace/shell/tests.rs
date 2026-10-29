@@ -19,6 +19,31 @@ fn widths_are_held_to_their_ranges_and_reset_to_the_defaults() {
 }
 
 #[test]
+fn the_map_section_is_wider_by_default_and_keeps_its_own_width() {
+    let mut shell = Shell::default();
+    assert_eq!(shell.width(Side::Left), metrics::LAYERS_PANEL_DEFAULT);
+    shell.set_sidebar_section(SidebarSection::Map);
+    assert_eq!(shell.width(Side::Left), metrics::MAP_PANEL_DEFAULT);
+    shell.set_width(Side::Left, 9000.0);
+    assert_eq!(shell.width(Side::Left), metrics::MAP_PANEL_MAX);
+    shell.reset_width(Side::Left);
+    assert_eq!(shell.width(Side::Left), metrics::MAP_PANEL_DEFAULT);
+    // Resizing it leaves the other sections' width alone.
+    shell.set_width(Side::Left, 400.0);
+    shell.set_sidebar_section(SidebarSection::Layers);
+    assert_eq!(shell.width(Side::Left), metrics::LAYERS_PANEL_DEFAULT);
+    // In a narrower window the Map section still gets more than the other sections.
+    shell.layers_collapsed = false;
+    shell.set_sidebar_section(SidebarSection::Layers);
+    let narrow = shell.layout(1280.0).layers.width();
+    shell.set_sidebar_section(SidebarSection::Map);
+    assert!(shell.layout(1280.0).layers.width() > narrow);
+    // A layout saved before the Map section existed gets the default.
+    let old: Shell = serde_json::from_str(r#"{"layers_width": 300}"#).unwrap();
+    assert_eq!(old.map_width, metrics::MAP_PANEL_DEFAULT);
+}
+
+#[test]
 fn stored_state_is_clamped_when_loaded_and_survives_a_round_trip() {
     let mut shell = Shell::default();
     shell.set_width(Side::Left, 300.0);
