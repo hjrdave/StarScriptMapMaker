@@ -23,7 +23,7 @@ pub(crate) fn icon(tool: ToolId) -> Icon {
         ToolId::Select => Icon::Select,
         ToolId::Pan => Icon::Pan,
         ToolId::LandBrush => Icon::LandBrush,
-        ToolId::WaterBrush => Icon::WaterBrush,
+        ToolId::WaterBrush => Icon::LakeBrush,
         ToolId::River => Icon::River,
         ToolId::Lasso => Icon::Lasso,
         ToolId::Label => Icon::Label,
@@ -175,7 +175,7 @@ fn size_spec() -> ScrubSpec<'static> {
         .range(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end())
 }
 
-/// The brush size of the Land Brush, Water Brush and Stamp Eraser: a logarithmic slider,
+/// The brush size of the Land Brush, Lake Brush and Stamp Eraser: a logarithmic slider,
 /// where dragging along the track is the point.
 fn size(ui: &mut egui::Ui, editor: &mut Editor) {
     let spec = ScrubSpec::new("Size")

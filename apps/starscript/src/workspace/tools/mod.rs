@@ -71,7 +71,7 @@ impl ToolId {
             ToolId::Select => "Select",
             ToolId::Pan => "Pan",
             ToolId::LandBrush => "Land Brush",
-            ToolId::WaterBrush => "Water Brush",
+            ToolId::WaterBrush => "Lake Brush",
             ToolId::River => "River",
             ToolId::Lasso => "Lasso",
             ToolId::Label => "Label",
