@@ -63,6 +63,53 @@ fn a_committed_stroke_is_lighter_than_its_preview() {
 }
 
 #[test]
+fn a_natural_dab_is_irregular_deterministic_and_seeded() {
+    let tolerance = simplify_tolerance(40.0, 1.0);
+    let dab = |seed| natural_region(&[[100.0, 100.0]], 40.0, tolerance, 0.6, 0.5, seed);
+    let a = dab(1);
+    assert!(!a.is_empty());
+    assert!(a.problem().is_none());
+    assert_oriented(&a);
+    assert_eq!(a, dab(1));
+    assert_ne!(a, dab(2));
+    // Not a disc: the edge's distance from the centre varies.
+    let radii: Vec<f64> = a.0[0]
+        .exterior
+        .iter()
+        .map(|p| (p[0] - 100.0).hypot(p[1] - 100.0))
+        .collect();
+    let (min, max) = radii
+        .iter()
+        .fold((f64::MAX, f64::MIN), |(lo, hi), &r| (lo.min(r), hi.max(r)));
+    assert!(max - min > 40.0 * 0.15, "spread {}", max - min);
+}
+
+#[test]
+fn natural_roughness_zero_is_the_round_brush() {
+    let points: Vec<Point> = (0..30).map(|i| [f64::from(i) * 4.0, 0.0]).collect();
+    let tolerance = simplify_tolerance(20.0, 1.0);
+    assert_eq!(
+        natural_region(&points, 20.0, tolerance, 0.0, 0.5, 7),
+        brush_region(&points, 20.0, tolerance)
+    );
+}
+
+#[test]
+fn a_natural_dab_keeps_its_vertex_count_bounded() {
+    for (radius, roughness, detail) in [(40.0, 1.0, 1.0), (400.0, 1.0, 1.0), (5.0, 1.0, 1.0)] {
+        let tolerance = simplify_tolerance(radius, 1.0);
+        let dab = natural_region(&[[0.0, 0.0]], radius, tolerance, roughness, detail, 3);
+        let vertices: usize = dab
+            .0
+            .iter()
+            .flat_map(Polygon::rings)
+            .map(<[Point]>::len)
+            .sum();
+        assert!(vertices > 0 && vertices <= 400, "{vertices} vertices");
+    }
+}
+
+#[test]
 fn union_and_difference_keep_outlines_valid() {
     let joined = union(&square(0.0, 10.0), &square(5.0, 15.0));
     assert_eq!(joined.0.len(), 1);
