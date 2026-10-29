@@ -378,4 +378,14 @@ mod tests {
         river_tool(&mut editor, &view, &mut state, &enter_key());
         assert!(!rivers(&editor)[0].open_source());
     }
+
+    #[test]
+    fn a_river_that_starts_in_the_open_sea_keeps_its_pointed_source() {
+        let (mut editor, view, mut state) = (land_with_a_lake(), view(), ToolState::default());
+        for (x, y) in [(20.0, 150.0), (150.0, 150.0)] {
+            river_tool(&mut editor, &view, &mut state, &click_at(x, y));
+        }
+        river_tool(&mut editor, &view, &mut state, &enter_key());
+        assert!(!rivers(&editor)[0].open_source());
+    }
 }

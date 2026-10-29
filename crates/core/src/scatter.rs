@@ -94,6 +94,11 @@ impl Terrain {
             && !self.lakes.iter().any(|outline| outline.contains(point))
     }
 
+    /// Whether `point` is in a Lake or a River, as opposed to the open sea or land.
+    pub fn in_lake(&self, point: Point) -> bool {
+        self.lakes.iter().any(|outline| outline.contains(point))
+    }
+
     /// Whether `point` is somewhere `placement` allows.
     pub fn allows(&self, placement: Placement, point: Point) -> bool {
         match placement {
