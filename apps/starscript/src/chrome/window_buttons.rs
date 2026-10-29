@@ -5,6 +5,11 @@
 //! exit and similar events, so `center` runs every frame and only writes a frame that differs.
 //! It has not been compiled or run by CI; see `docs/release/macos-local-build.md`.
 
+#![allow(
+    unsafe_code,
+    reason = "NSView::superview is an unsafe fn in objc2-app-kit"
+)]
+
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSApplication, NSWindowButton, NSWindowStyleMask};
 
@@ -28,7 +33,10 @@ pub(crate) fn center(bar: f64) {
             continue;
         };
         // The button sits in the title bar view, inside the container that AppKit sizes.
-        if let Some(container) = close.superview().and_then(|view| view.superview()) {
+        // SAFETY: `mtm` proves this is the main thread, the only thread AppKit views may be
+        // used on, and `close` is a live view of a window that `NSApplication` just listed.
+        let container = unsafe { close.superview().and_then(|view| view.superview()) };
+        if let Some(container) = container {
             let mut frame = container.frame();
             let top = window.frame().size.height;
             if (frame.size.height - bar).abs() > 0.5 || (frame.origin.y - (top - bar)).abs() > 0.5 {
