@@ -60,6 +60,7 @@ icons! {
     LabelKind, "Label kind", "label-kind";
     LayerGroup, "Layer / Group", "layer-group";
     History, "History", "history";
+    Map, "Map", "map";
     Visible, "Visible", "visible";
     Hidden, "Hidden", "hidden";
     Lock, "Lock", "lock";

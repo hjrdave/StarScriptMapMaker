@@ -40,11 +40,12 @@ fn open_with_the_shortcut(harness: &mut Harness<'static, MapMakerApp>) {
 }
 
 #[test]
-fn the_icon_strip_lists_layers_art_boards_and_history_only() {
+fn the_icon_strip_lists_layers_map_art_boards_and_history_only() {
     assert_eq!(
         SidebarSection::ALL,
         [
             SidebarSection::Layers,
+            SidebarSection::Map,
             SidebarSection::Boards,
             SidebarSection::History
         ]

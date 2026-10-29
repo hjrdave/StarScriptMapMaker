@@ -111,8 +111,6 @@ impl PropertiesPanel {
         self.live.apply(editor, Edit::default(), "", || {
             unreachable!("nothing changed")
         });
-        // The Map section starts collapsed; the others start open.
-        prop_widgets::default_closed(ui.ctx(), "map");
         crate::shell::panel_header(ui, "Properties", |_| {});
         let footer = crate::layer_tree::FOOTER_HEIGHT;
         // The control is pinned to the panel's bottom edge, where the collapsed strip has it too.
@@ -166,7 +164,12 @@ impl PropertiesPanel {
                 self.board_properties(ui, editor, board);
             }
             [] => {
-                self.map_properties(ui, editor);
+                if !crate::tool_section::has_settings(editor.active_tool) {
+                    caption(
+                        ui,
+                        "Nothing selected. The Map's own settings are in the Map section of the left bar.",
+                    );
+                }
             }
             [id] => {
                 let id = *id;
@@ -174,7 +177,6 @@ impl PropertiesPanel {
                     // A Layer's own fields are edited in the Layers panel.
                     Some(Node::Layer(_)) => {
                         breadcrumb(ui, editor.map(), id);
-                        self.map_properties(ui, editor);
                     }
                     Some(Node::Object(object)) if matches!(object.kind, ObjectKind::Label(_)) => {
                         let ObjectKind::Label(label) = object.kind else {

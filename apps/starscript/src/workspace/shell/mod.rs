@@ -27,17 +27,19 @@ pub enum SidebarSection {
     #[default]
     #[serde(alias = "Assets")]
     Layers,
+    Map,
     Boards,
     History,
 }
 
 impl SidebarSection {
     /// Every section, in the order of the icon strip.
-    pub const ALL: [Self; 3] = [Self::Layers, Self::Boards, Self::History];
+    pub const ALL: [Self; 4] = [Self::Layers, Self::Map, Self::Boards, Self::History];
 
     pub fn icon(self) -> Icon {
         match self {
             Self::Layers => Icon::LayerGroup,
+            Self::Map => Icon::Map,
             Self::Boards => Icon::ExportRegion,
             Self::History => Icon::History,
         }
@@ -46,6 +48,7 @@ impl SidebarSection {
     pub fn title(self) -> &'static str {
         match self {
             Self::Layers => "Layers",
+            Self::Map => "Map",
             Self::Boards => "Art boards",
             Self::History => "History",
         }
@@ -55,6 +58,7 @@ impl SidebarSection {
     pub fn label(self) -> &'static str {
         match self {
             Self::Layers => "Layers (⌘⌥1)",
+            Self::Map => "Map (⌘⌥6)",
             Self::Boards => "Art boards (⌘⌥3)",
             Self::History => "History (⌘⌥5)",
         }

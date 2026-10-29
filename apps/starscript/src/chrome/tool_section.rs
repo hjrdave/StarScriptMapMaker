@@ -34,7 +34,12 @@ pub(crate) fn icon(tool: ToolId) -> Icon {
     }
 }
 
-/// Whether the tool has settings to show.
+/// Whether the tool has settings in Properties: a section of its own, or the Stamp's sections.
+pub(crate) fn has_settings(tool: ToolId) -> bool {
+    has_section(tool) || tool == ToolId::Stamp
+}
+
+/// Whether the tool has a settings block at the top of Properties.
 fn has_section(tool: ToolId) -> bool {
     matches!(
         tool,
