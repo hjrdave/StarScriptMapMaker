@@ -32,7 +32,7 @@ pub(crate) struct PropertiesPanel {
     manage_label_styles: bool,
     /// What the board buttons asked the window for.
     board_requests: Vec<board::BoardRequest>,
-    /// The active tool's settings, above the selection.
+    /// What the Stamp tool's Asset card asked for.
     tool_section: ToolSection,
     /// The Stamp section's "Replace Asset" was clicked; the window opens the Assets section.
     open_assets: bool,
@@ -123,20 +123,21 @@ impl PropertiesPanel {
             .auto_shrink([false, false])
             .max_height((rect.top() - ui.cursor().top()).max(0.0))
             .show(ui, |ui| {
-                self.tool_section.show(ui, editor);
-                ui.add_space(theme::SPACING[1]);
-                // The Stamp tool's settings are sections like a selected Stamp's: with nothing
-                // selected they come first, with the Asset card; otherwise below the selection.
-                let stamp_tool = editor.active_tool == crate::tools::ToolId::Stamp;
+                // The tool's settings are sections like a selected Object's: with nothing
+                // selected they come first (the Stamp's with the Asset card), otherwise below
+                // the selection.
+                let tool = editor.active_tool;
                 let nothing_selected = editor.selection().is_empty();
-                if stamp_tool && nothing_selected {
-                    self.tool_section.stamp_asset(ui, editor);
-                    ui.add_space(theme::SPACING[2]);
-                    crate::tool_section::scatter_sections(ui, editor);
+                if nothing_selected {
+                    if tool == crate::tools::ToolId::Stamp {
+                        self.tool_section.stamp_asset(ui, editor);
+                        ui.add_space(theme::SPACING[2]);
+                    }
+                    crate::tool_section::tool_sections(ui, editor);
                 }
                 self.selection(ui, editor);
-                if stamp_tool && !nothing_selected {
-                    crate::tool_section::scatter_sections(ui, editor);
+                if !nothing_selected {
+                    crate::tool_section::tool_sections(ui, editor);
                 }
             });
         ui.painter().hline(
