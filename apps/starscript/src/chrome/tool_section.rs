@@ -1,7 +1,7 @@
-//! The active tool's settings, at the top of Properties above the selection: the Land Brush's
-//! size and mode, the River's width and bending and the Stamp Eraser's size. Tools without
-//! settings get no section. The Stamp's own settings are sections of Properties, like a
-//! selected Stamp's, so they are laid out by [`ToolSection::stamp_asset`] and [`scatter_sections`].
+//! The active tool's settings, as sections of Properties laid out like a selected Object's:
+//! the Land and Lake Brush's size and mode, the River's width and bending, the Stamp's
+//! scatter settings and the Stamp Eraser's size. Tools without settings get no section.
+//! [`tool_sections`] lays them out; the Stamp's chosen Asset is [`ToolSection::stamp_asset`].
 
 use eframe::egui;
 use ssmap_core::scatter::Placement;
@@ -34,11 +34,15 @@ pub(crate) fn icon(tool: ToolId) -> Icon {
     }
 }
 
-/// Whether the tool has settings to show.
-fn has_section(tool: ToolId) -> bool {
+/// Whether the tool has settings in Properties.
+pub(crate) fn has_settings(tool: ToolId) -> bool {
     matches!(
         tool,
-        ToolId::LandBrush | ToolId::WaterBrush | ToolId::River | ToolId::StampEraser
+        ToolId::LandBrush
+            | ToolId::WaterBrush
+            | ToolId::River
+            | ToolId::Stamp
+            | ToolId::StampEraser
     )
 }
 
@@ -46,32 +50,6 @@ impl ToolSection {
     /// Whether the Asset card was clicked since the last call.
     pub(crate) fn take_open_assets(&mut self) -> bool {
         std::mem::take(&mut self.open_assets)
-    }
-
-    pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
-        let tool = editor.active_tool;
-        if !has_section(tool) {
-            return;
-        }
-        let palette = theme::palette(ui.ctx());
-        egui::Frame::NONE
-            .fill(palette.bg_tool_section)
-            .inner_margin(egui::Margin::symmetric(
-                theme::SPACING[4] as i8,
-                theme::SPACING[3] as i8,
-            ))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                header(ui, tool);
-                ui.add_space(theme::SPACING[2]);
-                match tool {
-                    ToolId::LandBrush | ToolId::WaterBrush => land_brush(ui, editor),
-                    ToolId::River => river(ui, editor),
-                    ToolId::StampEraser => size(ui, editor),
-                    _ => {}
-                }
-            });
-        ui.add_space(theme::SPACING[1]);
     }
 }
 
@@ -133,27 +111,29 @@ impl ToolSection {
     }
 }
 
-/// The tool's icon, name and shortcut.
-fn header(ui: &mut egui::Ui, tool: ToolId) {
-    let palette = theme::palette(ui.ctx());
-    ui.horizontal(|ui| {
-        let (rect, _) =
-            ui.allocate_exact_size(egui::Vec2::splat(icons::GRID), egui::Sense::hover());
-        icons::paint(ui, rect, icon(tool), icons::GRID, palette.gold_text);
-        ui.label(
-            egui::RichText::new(tool.label())
-                .size(theme::HEADING)
-                .color(palette.text_primary),
-        );
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(
-                egui::RichText::new(tool.shortcut_text())
-                    .size(theme::CAPTION)
-                    .family(theme::mono_family())
-                    .color(palette.text_tertiary),
-            );
-        });
-    });
+/// The settings of the active tool, as one section named after it. The Stamp's are the
+/// Scatter and Randomise sections.
+pub(crate) fn tool_sections(ui: &mut egui::Ui, editor: &mut Editor) {
+    let tool = editor.active_tool;
+    let header = SectionHeader {
+        kind: "tool",
+        title: tool.label(),
+        badge: None,
+        action: None,
+    };
+    match tool {
+        ToolId::LandBrush | ToolId::WaterBrush => {
+            prop_widgets::section(ui, header, |ui| land_brush(ui, editor));
+        }
+        ToolId::River => {
+            prop_widgets::section(ui, header, |ui| river(ui, editor));
+        }
+        ToolId::StampEraser => {
+            prop_widgets::section(ui, header, |ui| size(ui, editor));
+        }
+        ToolId::Stamp => scatter_sections(ui, editor),
+        _ => {}
+    }
 }
 
 /// The brush size of the Land Brush, Lake Brush and Stamp Eraser: a logarithmic slider,

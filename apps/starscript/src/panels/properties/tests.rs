@@ -48,6 +48,21 @@ fn square(min: f64, size: f64) -> MultiPolygon {
     }])
 }
 
+/// The Map section of the left sidebar, which holds the Map's own settings.
+fn map_harness(fixture: Fixture) -> Harness<'static, Fixture> {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(320.0, 900.0))
+        .build_ui_state(
+            |ui, fixture: &mut Fixture| {
+                theme::install(&ui.ctx().clone());
+                fixture.panel.map_panel(ui, &mut fixture.editor);
+            },
+            fixture,
+        );
+    harness.run();
+    harness
+}
+
 fn harness(fixture: Fixture) -> Harness<'static, Fixture> {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(320.0, 900.0))
@@ -72,28 +87,28 @@ fn layer_name_visibility_and_lock_are_managed_in_the_layers_panel() {
 }
 
 #[test]
-fn nothing_selected_shows_only_a_collapsed_map_section() {
+fn nothing_selected_shows_no_map_settings() {
     let (fixture, _, _) = fixture();
     let harness = harness(fixture);
     // The Layer's fields are in the Layers panel.
     for label in ["Depth sort", "Opacity", "Clip to"] {
         assert!(harness.query_by_label(label).is_none(), "{label}");
     }
-    // The Map section is there, closed: its fields are not.
-    assert!(harness.query_by_label("Map").is_some());
-    assert!(harness.query_by_label("Canvas width").is_none());
-    assert!(harness.query_by_label("Amount").is_none());
+    // The Map's fields are in the Map section of the left sidebar, not here.
+    for label in ["Map", "Canvas width", "Amount"] {
+        assert!(harness.query_by_label(label).is_none(), "{label}");
+    }
 }
 
 #[test]
-fn a_selected_layer_shows_the_map_section_and_no_layer_section() {
+fn a_selected_layer_shows_no_map_section_and_no_layer_section() {
     let (mut fixture, layer, _) = fixture();
     fixture.editor.select(vec![layer]);
     let harness = harness(fixture);
     for label in ["Depth sort", "Opacity", "Clip to", "Layer"] {
         assert!(harness.query_by_label(label).is_none(), "{label}");
     }
-    assert!(harness.query_by_label("Map").is_some());
+    assert!(harness.query_by_label("Map").is_none());
 }
 
 #[test]
@@ -490,11 +505,6 @@ fn the_summary_counts_each_kind() {
     assert_eq!(selection_summary(map, &[]), "");
 }
 
-fn open_map_section(harness: &mut Harness<'static, Fixture>) {
-    harness.get_by_label("Map").click();
-    harness.run();
-}
-
 fn click(harness: &mut Harness<'static, Fixture>, label: &str) {
     harness.get_by_label(label).click();
     harness.run();
@@ -527,8 +537,7 @@ fn resizing_from_each_anchor_keeps_that_point_fixed_and_moves_no_object() {
         for x in 0..3u8 {
             let (fixture, _, island) = fixture();
             let before = geometry_of(&fixture, island);
-            let mut harness = harness(fixture);
-            open_map_section(&mut harness);
+            let mut harness = map_harness(fixture);
             click(&mut harness, &anchor_name(x, y));
             // The width box is the first showing 100, the height box the second.
             type_into_nth(&mut harness, "100", 0, "90");
@@ -547,8 +556,7 @@ fn resizing_from_each_anchor_keeps_that_point_fixed_and_moves_no_object() {
 fn shrinking_past_objects_and_growing_back_then_undo_and_redo_touch_no_object() {
     let (fixture, _, island) = fixture();
     let before = geometry_of(&fixture, island);
-    let mut harness = harness(fixture);
-    open_map_section(&mut harness);
+    let mut harness = map_harness(fixture);
     // Anchor bottom-right: shrinking pulls the left edge past the Landmass at 0..40.
     click(&mut harness, &anchor_name(2, 2));
     type_into_nth(&mut harness, "100", 0, "30");
@@ -580,8 +588,7 @@ fn shrinking_past_objects_and_growing_back_then_undo_and_redo_touch_no_object() 
 fn scrubbing_the_canvas_width_is_one_undo_step_that_holds_the_anchor() {
     let (fixture, _, island) = fixture();
     let before = geometry_of(&fixture, island);
-    let mut harness = harness(fixture);
-    open_map_section(&mut harness);
+    let mut harness = map_harness(fixture);
     click(&mut harness, &anchor_name(2, 1));
     let steps = harness.state().editor.history_steps().0.len();
     let start = harness
@@ -650,8 +657,7 @@ fn look_of(name: &str) -> ssmap_core::Background {
 
 #[test]
 fn map_settings_name_the_template_the_map_was_made_from() {
-    let mut harness = harness(ocean_fixture());
-    open_map_section(&mut harness);
+    let harness = map_harness(ocean_fixture());
     harness.get_by_label("Template");
     harness.get_by_label("Ocean");
 }
@@ -660,8 +666,7 @@ fn map_settings_name_the_template_the_map_was_made_from() {
 fn taking_another_templates_look_is_one_undo_step_and_keeps_the_template() {
     let fixture = ocean_fixture();
     let original = fixture.editor.map().canvas().background.clone();
-    let mut harness = harness(fixture);
-    open_map_section(&mut harness);
+    let mut harness = map_harness(fixture);
     click(&mut harness, "Parchment look");
     let state = harness.state();
     assert_eq!(state.editor.map().canvas().background, look_of("Parchment"));
@@ -682,8 +687,7 @@ fn taking_another_templates_look_is_one_undo_step_and_keeps_the_template() {
 fn changing_one_background_field_leaves_the_rest_and_is_one_undo_step() {
     let fixture = ocean_fixture();
     let original = fixture.editor.map().canvas().background.clone();
-    let mut harness = harness(fixture);
-    open_map_section(&mut harness);
+    let mut harness = map_harness(fixture);
     type_into(&mut harness, "1.0", "2.5");
     let state = harness.state();
     let background = &state.editor.map().canvas().background;
@@ -712,8 +716,7 @@ fn changing_one_background_field_leaves_the_rest_and_is_one_undo_step() {
 
 #[test]
 fn a_changed_background_and_the_template_name_survive_save_and_reopen() {
-    let mut harness = harness(ocean_fixture());
-    open_map_section(&mut harness);
+    let mut harness = map_harness(ocean_fixture());
     click(&mut harness, "Winter look");
     let shown = format!("{:.1}", look_of("Winter").texture.scale);
     type_into(&mut harness, &shown, "2.5");

@@ -173,6 +173,7 @@ impl MapMakerApp {
             C::Home => self.show_slot(tab_strip::Slot::Home),
             C::ToggleLayers => self.win.shell.toggle_layers(),
             C::ToggleProperties => self.win.shell.toggle_properties(),
+            C::ShowMap => self.win.shell.show_section(shell::SidebarSection::Map),
             C::ShowBoards => self.win.shell.show_section(shell::SidebarSection::Boards),
             C::ShowAssets => self.win.asset_picker = true,
             C::ShowHistory => self.win.shell.show_section(shell::SidebarSection::History),
@@ -363,6 +364,7 @@ impl MapMakerApp {
             [
                 menu::Command::ToggleLayers,
                 menu::Command::ToggleProperties,
+                menu::Command::ShowMap,
                 menu::Command::ShowBoards,
                 menu::Command::ShowAssets,
                 menu::Command::ShowHistory,

@@ -5,7 +5,7 @@ use ssmap_core::{Canvas, Color, Command, DistanceUnit, Id, MapTemplate, ShoreKin
 
 use super::{Inherit, PropertiesPanel, caption, row};
 use crate::editor::Editor;
-use crate::prop_widgets::{self, Edit, Handle, Provenance, ScrubSpec, SectionHeader};
+use crate::prop_widgets::{self, Edit, Handle, Provenance, ScrubSpec};
 
 impl PropertiesPanel {
     /// Width, height and the anchor they grow or shrink from, of the board `id` whose box is
@@ -174,70 +174,72 @@ impl PropertiesPanel {
             .apply(editor, edit, "Change Background", || set(next.clone()));
     }
 
-    /// The Map: Canvas, Scale and the Map-wide defaults. Collapsed until opened.
-    pub(super) fn map_properties(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+    /// The Map section of the sidebar: Canvas, Scale, background and the Map-wide defaults.
+    pub(crate) fn map_panel(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+        // A change ends when the pointer is released, or when Escape cancelled it.
+        self.live.apply(editor, Edit::default(), "", || {
+            unreachable!("nothing changed")
+        });
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| self.map_fields(ui, editor));
+    }
+
+    fn map_fields(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         let canvas = editor.map().canvas().clone();
-        let header = SectionHeader {
-            kind: "map",
-            title: "Map",
-            badge: None,
-            action: None,
+        let primary = editor.map().primary_board();
+        self.canvas_fields(ui, editor, primary, &canvas);
+        let unit = match canvas.scale.unit {
+            DistanceUnit::Miles => "mi",
+            DistanceUnit::Kilometres => "km",
         };
-        prop_widgets::section(ui, header, |ui| {
-            let primary = editor.map().primary_board();
-            self.canvas_fields(ui, editor, primary, &canvas);
-            let unit = match canvas.scale.unit {
-                DistanceUnit::Miles => "mi",
-                DistanceUnit::Kilometres => "km",
-            };
-            row(ui, "Scale", |ui| {
-                ui.label(format!(
-                    "{} {unit} per unit",
-                    canvas.scale.distance_per_unit
-                ));
-            });
+        row(ui, "Scale", |ui| {
+            ui.label(format!(
+                "{} {unit} per unit",
+                canvas.scale.distance_per_unit
+            ));
+        });
 
-            self.background_fields(ui, editor, primary, &canvas);
+        self.background_fields(ui, editor, primary, &canvas);
 
-            caption(ui, "Default Roughness");
-            let current = [editor.map().defaults().roughness.clone()];
-            let set = |_, roughness| Command::SetDefaultRoughness { roughness };
+        caption(ui, "Default Roughness");
+        let current = [editor.map().defaults().roughness.clone()];
+        let set = |_, roughness| Command::SetDefaultRoughness { roughness };
+        let group = Inherit {
+            members: &current,
+            provenance: Provenance::Plain,
+            label: "Change Default Roughness",
+            set: &set,
+            reset: None,
+        };
+        ui.push_id("default roughness", |ui| {
+            self.roughness_fields(ui, editor, &group);
+        });
+
+        for (kind, title, label) in [
+            (
+                ShoreKind::Landmass,
+                "Default Landmass shore",
+                "Change Default Shore Style",
+            ),
+            (
+                ShoreKind::Lake,
+                "Default Lake shore",
+                "Change Default Lake Shore Style",
+            ),
+        ] {
+            caption(ui, title);
+            let current = [editor.map().defaults().shore_for(kind).clone()];
+            let set = move |_, shore| Command::SetDefaultShore { kind, shore };
             let group = Inherit {
                 members: &current,
                 provenance: Provenance::Plain,
-                label: "Change Default Roughness",
+                label,
                 set: &set,
                 reset: None,
             };
-            ui.push_id("default roughness", |ui| {
-                self.roughness_fields(ui, editor, &group);
-            });
-
-            for (kind, title, label) in [
-                (
-                    ShoreKind::Landmass,
-                    "Default Landmass shore",
-                    "Change Default Shore Style",
-                ),
-                (
-                    ShoreKind::Lake,
-                    "Default Lake shore",
-                    "Change Default Lake Shore Style",
-                ),
-            ] {
-                caption(ui, title);
-                let current = [editor.map().defaults().shore_for(kind).clone()];
-                let set = move |_, shore| Command::SetDefaultShore { kind, shore };
-                let group = Inherit {
-                    members: &current,
-                    provenance: Provenance::Plain,
-                    label,
-                    set: &set,
-                    reset: None,
-                };
-                ui.push_id(title, |ui| self.shore_fields(ui, editor, &group));
-            }
-        });
+            ui.push_id(title, |ui| self.shore_fields(ui, editor, &group));
+        }
     }
 }
 

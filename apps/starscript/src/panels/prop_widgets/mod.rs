@@ -206,7 +206,7 @@ pub enum Provenance {
 
 const DOT_WIDTH: f32 = 10.0;
 /// The label column: labels line up across rows and sections.
-const LABEL_MIN: f32 = 64.0;
+const LABEL_MIN: f32 = 80.0;
 
 /// The label of a field, with the gold dot when overridden.
 fn paint_label(ui: &egui::Ui, rect: egui::Rect, label: &str, provenance: Provenance) {

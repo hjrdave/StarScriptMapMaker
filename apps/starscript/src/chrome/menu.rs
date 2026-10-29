@@ -41,6 +41,8 @@ pub enum Command {
     ActualSize,
     ToggleLayers,
     ToggleProperties,
+    /// Shows the Map section in the left sidebar.
+    ShowMap,
     /// Shows the Art boards section in the left sidebar.
     ShowBoards,
     /// Shows the Assets section in the left sidebar.
@@ -198,6 +200,7 @@ pub fn shortcut(command: Command) -> Option<Shortcut> {
         ActualSize => Shortcut::new(!c, s, !a, Key::Num(0)),
         ToggleLayers => Shortcut::new(c, !s, a, Key::Num(1)),
         ToggleProperties => Shortcut::new(c, !s, a, Key::Num(2)),
+        ShowMap => Shortcut::new(c, !s, a, Key::Num(6)),
         ShowBoards => Shortcut::new(c, !s, a, Key::Num(3)),
         ShowAssets => Shortcut::new(c, !s, a, Key::Num(4)),
         ShowHistory => Shortcut::new(c, !s, a, Key::Num(5)),
@@ -382,6 +385,7 @@ pub fn menus(state: &State) -> Vec<Menu> {
         Separator,
         item(ToggleLayers, "Toggle Layers", map),
         item(ToggleProperties, "Toggle Properties", map),
+        item(ShowMap, "Map", map),
         item(ShowBoards, "Art Boards", map && state.multiple_boards),
         item(ShowAssets, "Assets", map),
         item(ShowHistory, "History", map),
