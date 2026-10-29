@@ -28,7 +28,7 @@ lyon = "1.0"
 muda = { version = "0.21", default-features = false }
 # Dock-click reopen hook (app crate, macOS only). Versions match what eframe and winit use.
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSButton", "NSControl", "NSResponder", "NSView", "NSWindow"] }
 png = "0.18"
 # Frame-stage spans, behind the profiling feature of ssmap-render and the app.
 tracing = { version = "0.1", default-features = false, features = ["std"] }
