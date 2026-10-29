@@ -1,4 +1,5 @@
-//! Node-edit mode: moving, adding and removing the nodes of a Landmass or Lake.
+//! Node-edit mode: moving, adding and removing the nodes of a Landmass or Lake, or the points
+//! of a River's path.
 
 use eframe::egui;
 use ssmap_core::{Command, MultiPolygon, NodeRef, Point};
@@ -26,11 +27,33 @@ enum NodeHit {
     Outside,
 }
 
-fn hit_outline(outline: &MultiPolygon, point: Point, node_reach: f64, edge_reach: f64) -> NodeHit {
+/// The nodes being edited, as [`Editor::edited_outline`] gives them, and what a hit test
+/// needs to know about them.
+struct Edited<'a> {
+    nodes: &'a MultiPolygon,
+    /// A River's path: no edge runs from its last point back to its first.
+    open: bool,
+    /// What counts as inside: the outline, which for a River is generated from its path.
+    area: &'a MultiPolygon,
+}
+
+impl Edited<'_> {
+    /// The edges of a ring of `len` points, by the node each starts from.
+    fn edges(&self, len: usize) -> usize {
+        if self.open {
+            len.saturating_sub(1)
+        } else {
+            len
+        }
+    }
+}
+
+fn hit_outline(edited: &Edited<'_>, point: Point, node_reach: f64, edge_reach: f64) -> NodeHit {
     let mut best_node: Option<(f64, NodeRef)> = None;
     let mut best_edge: Option<(f64, NodeRef, Point)> = None;
-    for (part, polygon) in outline.0.iter().enumerate() {
+    for (part, polygon) in edited.nodes.0.iter().enumerate() {
         for (ring_number, ring) in polygon.rings().enumerate() {
+            let edges = edited.edges(ring.len());
             for (index, &a) in ring.iter().enumerate() {
                 let node = NodeRef {
                     part,
@@ -40,6 +63,9 @@ fn hit_outline(outline: &MultiPolygon, point: Point, node_reach: f64, edge_reach
                 let d = (a[0] - point[0]).hypot(a[1] - point[1]);
                 if d <= node_reach && best_node.is_none_or(|(best, _)| d < best) {
                     best_node = Some((d, node));
+                }
+                if index >= edges {
+                    continue;
                 }
                 let b = ring[(index + 1) % ring.len()];
                 let (d, nearest) = nearest_on_segment(a, b, point);
@@ -53,7 +79,7 @@ fn hit_outline(outline: &MultiPolygon, point: Point, node_reach: f64, edge_reach
         NodeHit::Node(node)
     } else if let Some((_, edge, nearest)) = best_edge {
         NodeHit::Edge(edge, nearest)
-    } else if outline.contains(point) {
+    } else if edited.area.contains(point) {
         NodeHit::Inside
     } else {
         NodeHit::Outside
@@ -72,7 +98,7 @@ fn nearest_on_segment(a: Point, b: Point, p: Point) -> (f64, Point) {
     ((p[0] - nearest[0]).hypot(p[1] - nearest[1]), nearest)
 }
 
-/// Node-edit mode (double-click a Landmass or Lake): click a node to select it (Shift adds),
+/// Node-edit mode (double-click a Landmass, Lake or River): click a node to select it (Shift adds),
 /// drag nodes to move them, drag empty space to box-select, double-click an edge to add a node,
 /// Delete removes the selected nodes, and Escape or a click outside the shape leaves. Each
 /// drag is one Undo step.
@@ -87,9 +113,18 @@ pub(super) fn node_edit_tool(
     let per_point = input.pixels_per_point / view.zoom;
     let hit_at = |editor: &Editor, pos: egui::Pos2| {
         let point = input.canvas_point(view, pos);
-        editor.edited_outline().map(|outline| {
-            hit_outline(outline, point, NODE_GRAB * per_point, EDGE_GRAB * per_point)
-        })
+        let (nodes, area) = (editor.edited_outline()?, editor.edited_area()?);
+        let edited = Edited {
+            nodes: &nodes,
+            open: editor.edited_is_path(),
+            area,
+        };
+        Some(hit_outline(
+            &edited,
+            point,
+            NODE_GRAB * per_point,
+            EDGE_GRAB * per_point,
+        ))
     };
 
     if let Some(pos) = input.hover_pos
@@ -242,11 +277,20 @@ pub(super) fn paint_nodes(
     hover: Option<egui::Pos2>,
     ppp: f64,
 ) {
-    let (Some(edit), Some(outline)) = (editor.node_edit(), editor.edited_outline()) else {
+    let (Some(edit), Some(outline), Some(area)) = (
+        editor.node_edit(),
+        editor.edited_outline(),
+        editor.edited_area(),
+    ) else {
         return;
     };
+    let edited = Edited {
+        nodes: &outline,
+        open: editor.edited_is_path(),
+        area,
+    };
     let to_screen = |p: Point| crate::handles::to_screen(view, origin, ppp, p);
-    let area = painter.clip_rect().expand(24.0);
+    let view_area = painter.clip_rect().expand(24.0);
     let select = crate::theme::palette(painter.ctx()).select;
     let line = egui::Stroke::new(1.5, select);
 
@@ -255,9 +299,10 @@ pub(super) fn paint_nodes(
         for (ring_number, ring) in polygon.rings().enumerate() {
             let mut run: Vec<egui::Pos2> = Vec::new();
             let screen: Vec<egui::Pos2> = ring.iter().map(|&p| to_screen(p)).collect();
+            let edges = edited.edges(screen.len());
             for (index, &a) in screen.iter().enumerate() {
                 let b = screen[(index + 1) % screen.len()];
-                if area.contains(a) {
+                if view_area.contains(a) {
                     visible.push((
                         NodeRef {
                             part,
@@ -267,7 +312,10 @@ pub(super) fn paint_nodes(
                         a,
                     ));
                 }
-                if area.intersects(egui::Rect::from_two_pos(a, b)) {
+                if index >= edges {
+                    continue;
+                }
+                if view_area.intersects(egui::Rect::from_two_pos(a, b)) {
                     if run.is_empty() {
                         run.push(a);
                     }
@@ -322,7 +370,7 @@ pub(super) fn paint_nodes(
         && let Some(on_edge) = {
             let local = pos - origin;
             let point = view.to_canvas([f64::from(local.x) * ppp, f64::from(local.y) * ppp]);
-            match hit_outline(outline, point, NODE_GRAB * per_point, EDGE_GRAB * per_point) {
+            match hit_outline(&edited, point, NODE_GRAB * per_point, EDGE_GRAB * per_point) {
                 NodeHit::Edge(_, on_edge) => Some(on_edge),
                 _ => None,
             }
@@ -353,6 +401,14 @@ mod tests {
     use super::*;
     use ssmap_core::{Id, Polygon};
 
+    fn closed(outline: &MultiPolygon) -> Edited<'_> {
+        Edited {
+            nodes: outline,
+            open: false,
+            area: outline,
+        }
+    }
+
     fn outline() -> MultiPolygon {
         MultiPolygon(vec![Polygon {
             exterior: vec![[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]],
@@ -362,7 +418,7 @@ mod tests {
 
     #[test]
     fn hit_outline_finds_a_node_within_reach() {
-        let hit = hit_outline(&outline(), [103.0, 2.0], 5.0, 5.0);
+        let hit = hit_outline(&closed(&outline()), [103.0, 2.0], 5.0, 5.0);
         let node = NodeRef {
             part: 0,
             ring: 0,
@@ -374,13 +430,13 @@ mod tests {
     #[test]
     fn hit_outline_prefers_a_node_over_an_edge() {
         // Within reach of both the corner and the two edges meeting there.
-        let hit = hit_outline(&outline(), [1.0, 1.0], 5.0, 5.0);
+        let hit = hit_outline(&closed(&outline()), [1.0, 1.0], 5.0, 5.0);
         assert!(matches!(hit, NodeHit::Node(NodeRef { index: 0, .. })));
     }
 
     #[test]
     fn hit_outline_finds_the_nearest_point_on_an_edge() {
-        match hit_outline(&outline(), [50.0, 3.0], 5.0, 5.0) {
+        match hit_outline(&closed(&outline()), [50.0, 3.0], 5.0, 5.0) {
             NodeHit::Edge(edge, nearest) => {
                 assert_eq!(edge.index, 0);
                 assert_eq!(nearest, [50.0, 0.0]);
@@ -391,7 +447,7 @@ mod tests {
 
     #[test]
     fn hit_outline_checks_the_closing_edge() {
-        match hit_outline(&outline(), [2.0, 50.0], 5.0, 5.0) {
+        match hit_outline(&closed(&outline()), [2.0, 50.0], 5.0, 5.0) {
             NodeHit::Edge(edge, nearest) => {
                 assert_eq!(edge.index, 3);
                 assert_eq!(nearest, [0.0, 50.0]);
@@ -402,9 +458,9 @@ mod tests {
 
     #[test]
     fn hit_outline_tells_inside_from_outside() {
-        let inside = hit_outline(&outline(), [50.0, 50.0], 5.0, 5.0);
+        let inside = hit_outline(&closed(&outline()), [50.0, 50.0], 5.0, 5.0);
         assert!(matches!(inside, NodeHit::Inside));
-        let outside = hit_outline(&outline(), [150.0, 50.0], 5.0, 5.0);
+        let outside = hit_outline(&closed(&outline()), [150.0, 50.0], 5.0, 5.0);
         assert!(matches!(outside, NodeHit::Outside));
     }
 
@@ -508,6 +564,102 @@ mod tests {
         assert_eq!(icon, Some(egui::CursorIcon::PointingHand));
         let icon = node_edit_tool(&mut editor, &view, &mut state, &hover(50.0, 50.0));
         assert_eq!(icon, None);
+    }
+
+    /// An Editor in node-edit mode on a River from (0, 0) through (100, 0) to (100, 100).
+    fn river_editor() -> Editor {
+        use ssmap_core::{River, RiverPoint};
+        let mut editor = land_editor();
+        let layer = editor.map().children(None).first().copied();
+        let id = Id::new();
+        let river = River::new(vec![
+            RiverPoint::new([0.0, 0.0], 6.0),
+            RiverPoint::new([100.0, 0.0], 6.0),
+            RiverPoint::new([100.0, 100.0], 12.0),
+        ])
+        .with_meander(0.0);
+        assert!(
+            editor
+                .run(Command::CreateRiver {
+                    id,
+                    parent: layer.unwrap_or_else(Id::new),
+                    index: None,
+                    river: Box::new(river),
+                })
+                .is_ok()
+        );
+        editor.enter_node_edit(id);
+        editor
+    }
+
+    fn river_path(editor: &Editor) -> Vec<ssmap_core::RiverPoint> {
+        editor.selected_rivers()[0].1.path().to_vec()
+    }
+
+    #[test]
+    fn a_river_path_has_no_closing_edge() {
+        let path = MultiPolygon(vec![Polygon {
+            exterior: vec![[0.0, 0.0], [100.0, 0.0], [100.0, 100.0]],
+            holes: Vec::new(),
+        }]);
+        let open = Edited {
+            nodes: &path,
+            open: true,
+            area: &path,
+        };
+        // On the line from the last point back to the first, which a River doesn't have.
+        assert!(!matches!(
+            hit_outline(&open, [50.0, 50.0], 5.0, 5.0),
+            NodeHit::Edge(..)
+        ));
+        assert!(matches!(
+            hit_outline(&closed(&path), [50.0, 50.0], 5.0, 5.0),
+            NodeHit::Edge(..)
+        ));
+    }
+
+    #[test]
+    fn dragging_a_river_point_moves_it() {
+        let mut editor = river_editor();
+        assert!(editor.edited_is_path());
+        let (view, mut state) = (view(), ToolState::default());
+        node_edit_tool(&mut editor, &view, &mut state, &press(100.0, 0.0));
+        node_edit_tool(&mut editor, &view, &mut state, &drag_to(120.0, -30.0));
+        node_edit_tool(&mut editor, &view, &mut state, &release(120.0, -30.0));
+        assert_eq!(river_path(&editor)[1].position, [120.0, -30.0]);
+        assert_eq!(editor.undo_label(), Some("Move Points"));
+    }
+
+    #[test]
+    fn double_clicking_a_river_segment_adds_a_point_and_brackets_widen_it() {
+        let mut editor = river_editor();
+        let (view, mut state) = (view(), ToolState::default());
+        let double = CanvasFrame {
+            double_clicked: true,
+            ..click_at(50.0, 1.0)
+        };
+        node_edit_tool(&mut editor, &view, &mut state, &double);
+        let path = river_path(&editor);
+        assert_eq!(path.len(), 4);
+        assert_eq!(path[1].position, [50.0, 0.0]);
+        assert_eq!(
+            selected_nodes(&editor).len(),
+            1,
+            "the new point is selected"
+        );
+        editor.scale_selected_river_widths(2.0);
+        assert_eq!(river_path(&editor)[1].width, 12.0);
+    }
+
+    #[test]
+    fn stepping_the_seed_keeps_the_points() {
+        let mut editor = river_editor();
+        let before = editor.selected_rivers()[0].1.clone();
+        editor.step_river_seeds(1);
+        let after = editor.selected_rivers()[0].1.clone();
+        assert_eq!(after.seed(), before.seed() + 1);
+        assert_eq!(after.path(), before.path());
+        assert_eq!(editor.undo_label(), Some("Edit River"));
     }
 
     #[test]

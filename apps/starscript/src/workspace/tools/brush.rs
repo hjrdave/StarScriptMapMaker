@@ -163,7 +163,7 @@ pub(super) fn brush_ring(painter: &egui::Painter, pos: egui::Pos2, radius: f32) 
 }
 
 /// A filled region as an egui mesh in screen points. Holes stay open (even-odd).
-fn region_mesh(
+pub(super) fn region_mesh(
     region: &MultiPolygon,
     color: egui::Color32,
     to_screen: impl Fn(Point) -> egui::Pos2,

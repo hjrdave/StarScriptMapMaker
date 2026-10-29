@@ -32,6 +32,8 @@ fn kind_noun(map: &Map, id: Id, plural: bool) -> &'static str {
             (ObjectKind::Landmass(_), true) => "Landmasses",
             (ObjectKind::Lake(_), false) => "Lake",
             (ObjectKind::Lake(_), true) => "Lakes",
+            (ObjectKind::River(_), false) => "River",
+            (ObjectKind::River(_), true) => "Rivers",
             (ObjectKind::Stamp(_), false) => "Stamp",
             (ObjectKind::Stamp(_), true) => "Stamps",
             (ObjectKind::Label(_), false) => "Label",
@@ -53,9 +55,10 @@ pub fn selection_summary(map: &Map, selection: &[Id], active_layer: Option<Id>) 
             let name = match map.node(*id) {
                 Some(Node::Object(object)) => match &object.kind {
                     ObjectKind::Stamp(stamp) => Some(title_case(&stamp.asset.asset)),
-                    ObjectKind::Label(_) | ObjectKind::Landmass(_) | ObjectKind::Lake(_) => {
-                        Some(node_name(map, *id)).filter(|name| name != noun)
-                    }
+                    ObjectKind::Label(_)
+                    | ObjectKind::Landmass(_)
+                    | ObjectKind::Lake(_)
+                    | ObjectKind::River(_) => Some(node_name(map, *id)).filter(|name| name != noun),
                 },
                 Some(Node::Layer(layer)) => Some(layer.name.clone()),
                 None => None,

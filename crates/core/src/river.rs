@@ -76,12 +76,19 @@ pub struct RiverPoint {
     pub position: Point,
     /// How wide the River is here, in Canvas units.
     pub width: f64,
+    /// Whether the River runs to this point without bends, from the point before.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub straight: bool,
 }
 
 impl RiverPoint {
-    /// A point at `position`, `width` wide.
+    /// A point at `position`, `width` wide, reached through bends.
     pub fn new(position: Point, width: f64) -> Self {
-        Self { position, width }
+        Self {
+            position,
+            width,
+            straight: false,
+        }
     }
 }
 
@@ -240,6 +247,7 @@ impl River {
             .map(|p| RiverPoint {
                 position: transform.apply(p.position),
                 width: (p.width * scale).clamp(MIN_RIVER_WIDTH, MAX_RIVER_WIDTH),
+                ..*p
             })
             .collect();
         self.clone().with_path(path)
@@ -438,6 +446,8 @@ struct Section {
     width: f64,
     /// Which of the path's segments it lies on, counting from the source.
     segment: usize,
+    /// Whether that segment runs without bends.
+    straight: bool,
 }
 
 /// The outline and mouth of a River, or an empty outline when it has fewer than two distinct
@@ -504,6 +514,7 @@ fn smoothed(path: &[RiverPoint]) -> Vec<Section> {
                 position: catmull_rom(p0, p1, p2, p3, u),
                 width: path[segment].width + (path[segment + 1].width - path[segment].width) * u,
                 segment,
+                straight: path[segment + 1].straight,
             });
         }
     }
@@ -511,6 +522,7 @@ fn smoothed(path: &[RiverPoint]) -> Vec<Section> {
         position: positions[last],
         width: path[last].width,
         segment: last - 1,
+        straight: path[last].straight,
     });
     sections
 }
@@ -577,7 +589,11 @@ fn bent(sections: &[Section], meander: f64, seed: u32) -> Vec<Section> {
             } else {
                 along[i].min(length - along[i])
             };
-            let pin = smoothstep(from_point / (PIN_RAMP * section.width));
+            let pin = if section.straight {
+                0.0
+            } else {
+                smoothstep(from_point / (PIN_RAMP * section.width))
+            };
             let segment_seed = mix(u64::from(seed), segment as u64);
             let swing = meander * BEND_SWING * section.width * pin * bends(segment_seed, phase);
             let n = normals[i];
@@ -643,7 +659,7 @@ fn banked(line: &[Section], seed: u32) -> (MultiPolygon, Option<[Point; 2]>) {
 /// A counter-clockwise triangle, or `None` when it has no area.
 fn triangle(a: Point, b: Point, c: Point) -> Option<geo::Polygon<f64>> {
     let area = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
-    if !(area.abs() > 1e-12) {
+    if area.is_nan() || area.abs() <= 1e-12 {
         return None;
     }
     let ring = if area > 0.0 {
@@ -802,6 +818,30 @@ mod tests {
         // And the bends swing off the straight path between points.
         let flat = river.clone().with_meander(0.0);
         assert_ne!(river.outline(), flat.outline());
+    }
+
+    #[test]
+    fn a_straight_segment_has_no_bends() {
+        let mut path = vec![
+            RiverPoint::new([0.0, 0.0], 8.0),
+            RiverPoint::new([400.0, 0.0], 8.0),
+        ];
+        let bendy = River::new(path.clone()).with_meander(MAX_MEANDER);
+        path[1].straight = true;
+        let straight = River::new(path).with_meander(MAX_MEANDER);
+        let spread = |river: &River| {
+            let ys = river
+                .outline()
+                .0
+                .iter()
+                .flat_map(|p| p.exterior.iter().map(|q| q[1]));
+            ys.fold(0.0_f64, |most, y| most.max(y.abs()))
+        };
+        assert!(spread(&straight) < 8.0, "{}", spread(&straight));
+        assert!(spread(&bendy) > spread(&straight));
+        let json = serde_json::to_value(straight.path()).unwrap();
+        assert_eq!(json[1]["straight"], true);
+        assert!(json[0].get("straight").is_none(), "false is left out");
     }
 
     #[test]

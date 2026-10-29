@@ -6,6 +6,7 @@ pub(crate) use board::BoardRequest;
 mod label;
 mod map;
 mod object_style;
+mod river;
 mod stamp;
 #[cfg(test)]
 mod tests;
@@ -198,8 +199,8 @@ impl PropertiesPanel {
         self.membership_row(ui, editor);
     }
 
-    /// A Landmass or Lake: the header with the lock, its Fill, then Roughness and Shore style,
-    /// and Combine for a Landmass.
+    /// A Landmass, Lake or River: the header with the lock, a River's own settings, its Fill,
+    /// then Roughness (not for a River) and Shore style, and Combine for a Landmass.
     fn object_properties(
         &mut self,
         ui: &mut egui::Ui,
@@ -210,9 +211,13 @@ impl PropertiesPanel {
         let title = node_name(editor.map(), id);
         let noun = match object.kind {
             ObjectKind::Lake(_) => "Lake",
+            ObjectKind::River(_) => "River",
             _ => "Landmass",
         };
         self.object_header(ui, editor, &[id], &title, noun);
+        if let ObjectKind::River(river) = &object.kind {
+            self.river_section(ui, editor, id, river);
+        }
         if let Some(fill) = object.kind.fill() {
             let header = SectionHeader {
                 kind: "appearance",
@@ -340,22 +345,24 @@ fn row(ui: &mut egui::Ui, label: &str, body: impl FnOnce(&mut egui::Ui)) {
 
 /// "2 Landmasses + 1 Lake": what a multi-selection holds.
 fn selection_summary(map: &Map, ids: &[Id]) -> String {
-    const KINDS: [(&str, &str); 5] = [
+    const KINDS: [(&str, &str); 6] = [
         ("Layer", "Layers"),
         ("Landmass", "Landmasses"),
         ("Lake", "Lakes"),
+        ("River", "Rivers"),
         ("Stamp", "Stamps"),
         ("Label", "Labels"),
     ];
-    let mut counts = [0usize; 5];
+    let mut counts = [0usize; 6];
     for &id in ids {
         let kind = match map.node(id) {
             Some(Node::Layer(_)) => 0,
             Some(Node::Object(object)) => match object.kind {
                 ObjectKind::Landmass(_) => 1,
                 ObjectKind::Lake(_) => 2,
-                ObjectKind::Stamp(_) => 3,
-                ObjectKind::Label(_) => 4,
+                ObjectKind::River(_) => 3,
+                ObjectKind::Stamp(_) => 4,
+                ObjectKind::Label(_) => 5,
             },
             None => continue,
         };

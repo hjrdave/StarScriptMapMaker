@@ -8,8 +8,8 @@
 use proptest::prelude::*;
 use ssmap_core::{
     Canvas, Color, DistanceUnit, Halo, Id, Label, Lake, Landmass, Layer, Map, MapDefaults, MapView,
-    MultiPolygon, Node, Object, ObjectKind, Op, Point, Polygon, Property, Roughness, Scale, Stamp,
-    Subtree,
+    MultiPolygon, Node, Object, ObjectKind, Op, Point, Polygon, Property, River, RiverPoint,
+    Roughness, Scale, Stamp, Subtree,
 };
 
 fn canvas() -> Canvas {
@@ -79,11 +79,27 @@ fn object() -> impl Strategy<Value = Object> {
         }),
         Just(ObjectKind::Stamp(Stamp::default())),
         label().prop_map(|label| ObjectKind::Label(Box::new(label))),
+        river().prop_map(|river| ObjectKind::River(Box::new(river))),
     ];
     (any::<bool>(), kind).prop_map(|(locked, kind)| Object {
         locked,
         ..Object::new(kind)
     })
+}
+
+fn river() -> impl Strategy<Value = River> {
+    (
+        prop::collection::vec(((-500.0..500.0f64, -500.0..500.0f64), 1.0..40.0f64), 2..6),
+        0.0..=1.0f64,
+        any::<u32>(),
+    )
+        .prop_map(|(points, meander, seed)| {
+            let path = points
+                .into_iter()
+                .map(|((x, y), width)| RiverPoint::new([x, y], width))
+                .collect();
+            River::new(path).with_meander(meander).with_seed(seed)
+        })
 }
 
 fn layer() -> impl Strategy<Value = Layer> {
@@ -194,6 +210,7 @@ fn property() -> impl Strategy<Value = Property> {
         any::<[u8; 4]>().prop_map(|[r, g, b, a]| Property::Fill(Color::rgba(r, g, b, a))),
         prop::option::of(roughness()).prop_map(Property::Roughness),
         label().prop_map(|label| Property::Label(Box::new(label))),
+        river().prop_map(|river| Property::River(Box::new(river))),
     ]
 }
 

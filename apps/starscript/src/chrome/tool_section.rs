@@ -1,6 +1,6 @@
 //! The active tool's settings, at the top of Properties above the selection: the Land Brush's
-//! size and mode, the Stamp's chosen Asset and its scatter settings, and the Stamp Eraser's
-//! size. Tools without settings get no section.
+//! size and mode, the River's width and bending, the Stamp's chosen Asset and its scatter
+//! settings, and the Stamp Eraser's size. Tools without settings get no section.
 
 use eframe::egui;
 use ssmap_core::scatter::Placement;
@@ -24,6 +24,7 @@ pub(crate) fn icon(tool: ToolId) -> Icon {
         ToolId::Pan => Icon::Pan,
         ToolId::LandBrush => Icon::LandBrush,
         ToolId::WaterBrush => Icon::WaterBrush,
+        ToolId::River => Icon::River,
         ToolId::Lasso => Icon::Lasso,
         ToolId::Label => Icon::Label,
         ToolId::Stamp => Icon::Stamp,
@@ -36,7 +37,11 @@ pub(crate) fn icon(tool: ToolId) -> Icon {
 fn has_section(tool: ToolId) -> bool {
     matches!(
         tool,
-        ToolId::LandBrush | ToolId::WaterBrush | ToolId::Stamp | ToolId::StampEraser
+        ToolId::LandBrush
+            | ToolId::WaterBrush
+            | ToolId::River
+            | ToolId::Stamp
+            | ToolId::StampEraser
     )
 }
 
@@ -69,6 +74,7 @@ impl ToolSection {
                 ui.add_space(theme::SPACING[2]);
                 match tool {
                     ToolId::LandBrush | ToolId::WaterBrush => land_brush(ui, editor),
+                    ToolId::River => river(ui, editor),
                     ToolId::Stamp => {
                         self.chosen_asset(ui, editor);
                         ui.add_space(theme::SPACING[2]);
@@ -191,6 +197,33 @@ fn land_brush(ui: &mut egui::Ui, editor: &mut Editor) {
     ui.label(
         egui::RichText::new(format!(
             "Hold {} to get the other mode.",
+            tools::ERASE_MODIFIER
+        ))
+        .size(theme::CAPTION)
+        .color(theme::palette(ui.ctx()).text_tertiary),
+    );
+}
+
+/// The width the next point gets, which `[` and `]` also change, and how much new Rivers bend.
+fn river(ui: &mut egui::Ui, editor: &mut Editor) {
+    let spec = ScrubSpec::new("Width")
+        .range(ssmap_core::MIN_RIVER_WIDTH, ssmap_core::MAX_RIVER_WIDTH)
+        .slider_max(tools::BRUSH_SIZE_SLIDER_MAX)
+        .logarithmic()
+        .default_value(crate::editor::DEFAULT_RIVER_WIDTH);
+    prop_widgets::slider(ui, &mut editor.river_width, &spec);
+    let mut bends = editor.river_meander * 100.0;
+    let spec = ScrubSpec::new("Bends")
+        .range(0.0, ssmap_core::MAX_MEANDER * 100.0)
+        .unit("%")
+        .default_value(ssmap_core::River::DEFAULT_MEANDER * 100.0);
+    if prop_widgets::slider(ui, &mut bends, &spec).changed {
+        editor.river_meander = bends / 100.0;
+    }
+    ui.label(
+        egui::RichText::new(format!(
+            "Click from source to mouth · double-click or Enter to finish. Widen with ] as \
+             you go. Shift snaps to 45°, {} runs straight. Shift + wheel changes the bends.",
             tools::ERASE_MODIFIER
         ))
         .size(theme::CAPTION)

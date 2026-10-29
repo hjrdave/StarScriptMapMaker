@@ -56,6 +56,7 @@ icons! {
     ExportRegion, "Export Region", "export-region";
     Landmass, "Landmass", "landmass";
     Lake, "Lake", "lake";
+    River, "River", "river";
     LabelKind, "Label kind", "label-kind";
     LayerGroup, "Layer / Group", "layer-group";
     History, "History", "history";

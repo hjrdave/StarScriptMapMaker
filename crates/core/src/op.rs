@@ -48,7 +48,8 @@ pub enum Op {
         /// The property and its new value.
         property: Property,
     },
-    /// Replaces the outline of a Landmass or Lake.
+    /// Replaces the outline of a Landmass or Lake. A River's is generated, so it has none to
+    /// replace.
     ReplaceGeometry {
         /// The Landmass or Lake to change.
         id: Id,
@@ -486,8 +487,9 @@ impl Map {
                 check_property(self.existing(*id)?, property)
                     .map_err(|name| OpError::NoSuchProperty(*id, name))?;
             }
+            // A River's outline is generated from its path, so there is none to replace.
             Op::ReplaceGeometry { id, .. } => match self.existing(*id)? {
-                Node::Object(object) if object.kind.geometry().is_some() => {}
+                Node::Object(object) if object.kind.stored_geometry().is_some() => {}
                 _ => return Err(OpError::NoGeometry(*id)),
             },
             Op::Move { id, parent, index } => {
