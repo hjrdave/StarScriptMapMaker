@@ -133,7 +133,7 @@ _Avoid_: Focus, active objects
 ### Tabs
 
 **Tab**:
-One open Map in the window, with its own editor, unsaved-changes state and view. Asset packs, Recent files and the export dialog are shared by all tabs and act on the active one. A Tab can be dragged along the strip to reorder it; tabs do not pop out into windows of their own. An Asset dragged from the Asset browser onto the Canvas is placed there, as one Undo step.
+One open Map in the window, with its own editor, unsaved-changes state and view. Asset packs, Recent files and the export dialog are shared by all tabs and act on the active one. A Tab can be dragged along the strip to reorder it; tabs do not pop out into windows of their own. The Asset picker opens over the window as a modal: picking an Asset arms the Stamp tool and closes it.
 _Avoid_: Window, project
 
 **Home tab**:
