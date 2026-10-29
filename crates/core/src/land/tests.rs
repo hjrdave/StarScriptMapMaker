@@ -46,6 +46,15 @@ fn a_click_is_a_disc_and_a_drag_a_capsule() {
 }
 
 #[test]
+fn a_committed_click_is_a_disc() {
+    let disc = brush_region(&[[50.0, 50.0]], 10.0, simplify_tolerance(10.0, 1.0));
+    assert_eq!(disc.0.len(), 1);
+    let expected = std::f64::consts::PI * 100.0;
+    assert!((area(&disc) - expected).abs() < expected * 0.05);
+    assert_oriented(&disc);
+}
+
+#[test]
 fn a_committed_stroke_is_lighter_than_its_preview() {
     let points: Vec<Point> = (0..200)
         .map(|i| {
@@ -259,8 +268,7 @@ fn irregularity_zero_is_the_round_stroke() {
 #[test]
 fn an_irregular_click_is_a_lumpy_blob() {
     let tolerance = simplify_tolerance(60.0, 1.0);
-    // A dab: a click that moved a few units, as a lone point paints nothing.
-    let dab = [[98.0, 100.0], [102.0, 100.0]];
+    let dab = [[100.0, 100.0]];
     let round = irregular_region(&dab, 60.0, tolerance, 0.0, 3);
     let blob = irregular_region(&dab, 60.0, tolerance, 0.2, 3);
     assert!(!round.is_empty() && !blob.is_empty());

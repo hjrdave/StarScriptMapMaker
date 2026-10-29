@@ -264,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn a_land_brush_click_starts_and_ends_a_stroke_in_one_frame() {
+    fn a_land_brush_click_paints_a_dab_in_one_frame() {
         let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
         let before = editor.history_steps().1;
         land_brush(
@@ -274,9 +274,9 @@ mod tests {
             &click_at(250.0, 250.0),
             false,
         );
-        // A lone point has no outline to paint, so no Undo step is left, and nothing is held.
         assert!(!editor.gesture_open() && state.stroke.is_none());
-        assert_eq!(editor.history_steps().1, before);
+        assert_eq!(editor.undo_label(), Some("Paint Land"));
+        assert_eq!(editor.history_steps().1, before + 1);
     }
 
     #[test]

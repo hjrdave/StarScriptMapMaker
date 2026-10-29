@@ -54,8 +54,13 @@ pub fn brush_region(points: &[Point], radius: f64, tolerance: f64) -> MultiPolyg
     {
         *end = last;
     }
-    let line = centreline(&kept).chaikin_smoothing(SMOOTHING_PASSES);
-    let stroked = line.buffer_with_style(BufferStyle::new(radius));
+    // A lone point has no line to stroke, so it is buffered as a point: a click is a dab.
+    let stroked = match kept.as_slice() {
+        [only] => geo::Point::new(only[0], only[1]).buffer_with_style(BufferStyle::new(radius)),
+        _ => centreline(&kept)
+            .chaikin_smoothing(SMOOTHING_PASSES)
+            .buffer_with_style(BufferStyle::new(radius)),
+    };
     let simplified = stroked.simplify(tolerance.max(0.0));
     // Simplifying can make a ring cross itself; uniting it with nothing cleans that up.
     normalised(simplified.union(&geo::MultiPolygon::<f64>::new(Vec::new())))
