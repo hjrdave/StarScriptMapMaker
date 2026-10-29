@@ -477,7 +477,7 @@ fn tools_without_settings_have_no_section_and_the_eraser_has_only_size() {
     let (mut fixture, _, _) = fixture();
     fixture.editor.active_tool = ToolId::StampEraser;
     let mut harness = harness(fixture);
-    assert!(harness.query_by_label("Stamp Eraser").is_some());
+    assert!(harness.query_by_label("Eraser").is_some());
     assert!(harness.query_by_label("Size").is_some());
     assert!(harness.query_by_label("Density").is_none());
     for tool in [
