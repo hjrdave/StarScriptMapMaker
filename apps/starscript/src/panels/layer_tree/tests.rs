@@ -739,7 +739,15 @@ fn the_layer_area_shows_the_selected_layer_and_edits_its_depth_sort() {
     let (mut editor, a, b) = editor_with_two_layers();
     editor.select(vec![a]);
     let mut harness = harness(editor);
-    for label in ["Layer", "Opacity", "Depth sort", "Clip to", "Use selection"] {
+    for label in [
+        "Appearance",
+        "Ordering",
+        "Clipping",
+        "Opacity",
+        "Depth sort",
+        "Clip to",
+        "Use selection",
+    ] {
         assert!(harness.query_by_label(label).is_some(), "{label}");
     }
     // No Landmass is selected, so there is nothing to clip to.

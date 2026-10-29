@@ -6,7 +6,7 @@ use ssmap_core::{Command, Id, Node};
 
 use super::{DEPTH_SORT_HINT, LayerTree, landmass_name, landmasses, selected_landmass};
 use crate::editor::Editor;
-use crate::prop_widgets::{self, ScrubSpec, SectionHeader};
+use crate::prop_widgets::{self, Provenance, ScrubSpec, SectionHeader};
 use crate::theme;
 
 /// The Layer the area edits: the one Layer selected, else the active Layer.
@@ -35,13 +35,13 @@ impl LayerTree {
             egui::Stroke::new(1.0, palette.border_subtle),
         );
         ui.spacing_mut().item_spacing.y = theme::SPACING[1];
-        let header = SectionHeader {
-            kind: "layer",
-            title: "Layer",
+        let header = |kind, title| SectionHeader {
+            kind,
+            title,
             badge: None,
             action: None,
         };
-        prop_widgets::section(ui, header, |ui| {
+        prop_widgets::section(ui, header("layer-appearance", "Appearance"), |ui| {
             // Dragging the slider is one gesture: live updates, one Undo step.
             let mut percent = f64::from(layer.opacity) * 100.0;
             let edit = prop_widgets::slider(
@@ -54,7 +54,8 @@ impl LayerTree {
                     id,
                     opacity: (percent / 100.0).clamp(0.0, 1.0) as f32,
                 });
-
+        });
+        prop_widgets::section(ui, header("layer-ordering", "Ordering"), |ui| {
             let mut depth_sort = layer.depth_sort;
             if prop_widgets::checkbox_row(ui, "Depth sort", &mut depth_sort) {
                 let _ = editor.run(Command::SetDepthSort { id, depth_sort });
@@ -64,7 +65,8 @@ impl LayerTree {
                     .size(theme::CAPTION)
                     .color(palette.text_tertiary),
             );
-
+        });
+        prop_widgets::section(ui, header("layer-clipping", "Clipping"), |ui| {
             clip_row(ui, editor, id, layer.clip);
         });
         ui.add_space(theme::SPACING[1]);
@@ -74,16 +76,7 @@ impl LayerTree {
 
 /// "Clip to" and its Landmass picker, with "Use selection" under it.
 fn clip_row(ui: &mut egui::Ui, editor: &mut Editor, id: Id, clip: Option<Id>) {
-    let palette = theme::palette(ui.ctx());
-    ui.horizontal(|ui| {
-        ui.add_sized(
-            [64.0, 22.0],
-            egui::Label::new(
-                egui::RichText::new("Clip to")
-                    .size(theme::BODY)
-                    .color(palette.text_secondary),
-            ),
-        );
+    prop_widgets::field_row(ui, "Clip to", Provenance::Plain, |ui| {
         let current = clip.map_or("None".to_owned(), |t| landmass_name(editor.map(), t));
         egui::ComboBox::from_id_salt("clip")
             .selected_text(current)
