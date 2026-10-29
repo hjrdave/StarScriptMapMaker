@@ -1,11 +1,11 @@
-//! The Map section: Canvas, Scale, background and the Map-wide defaults.
+//! The Map section: the Canvas, its background and the Map-wide defaults.
 
 use eframe::egui;
 use ssmap_core::{Canvas, Color, Command, DistanceUnit, Id, MapTemplate, ShoreKind};
 
 use super::{Inherit, PropertiesPanel, caption, row};
 use crate::editor::Editor;
-use crate::prop_widgets::{self, Edit, Handle, Provenance, ScrubSpec};
+use crate::prop_widgets::{self, Edit, Handle, Provenance, ScrubSpec, SectionHeader};
 
 impl PropertiesPanel {
     /// Width, height and the anchor they grow or shrink from, of the board `id` whose box is
@@ -119,7 +119,6 @@ impl PropertiesPanel {
                 ui.label(canvas.template.as_deref().unwrap_or("None"));
             });
         }
-        caption(ui, "Background");
         let templates = self
             .templates
             .get_or_insert_with(|| MapTemplate::load_all().0);
@@ -185,24 +184,41 @@ impl PropertiesPanel {
             .show(ui, |ui| self.map_fields(ui, editor));
     }
 
+    /// Three sections: the Canvas (size, anchor and scale), its Background, and the Map-wide
+    /// defaults that Landmasses and Lakes inherit.
     fn map_fields(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         let canvas = editor.map().canvas().clone();
         let primary = editor.map().primary_board();
-        self.canvas_fields(ui, editor, primary, &canvas);
-        let unit = match canvas.scale.unit {
-            DistanceUnit::Miles => "mi",
-            DistanceUnit::Kilometres => "km",
+        let header = |kind, title| SectionHeader {
+            kind,
+            title,
+            badge: None,
+            action: None,
         };
-        row(ui, "Scale", |ui| {
-            ui.label(format!(
-                "{} {unit} per unit",
-                canvas.scale.distance_per_unit
-            ));
+        prop_widgets::section(ui, header("map-canvas", "Canvas"), |ui| {
+            self.canvas_fields(ui, editor, primary, &canvas);
+            let unit = match canvas.scale.unit {
+                DistanceUnit::Miles => "mi",
+                DistanceUnit::Kilometres => "km",
+            };
+            row(ui, "Scale", |ui| {
+                ui.label(format!(
+                    "{} {unit} per unit",
+                    canvas.scale.distance_per_unit
+                ));
+            });
         });
+        prop_widgets::section(ui, header("map-background", "Background"), |ui| {
+            self.background_fields(ui, editor, primary, &canvas);
+        });
+        prop_widgets::section(ui, header("map-defaults", "Defaults"), |ui| {
+            self.map_defaults(ui, editor);
+        });
+    }
 
-        self.background_fields(ui, editor, primary, &canvas);
-
-        caption(ui, "Default Roughness");
+    /// The Roughness and shore styles that Landmasses and Lakes take unless they set their own.
+    fn map_defaults(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+        caption(ui, "Roughness");
         let current = [editor.map().defaults().roughness.clone()];
         let set = |_, roughness| Command::SetDefaultRoughness { roughness };
         let group = Inherit {
@@ -219,12 +235,12 @@ impl PropertiesPanel {
         for (kind, title, label) in [
             (
                 ShoreKind::Landmass,
-                "Default Landmass shore",
+                "Landmass shore",
                 "Change Default Shore Style",
             ),
             (
                 ShoreKind::Lake,
-                "Default Lake shore",
+                "Lake shore",
                 "Change Default Lake Shore Style",
             ),
         ] {
