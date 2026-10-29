@@ -9,8 +9,8 @@ use std::sync::Arc;
 use lyon::math::point;
 use lyon::path::Path;
 use ssmap_core::{
-    ContentHash, Id, Landmass, Map, Membership, MultiPolygon, Node, ObjectKind, Polygon,
-    ResolvedLabel, RoughnessCache, ShoreStyle, Stamp,
+    ContentHash, Id, Landmass, Map, Membership, MultiPolygon, Node, ObjectKind, Polygon, Rect,
+    ResolvedLabel, RoughnessCache, ShoreStyle, Stamp, land,
 };
 
 use crate::canvas::{ClipScope, Content};
@@ -54,6 +54,9 @@ pub struct MapScene {
     ends: HashMap<Id, LayerEnd>,
     /// The Labels the build in progress has drawn, to forget the layouts of the rest.
     seen: HashSet<Id>,
+    /// The outlines of the Lakes and Rivers that draw, so water that overlaps other water can
+    /// leave its shore line and shading out where they meet.
+    water: Vec<WaterBody>,
     /// Counts builds, to tell the entries of `stamps` the last build used from the rest.
     build: u64,
 }
@@ -117,6 +120,35 @@ struct Replacement {
     new: Vec<VectorGroup>,
 }
 
+/// One Lake or River that draws, as far as other water is concerned.
+struct WaterBody {
+    id: Id,
+    outline: Arc<MultiPolygon>,
+    bounds: Rect,
+}
+
+/// The Lakes and Rivers among `order`, with the outlines they draw.
+fn water_bodies(map: &Map, roughness: &mut RoughnessCache, order: &[Id]) -> Vec<WaterBody> {
+    order
+        .iter()
+        .filter_map(|&id| {
+            let Some(Node::Object(object)) = map.node(id) else {
+                return None;
+            };
+            if !object.kind.is_water() {
+                return None;
+            }
+            let outline = outline(roughness, map, id)?;
+            let bounds = outline.bounds()?;
+            Some(WaterBody {
+                id,
+                outline,
+                bounds,
+            })
+        })
+        .collect()
+}
+
 /// A Stamp's draw, and what it was built from.
 struct CachedStamp {
     /// The version of the Stamp when it was built.
@@ -141,6 +173,7 @@ impl MapScene {
             built: None,
             stamps: HashMap::new(),
             seen: HashSet::new(),
+            water: Vec::new(),
             slot_ids: Vec::new(),
             slots: None,
             objects: HashMap::new(),
@@ -255,6 +288,7 @@ impl MapScene {
         // The Landmass the last scope is clipped to, while that scope is still growing.
         let mut open: Option<Id> = None;
         let order = map.draw_order();
+        self.water = water_bodies(map, roughness, &order);
         self.build += 1;
         // What the Layers above an Object decide, worked out once per Layer and not per Object.
         let mut above: HashMap<Option<Id>, (Option<Id>, f32)> = HashMap::new();
@@ -411,6 +445,21 @@ impl MapScene {
         }
         if landed {
             self.pick_up_landed(map, roughness, &mut dirty)?;
+        }
+        // Water that moved, or changed, shows differently where it meets other water, so all
+        // the water is drawn again.
+        let is_water =
+            |id: &Id| matches!(map.node(*id), Some(Node::Object(o)) if o.kind.is_water());
+        if dirty.iter().any(is_water) {
+            self.water = water_bodies(map, roughness, &map.draw_order());
+            let have: HashSet<Id> = dirty.iter().copied().collect();
+            let others: Vec<Id> = self
+                .water
+                .iter()
+                .map(|body| body.id)
+                .filter(|id| !have.contains(id) && self.objects.contains_key(id))
+                .collect();
+            dirty.extend(others);
         }
         let stamps = if stamp_ids.is_empty() {
             None
@@ -854,31 +903,30 @@ impl MapScene {
                 if let Some(shore) = map.shore(id) {
                     self.rings.prepare(id, &outline, shore, self.complete);
                     // A River's mouth opens into the water it flows into, so its line and
-                    // shading run along the banks only.
+                    // shading run along the banks only. Where water overlaps other water, the
+                    // lines stop at the other's edge, so the two read as one body.
                     let river = match kind {
-                        ObjectKind::River(river) => Some(river),
+                        ObjectKind::River(river) => Some(&**river),
                         _ => None,
                     };
+                    // Land needs none of this: water draws above it and covers its lines.
+                    let others = kind
+                        .is_water()
+                        .then(|| self.overlapping_water(id, &outline))
+                        .flatten();
                     let reach = shore.shading.width / f64::from(SHADING_BANDS);
                     shading_groups(
                         &mut |distance| self.rings.ring(id, distance),
-                        &|ring: &MultiPolygon, distance: f64| match river {
-                            Some(river) => {
-                                lines_path(&river.away_from_mouth(ring, distance.abs() + reach))
-                            }
-                            None => region_path(ring),
+                        &|ring: &MultiPolygon, distance: f64| {
+                            shore_path(river, ring, distance.abs() + reach, others.as_ref())
                         },
                         shore,
                         opacity,
                         groups,
                     );
                     if shore.outline.width > 0.0 {
-                        let path = match river {
-                            Some(river) => lines_path(&river.banks()),
-                            None => region_path(&outline),
-                        };
                         groups.push(stroke(
-                            path,
+                            shore_path(river, &outline, 0.0, others.as_ref()),
                             shore.outline.color,
                             shore.outline.width as f32,
                             opacity,
@@ -888,6 +936,59 @@ impl MapScene {
             }
         }
     }
+
+    /// The parts of the other water that draws whose bounds meet `outline`'s, as one region, or
+    /// `None` if there are none.
+    fn overlapping_water(&self, id: Id, outline: &MultiPolygon) -> Option<MultiPolygon> {
+        let bounds = outline.bounds()?;
+        let meets = |other: &Rect| {
+            other.min[0] <= bounds.max[0]
+                && bounds.min[0] <= other.max[0]
+                && other.min[1] <= bounds.max[1]
+                && bounds.min[1] <= other.max[1]
+        };
+        let parts: Vec<_> = self
+            .water
+            .iter()
+            .filter(|body| body.id != id && meets(&body.bounds))
+            .flat_map(|body| body.outline.0.iter().cloned())
+            .collect();
+        (!parts.is_empty()).then_some(MultiPolygon(parts))
+    }
+}
+
+/// The path a shore line or a band of shading follows along `region`, a ring of a Lake's or
+/// River's outline: a River's leaves out its mouth (within `reach` of it), and with `others`, the
+/// other water it overlaps, none of it lies inside that.
+fn shore_path(
+    river: Option<&ssmap_core::River>,
+    region: &MultiPolygon,
+    reach: f64,
+    others: Option<&MultiPolygon>,
+) -> Path {
+    let lines = match (river, others) {
+        (None, None) => return region_path(region),
+        (Some(river), _) => river.away_from_mouth(region, reach),
+        (None, Some(_)) => closed_lines(region),
+    };
+    match others {
+        Some(others) => lines_path(&land::lines_outside(&lines, others)),
+        None => lines_path(&lines),
+    }
+}
+
+/// Every ring of `region` as a line that returns to its first point.
+fn closed_lines(region: &MultiPolygon) -> Vec<Vec<[f64; 2]>> {
+    region
+        .0
+        .iter()
+        .flat_map(Polygon::rings)
+        .filter_map(|ring| {
+            let mut line = ring.to_vec();
+            line.push(*ring.first()?);
+            Some(line)
+        })
+        .collect()
 }
 
 /// What the Layers above an Object and its membership decide about how it draws.
@@ -1626,6 +1727,61 @@ mod tests {
             assert_eq!(x, y, "group {i}");
         }
         assert_same_stamps(a, b);
+    }
+
+    #[test]
+    fn water_that_meets_other_water_is_redrawn_when_either_moves() {
+        use ssmap_core::{River, RiverPoint};
+        let (mut map, _) = map_with_land();
+        let layer = map.children(None)[0];
+        let mut river = |points: &[(f64, f64)]| {
+            let id = Id::new();
+            let path = points
+                .iter()
+                .map(|&(x, y)| RiverPoint::new([x, y], 12.0))
+                .collect();
+            map.execute(&Command::CreateRiver {
+                id,
+                parent: layer,
+                index: None,
+                river: Box::new(River::new(path).with_meander(0.0)),
+            })
+            .unwrap();
+            id
+        };
+        let main = river(&[(0.0, 50.0), (400.0, 50.0)]);
+        let across = river(&[(200.0, -100.0), (200.0, 200.0)]);
+        let mut scene = MapScene::new(Fonts::bundled());
+        let mut roughness = RoughnessCache::new();
+        let apart = scene.content(&map, &mut roughness);
+        let joined = |content: &Content| {
+            let shore_of = |id: Id| {
+                content
+                    .groups()
+                    .iter()
+                    .filter(|g| g.object.is_some_and(|o| o.id == id) && !g.effect)
+                    .count()
+            };
+            (shore_of(main), shore_of(across))
+        };
+        // Move the crossing River away, then back: each patched build equals a fresh one,
+        // so the main River's lines were redrawn for water that was not its own edit.
+        for offset in [[0.0, 400.0], [0.0, -400.0]] {
+            map.execute(&Command::Translate {
+                ids: vec![across],
+                offset,
+            })
+            .unwrap();
+            let patched = scene.content(&map, &mut roughness);
+            let fresh = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
+            assert_same_content(&patched, &fresh);
+        }
+        let back = scene.content(&map, &mut roughness);
+        assert_same_content(
+            &back,
+            &MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new()),
+        );
+        assert_eq!(joined(&back), joined(&apart));
     }
 
     #[test]

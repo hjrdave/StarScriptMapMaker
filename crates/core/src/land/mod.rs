@@ -4,6 +4,7 @@
 //! Everything this module returns is a valid stored outline: parts never overlap, exteriors
 //! are counter-clockwise and holes clockwise (positive and negative shoelace area).
 
+use geo::bool_ops::FillRule;
 use geo::orient::Direction;
 use geo::{BooleanOps, Buffer, Intersects, LineString, Orient, Simplify, buffer::BufferStyle};
 
@@ -50,6 +51,26 @@ pub fn offset(outline: &MultiPolygon, distance: f64) -> MultiPolygon {
     let tolerance = (distance.abs() * OFFSET_TOLERANCE).max(MIN_OFFSET_TOLERANCE);
     let simplified = to_geo(outline).simplify(tolerance);
     normalised(simplified.buffer_with_style(BufferStyle::new(distance)))
+}
+
+/// The parts of `lines` that lie outside `region`, as open lines. Where `region` has parts that
+/// overlap, a point in any of them counts as inside, so it can be the water of several Lakes and
+/// Rivers at once. A line that never meets `region` comes back whole.
+pub fn lines_outside(lines: &[Vec<Point>], region: &MultiPolygon) -> Vec<Vec<Point>> {
+    if lines.is_empty() || region.is_empty() {
+        return lines.to_vec();
+    }
+    let lines =
+        geo::MultiLineString::new(lines.iter().map(|l| LineString::from(l.clone())).collect());
+    // Positive winding, because stored parts are all counter-clockwise: overlapping parts add
+    // up instead of cancelling out as even-odd would.
+    let outside = to_geo(region).clip_with_fill_rule(&lines, true, FillRule::Positive);
+    outside
+        .0
+        .iter()
+        .map(|line| line.coords().map(|c| [c.x, c.y]).collect::<Vec<Point>>())
+        .filter(|line| line.len() > 1)
+        .collect()
 }
 
 /// Whether the two regions share any point.

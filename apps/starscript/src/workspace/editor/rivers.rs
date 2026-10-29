@@ -2,10 +2,19 @@ use ssmap_core::{River, RiverPoint, ending_at_shore};
 
 use super::*;
 
-/// The River tool's starting width, in Canvas units.
-pub const DEFAULT_RIVER_WIDTH: f64 = 8.0;
+/// The width the River tool starts with on a Canvas `canvas_width` units across: a 150th of it,
+/// so a River is a few pixels wide however the Canvas is sized, but never under 8 units (so
+/// its Shore style leaves room for the fill) or over 64.
+pub fn default_river_width(canvas_width: u32) -> f64 {
+    (f64::from(canvas_width) / 150.0).clamp(8.0, 64.0)
+}
 
 impl Editor {
+    /// The River tool's width on this Map's Canvas, which Reset in its settings goes back to.
+    pub fn default_river_width(&self) -> f64 {
+        default_river_width(self.map.canvas().width)
+    }
+
     /// The River that finishing the River tool's `path` now would make: cut where it first
     /// leaves land, with the tool's bending and `seed`. Its problem, if it has one, is why it
     /// can't be made.

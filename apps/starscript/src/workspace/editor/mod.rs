@@ -45,7 +45,7 @@ use caches::Caches;
 use clipboard::ClipboardSlot;
 use gesture::OpenGesture;
 pub use gesture::{Gesture, GestureId};
-pub use rivers::DEFAULT_RIVER_WIDTH;
+pub use rivers::default_river_width;
 
 /// The land brush's starting diameter, in Canvas units.
 pub const DEFAULT_BRUSH_SIZE: f64 = 48.0;
@@ -160,6 +160,7 @@ impl Editor {
     pub fn new(map: Map) -> Self {
         let mut history = History::default();
         history.set_recording(true);
+        let river_width = rivers::default_river_width(map.canvas().width);
         Self {
             map,
             scene: MapScene::new(Fonts::bundled()),
@@ -176,7 +177,7 @@ impl Editor {
             rename_request: None,
             brush_size: DEFAULT_BRUSH_SIZE,
             erase_default: false,
-            river_width: DEFAULT_RIVER_WIDTH,
+            river_width,
             river_meander: ssmap_core::River::DEFAULT_MEANDER,
             node_edit: None,
             tool_busy: false,

@@ -14,6 +14,7 @@ Like Roughness, the generator uses only `+ - * /` and `sqrt` and draws its rando
 
 - **The path is the River.** `CreateRiver` and `SetRiver` carry the River's stored fields. `MoveNodes`, `InsertNode` and `DeleteNodes` edit its points: part 0, ring 0, from source to mouth. `Translate`, `Transform` and paste move its points and scale its widths. `ReplaceGeometry`, `AddRegion`, `SubtractRegion` and `SetRoughness` refuse a River.
 - **Water, like a Lake.** A River draws with its Layer's Lakes, above the land, uses the Lakes' default Shore style, and counts as water for scatter placement and Clip. It has no Roughness of its own: its bends and banks are its detail.
+- **Overlapping water is one body.** A Lake's or River's shore line and shading are drawn only where they lie outside the other water that draws (`land::lines_outside`), so a tributary, a crossing River or a River through a Lake shows no bank lines across it. The scene redraws all water when any of it changes, since each body's lines depend on the rest. Ripples already draw beneath every fill, and Landmasses are unaffected, because water covers their lines.
 - **The tool ends Rivers at the shore.** The River tool cuts a path where it first leaves land (`ending_at_shore`), just past where the later bank crosses. The square mouth then covers the Lake's or the coast's shore line, and the River joins the water with no line across it.
 - **File format 1.11.** A River's row holds its path in `props` and has no `geometry` blob. Older apps refuse the `river` kind, as they would any unknown Object kind.
 
@@ -25,5 +26,5 @@ Like Roughness, the generator uses only `+ - * /` and `sqrt` and draws its rando
 
 ## Consequences
 
-- Tributaries are separate Rivers that end on another River; nothing joins them yet.
+- Tributaries are separate Rivers that end on another River. They look joined, but nothing links them as Objects: moving the main River does not move its tributaries.
 - A River placed by Commands rather than the tool keeps whatever path it was given, including any part that runs past the shore.

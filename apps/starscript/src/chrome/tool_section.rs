@@ -210,7 +210,7 @@ fn river(ui: &mut egui::Ui, editor: &mut Editor) {
         .range(ssmap_core::MIN_RIVER_WIDTH, ssmap_core::MAX_RIVER_WIDTH)
         .slider_max(tools::BRUSH_SIZE_SLIDER_MAX)
         .logarithmic()
-        .default_value(crate::editor::DEFAULT_RIVER_WIDTH);
+        .default_value(editor.default_river_width());
     prop_widgets::slider(ui, &mut editor.river_width, &spec);
     let mut bends = editor.river_meander * 100.0;
     let spec = ScrubSpec::new("Bends")

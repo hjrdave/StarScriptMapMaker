@@ -219,3 +219,28 @@ fn a_lasso_loop_becomes_a_valid_region_even_when_it_crosses_itself() {
     assert!(lasso_region(&[[0.0, 0.0], [5.0, 5.0]], 0.0).is_empty());
     assert!(lasso_region(&[[0.0, 0.0], [5.0, 5.0], [10.0, 10.0]], 0.0).is_empty());
 }
+
+#[test]
+fn lines_outside_drops_what_lies_inside_the_region() {
+    let lines = vec![vec![[-10.0, 5.0], [30.0, 5.0]]];
+    let outside = lines_outside(&lines, &square(0.0, 10.0));
+    assert_eq!(outside.len(), 2, "{outside:?}");
+    let xs = |line: &Vec<Point>| (line[0][0].min(line[1][0]), line[0][0].max(line[1][0]));
+    let mut spans: Vec<_> = outside.iter().map(xs).collect();
+    spans.sort_by(|a, b| a.0.total_cmp(&b.0));
+    assert_eq!(spans, vec![(-10.0, 0.0), (10.0, 30.0)]);
+    // A line that never meets the region comes back whole.
+    let far = vec![vec![[50.0, 50.0], [60.0, 50.0]]];
+    assert_eq!(lines_outside(&far, &square(0.0, 10.0)), far);
+}
+
+#[test]
+fn lines_outside_treats_overlapping_parts_as_one_region() {
+    // Two overlapping squares, both counter-clockwise: a line through their overlap is inside.
+    let mut region = square(0.0, 10.0);
+    region.0.extend(square(5.0, 15.0).0);
+    let lines = vec![vec![[-5.0, 7.0], [20.0, 7.0]]];
+    let outside = lines_outside(&lines, &region);
+    let total: f64 = outside.iter().map(|l| (l[1][0] - l[0][0]).abs()).sum();
+    assert!((total - 10.0).abs() < 1e-9, "5 either side, {outside:?}");
+}

@@ -176,7 +176,7 @@ pub(super) fn paint_river(
 mod tests {
     use super::super::test_util::*;
     use super::*;
-    use ssmap_core::{Node, ObjectKind};
+    use ssmap_core::{Id, Node, ObjectKind};
 
     fn enter_key() -> CanvasFrame {
         CanvasFrame {
@@ -259,6 +259,33 @@ mod tests {
         assert!(level[1].abs() < 1e-9 && level[0] > 99.0, "{level:?}");
         let diagonal = snapped([0.0, 0.0], [70.0, 75.0]);
         assert!((diagonal[0] - diagonal[1]).abs() < 1e-9, "{diagonal:?}");
+    }
+
+    #[test]
+    fn the_starting_width_scales_with_the_canvas() {
+        use crate::editor::default_river_width;
+        assert_eq!(
+            default_river_width(400),
+            8.0,
+            "never thinner than the shore effects"
+        );
+        assert!((default_river_width(4096) - 4096.0 / 150.0).abs() < 1e-9);
+        assert_eq!(default_river_width(100_000), 64.0);
+        let mut big = ssmap_core::Map::new(ssmap_core::Canvas::new(
+            4096,
+            3072,
+            ssmap_core::Scale::new(0.25, ssmap_core::DistanceUnit::Miles),
+        ));
+        let layer = Id::new();
+        let _ = big.execute(&ssmap_core::Command::CreateLayer {
+            id: layer,
+            parent: None,
+            index: None,
+            name: "Land".into(),
+        });
+        let editor = Editor::new(big);
+        assert!(editor.river_width > 20.0, "{}", editor.river_width);
+        assert_eq!(editor.river_width, editor.default_river_width());
     }
 
     #[test]

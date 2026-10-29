@@ -396,6 +396,116 @@ fn rivers_taper_and_bend_into_the_water() {
     }
 }
 
+/// Water that overlaps other water: a tributary joining a River, a River running through a
+/// Lake, and a River crossing another. Their shore lines stop where they meet.
+fn joined_water() -> Map {
+    let mut map = Map::new(Canvas::new(
+        1000,
+        1000,
+        Scale::new(1.0, DistanceUnit::Miles),
+    ));
+    let layer = Id::new();
+    let run = |map: &mut Map, command: Command| {
+        map.execute(&command).expect("the Command applies");
+    };
+    run(
+        &mut map,
+        Command::CreateLayer {
+            id: layer,
+            parent: None,
+            index: None,
+            name: "Land".into(),
+        },
+    );
+    run(
+        &mut map,
+        Command::CreateLandmass {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            geometry: MultiPolygon(vec![Polygon {
+                exterior: vec![[40.0, 40.0], [960.0, 40.0], [960.0, 960.0], [40.0, 960.0]],
+                holes: Vec::new(),
+            }]),
+            fill: None,
+        },
+    );
+    run(
+        &mut map,
+        Command::CreateLake {
+            id: Id::new(),
+            parent: layer,
+            index: None,
+            geometry: MultiPolygon(vec![Polygon {
+                exterior: vec![
+                    [620.0, 560.0],
+                    [840.0, 540.0],
+                    [860.0, 720.0],
+                    [640.0, 740.0],
+                ],
+                holes: Vec::new(),
+            }]),
+            fill: None,
+        },
+    );
+    let paths: [&[(f64, f64, f64)]; 4] = [
+        // The main River, across the Canvas.
+        &[
+            (80.0, 120.0, 18.0),
+            (400.0, 300.0, 22.0),
+            (700.0, 380.0, 26.0),
+            (930.0, 330.0, 30.0),
+        ],
+        // A tributary that runs into the main River's side.
+        &[
+            (120.0, 600.0, 8.0),
+            (250.0, 450.0, 12.0),
+            (392.0, 304.0, 16.0),
+        ],
+        // A River through the Lake, longer than the Lake, so it crosses both shores.
+        &[
+            (720.0, 400.0, 14.0),
+            (740.0, 560.0, 18.0),
+            (730.0, 780.0, 22.0),
+            (700.0, 930.0, 28.0),
+        ],
+        // One that crosses the main River and goes on.
+        &[
+            (520.0, 150.0, 10.0),
+            (560.0, 330.0, 12.0),
+            (520.0, 520.0, 14.0),
+        ],
+    ];
+    for (i, path) in paths.iter().enumerate() {
+        let river = River::new(
+            path.iter()
+                .map(|&(x, y, w)| RiverPoint::new([x, y], w))
+                .collect(),
+        )
+        .with_seed(i as u32 + 1);
+        run(
+            &mut map,
+            Command::CreateRiver {
+                id: Id::new(),
+                parent: layer,
+                index: None,
+                river: Box::new(river),
+            },
+        );
+    }
+    map
+}
+
+#[test]
+fn water_that_overlaps_water_reads_as_one_body() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let image = render(headless, &scene_of(&joined_water()), &land_and_water_view());
+    if let Gpu::Software(_) = gpu {
+        assert_matches_golden("joined_water", &image);
+    }
+}
+
 /// A frame drawn mid-gesture skips ripples and inner shading; the redraw once the gesture
 /// stops, on the same renderer, is the fully rendered frame.
 #[test]
