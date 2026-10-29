@@ -441,12 +441,19 @@ impl Shell {
         self.layers_overlay || self.properties_overlay
     }
 
-    /// Whether the window's width, not the user, makes the panel on `side` a rail.
+    /// Whether the window is too narrow for the panel on `side` to show in full, whether or not
+    /// the user collapsed it.
     fn auto_rail(&self, side: Side) -> bool {
-        let layout = self.current_layout();
+        let mut expanded = self.clone();
         match side {
-            Side::Left => !self.layers_collapsed && layout.layers == PanelMode::Rail,
-            Side::Right => !self.properties_collapsed && layout.properties == PanelMode::Rail,
+            Side::Left => {
+                expanded.layers_collapsed = false;
+                expanded.current_layout().layers == PanelMode::Rail
+            }
+            Side::Right => {
+                expanded.properties_collapsed = false;
+                expanded.current_layout().properties == PanelMode::Rail
+            }
         }
     }
 }

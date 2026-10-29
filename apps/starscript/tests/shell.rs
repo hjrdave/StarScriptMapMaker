@@ -390,17 +390,15 @@ fn the_overlay_closes_from_every_sidebar_section() {
             .state_mut()
             .run_command(ssmap_app::menu::Command::NewArtBoard);
         harness.run();
-        // The sidebar starts collapsed by the user's choice, and in that state the shortcut
-        // only expands it: a narrow window shows the rail either way. Expand it first.
-        harness.key_press_modifiers(BOTH, egui::Key::Num1);
-        harness.run();
-        assert!(!harness.state().shell().layers_collapsed(), "{section:?}");
-        // In a narrow window the shortcut then opens the sidebar over the Canvas.
+        // The sidebar starts collapsed, and in a narrow window the shortcut opens it over the
+        // Canvas on the first press, leaving the user's collapse as it was (#492).
+        assert!(harness.state().shell().layers_collapsed(), "{section:?}");
         assert_eq!(show_section(&mut harness, key), section);
         assert!(harness.state().shell().layers_overlay(), "{section:?}");
+        assert!(harness.state().shell().layers_collapsed(), "{section:?}");
         harness.get_by_label("Collapse Layers (⌘⌥1)").click();
         harness.run();
         assert!(!harness.state().shell().layers_overlay(), "{section:?}");
-        assert!(!harness.state().shell().layers_collapsed(), "{section:?}");
+        assert!(harness.state().shell().layers_collapsed(), "{section:?}");
     }
 }

@@ -160,6 +160,53 @@ fn the_layers_shortcut_opens_the_overlay_when_the_window_is_too_narrow() {
 }
 
 #[test]
+fn a_shortcut_opens_the_overlay_on_the_first_press_while_the_sidebar_is_collapsed() {
+    // The sidebar starts collapsed. In a window too narrow for it, the shortcut opens it over
+    // the Canvas at once and leaves the user's collapse alone.
+    let mut shell = Shell::default();
+    assert!(shell.layers_collapsed());
+    shell.set_window_width(1100.0);
+    shell.toggle_layers();
+    assert!(shell.layers_overlay() && shell.layers_collapsed());
+    shell.toggle_layers();
+    assert!(!shell.layers_overlay() && shell.layers_collapsed());
+
+    for section in SidebarSection::ALL {
+        let mut shell = Shell::default();
+        shell.set_window_width(1100.0);
+        // Art boards is offered once the Map has a board besides the Canvas.
+        shell.board_count = 2;
+        shell.show_section(section);
+        assert!(
+            shell.layers_overlay() && shell.layers_collapsed(),
+            "{section:?}"
+        );
+        assert_eq!(shell.sidebar_section(), section);
+    }
+
+    // The same for Properties on the right.
+    // Properties gives way to a strip below 1100.
+    let mut shell = Shell::default();
+    shell.set_window_width(1000.0);
+    shell.properties_collapsed = true;
+    shell.toggle_properties();
+    assert!(shell.properties_overlay() && shell.properties_collapsed());
+    shell.toggle_properties();
+    assert!(!shell.properties_overlay() && shell.properties_collapsed());
+}
+
+#[test]
+fn in_a_window_with_room_a_shortcut_still_expands_a_collapsed_sidebar() {
+    let mut shell = Shell::default();
+    shell.set_window_width(1500.0);
+    shell.toggle_layers();
+    assert!(!shell.layers_collapsed() && !shell.layers_overlay());
+    shell.set_layers_collapsed(true);
+    shell.show_section(SidebarSection::Boards);
+    assert!(!shell.layers_collapsed() && !shell.layers_overlay());
+}
+
+#[test]
 fn only_one_overlay_is_open_at_a_time() {
     let mut shell = Shell::default();
     shell.set_layers_overlay(true);
