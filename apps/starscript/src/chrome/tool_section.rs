@@ -111,25 +111,30 @@ impl ToolSection {
     }
 }
 
-/// The settings of the active tool, as one section named after it. The Stamp's are the
-/// Scatter and Randomise sections.
+/// The settings of the active tool, as sections that group them by what they do, like the
+/// Map section's. The Stamp's are the Scatter and Randomise sections.
 pub(crate) fn tool_sections(ui: &mut egui::Ui, editor: &mut Editor) {
-    let tool = editor.active_tool;
-    let header = SectionHeader {
-        kind: "tool",
-        title: tool.label(),
+    let header = |kind, title| SectionHeader {
+        kind,
+        title,
         badge: None,
         action: None,
     };
-    match tool {
+    match editor.active_tool {
         ToolId::LandBrush | ToolId::WaterBrush => {
-            prop_widgets::section(ui, header, |ui| land_brush(ui, editor));
+            prop_widgets::section(ui, header("brush", "Brush"), |ui| {
+                size(ui, editor);
+                if editor.active_tool == ToolId::LandBrush {
+                    irregularity(ui, editor);
+                }
+            });
+            prop_widgets::section(ui, header("brush-mode", "Behaviour"), |ui| mode(ui, editor));
         }
         ToolId::River => {
-            prop_widgets::section(ui, header, |ui| river(ui, editor));
+            prop_widgets::section(ui, header("river", "Shape"), |ui| river(ui, editor));
         }
         ToolId::StampEraser => {
-            prop_widgets::section(ui, header, |ui| size(ui, editor));
+            prop_widgets::section(ui, header("eraser", "Eraser"), |ui| size(ui, editor));
         }
         ToolId::Stamp => scatter_sections(ui, editor),
         _ => {}
@@ -147,11 +152,8 @@ fn size(ui: &mut egui::Ui, editor: &mut Editor) {
     prop_widgets::slider(ui, &mut editor.brush_size, &spec);
 }
 
-fn land_brush(ui: &mut egui::Ui, editor: &mut Editor) {
-    size(ui, editor);
-    if editor.active_tool == ToolId::LandBrush {
-        irregularity(ui, editor);
-    }
+/// Whether the Land Brush and Lake Brush paint or erase, and how to get the other one.
+fn mode(ui: &mut egui::Ui, editor: &mut Editor) {
     let mut mode = usize::from(editor.erase_default);
     prop_widgets::field_row(ui, "Mode", Provenance::Plain, |ui| {
         if prop_widgets::segmented(ui, &["Paint", "Erase"], &mut mode) {
