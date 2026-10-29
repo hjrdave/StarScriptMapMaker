@@ -4,7 +4,9 @@
 use eframe::egui;
 use ssmap_core::{Command, Id, Node};
 
-use super::{DEPTH_SORT_HINT, LayerTree, landmass_name, landmasses, selected_landmass};
+use super::{
+    DEPTH_SORT_HINT, DEPTH_SORT_OFF_HINT, LayerTree, landmass_name, landmasses, selected_landmass,
+};
 use crate::editor::Editor;
 use crate::prop_widgets::{self, Provenance, ScrubSpec, SectionHeader};
 use crate::theme;
@@ -61,9 +63,13 @@ impl LayerTree {
                 let _ = editor.run(Command::SetDepthSort { id, depth_sort });
             }
             ui.label(
-                egui::RichText::new(DEPTH_SORT_HINT)
-                    .size(theme::CAPTION)
-                    .color(palette.text_tertiary),
+                egui::RichText::new(if depth_sort {
+                    DEPTH_SORT_HINT
+                } else {
+                    DEPTH_SORT_OFF_HINT
+                })
+                .size(theme::CAPTION)
+                .color(palette.text_tertiary),
             );
         });
         prop_widgets::section(ui, header("layer-clipping", "Clipping"), |ui| {
