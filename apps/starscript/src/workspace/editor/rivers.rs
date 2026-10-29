@@ -1,4 +1,4 @@
-use ssmap_core::{River, RiverPoint, ending_at_shore};
+use ssmap_core::{River, RiverPoint, ending_at_shore, starting_at_shore};
 
 use super::*;
 
@@ -7,13 +7,20 @@ pub const DEFAULT_RIVER_WIDTH: f64 = 8.0;
 
 impl Editor {
     /// The River that finishing the River tool's `path` now would make: cut where it first
-    /// leaves land, with the tool's bending and `seed`. Its problem, if it has one, is why it
-    /// can't be made.
+    /// leaves land, with the tool's bending and `seed`. A path that starts in water (a Lake)
+    /// is cut where it first reaches land and gets an open source that joins the water. Its
+    /// problem, if it has one, is why it can't be made.
     pub fn planned_river(&mut self, path: &[RiverPoint], seed: u32) -> River {
         let terrain = Terrain::of(&self.map, self.caches.roughness());
-        River::new(ending_at_shore(path, &terrain))
+        let path = ending_at_shore(path, &terrain);
+        let (path, open_source) = match starting_at_shore(&path, &terrain) {
+            Some(cut) => (cut, true),
+            None => (path, false),
+        };
+        River::new(path)
             .with_meander(self.river_meander)
             .with_seed(seed)
+            .with_open_source(open_source)
     }
 
     /// Adds the River the tool's `path` makes ([`Self::planned_river`]) to the "Water" Layer

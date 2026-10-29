@@ -300,4 +300,82 @@ mod tests {
         river_tool(&mut editor, &view, &mut state, &hover(300.0, 200.0));
         assert_ne!(outline(&state), Some(first));
     }
+
+    /// A Landmass over (50, 50) to (450, 450) with a Lake over (200, 200) to (300, 300).
+    fn land_with_a_lake() -> Editor {
+        use ssmap_core::{Command, Id, MultiPolygon, Polygon};
+        let square = |min: f64, max: f64| {
+            MultiPolygon(vec![Polygon {
+                exterior: vec![[min, min], [max, min], [max, max], [min, max]],
+                holes: Vec::new(),
+            }])
+        };
+        let mut editor = editor();
+        let layer = Id::new();
+        let run = |editor: &mut Editor, command| editor.run(command).unwrap();
+        run(
+            &mut editor,
+            Command::CreateLayer {
+                id: layer,
+                parent: None,
+                index: None,
+                name: "Land".into(),
+            },
+        );
+        run(
+            &mut editor,
+            Command::CreateLandmass {
+                id: Id::new(),
+                parent: layer,
+                index: None,
+                geometry: square(50.0, 450.0),
+                fill: None,
+            },
+        );
+        run(
+            &mut editor,
+            Command::CreateLake {
+                id: Id::new(),
+                parent: layer,
+                index: None,
+                geometry: square(200.0, 300.0),
+                fill: None,
+            },
+        );
+        editor.select(Vec::new());
+        editor
+    }
+
+    #[test]
+    fn a_river_that_starts_in_a_lake_begins_at_its_shore_with_an_open_source() {
+        let (mut editor, view, mut state) = (land_with_a_lake(), view(), ToolState::default());
+        // From the middle of the Lake, out across the land to the coast.
+        for (x, y) in [
+            (250.0, 250.0),
+            (350.0, 250.0),
+            (440.0, 250.0),
+            (480.0, 250.0),
+        ] {
+            river_tool(&mut editor, &view, &mut state, &click_at(x, y));
+        }
+        river_tool(&mut editor, &view, &mut state, &enter_key());
+        let added = rivers(&editor);
+        assert_eq!(added.len(), 1);
+        let river = &added[0];
+        assert!(river.open_source());
+        // The source sits just inside the Lake's shore at x = 300, not in the middle of it.
+        let source = river.path()[0].position[0];
+        assert!((295.0..300.0).contains(&source), "{source}");
+        assert!(river.source_mouth().is_some());
+    }
+
+    #[test]
+    fn a_river_that_starts_on_land_keeps_its_pointed_source() {
+        let (mut editor, view, mut state) = (land_with_a_lake(), view(), ToolState::default());
+        for (x, y) in [(100.0, 100.0), (150.0, 150.0)] {
+            river_tool(&mut editor, &view, &mut state, &click_at(x, y));
+        }
+        river_tool(&mut editor, &view, &mut state, &enter_key());
+        assert!(!rivers(&editor)[0].open_source());
+    }
 }

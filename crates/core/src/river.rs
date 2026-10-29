@@ -101,6 +101,7 @@ pub struct River {
     data: RiverData,
     outline: MultiPolygon,
     mouth: Option<[Point; 2]>,
+    source_mouth: Option<[Point; 2]>,
 }
 
 /// The stored fields of a River: everything but its generated outline.
@@ -121,9 +122,17 @@ struct RiverData {
     /// Overrides the Map-wide default Shore style for Lakes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     shore: Option<ShoreStyle>,
+    /// The source is cut square and opens into the water it comes from, as the mouth does,
+    /// instead of narrowing to a point.
+    #[serde(default, skip_serializing_if = "is_false")]
+    open_source: bool,
     /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     extra: Extra,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 fn default_meander() -> f64 {
@@ -136,11 +145,12 @@ fn default_fill() -> Color {
 
 impl From<RiverData> for River {
     fn from(data: RiverData) -> Self {
-        let (outline, mouth) = generate(&data);
+        let (outline, mouth, source_mouth) = generate(&data);
         Self {
             data,
             outline,
             mouth,
+            source_mouth,
         }
     }
 }
@@ -163,6 +173,7 @@ impl River {
             seed: 0,
             fill: Lake::DEFAULT_FILL,
             shore: None,
+            open_source: false,
             extra: Extra::new(),
         }
         .into()
@@ -207,6 +218,23 @@ impl River {
     /// is where the River opens into other water, so no shore line is drawn along it.
     pub fn mouth(&self) -> Option<[Point; 2]> {
         self.mouth
+    }
+
+    /// Whether the source is cut square, like the mouth, rather than narrowing to a point.
+    pub fn open_source(&self) -> bool {
+        self.data.open_source
+    }
+
+    /// The two corners of the square source of a River with an [open source](Self::open_source),
+    /// left bank first.
+    pub fn source_mouth(&self) -> Option<[Point; 2]> {
+        self.source_mouth
+    }
+
+    /// This River with its source open (cut square, opening into the water it comes from) or
+    /// pointed.
+    pub fn with_open_source(self, open: bool) -> Self {
+        self.edited(|data| data.open_source = open)
     }
 
     /// A copy along another path.
@@ -319,7 +347,9 @@ impl River {
                 let (a, b) = (ring[i], ring[(i + 1) % ring.len()]);
                 !self
                     .mouth
-                    .is_some_and(|mouth| near_mouth(mouth, a, b, reach))
+                    .into_iter()
+                    .chain(self.source_mouth)
+                    .any(|mouth| near_mouth(mouth, a, b, reach))
             };
             // Start just after a mouth edge, if there is one, so every line runs unbroken.
             let start = (0..ring.len())
@@ -400,6 +430,27 @@ pub fn ending_at_shore(path: &[RiverPoint], terrain: &Terrain) -> Vec<RiverPoint
     path.to_vec()
 }
 
+/// `path` cut short at its start, where it first reaches land from water: a River that starts in
+/// a Lake (or the sea) then begins just inside the shore, on the water side, so its square
+/// source opens into it. `None` when the path starts on land or never reaches land.
+pub fn starting_at_shore(path: &[RiverPoint], terrain: &Terrain) -> Option<Vec<RiverPoint>> {
+    let first = path
+        .iter()
+        .position(|p| terrain.allows(Placement::Land, p.position))?;
+    if first == 0 {
+        return None;
+    }
+    // The mirror of `ending_at_shore`: walk the start back out from the first point on land.
+    let mut back: Vec<RiverPoint> = path[..=first].iter().rev().copied().collect();
+    back = ending_at_shore(&back, terrain);
+    if back.len() < 2 {
+        return None;
+    }
+    back.reverse();
+    back.extend_from_slice(&path[first + 1..]);
+    Some(back)
+}
+
 /// Where along a line from `t = 0` to `1`, `length` long, the point `at(t)` first leaves land,
 /// sampled every half of `width` and then narrowed down by bisection. `None` if it never does.
 fn leaves_land(
@@ -452,7 +503,7 @@ struct Section {
 
 /// The outline and mouth of a River, or an empty outline when it has fewer than two distinct
 /// points or anything is out of range.
-fn generate(data: &RiverData) -> (MultiPolygon, Option<[Point; 2]>) {
+fn generate(data: &RiverData) -> (MultiPolygon, Option<[Point; 2]>, Option<[Point; 2]>) {
     let valid = data.path.len() <= MAX_RIVER_POINTS
         && (0.0..=MAX_MEANDER).contains(&data.meander)
         && data.path.iter().all(|p| {
@@ -469,11 +520,11 @@ fn generate(data: &RiverData) -> (MultiPolygon, Option<[Point; 2]>) {
         }
     }
     if path.len() < 2 {
-        return (MultiPolygon::default(), None);
+        return (MultiPolygon::default(), None, None);
     }
     let sections = smoothed(&path);
     let line = bent(&sections, data.meander, data.seed);
-    banked(&line, data.seed)
+    banked(&line, data.seed, data.open_source)
 }
 
 /// Cross-sections along a centripetal Catmull-Rom curve through every point, which never loops
@@ -611,7 +662,11 @@ fn bent(sections: &[Section], meander: f64, seed: u32) -> Vec<Section> {
 /// The outline around the line of cross-sections, and its mouth: the union of the triangles
 /// between neighbouring cross-sections and of the source's point, which stays one clean outline
 /// even where a tight bend folds a bank over itself.
-fn banked(line: &[Section], seed: u32) -> (MultiPolygon, Option<[Point; 2]>) {
+fn banked(
+    line: &[Section],
+    seed: u32,
+    open_source: bool,
+) -> (MultiPolygon, Option<[Point; 2]>, Option<[Point; 2]>) {
     let normals = normals(line);
     let wobble_seed = |side: u64| mix(u64::from(seed), 0xB4_4E_u64 + side);
     let mut left = Vec::with_capacity(line.len());
@@ -623,8 +678,11 @@ fn banked(line: &[Section], seed: u32) -> (MultiPolygon, Option<[Point; 2]>) {
         phase += step / (WOBBLE_LENGTH * section.width.max(1.0));
         from_source += step;
         previous = section.position;
-        let narrowing =
-            SOURCE_NARROWEST + (1.0 - SOURCE_NARROWEST) * smoothstep(from_source / taper);
+        let narrowing = if open_source {
+            1.0
+        } else {
+            SOURCE_NARROWEST + (1.0 - SOURCE_NARROWEST) * smoothstep(from_source / taper)
+        };
         let half = section.width * narrowing / 2.0;
         let side = |s: u64, sign: f64| {
             let reach = half * (1.0 + BANK_WOBBLE * bends(wobble_seed(s), phase));
@@ -649,11 +707,14 @@ fn banked(line: &[Section], seed: u32) -> (MultiPolygon, Option<[Point; 2]>) {
         source.position[0] + back[1] * reach,
         source.position[1] - back[0] * reach,
     ];
-    triangles.push(triangle(left[0], right[0], tip));
+    if !open_source {
+        triangles.push(triangle(left[0], right[0], tip));
+    }
     let triangles: Vec<geo::Polygon<f64>> = triangles.into_iter().flatten().collect();
     let outline = land::normalised(unary_union(&triangles));
     let last = line.len() - 1;
-    (outline, Some([left[last], right[last]]))
+    let source_mouth = open_source.then(|| [left[0], right[0]]);
+    (outline, Some([left[last], right[last]]), source_mouth)
 }
 
 /// A counter-clockwise triangle, or `None` when it has no area.
@@ -1023,6 +1084,74 @@ mod tests {
             RiverPoint::new([900.0, 900.0], 10.0),
         ];
         assert_eq!(ending_at_shore(&at_sea, &terrain), at_sea.to_vec());
+    }
+
+    #[test]
+    fn a_path_starting_in_a_lake_begins_just_inside_its_shore() {
+        let terrain = island_with_a_lake();
+        let path = [
+            RiverPoint::new([350.0, 350.0], 12.0),
+            RiverPoint::new([250.0, 350.0], 12.0),
+            RiverPoint::new([100.0, 350.0], 6.0),
+        ];
+        let cut = starting_at_shore(&path, &terrain).expect("it starts in the Lake");
+        assert_eq!(cut.len(), 3);
+        // The Lake's shore is at x = 300; the source sits just past it, on the water side.
+        let expected = 300.0 + SHORE_OVERSHOOT;
+        assert!(
+            (cut[0].position[0] - expected).abs() < 0.01,
+            "{:?}",
+            cut[0].position
+        );
+        assert_eq!(&cut[1..], &path[1..]);
+    }
+
+    #[test]
+    fn a_path_that_starts_on_land_or_never_reaches_it_keeps_its_start() {
+        let terrain = island_with_a_lake();
+        let inland = [
+            RiverPoint::new([50.0, 50.0], 4.0),
+            RiverPoint::new([250.0, 50.0], 10.0),
+        ];
+        assert_eq!(starting_at_shore(&inland, &terrain), None);
+        let at_sea = [
+            RiverPoint::new([700.0, 700.0], 4.0),
+            RiverPoint::new([900.0, 900.0], 10.0),
+        ];
+        assert_eq!(starting_at_shore(&at_sea, &terrain), None);
+    }
+
+    #[test]
+    fn an_open_source_is_cut_square_like_the_mouth() {
+        let pointed = straight([10.0, 10.0]);
+        let open = pointed.clone().with_open_source(true);
+        assert!(open.open_source() && !pointed.open_source());
+        assert_eq!(pointed.source_mouth(), None);
+        let [a, b] = open.source_mouth().expect("a source edge");
+        // Square across the path at the first point, as wide as the River (give or take the
+        // banks' wobble).
+        assert!(a[0].abs() < 0.5 && b[0].abs() < 0.5, "{a:?} {b:?}");
+        assert!(((a[1] - b[1]).abs() - 10.0).abs() < 1.0, "{a:?} {b:?}");
+        assert!(area(open.outline()) > area(pointed.outline()));
+        // The edge between the corners is left out of the banks, as the mouth's is.
+        let on_edge = |p: Point, q: Point| (p == a && q == b) || (p == b && q == a);
+        assert!(
+            open.banks()
+                .iter()
+                .all(|bank| bank.windows(2).all(|w| !on_edge(w[0], w[1])))
+        );
+    }
+
+    #[test]
+    fn an_open_source_is_stored_only_when_set() {
+        let pointed = serde_json::to_value(straight([5.0, 15.0])).unwrap();
+        assert!(pointed.get("open_source").is_none());
+        let open = straight([5.0, 15.0]).with_open_source(true);
+        let json = serde_json::to_value(&open).unwrap();
+        assert_eq!(json["open_source"], true);
+        let back: River = serde_json::from_value(json).unwrap();
+        assert_eq!(back, open);
+        assert!(back.source_mouth().is_some());
     }
 
     #[test]

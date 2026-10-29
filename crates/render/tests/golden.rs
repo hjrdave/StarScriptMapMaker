@@ -20,7 +20,7 @@ use ssmap_core::scatter::Terrain;
 use ssmap_core::{
     Align, Canvas, Color, Command, DistanceUnit, FontFace, Id, Label, LabelStyle, LabelStyles,
     Lake, Landmass, Map, MultiPolygon, Polygon, River, RiverPoint, Roughness, RoughnessCache,
-    Scale, ShoreKind, ShoreRipples, ShoreStyle, ending_at_shore,
+    Scale, ShoreKind, ShoreRipples, ShoreStyle, ending_at_shore, starting_at_shore,
 };
 use ssmap_render::atlas::{Atlas, AtlasEntry, MIN_PAGE_SIZE};
 use ssmap_render::raster::{Art, Raster};
@@ -283,8 +283,8 @@ fn island_with_a_hole_and_a_lake() {
     }
 }
 
-/// A Landmass with a Lake, two Rivers tapering into the Lake and one out to sea, all with the
-/// default Shore styles.
+/// A Landmass with a Lake, two Rivers tapering into the Lake, one out to sea and one out of the
+/// Lake to the coast, all with the default Shore styles.
 fn rivers() -> Map {
     let mut map = Map::new(Canvas::new(
         1000,
@@ -335,10 +335,16 @@ fn rivers() -> Map {
             fill: None,
         },
     );
-    // Each path runs on into the water, and is cut at the shore as the River tool does.
+    // Each path runs on into the water, and is cut at the shore as the River tool does; one
+    // that starts in the Lake begins at its shore with an open source.
     let terrain = Terrain::of(&map, &mut RoughnessCache::new());
-    let river =
-        |path: &[RiverPoint], seed| River::new(ending_at_shore(path, &terrain)).with_seed(seed);
+    let river = |path: &[RiverPoint], seed| {
+        let path = ending_at_shore(path, &terrain);
+        let start = starting_at_shore(&path, &terrain);
+        River::new(start.clone().unwrap_or(path))
+            .with_seed(seed)
+            .with_open_source(start.is_some())
+    };
     let from_the_west = river(
         &[
             RiverPoint::new([180.0, 160.0], 4.0),
@@ -364,7 +370,16 @@ fn rivers() -> Map {
         ],
         11,
     );
-    for river in [from_the_west, from_the_north, to_the_sea] {
+    // Starting in the middle of the Lake, it flows out of it across the land to the east coast.
+    let out_of_the_lake = river(
+        &[
+            RiverPoint::new([680.0, 500.0], 14.0),
+            RiverPoint::new([790.0, 470.0], 14.0),
+            RiverPoint::new([960.0, 380.0], 22.0),
+        ],
+        7,
+    );
+    for river in [from_the_west, from_the_north, to_the_sea, out_of_the_lake] {
         run(
             &mut map,
             Command::CreateRiver {
