@@ -657,7 +657,7 @@ fn look_of(name: &str) -> ssmap_core::Background {
 
 #[test]
 fn map_settings_name_the_template_the_map_was_made_from() {
-    let mut harness = map_harness(ocean_fixture());
+    let harness = map_harness(ocean_fixture());
     harness.get_by_label("Template");
     harness.get_by_label("Ocean");
 }
