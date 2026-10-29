@@ -70,6 +70,10 @@ _Avoid_: Stream, creek, water line
 Generated fractal detail added to a Coastline from an amount, a scale and a seed, so a smooth stored outline renders as a jagged coast.
 _Avoid_: Noise, jitter, fractalisation
 
+**Irregularity**:
+How far the Land Brush pushes a stroke's outline out and in, at the scale of the brush, so strokes paint lobed, natural shapes instead of round ones. Unlike Roughness it is stored in the outline, as points that can be edited; Roughness then adds its finer detail on top. Zero paints round strokes.
+_Avoid_: Wobble, raise, lower
+
 **Shore style**:
 The set of effects drawn along a Coastline: outline, ripple lines and inner shading. A Map has a default, and each Landmass, Lake or River may override it. Rivers use the Lakes' default.
 _Avoid_: Coast effect, border style

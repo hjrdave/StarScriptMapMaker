@@ -50,21 +50,8 @@ pub use rivers::DEFAULT_RIVER_WIDTH;
 /// The land brush's starting diameter, in Canvas units.
 pub const DEFAULT_BRUSH_SIZE: f64 = 48.0;
 
-/// The Land Brush's starting Natural roughness, as a share of the brush radius.
-pub const DEFAULT_NATURAL_ROUGHNESS: f64 = 0.5;
-
-/// The Land Brush's starting Natural detail, from a few large lobes (0) to many small ones (1).
-pub const DEFAULT_NATURAL_DETAIL: f64 = 0.5;
-
-/// The shape a Land Brush stroke leaves.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum BrushTip {
-    /// A smooth round-capped stroke.
-    #[default]
-    Round,
-    /// A stroke whose edge is pushed in and out by noise (Raise and Lower).
-    Natural,
-}
+/// The land brush's starting Irregularity: enough that strokes look natural, not round.
+pub const DEFAULT_BRUSH_IRREGULARITY: f64 = 0.15;
 
 /// The name of the Layer the water brush paints into.
 pub const WATER_LAYER: &str = "Water";
@@ -89,14 +76,10 @@ pub struct Editor {
     pub active_tool: ToolId,
     /// The land brush's diameter, in Canvas units.
     pub brush_size: f64,
+    /// How far the land brush pushes a stroke's outline out and in, as a share of its radius.
+    pub brush_irregularity: f64,
     /// Whether the land brush erases by default; holding the erase modifier gives the other.
     pub erase_default: bool,
-    /// The Land Brush's tip.
-    pub brush_tip: BrushTip,
-    /// How far a Natural tip moves the edge, as a share of the brush radius (0 to 1).
-    pub natural_roughness: f64,
-    /// The noise scale of a Natural tip: 0 is a few large lobes, 1 many small ones.
-    pub natural_detail: f64,
     /// The width the River tool gives the next point it places, in Canvas units.
     pub river_width: f64,
     /// How much the River tool's new Rivers bend, from 0 to 1.
@@ -197,10 +180,8 @@ impl Editor {
             clipboard: ClipboardSlot::default(),
             rename_request: None,
             brush_size: DEFAULT_BRUSH_SIZE,
+            brush_irregularity: DEFAULT_BRUSH_IRREGULARITY,
             erase_default: false,
-            brush_tip: BrushTip::Round,
-            natural_roughness: DEFAULT_NATURAL_ROUGHNESS,
-            natural_detail: DEFAULT_NATURAL_DETAIL,
             river_width: DEFAULT_RIVER_WIDTH,
             river_meander: ssmap_core::River::DEFAULT_MEANDER,
             node_edit: None,

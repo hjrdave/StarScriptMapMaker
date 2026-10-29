@@ -432,19 +432,14 @@ fn the_land_brush_section_sets_the_default_mode() {
 }
 
 #[test]
-fn the_natural_tip_shows_roughness_and_detail() {
+fn only_the_land_brush_has_irregularity() {
     let (mut fixture, _, _) = fixture();
     fixture.editor.active_tool = ToolId::LandBrush;
     let mut harness = harness(fixture);
-    assert!(harness.query_by_label("Roughness").is_none());
-    harness.get_by_label("Natural").click();
+    assert!(harness.query_by_label("Irregularity").is_some());
+    harness.state_mut().editor.active_tool = ToolId::WaterBrush;
     harness.run();
-    assert_eq!(
-        harness.state().editor.brush_tip,
-        crate::editor::BrushTip::Natural
-    );
-    assert!(harness.query_by_label("Roughness").is_some());
-    assert!(harness.query_by_label("Detail").is_some());
+    assert!(harness.query_by_label("Irregularity").is_none());
 }
 
 #[test]

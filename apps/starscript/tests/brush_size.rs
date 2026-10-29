@@ -59,7 +59,7 @@ fn type_size(harness: &mut Harness<'static, MapMakerApp>, text: &str) {
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::A);
     harness.run();
     harness
-        .get_by(|n| n.role() == Role::TextInput)
+        .get_by(|n| n.role() == Role::TextInput && n.value().as_deref() == Some(&shown))
         .type_text(text);
     harness.key_press(egui::Key::Enter);
     harness.run();

@@ -11,7 +11,7 @@ use ssmap_core::{MultiPolygon, Point};
 use ssmap_render::View;
 
 use super::{CanvasFrame, ToolId, ToolState};
-use crate::editor::{BrushTip, Editor};
+use crate::editor::Editor;
 
 /// A land brush stroke in progress. Nothing changes in the Map until it is released; until
 /// then an overlay shows the area it covers.
@@ -79,22 +79,26 @@ pub(super) fn land_brush(
     }
 
     let tolerance = land::simplify_tolerance(radius, 1.0 / view.zoom);
-    let natural = (!water && editor.brush_tip == BrushTip::Natural)
-        .then_some((editor.natural_roughness, editor.natural_detail));
-    let finished = |stroke: &Stroke| BrushStroke {
-        region: match natural {
-            Some((roughness, detail)) => land::natural_region(
+    // Irregularity is the land brush's; the water brush paints round strokes.
+    let irregularity = if water {
+        0.0
+    } else {
+        editor.brush_irregularity
+    };
+    let finished = |stroke: &Stroke| {
+        let start = stroke.points.first().copied().unwrap_or_default();
+        BrushStroke {
+            // Seeded by where the stroke starts, so the preview and the commit agree.
+            region: land::irregular_region(
                 &stroke.points,
                 radius,
                 tolerance,
-                roughness,
-                detail,
-                seed_of(stroke.points.first().copied().unwrap_or_default()),
+                irregularity,
+                seed_at(start),
             ),
-            None => land::brush_region(&stroke.points, radius, tolerance),
-        },
-        start: stroke.points.first().copied().unwrap_or_default(),
-        erase: stroke.erase,
+            start,
+            erase: stroke.erase,
+        }
     };
     let released = input.drag_stopped || input.clicked;
     if !released
@@ -122,10 +126,10 @@ pub(super) fn land_brush(
     cursor
 }
 
-/// The seed of a Natural stroke: its start point, so the preview and the committed stroke agree
-/// and each dab elsewhere looks different.
-fn seed_of(start: Point) -> u64 {
-    start[0].to_bits() ^ start[1].to_bits().rotate_left(32)
+/// A seed for a stroke's Irregularity from where it starts, so each dab gets its own shape.
+fn seed_at(start: Point) -> u32 {
+    let bits = start[0].to_bits() ^ start[1].to_bits().rotate_left(32);
+    (bits ^ (bits >> 32)) as u32
 }
 
 /// Draws the brush's outline under the pointer, and the area a stroke in progress covers.
@@ -260,22 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn a_natural_land_brush_click_paints_an_irregular_dab() {
-        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
-        editor.brush_tip = BrushTip::Natural;
-        land_brush(
-            &mut editor,
-            &view,
-            &mut state,
-            &click_at(250.0, 250.0),
-            false,
-        );
-        assert!(!editor.gesture_open() && state.stroke.is_none());
-        assert_eq!(editor.undo_label(), Some("Paint Land"));
-    }
-
-    #[test]
-    fn a_land_brush_click_starts_and_ends_a_stroke_in_one_frame() {
+    fn a_land_brush_click_paints_a_dab_in_one_frame() {
         let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
         let before = editor.history_steps().1;
         land_brush(
@@ -285,9 +274,32 @@ mod tests {
             &click_at(250.0, 250.0),
             false,
         );
-        // A lone point has no outline to paint, so no Undo step is left, and nothing is held.
         assert!(!editor.gesture_open() && state.stroke.is_none());
-        assert_eq!(editor.history_steps().1, before);
+        assert_eq!(editor.undo_label(), Some("Paint Land"));
+        assert_eq!(editor.history_steps().1, before + 1);
+    }
+
+    #[test]
+    fn irregularity_shapes_land_strokes_and_zero_paints_them_round() {
+        let outline = |irregularity: f64| {
+            let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+            editor.brush_irregularity = irregularity;
+            paint_stroke(&mut editor, &view, &mut state, false);
+            editor
+                .map()
+                .draw_order()
+                .into_iter()
+                .find_map(|id| match editor.map().node(id) {
+                    Some(ssmap_core::Node::Object(o)) => o.kind.geometry().cloned(),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        let points = [[100.0, 100.0], [150.0, 120.0], [200.0, 150.0]];
+        let radius = crate::editor::DEFAULT_BRUSH_SIZE / 2.0;
+        let round = land::brush_region(&points, radius, land::simplify_tolerance(radius, 1.0));
+        assert_eq!(outline(0.0), round);
+        assert_ne!(outline(crate::editor::DEFAULT_BRUSH_IRREGULARITY), round);
     }
 
     #[test]
