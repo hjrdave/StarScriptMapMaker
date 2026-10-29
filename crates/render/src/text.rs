@@ -194,6 +194,20 @@ pub struct LabelLayout {
     /// The text block: the line boxes of every line, unioned.
     bounds: Box2D,
     missing_glyphs: usize,
+    /// Where a text caret can stand, for editing the text in place.
+    stops: Vec<CaretStop>,
+}
+
+/// A place between two characters where a caret can stand, in the Label's own frame.
+#[derive(Clone, Copy, Debug)]
+struct CaretStop {
+    /// The number of characters before it in the text.
+    index: usize,
+    /// The line it is on.
+    line: usize,
+    x: f32,
+    top: f32,
+    bottom: f32,
 }
 
 /// The Label fields shaping depends on. Equal keys give equal layouts.
@@ -248,6 +262,15 @@ impl LabelLayout {
         let mut builder = Path::builder();
         let mut bounds: Option<Box2D> = None;
         let mut missing_glyphs = 0;
+        let mut stops = Vec::new();
+        let text = label.display_text();
+        // The characters before each line, counting the line breaks.
+        let mut line_starts = Vec::new();
+        let mut before = 0;
+        for line in text.split('\n') {
+            line_starts.push(before);
+            before += line.chars().count() + 1;
+        }
         let mut block_top = f32::INFINITY;
         let mut block_bottom = f32::NEG_INFINITY;
         let runs: Vec<_> = buffer.layout_runs().collect();
@@ -282,6 +305,20 @@ impl LabelLayout {
                 let line = Box2D::new(point(dx, top), point(dx + width, bottom));
                 bounds = Some(bounds.map_or(line, |b| b.union(&line)));
             }
+            let line_start = line_starts.get(run.line_i).copied().unwrap_or(0);
+            let stop = |index: usize, x: f32| CaretStop {
+                index,
+                line: run.line_i,
+                x,
+                top,
+                bottom,
+            };
+            for glyph in run.glyphs {
+                let index =
+                    line_start + run.text.get(..glyph.start).map_or(0, |s| s.chars().count());
+                stops.push(stop(index, glyph.x + dx));
+            }
+            stops.push(stop(line_start + run.text.chars().count(), dx + width));
             for glyph in run.glyphs {
                 // Where the glyph's middle falls on the straight line, and the turn that
                 // takes it onto the arc.
@@ -333,7 +370,74 @@ impl LabelLayout {
             outlines: builder.build(),
             bounds: bounds.unwrap_or_else(Box2D::zero),
             missing_glyphs,
+            stops,
         }
+    }
+
+    /// The caret before the `index`th character as a line from top to bottom on the Canvas,
+    /// or `None` past the end of the text. Only meant for a straight Label.
+    pub fn caret(&self, label: &ResolvedLabel, index: usize) -> Option<[[f64; 2]; 2]> {
+        let stop = self.stops.iter().find(|s| s.index == index)?;
+        let x = f64::from(stop.x);
+        Some([
+            to_canvas(label, [x, f64::from(stop.top)]),
+            to_canvas(label, [x, f64::from(stop.bottom)]),
+        ])
+    }
+
+    /// The quads, one per line, behind the characters from `from` up to `to`, on the Canvas,
+    /// clockwise from the top-left.
+    pub fn selection(&self, label: &ResolvedLabel, from: usize, to: usize) -> Vec<[[f64; 2]; 4]> {
+        self.selection_local(from, to)
+            .into_iter()
+            .map(|[min, max]| {
+                [
+                    [min[0], min[1]],
+                    [max[0], min[1]],
+                    [max[0], max[1]],
+                    [min[0], max[1]],
+                ]
+                .map(|corner| to_canvas(label, corner))
+            })
+            .collect()
+    }
+
+    /// The number of characters before the caret stop nearest the Canvas point.
+    pub fn nearest_index(&self, label: &ResolvedLabel, canvas_point: [f64; 2]) -> Option<usize> {
+        self.nearest_local(to_local(label, canvas_point))
+    }
+
+    fn selection_local(&self, from: usize, to: usize) -> Vec<[[f64; 2]; 2]> {
+        let (from, to) = (from.min(to), from.max(to));
+        let mut lines: Vec<(usize, [f32; 2])> = Vec::new();
+        for stop in self.stops.iter().filter(|s| (from..=to).contains(&s.index)) {
+            match lines.iter_mut().find(|(line, _)| *line == stop.line) {
+                Some((_, [min, max])) => {
+                    *min = min.min(stop.x);
+                    *max = max.max(stop.x);
+                }
+                None => lines.push((stop.line, [stop.x, stop.x])),
+            }
+        }
+        lines
+            .into_iter()
+            .filter_map(|(line, [min, max])| {
+                let stop = self.stops.iter().find(|s| s.line == line)?;
+                (max > min).then_some([
+                    [f64::from(min), f64::from(stop.top)],
+                    [f64::from(max), f64::from(stop.bottom)],
+                ])
+            })
+            .collect()
+    }
+
+    fn nearest_local(&self, local: [f64; 2]) -> Option<usize> {
+        let [x, y] = local;
+        let near = |s: &&CaretStop| {
+            let dy = (f64::from(s.top) + f64::from(s.bottom)) / 2.0 - y;
+            (dy * dy * 1000.0 + (f64::from(s.x) - x).powi(2)) as i64
+        };
+        self.stops.iter().min_by_key(near).map(|s| s.index)
     }
 
     /// Characters no bundled font could draw. They are left out, never drawn as boxes.
@@ -554,6 +658,30 @@ mod tests {
     fn width(layout: &LabelLayout) -> f64 {
         let [min, max] = layout.bounds();
         max[0] - min[0]
+    }
+
+    #[test]
+    fn carets_stand_between_characters_on_each_line() {
+        let mut fonts = Fonts::bundled();
+        let family = LABEL_FAMILIES[0];
+        let label = label("ab\nab", family);
+        let layout = LabelLayout::shape(&mut fonts, &label);
+        let x = |index| layout.caret(&label, index).map(|c| c[0][0]);
+        let (start, middle, end) = (x(0).unwrap(), x(1).unwrap(), x(2).unwrap());
+        assert!(start < middle && middle < end);
+        // The second line starts again at the left, below the first.
+        assert_eq!(x(3), Some(start));
+        let (top, below) = (layout.caret(&label, 0), layout.caret(&label, 3));
+        assert!(below.unwrap()[0][1] > top.unwrap()[0][1]);
+        assert_eq!(layout.caret(&label, 99), None);
+        // A selection of "b\nc" covers the end of one line and the start of the next.
+        assert_eq!(layout.selection(&label, 1, 4).len(), 2);
+        assert!(layout.selection(&label, 2, 2).is_empty());
+        // The stop nearest the middle of the first line's "ab" is the one between them.
+        assert_eq!(
+            layout.nearest_index(&label, [middle, top.unwrap()[0][1] + 5.0]),
+            Some(1)
+        );
     }
 
     /// Which family drew each glyph of `label`, as the fonts spell it.

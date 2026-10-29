@@ -3,10 +3,11 @@
 
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
-use ssmap_core::Command;
+use ssmap_core::{Command, ResolvedLabel};
 use ssmap_render::{
-    CanvasRenderer, CanvasScene, ExportError, ExportJob, ExportStep, GpuCapabilities, Presenter,
-    Quality, RgbaImage, SpriteStore, Suitability, TessellationCache, View, render_to_image,
+    CanvasRenderer, CanvasScene, ExportError, ExportJob, ExportStep, GpuCapabilities, LabelLayout,
+    Presenter, Quality, RgbaImage, SpriteStore, Suitability, TessellationCache, View,
+    render_to_image,
 };
 
 use crate::canvas_controls::{self, BannerAction};
@@ -359,9 +360,9 @@ impl CanvasView {
         if editor.node_edit().is_none()
             && let Some(bounds) = Bounds::of_selection(editor)
         {
-            let rotatable = tools::selection_has_label(editor);
+            let knobs = tools::selection_knobs(editor);
             let select = crate::theme::palette(ui.ctx()).select;
-            handles::paint(&painter, &bounds, &view, rect.min, ppp, rotatable, select);
+            handles::paint(&painter, &bounds, &view, rect.min, ppp, knobs, select);
         }
         // The Art board tool names the boards itself, in the colour of the selection.
         if editor.active_tool != tools::ToolId::Canvas {
@@ -519,8 +520,11 @@ impl CanvasView {
         }
     }
 
-    /// The box a Label's text is typed in, just below the Label so its real render shows
-    /// live above. Clicking away or Escape commits; emptying it deletes the Label.
+    /// Edits a Label's text where it is: the Label's own render shows the text, and an
+    /// invisible editor takes the typing while the caret and selection are drawn over the
+    /// glyphs. A Label with an arch is typed in a box just below it instead, with its real
+    /// render live above. Clicking away or Escape commits; emptying the text deletes the
+    /// Label. The Select tool's handles keep working throughout.
     fn text_box(
         &mut self,
         ui: &mut egui::Ui,
@@ -529,6 +533,7 @@ impl CanvasView {
         origin: egui::Pos2,
         ppp: f64,
     ) {
+        let dragging = self.tools.dragging();
         let Some(editing) = &mut self.tools.editing else {
             return;
         };
@@ -545,25 +550,64 @@ impl CanvasView {
         let Some(bounds) = Bounds::around(&layout.corners(&shown)) else {
             return;
         };
-        let at = handles::to_screen(view, origin, ppp, [bounds.min[0], bounds.max[1]]);
         let text_id = egui::Id::new("label_text").with(id);
+        let in_place = tools::edits_in_place(shown.arch);
+        let mut keep = false;
         let mut output = None;
-        egui::Area::new(egui::Id::new("label_text_box"))
-            .fixed_pos(at + egui::vec2(0.0, 6.0))
-            .order(egui::Order::Foreground)
-            .show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
+        if in_place {
+            keep = in_place_pointer(
+                ui.ctx(),
+                editor,
+                editing,
+                (&shown, &layout),
+                (view, origin, ppp),
+                (text_id, dragging),
+            );
+            let top_left = handles::to_screen(view, origin, ppp, bounds.min);
+            let width = (bounds.max[0] - bounds.min[0]) * view.zoom / ppp;
+            egui::Area::new(egui::Id::new("label_text_box"))
+                .fixed_pos(top_left)
+                .order(egui::Order::Foreground)
+                .interactable(false)
+                .show(ui.ctx(), |ui| {
+                    // Nothing of the editor shows: the Label's render is the text.
+                    let visuals = ui.visuals_mut();
+                    visuals.text_cursor.stroke = egui::Stroke::NONE;
+                    visuals.selection.bg_fill = egui::Color32::TRANSPARENT;
+                    visuals.selection.stroke = egui::Stroke::NONE;
                     output = Some(
                         egui::TextEdit::multiline(&mut editing.text)
                             .id(text_id)
+                            .frame(egui::Frame::NONE)
+                            .margin(egui::Margin::ZERO)
+                            .text_color(egui::Color32::TRANSPARENT)
                             .desired_rows(1)
-                            .desired_width(220.0)
-                            .hint_text("Label text")
+                            .desired_width((width as f32).max(8.0))
                             .show(ui),
                     );
                 });
-            });
+        } else {
+            let at = handles::to_screen(view, origin, ppp, [bounds.min[0], bounds.max[1]]);
+            egui::Area::new(egui::Id::new("label_text_box"))
+                .fixed_pos(at + egui::vec2(0.0, 6.0))
+                .order(egui::Order::Foreground)
+                .show(ui.ctx(), |ui| {
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        output = Some(
+                            egui::TextEdit::multiline(&mut editing.text)
+                                .id(text_id)
+                                .desired_rows(1)
+                                .desired_width(220.0)
+                                .hint_text("Label text")
+                                .show(ui),
+                        );
+                    });
+                });
+        }
         let Some(mut output) = output else { return };
+        if in_place && let Some(range) = output.cursor_range {
+            paint_caret(ui.ctx(), (&shown, &layout), range, (view, origin, ppp));
+        }
         let response = output.response.response.clone();
         if editing.just_opened {
             // A new Area's first frame only sizes it, so keep asking until the box has the
@@ -591,7 +635,10 @@ impl CanvasView {
                 },
             );
         }
-        if response.lost_focus() {
+        if keep {
+            // A handle or the text itself was pressed: the editor keeps the keyboard.
+            ui.ctx().memory_mut(|m| m.request_focus(text_id));
+        } else if response.lost_focus() {
             if editing.text.is_empty() {
                 editing.run(editor, Command::Delete { ids: vec![id] });
                 editor.select(Vec::new());
@@ -600,6 +647,80 @@ impl CanvasView {
                 editing.finish(editor);
             }
         }
+    }
+}
+
+/// What the pointer does while a Label's text is edited in place. A press on a handle
+/// commits the text typed so far, so the handle's drag is its own Undo step, and a press on the
+/// text puts the caret there. Both, and a drag of the selection, keep the keyboard in the
+/// editor, which is what the return value says.
+fn in_place_pointer(
+    ctx: &egui::Context,
+    editor: &mut Editor,
+    editing: &mut tools::TextEditing,
+    (shown, layout): (&ResolvedLabel, &LabelLayout),
+    (view, origin, ppp): (&View, egui::Pos2, f64),
+    (text_id, dragging): (egui::Id, bool),
+) -> bool {
+    let pressed = ctx
+        .input(|i| {
+            i.pointer
+                .primary_pressed()
+                .then(|| i.pointer.interact_pos())
+        })
+        .flatten();
+    let Some(pos) = pressed else {
+        return dragging;
+    };
+    let knobs = tools::selection_knobs(editor);
+    let on_handle = Bounds::of_selection(editor)
+        .is_some_and(|b| handles::hit(&b, view, origin, ppp, pos, knobs).is_some());
+    if on_handle {
+        editing.commit(editor);
+        return true;
+    }
+    let point = [
+        f64::from(pos.x - origin.x) * ppp / view.zoom + view.origin[0],
+        f64::from(pos.y - origin.y) * ppp / view.zoom + view.origin[1],
+    ];
+    if !layout.contains(shown, point) {
+        return dragging;
+    }
+    if let Some(index) = layout.nearest_index(shown, point) {
+        let mut state = egui::TextEdit::load_state(ctx, text_id).unwrap_or_default();
+        state
+            .cursor
+            .set_char_range(Some(egui::text::CCursorRange::one(
+                egui::text::CCursor::new(index),
+            )));
+        state.store(ctx, text_id);
+    }
+    true
+}
+
+/// Draws the caret and the selected text of a Label edited in place, on its own glyphs.
+fn paint_caret(
+    ctx: &egui::Context,
+    (shown, layout): (&ResolvedLabel, &LabelLayout),
+    range: egui::text::CCursorRange,
+    (view, origin, ppp): (&View, egui::Pos2, f64),
+) {
+    let select = crate::theme::palette(ctx).select;
+    let painter = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("label_caret"),
+    ));
+    let to = |point: [f64; 2]| handles::to_screen(view, origin, ppp, point);
+    let (primary, secondary) = (range.primary.index.into(), range.secondary.index.into());
+    for quad in layout.selection(shown, primary, secondary) {
+        painter.add(egui::Shape::convex_polygon(
+            quad.map(to).to_vec(),
+            select.gamma_multiply(0.35),
+            egui::Stroke::NONE,
+        ));
+    }
+    if let Some([top, bottom]) = layout.caret(shown, primary) {
+        painter.line_segment([to(top), to(bottom)], egui::Stroke::new(1.5, select));
     }
 }
 

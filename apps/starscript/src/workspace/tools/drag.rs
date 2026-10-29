@@ -25,6 +25,8 @@ pub(super) struct Drag {
     stamps: Vec<(Id, Stamp)>,
     /// An Option-drag: the originals that stay put, and the ids their copies took.
     pub(super) copies: Option<(Vec<Id>, Vec<Id>)>,
+    /// For an arch drag: the Label's arch and text block width when it began.
+    arching: Option<(f64, f64)>,
 }
 
 /// Starts moving, scaling or rotating the selection from the Canvas point `point`, picking
@@ -108,12 +110,25 @@ pub(super) fn start_drag(
             None => "Move",
             Some(Grip::Resize(_)) => "Resize",
             Some(Grip::Rotate) => "Rotate",
+            Some(Grip::Arch) => "Change Label Arch",
         };
         if !state.begin_held(editor, ToolId::Select, label) {
             return;
         }
     }
+    let arching = match (grip, labels.as_slice()) {
+        (Some(Grip::Arch), [(id, _)]) => editor.label_layout(*id).map(|(label, layout)| {
+            let [min, max] = layout.bounds();
+            (label.arch, max[0] - min[0])
+        }),
+        _ => None,
+    };
+    if grip == Some(Grip::Arch) && arching.is_none() {
+        state.cancel_held(editor);
+        return;
+    }
     state.drag = Some(Drag {
+        arching,
         grip,
         start: point,
         bounds,
@@ -202,6 +217,17 @@ pub(super) fn drag_commands(drag: &Drag, point: [f64; 2], snap: bool) -> Option<
                     Box::new(move |stamp| handles::scaled_stamp(stamp, scale, fixed)),
                 )
             }
+            Some(Grip::Arch) => {
+                let (start, width) = drag.arching?;
+                (
+                    None,
+                    Box::new(move |label| Label {
+                        arch: Some(handles::arched_by(start, delta, label.rotation, width)),
+                        ..label.clone()
+                    }),
+                    Box::new(Stamp::clone),
+                )
+            }
             Some(Grip::Rotate) => {
                 let centre = drag.bounds.centre();
                 let angle = |p: [f64; 2]| (p[1] - centre[1]).atan2(p[0] - centre[0]).to_degrees();
@@ -253,7 +279,16 @@ mod tests {
             styles: LabelStyles::default(),
             stamps: Vec::new(),
             copies: None,
+            arching: Some((0.0, 200.0)),
         }
+    }
+
+    #[test]
+    fn an_arch_drag_bends_the_label_by_how_far_the_knob_moved_up() {
+        let arched = dragged(&drag(Some(Grip::Arch)), [100.0, -50.0], false);
+        assert_eq!(arched.arch, Some(0.5));
+        let sagged = dragged(&drag(Some(Grip::Arch)), [100.0, 500.0], false);
+        assert_eq!(sagged.arch, Some(-1.0), "never past a half circle");
     }
 
     #[test]

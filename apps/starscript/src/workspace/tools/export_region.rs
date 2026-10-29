@@ -43,7 +43,14 @@ pub(super) fn export_region_tool(
     let existing = custom_region(editor);
     let grip_at = |pos: egui::Pos2| {
         let bounds = existing?;
-        handles::hit(&bounds, view, input.rect_min, ppp, pos, false)
+        handles::hit(
+            &bounds,
+            view,
+            input.rect_min,
+            ppp,
+            pos,
+            handles::Knobs::default(),
+        )
     };
     let cursor = input.hovered.then(|| match input.hover_pos {
         Some(pos) if state.region_drag.is_none() => match grip_at(pos) {
@@ -106,7 +113,15 @@ pub(super) fn paint_region(
         // Editor-only: drawn with egui over the Canvas, so it never reaches an export.
         let accent = crate::theme::palette(painter.ctx()).gold;
         if editor.active_tool == ToolId::ExportRegion {
-            handles::paint(painter, &bounds, view, origin, ppp, false, accent);
+            handles::paint(
+                painter,
+                &bounds,
+                view,
+                origin,
+                ppp,
+                handles::Knobs::default(),
+                accent,
+            );
         } else {
             handles::paint_outline(painter, &bounds, view, origin, ppp, accent);
         }

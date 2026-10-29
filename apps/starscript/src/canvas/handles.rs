@@ -71,6 +71,8 @@ pub(crate) enum Grip {
     Resize(Handle),
     /// The knob above the top edge.
     Rotate,
+    /// The knob below the bottom edge of a single Label, which bends its baseline.
+    Arch,
 }
 
 impl Grip {
@@ -79,8 +81,18 @@ impl Grip {
         match self {
             Grip::Resize(handle) => handle.cursor(),
             Grip::Rotate => egui::CursorIcon::Grab,
+            Grip::Arch => egui::CursorIcon::ResizeVertical,
         }
     }
+}
+
+/// The knobs a selection offers besides the eight resize handles.
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub(crate) struct Knobs {
+    /// The rotate knob above the box.
+    pub(crate) rotate: bool,
+    /// The arch knob below the box, holding the arch (-1 to 1) it shows.
+    pub(crate) arch: Option<f64>,
 }
 
 /// Half the size of a handle square, in points.
@@ -89,6 +101,8 @@ const HANDLE_RADIUS: f32 = 4.0;
 const SMALL_BOX: f32 = 6.0 * HANDLE_RADIUS;
 /// How far the rotate knob sits above the top edge, in points.
 const ROTATE_OFFSET: f32 = 20.0;
+/// How far the arch knob sits below the bottom edge, in points.
+const ARCH_OFFSET: f32 = 20.0;
 
 impl Bounds {
     /// Combines the outlines of every selected Object that has one, and the text blocks
@@ -289,18 +303,26 @@ fn rotate_knob(bounds: &Bounds, view: &View, origin: egui::Pos2, ppp: f64) -> eg
     to_screen(view, origin, ppp, bounds.point([0.5, 0.0])) - egui::vec2(0.0, ROTATE_OFFSET)
 }
 
-/// The handle or knob under `pointer`, if any. The knob is there only when `rotatable`.
+/// Where the arch knob is drawn.
+fn arch_knob(bounds: &Bounds, view: &View, origin: egui::Pos2, ppp: f64) -> egui::Pos2 {
+    to_screen(view, origin, ppp, bounds.point([0.5, 1.0])) + egui::vec2(0.0, ARCH_OFFSET)
+}
+
+/// The handle or knob under `pointer`, if any. Each knob is there only when `knobs` has it.
 pub(crate) fn hit(
     bounds: &Bounds,
     view: &View,
     origin: egui::Pos2,
     ppp: f64,
     pointer: egui::Pos2,
-    rotatable: bool,
+    knobs: Knobs,
 ) -> Option<Grip> {
     let near = |centre: egui::Pos2| (pointer - centre).abs().max_elem() <= HANDLE_RADIUS + 2.0;
-    if rotatable && near(rotate_knob(bounds, view, origin, ppp)) {
+    if knobs.rotate && near(rotate_knob(bounds, view, origin, ppp)) {
         return Some(Grip::Rotate);
+    }
+    if knobs.arch.is_some() && near(arch_knob(bounds, view, origin, ppp)) {
+        return Some(Grip::Arch);
     }
     // On a box too small to grab inside between its handles, inside means move.
     let rect = egui::Rect::from_two_pos(
@@ -337,14 +359,37 @@ pub(crate) fn paint_outline(
     );
 }
 
-/// Draws the box and its handles in `accent`, with the rotate knob when `rotatable`.
+/// The little curve drawn on the arch knob: flat at 0, bowing up for a positive arch.
+fn arch_glyph(centre: egui::Pos2, arch: f64) -> Vec<egui::Pos2> {
+    let half = HANDLE_RADIUS;
+    let bow = (arch.clamp(-1.0, 1.0) as f32) * half;
+    (0..=8)
+        .map(|i| {
+            let t = i as f32 / 8.0 * 2.0 - 1.0;
+            egui::pos2(centre.x + t * half, centre.y - bow * (1.0 - t * t))
+        })
+        .collect()
+}
+
+/// The arch a drag of the arch knob gives a Label. The knob moves along the Label's own up
+/// direction, and half the text block's width is one whole arch, so the baseline follows
+/// the pointer: `delta` is the drag in Canvas units, `rotation` the Label's, in degrees,
+/// and `width` its text block's.
+pub(crate) fn arched_by(start: f64, delta: [f64; 2], rotation: f64, width: f64) -> f64 {
+    let (sin, cos) = rotation.to_radians().sin_cos();
+    // Canvas y points down, so a Label's up is (sin, -cos) after turning clockwise.
+    let up = delta[0] * sin - delta[1] * cos;
+    (start + up / (width * 0.5).max(1.0)).clamp(-1.0, 1.0)
+}
+
+/// Draws the box and its handles in `accent`, with the knobs `knobs` has.
 pub(crate) fn paint(
     painter: &egui::Painter,
     bounds: &Bounds,
     view: &View,
     origin: egui::Pos2,
     ppp: f64,
-    rotatable: bool,
+    knobs: Knobs,
     accent: egui::Color32,
 ) {
     let rect = egui::Rect::from_two_pos(
@@ -357,7 +402,26 @@ pub(crate) fn paint(
         egui::Stroke::new(1.5, accent),
         egui::StrokeKind::Outside,
     );
-    if rotatable {
+    if let Some(arch) = knobs.arch {
+        let knob = arch_knob(bounds, view, origin, ppp);
+        painter.line_segment(
+            [egui::pos2(knob.x, rect.max.y), knob],
+            egui::Stroke::new(1.0, accent),
+        );
+        let chip = egui::Rect::from_center_size(knob, egui::Vec2::splat(2.0 * HANDLE_RADIUS + 6.0));
+        painter.rect_filled(chip, 3.0, egui::Color32::WHITE);
+        painter.rect_stroke(
+            chip,
+            3.0,
+            egui::Stroke::new(1.0, accent),
+            egui::StrokeKind::Inside,
+        );
+        painter.add(egui::Shape::line(
+            arch_glyph(knob, arch),
+            egui::Stroke::new(1.5, accent),
+        ));
+    }
+    if knobs.rotate {
         let knob = rotate_knob(bounds, view, origin, ppp);
         painter.line_segment(
             [knob, egui::pos2(knob.x, rect.min.y)],
@@ -386,6 +450,12 @@ pub(crate) fn paint(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    impl Knobs {
+        fn rotate(rotate: bool) -> Self {
+            Self { rotate, arch: None }
+        }
+    }
 
     const BOX: Bounds = Bounds {
         min: [10.0, 20.0],
@@ -420,17 +490,24 @@ mod tests {
         // BottomRight at Canvas (110, 70) is 2x zoom at 1 ppp: (220, 140) past the origin.
         let at = origin + egui::vec2(221.0, 139.0);
         assert_eq!(
-            hit(&BOX, &view, origin, 1.0, at, true),
+            hit(&BOX, &view, origin, 1.0, at, Knobs::rotate(true)),
             Some(Grip::Resize(Handle::BottomRight))
         );
-        assert_eq!(hit(&BOX, &view, origin, 1.0, origin, true), None);
+        assert_eq!(
+            hit(&BOX, &view, origin, 1.0, origin, Knobs::rotate(true)),
+            None
+        );
         // Top centre at Canvas (60, 20) is (120, 40), and the knob 20 points above it.
         let knob = origin + egui::vec2(120.0, 20.0);
         assert_eq!(
-            hit(&BOX, &view, origin, 1.0, knob, true),
+            hit(&BOX, &view, origin, 1.0, knob, Knobs::rotate(true)),
             Some(Grip::Rotate)
         );
-        assert_eq!(hit(&BOX, &view, origin, 1.0, knob, false), None, "no knob");
+        assert_eq!(
+            hit(&BOX, &view, origin, 1.0, knob, Knobs::rotate(false)),
+            None,
+            "no knob"
+        );
 
         // A box a few points tall is moved from inside, not scaled from its edges.
         let thin = Bounds {
@@ -438,12 +515,46 @@ mod tests {
             max: [110.0, 25.0],
         };
         let top_centre = origin + egui::vec2(120.0, 42.0);
-        assert_eq!(hit(&thin, &view, origin, 1.0, top_centre, true), None);
+        assert_eq!(
+            hit(&thin, &view, origin, 1.0, top_centre, Knobs::rotate(true)),
+            None
+        );
         let outside = origin + egui::vec2(221.0, 52.0);
         assert_eq!(
-            hit(&thin, &view, origin, 1.0, outside, true),
+            hit(&thin, &view, origin, 1.0, outside, Knobs::rotate(true)),
             Some(Grip::Resize(Handle::BottomRight))
         );
+    }
+
+    #[test]
+    fn the_arch_knob_is_hit_below_the_box_only_when_offered() {
+        let view = View {
+            origin: [0.0, 0.0],
+            zoom: 2.0,
+            size: [400, 300],
+        };
+        let origin = egui::pos2(100.0, 50.0);
+        // The bottom centre at Canvas (60, 70) is (120, 140); the knob 20 points below.
+        let at = origin + egui::vec2(120.0, 160.0);
+        let archable = Knobs {
+            rotate: true,
+            arch: Some(0.0),
+        };
+        assert_eq!(
+            hit(&BOX, &view, origin, 1.0, at, archable),
+            Some(Grip::Arch)
+        );
+        assert_eq!(hit(&BOX, &view, origin, 1.0, at, Knobs::rotate(true)), None);
+    }
+
+    #[test]
+    fn dragging_the_arch_knob_up_arches_and_down_sags() {
+        // Half of a 100-unit block is one whole arch.
+        assert_eq!(arched_by(0.0, [0.0, -25.0], 0.0, 100.0), 0.5);
+        assert_eq!(arched_by(0.0, [0.0, 25.0], 0.0, 100.0), -0.5);
+        assert_eq!(arched_by(0.8, [0.0, -100.0], 0.0, 100.0), 1.0);
+        // A Label turned a quarter clockwise has its up along +x.
+        assert!((arched_by(0.0, [25.0, 0.0], 90.0, 100.0) - 0.5).abs() < 1e-9);
     }
 
     #[test]
