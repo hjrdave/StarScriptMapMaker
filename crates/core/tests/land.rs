@@ -151,6 +151,9 @@ fn locked_objects_are_not_picked() {
 #[test]
 fn transforms_undo_to_the_exact_original() {
     let (mut map, island, water, _) = world();
+    for id in [island, water] {
+        run(&mut map, Command::SetMoveLocked { id, locked: false });
+    }
     let before = map.view();
     let mut history = History::default();
     history.begin("Resize", vec![island]).unwrap();

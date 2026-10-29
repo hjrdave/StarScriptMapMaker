@@ -305,10 +305,32 @@ mod tests {
         assert_eq!(editor.selection().len(), 1);
     }
 
+    fn unlock_selection(editor: &mut Editor) {
+        for id in editor.selection().to_vec() {
+            assert!(
+                editor
+                    .run(Command::SetMoveLocked { id, locked: false })
+                    .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn dragging_a_move_locked_object_leaves_it_in_place() {
+        let (mut editor, view, mut state) = with_land();
+        select_tool(&mut editor, &view, &mut state, &click(150.0, 125.0));
+        let start = Bounds::of_selection(&mut editor).map(|b| b.min);
+        select_tool(&mut editor, &view, &mut state, &press(150.0, 125.0));
+        select_tool(&mut editor, &view, &mut state, &drag_to(170.0, 145.0));
+        select_tool(&mut editor, &view, &mut state, &release(170.0, 145.0));
+        assert_eq!(Bounds::of_selection(&mut editor).map(|b| b.min), start);
+    }
+
     #[test]
     fn dragging_the_selection_moves_it_in_one_undo_step() {
         let (mut editor, view, mut state) = with_land();
         select_tool(&mut editor, &view, &mut state, &click(150.0, 125.0));
+        unlock_selection(&mut editor);
         let before = editor.history_steps().1;
         let start = Bounds::of_selection(&mut editor).map(|b| b.min);
         select_tool(&mut editor, &view, &mut state, &press(150.0, 125.0));

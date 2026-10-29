@@ -47,6 +47,8 @@ fn add_river(map: &mut Map, layer: Id, river: River) -> Id {
         river: Box::new(river),
     })
     .unwrap();
+    map.execute(&Command::SetMoveLocked { id, locked: false })
+        .unwrap();
     id
 }
 

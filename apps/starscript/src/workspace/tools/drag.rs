@@ -454,6 +454,13 @@ mod link_tests {
                 }
             };
             assert!(editor.run(command).is_ok());
+            if n < 2 {
+                let unlock = Command::SetMoveLocked {
+                    id: *id,
+                    locked: false,
+                };
+                assert!(editor.run(unlock).is_ok());
+            }
         }
         editor.select(ids.to_vec());
         assert!(editor.link_selection());

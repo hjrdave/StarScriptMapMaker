@@ -1735,6 +1735,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
                     "kind": "landmass"
                   },
                   "locked": false,
+                  "move_locked": true,
                   "type": "object"
                 }
               ],
@@ -2116,6 +2117,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
               "kind": "landmass"
             },
             "locked": false,
+            "move_locked": true,
             "type": "object"
           }
         ],

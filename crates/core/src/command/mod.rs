@@ -97,6 +97,14 @@ pub enum Command {
         /// Whether it is locked.
         locked: bool,
     },
+    /// Locks or unlocks an Object for movement: [`Command::Transform`] refuses it while on,
+    /// but its shape and settings stay editable.
+    SetMoveLocked {
+        /// The id of the Object this Command acts on.
+        id: Id,
+        /// Whether it is locked for movement.
+        locked: bool,
+    },
     /// Sets the opacity of a Layer or Object, from 0 (clear) to 1 (opaque).
     SetOpacity {
         /// The Layer or Object.
@@ -567,6 +575,7 @@ impl Command {
             Command::Move { .. } => "Move",
             Command::SetVisible { .. } => "Change Visibility",
             Command::SetLocked { .. } => "Change Lock",
+            Command::SetMoveLocked { .. } => "Change Move Lock",
             Command::SetOpacity { .. } => "Change Opacity",
             Command::SetDepthSort { .. } => "Change Depth Sort",
             Command::SetClip {
@@ -637,6 +646,7 @@ impl Command {
             Command::Move { id, parent, index } => layer::move_node(map, *id, *parent, *index),
             Command::SetVisible { id, visible } => layer::set_visible(map, *id, *visible),
             Command::SetLocked { id, locked } => layer::set_locked(map, *id, *locked),
+            Command::SetMoveLocked { id, locked } => layer::set_move_locked(map, *id, *locked),
             Command::SetOpacity { id, opacity } => layer::set_opacity(map, *id, *opacity),
             Command::SetDepthSort { id, depth_sort } => {
                 layer::set_depth_sort(map, *id, *depth_sort)

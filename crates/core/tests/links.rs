@@ -49,6 +49,8 @@ fn landmass(map: &mut Map, parent: Id, min: [f64; 2]) -> Id {
         fill: None,
     })
     .unwrap();
+    map.execute(&Command::SetMoveLocked { id, locked: false })
+        .unwrap();
     id
 }
 

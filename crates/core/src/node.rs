@@ -108,6 +108,10 @@ pub struct Object {
     pub name: Option<String>,
     /// Whether the Object refuses Commands.
     pub locked: bool,
+    /// Whether the Object refuses to be moved or transformed, while its shape and settings
+    /// stay editable. New Landmasses, Lakes and Rivers start with this on.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub move_locked: bool,
     /// Whether the Object belongs to the Canvas (and is clipped at its edge) or sits off it.
     /// Changed only by dragging, never by resizing the Canvas.
     #[serde(default, skip_serializing_if = "Membership::is_default")]
@@ -123,11 +127,13 @@ pub struct Object {
 }
 
 impl Object {
-    /// An unnamed, unlocked Object of `kind` that belongs to the Canvas.
+    /// An unnamed, unlocked Object of `kind` that belongs to the Canvas. It starts locked for
+    /// movement unless it is a Stamp or a Label, which are placed to be moved around.
     pub fn new(kind: ObjectKind) -> Self {
         Self {
             name: None,
             locked: false,
+            move_locked: !matches!(kind, ObjectKind::Stamp(_) | ObjectKind::Label(_)),
             membership: Membership::default(),
             kind,
             link: None,

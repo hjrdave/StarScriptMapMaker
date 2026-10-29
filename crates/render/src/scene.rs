@@ -1603,6 +1603,8 @@ mod tests {
                 fill: None,
             })
             .unwrap();
+            map.execute(&Command::SetMoveLocked { id, locked: false })
+                .unwrap();
         }
         for x in [3.0, 4.0] {
             stamp(&mut map, above, x);

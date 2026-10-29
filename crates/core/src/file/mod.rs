@@ -684,6 +684,7 @@ fn encode_node(node: &Node) -> (&'static str, String, Option<Vec<u8>>) {
                 let stripped = Node::Object(Object {
                     name: object.name.clone(),
                     locked: object.locked,
+                    move_locked: object.move_locked,
                     membership: object.membership,
                     kind: object.kind.without_geometry(),
                     link: object.link,

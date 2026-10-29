@@ -223,6 +223,11 @@ fn editing_a_coastline_afterwards_moves_no_stamps() {
     map.execute(&scatter(&map, mountains, Placement::Land, 5).unwrap())
         .unwrap();
     let before = positions(&map, mountains);
+    map.execute(&Command::SetMoveLocked {
+        id: land,
+        locked: false,
+    })
+    .unwrap();
     map.execute(&Command::SubtractRegion {
         ids: vec![land],
         region: region(square(0.0, 300.0)),

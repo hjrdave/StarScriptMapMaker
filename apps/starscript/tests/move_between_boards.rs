@@ -60,6 +60,11 @@ fn map() -> (Map, Id, Id) {
     ] {
         map.execute(&command).unwrap();
     }
+    map.execute(&Command::SetMoveLocked {
+        id: island,
+        locked: false,
+    })
+    .unwrap();
     (map, island, board)
 }
 

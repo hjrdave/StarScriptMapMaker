@@ -19,6 +19,9 @@ pub enum CommandError {
     /// The node is locked.
     #[error("{0} is locked")]
     Locked(Id),
+    /// The Object is locked for movement.
+    #[error("{0} is locked for movement")]
+    MoveLocked(Id),
     /// The node sits inside a locked Layer.
     #[error("{target} is inside locked Layer {layer}")]
     InLockedLayer {
