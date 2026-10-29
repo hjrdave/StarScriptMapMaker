@@ -57,7 +57,7 @@ pub use paste_gaps::PasteGaps;
 pub use pick::PickIndex;
 pub use river::{
     MAX_MEANDER, MAX_RIVER_POINTS, MAX_RIVER_WIDTH, MIN_RIVER_WIDTH, River, RiverPoint,
-    ending_at_shore,
+    ending_at_shore, starting_at_shore,
 };
 pub use roughness::{Rebuild, Roughness, RoughnessCache, roughen};
 pub use shore::{MAX_RIPPLES, ShoreKind, ShoreOutline, ShoreRipples, ShoreShading, ShoreStyle};
