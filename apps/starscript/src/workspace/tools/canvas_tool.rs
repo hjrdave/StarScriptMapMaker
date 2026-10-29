@@ -85,7 +85,14 @@ impl Hits<'_> {
             min: canvas.origin,
             max: canvas.rect().max,
         };
-        match handles::hit(&bounds, self.view, self.origin, self.ppp, pos, false) {
+        match handles::hit(
+            &bounds,
+            self.view,
+            self.origin,
+            self.ppp,
+            pos,
+            handles::Knobs::default(),
+        ) {
             Some(Grip::Resize(handle)) => Some(handle),
             _ => None,
         }
@@ -354,7 +361,15 @@ pub(super) fn paint_canvas(
                 min: board.canvas.origin,
                 max: board.canvas.rect().max,
             };
-            handles::paint(painter, &bounds, view, origin, ppp, false, palette.select);
+            handles::paint(
+                painter,
+                &bounds,
+                view,
+                origin,
+                ppp,
+                handles::Knobs::default(),
+                palette.select,
+            );
         }
     }
 }

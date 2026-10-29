@@ -33,8 +33,8 @@ use self::river::RiverDraft;
 use self::select::SelectBox;
 
 pub use self::export_region::custom_region;
-pub use self::label::TextEditing;
-pub(crate) use self::select::selection_has_label;
+pub use self::label::{TextEditing, edits_in_place};
+pub(crate) use self::select::selection_knobs;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ToolId {

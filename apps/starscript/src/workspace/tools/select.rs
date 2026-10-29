@@ -25,7 +25,7 @@ pub(super) fn select_tool(
 ) -> Option<egui::CursorIcon> {
     let shift = input.shift;
     let bounds = Bounds::of_selection(editor);
-    let rotatable = selection_has_label(editor);
+    let knobs = selection_knobs(editor);
     let grip_at = |pos: egui::Pos2| {
         let bounds = bounds?;
         handles::hit(
@@ -34,7 +34,7 @@ pub(super) fn select_tool(
             input.rect_min,
             input.pixels_per_point,
             pos,
-            rotatable,
+            knobs,
         )
     };
     let mut cursor = None;
@@ -110,7 +110,9 @@ pub(super) fn select_tool(
         let point = input.canvas_point(view, pos);
         if input.double_clicked {
             if let Some(id) = editor.pick(point) {
-                if editor.label(id).is_some() {
+                if state.editing.as_ref().is_some_and(|e| e.id == id) {
+                    // Already typing in it: the editor places the caret.
+                } else if editor.label(id).is_some() {
                     editor.select(vec![id]);
                     state.edit_text(editor, id);
                 } else {
@@ -217,6 +219,18 @@ fn click_select(editor: &mut Editor, hit: Option<Id>, shift: bool) {
     }
 }
 
+/// The knobs the selection offers: rotate for a Label or Stamp, and arch for a single Label.
+pub(crate) fn selection_knobs(editor: &Editor) -> handles::Knobs {
+    let arch = match editor.selection() {
+        [id] => editor.map().resolved_label(*id).map(|label| label.arch),
+        _ => None,
+    };
+    handles::Knobs {
+        rotate: selection_has_label(editor),
+        arch,
+    }
+}
+
 /// Whether the selection holds a Label or a Stamp, the only selected things that rotate.
 pub(crate) fn selection_has_label(editor: &Editor) -> bool {
     editor
@@ -231,6 +245,7 @@ mod tests {
     use super::super::label::label_tool;
     use super::super::test_util::*;
     use super::*;
+    use ssmap_core::Command;
 
     #[test]
     fn a_select_box_selects_the_objects_it_meets_on_release() {
@@ -339,10 +354,10 @@ mod tests {
         editor.active_tool = ToolId::Label;
         label_tool(&mut editor, &view, &mut state, &click(300.0, 300.0));
         assert_eq!(editor.active_tool, ToolId::Select);
-        let placed = state.editing.take().map(|e| e.gesture);
+        let placed = state.editing.take();
         assert!(placed.is_some());
-        if let Some(gesture) = placed {
-            editor.end_gesture(gesture);
+        if let Some(editing) = placed {
+            editing.finish(&mut editor);
         }
         editor.select(Vec::new());
         let double = CanvasFrame {
@@ -350,11 +365,138 @@ mod tests {
             ..click(300.0, 300.0)
         };
         select_tool(&mut editor, &view, &mut state, &double);
-        let reopened = state.editing.take().map(|e| e.gesture);
-        assert!(reopened.is_some());
-        if let Some(gesture) = reopened {
-            editor.end_gesture(gesture);
+        let reopened = state.editing.take();
+        // Opens on the Label's own text, with the editor still to select it.
+        let id = editor.selection().first().copied();
+        assert!(reopened.as_ref().is_some_and(|e| {
+            e.just_opened
+                && Some(e.id) == id
+                && Some(e.text.as_str()) == editor.label(e.id).map(|l| l.text.as_str())
+        }));
+        if let Some(editing) = reopened {
+            editing.finish(&mut editor);
         }
+    }
+
+    /// Places a Label at (300, 300) and leaves it selected with its text done.
+    fn with_label() -> (Editor, View, ToolState, Id) {
+        let (mut editor, view, mut state) = with_land();
+        editor.active_tool = ToolId::Label;
+        label_tool(&mut editor, &view, &mut state, &click(300.0, 300.0));
+        let id = state.editing.as_ref().map(|e| e.id).unwrap();
+        state.editing.take().unwrap().finish(&mut editor);
+        editor.select(vec![id]);
+        (editor, view, state, id)
+    }
+
+    #[test]
+    fn typing_in_a_label_is_one_undo_step_and_a_handle_ends_it() {
+        let (mut editor, view, mut state, id) = with_label();
+        let before = editor.history_steps().1;
+        editor.active_tool = ToolId::Select;
+        state.edit_text(&mut editor, id);
+        let Some(label) = editor.label(id).cloned() else {
+            panic!("no Label");
+        };
+        for text in ["a", "ab", "abc"] {
+            let label = Box::new(ssmap_core::Label {
+                text: text.into(),
+                ..label.clone()
+            });
+            let ran = state
+                .editing
+                .as_mut()
+                .is_some_and(|e| e.run(&mut editor, Command::SetLabel { id, label }));
+            assert!(ran);
+        }
+        // A handle takes over: the text so far is committed as its own step, and the
+        // Label stays open for typing.
+        if let Some(editing) = state.editing.as_mut() {
+            editing.commit(&mut editor);
+        }
+        assert!(!editor.gesture_open());
+        assert_eq!(editor.history_steps().1, before + 1);
+        let knob = Bounds::of_selection(&mut editor).map(|b| b.centre());
+        assert!(knob.is_some() && state.editing.is_some());
+        let more = Box::new(ssmap_core::Label {
+            text: "abcd".into(),
+            ..label
+        });
+        let ran = state
+            .editing
+            .as_mut()
+            .is_some_and(|e| e.run(&mut editor, Command::SetLabel { id, label: more }));
+        assert!(ran && editor.gesture_open());
+        if let Some(editing) = state.editing.take() {
+            editing.finish(&mut editor);
+        }
+        assert_eq!(editor.history_steps().1, before + 2);
+        let _ = view;
+    }
+
+    #[test]
+    fn the_arch_handle_arches_the_label_in_one_undo_step() {
+        let (mut editor, view, mut state, id) = with_label();
+        let Some(bounds) = Bounds::of_selection(&mut editor) else {
+            panic!("no bounds");
+        };
+        let knobs = selection_knobs(&editor);
+        assert_eq!(knobs.arch, Some(0.0), "a straight Label offers the handle");
+        let Some((_, layout)) = editor.label_layout(id) else {
+            panic!("no layout");
+        };
+        let [min, max] = layout.bounds();
+        let (x, y) = (bounds.centre()[0] as f32, bounds.max[1] as f32 + 20.0);
+        let before = editor.history_steps().1;
+        select_tool(&mut editor, &view, &mut state, &press(x, y));
+        assert!(state.drag.is_some());
+        select_tool(&mut editor, &view, &mut state, &drag_to(x, y - 10.0));
+        select_tool(&mut editor, &view, &mut state, &drag_to(x, y - 20.0));
+        select_tool(&mut editor, &view, &mut state, &release(x, y - 20.0));
+        let arch = editor.label(id).and_then(|l| l.arch);
+        let expected = handles::arched_by(0.0, [0.0, -20.0], 0.0, max[0] - min[0]);
+        assert!(arch.is_some_and(|a| a > 0.0 && (a - expected).abs() < 1e-9));
+        let (steps, applied) = editor.history_steps();
+        assert_eq!(applied, before + 1);
+        assert_eq!(
+            steps.get(applied - 1).map(String::as_str),
+            Some("Change Label Arch")
+        );
+        // The handle follows the Label's arch, as the Properties field does.
+        assert_eq!(selection_knobs(&editor).arch, arch);
+    }
+
+    #[test]
+    fn rotate_and_resize_handles_still_work_on_a_label() {
+        let (mut editor, view, mut state, id) = with_label();
+        let Some(bounds) = Bounds::of_selection(&mut editor) else {
+            panic!("no bounds");
+        };
+        let size = |editor: &mut Editor| editor.label_layout(id).map(|(l, _)| l.size);
+        let start = size(&mut editor);
+        let (x, y) = (bounds.max[0] as f32, bounds.max[1] as f32);
+        select_tool(&mut editor, &view, &mut state, &press(x, y));
+        select_tool(&mut editor, &view, &mut state, &drag_to(x + 40.0, y + 20.0));
+        select_tool(&mut editor, &view, &mut state, &release(x + 40.0, y + 20.0));
+        assert!(size(&mut editor) > start);
+        let Some(bounds) = Bounds::of_selection(&mut editor) else {
+            panic!("no bounds");
+        };
+        let knob = (bounds.centre()[0] as f32, bounds.min[1] as f32 - 20.0);
+        select_tool(&mut editor, &view, &mut state, &press(knob.0, knob.1));
+        select_tool(
+            &mut editor,
+            &view,
+            &mut state,
+            &drag_to(knob.0 + 60.0, knob.1 + 40.0),
+        );
+        select_tool(
+            &mut editor,
+            &view,
+            &mut state,
+            &release(knob.0 + 60.0, knob.1 + 40.0),
+        );
+        assert!(editor.label(id).is_some_and(|l| l.rotation != 0.0));
     }
 
     #[test]
