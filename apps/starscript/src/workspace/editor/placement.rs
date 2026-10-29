@@ -164,13 +164,6 @@ impl Editor {
         Some(id)
     }
 
-    /// Places `asset`, dragged in from an Asset browser, as a Stamp at `position` the way
-    /// [`Editor::place_stamp`] places the selected Asset, which it makes the selected one.
-    pub fn drop_asset(&mut self, asset: AssetRef, position: [f64; 2]) -> Option<Id> {
-        self.selected_asset = Some(asset);
-        self.place_stamp(position)
-    }
-
     /// Finishes a scatter brush stroke: scatters Stamps of the selected Asset along `points` in
     /// the active Layer as one Undo step ([`scatter::scatter_command`]). Does nothing, with a
     /// message, when no Asset is chosen, and leaves no Undo step when nothing could be placed.

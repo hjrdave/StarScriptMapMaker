@@ -22,22 +22,23 @@ pub enum Side {
 /// A new section is a variant here and one row in [`SidebarSection::ALL`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SidebarSection {
+    // A layout saved while the Assets section existed loads as Layers: the Asset picker is a
+    // modal now.
     #[default]
+    #[serde(alias = "Assets")]
     Layers,
     Boards,
-    Assets,
     History,
 }
 
 impl SidebarSection {
     /// Every section, in the order of the icon strip.
-    pub const ALL: [Self; 4] = [Self::Layers, Self::Boards, Self::Assets, Self::History];
+    pub const ALL: [Self; 3] = [Self::Layers, Self::Boards, Self::History];
 
     pub fn icon(self) -> Icon {
         match self {
             Self::Layers => Icon::LayerGroup,
             Self::Boards => Icon::ExportRegion,
-            Self::Assets => Icon::Stamp,
             Self::History => Icon::History,
         }
     }
@@ -46,7 +47,6 @@ impl SidebarSection {
         match self {
             Self::Layers => "Layers",
             Self::Boards => "Art boards",
-            Self::Assets => "Assets",
             Self::History => "History",
         }
     }
@@ -56,7 +56,6 @@ impl SidebarSection {
         match self {
             Self::Layers => "Layers (⌘⌥1)",
             Self::Boards => "Art boards (⌘⌥3)",
-            Self::Assets => "Assets (⌘⌥4)",
             Self::History => "History (⌘⌥5)",
         }
     }
