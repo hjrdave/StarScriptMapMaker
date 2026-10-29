@@ -55,6 +55,12 @@ impl MapMakerApp {
         }
     }
 
+    /// Test hook: whether the Asset picker is open.
+    #[doc(hidden)]
+    pub fn assets_open(&self) -> bool {
+        self.win.assets_open
+    }
+
     /// Test hook: where the Canvas is in the window, once it has been drawn.
     #[doc(hidden)]
     pub fn canvas_zone(&self) -> Option<egui::Rect> {

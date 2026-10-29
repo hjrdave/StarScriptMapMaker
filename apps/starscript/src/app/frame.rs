@@ -159,9 +159,10 @@ impl MapMakerApp {
             }
         }
         if open_assets {
-            self.win.shell.show_section(shell::SidebarSection::Assets);
+            self.win.assets_open = true;
         }
         if open_packs {
+            self.win.assets_open = false;
             self.show_slot(tab_strip::Slot::Home);
             self.win.home.show_packs();
         }

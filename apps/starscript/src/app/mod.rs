@@ -118,6 +118,8 @@ struct WindowState {
     /// ⇥ just toggled the panels: clear keyboard focus at the next frame.
     drop_focus: bool,
     new_map_dialog: NewMapDialog,
+    /// The Asset picker is open over the window.
+    assets_open: bool,
     export: ExportFlow,
     open_dialog: Pick,
     save_dialog: Pick,
@@ -261,6 +263,7 @@ impl MapMakerApp {
             shell: shell::Shell::load(cc.storage),
             drop_focus: false,
             new_map_dialog: NewMapDialog::default(),
+            assets_open: false,
             export: ExportFlow::new(launch_dialog),
             open_dialog: Pick::new(launch_dialog),
             save_dialog: Pick::new(launch_dialog),

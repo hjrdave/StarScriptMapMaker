@@ -174,7 +174,7 @@ impl MapMakerApp {
             C::ToggleLayers => self.win.shell.toggle_layers(),
             C::ToggleProperties => self.win.shell.toggle_properties(),
             C::ShowBoards => self.win.shell.show_section(shell::SidebarSection::Boards),
-            C::ShowAssets => self.win.shell.show_section(shell::SidebarSection::Assets),
+            C::ShowAssets => self.win.assets_open = true,
             C::ShowHistory => self.win.shell.show_section(shell::SidebarSection::History),
             C::HidePanels => self.win.shell.toggle_panels(),
             C::Tab(n) => self.show_tab_number(n),

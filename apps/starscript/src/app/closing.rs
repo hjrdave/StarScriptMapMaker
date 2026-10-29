@@ -143,6 +143,7 @@ impl MapMakerApp {
             || self.win.template_prompt.is_some()
             || self.win.paste_prompt.is_some()
             || self.win.new_map_dialog.open
+            || self.win.assets_open
             || self.win.export.is_busy()
             || self.win.open_dialog.is_open()
             || self.win.save_dialog.is_open()

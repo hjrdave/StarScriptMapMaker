@@ -58,6 +58,25 @@ impl MapMakerApp {
         self.pack_delete_dialog(ctx);
         self.template_dialog(ctx);
         self.paste_dialog(ctx);
+        self.assets_dialog(ctx);
+    }
+
+    /// The Asset picker in a modal. Picking an Asset arms the Stamp tool and closes it, as do
+    /// Esc and a click outside.
+    fn assets_dialog(&mut self, ctx: &egui::Context) {
+        if !self.win.assets_open {
+            return;
+        }
+        let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
+            self.win.assets_open = false;
+            return;
+        };
+        let shown = crate::dialog::show(ctx, "assets dialog", "Assets", 520.0, |ui| {
+            tab.asset_browser.show(ui, &mut tab.editor)
+        });
+        if shown.inner || shown.cancelled {
+            self.win.assets_open = false;
+        }
     }
 
     /// Lists what the copied layers need that this Map lacks and asks whether to paste anyway.

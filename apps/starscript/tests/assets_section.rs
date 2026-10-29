@@ -1,11 +1,13 @@
-//! The Assets section of the left sidebar: ⌘⌥4 shows it, it holds the Asset picker, and the
-//! Stamp tool's section in Properties points to it.
+//! The Asset picker dialog: ⌘⌥4, the Assets menu item and the Stamp section open it, picking
+//! arms the Stamp tool and closes it, and Esc closes it without picking. The sidebar's icon
+//! rail has no Assets entry.
 
 use eframe::egui;
 use egui_kittest::Harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use ssmap_app::MapMakerApp;
 use ssmap_app::shell::SidebarSection;
+use ssmap_app::tools::ToolId;
 use ssmap_core::{Canvas, DistanceUnit, Scale};
 
 fn app() -> Harness<'static, MapMakerApp> {
@@ -32,45 +34,76 @@ const BOTH: egui::Modifiers = egui::Modifiers {
 };
 
 #[test]
-fn the_icon_strip_lists_layers_boards_assets_and_history_in_that_order() {
+fn the_icon_strip_lists_layers_boards_and_history_in_that_order() {
     assert_eq!(
         SidebarSection::ALL,
         [
             SidebarSection::Layers,
             SidebarSection::Boards,
-            SidebarSection::Assets,
             SidebarSection::History
         ]
     );
+    let harness = app();
+    assert!(harness.query_by_label("Assets (⌘⌥4)").is_none());
 }
 
 #[test]
-fn the_shortcut_shows_the_assets_section_and_only_that() {
+fn the_shortcut_opens_the_picker_and_leaves_the_sidebar_alone() {
     let mut harness = app();
+    assert!(!harness.state().assets_open());
     harness.key_press_modifiers(BOTH, egui::Key::Num4);
     harness.run();
+    assert!(harness.state().assets_open());
     assert_eq!(
         harness.state().shell().sidebar_section(),
-        SidebarSection::Assets
+        SidebarSection::Layers
     );
-    assert!(harness.query_by_label("New Layer (⇧⌘N)").is_none());
     // With the built-in packs installed it shows the search field, not the empty state.
     assert!(harness.query_by_label("Open Asset packs").is_none());
 }
 
 #[test]
-fn the_stamp_section_opens_the_assets_section() {
+fn the_stamp_section_opens_the_picker() {
     let mut harness = app();
-    harness.state_mut().active_editor_mut().unwrap().active_tool = ssmap_app::tools::ToolId::Stamp;
+    harness.state_mut().active_editor_mut().unwrap().active_tool = ToolId::Stamp;
     harness.run();
-    assert_eq!(
-        harness.state().shell().sidebar_section(),
-        SidebarSection::Layers
-    );
+    assert!(!harness.state().assets_open());
     harness.get_by_label("Choose Asset").click();
     harness.run();
-    assert_eq!(
-        harness.state().shell().sidebar_section(),
-        SidebarSection::Assets
-    );
+    assert!(harness.state().assets_open());
+}
+
+#[test]
+fn escape_closes_the_picker_without_picking() {
+    let mut harness = app();
+    harness.key_press_modifiers(BOTH, egui::Key::Num4);
+    harness.run();
+    assert!(harness.state().assets_open());
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    assert!(!harness.state().assets_open());
+    let editor = harness.state_mut().active_editor_mut().unwrap();
+    assert_ne!(editor.active_tool, ToolId::Stamp);
+}
+
+#[test]
+fn picking_an_asset_arms_the_stamp_tool_and_closes_the_picker() {
+    let mut harness = app();
+    harness.key_press_modifiers(BOTH, egui::Key::Num4);
+    harness.run();
+    // Thumbnails are labelled "<name> (<pack>/<id>)"; take the first one.
+    harness
+        .get_all_by_role(egui::accesskit::Role::Button)
+        .find(|node| {
+            node.accesskit_node()
+                .label()
+                .is_some_and(|l| l.contains(" (") && l.contains('/'))
+        })
+        .expect("a thumbnail")
+        .click();
+    harness.run();
+    assert!(!harness.state().assets_open());
+    let editor = harness.state_mut().active_editor_mut().unwrap();
+    assert_eq!(editor.active_tool, ToolId::Stamp);
+    assert!(editor.selected_asset.is_some());
 }

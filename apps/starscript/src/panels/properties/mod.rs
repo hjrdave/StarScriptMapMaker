@@ -33,7 +33,7 @@ pub(crate) struct PropertiesPanel {
     board_requests: Vec<board::BoardRequest>,
     /// The active tool's settings, above the selection.
     tool_section: ToolSection,
-    /// The Stamp section's "Replace Asset" was clicked; the window opens the Assets section.
+    /// The Stamp section's "Replace Asset" was clicked; the window opens the Asset picker.
     open_assets: bool,
     /// The selected Stamp's Asset and its thumbnail, loaded once per Asset.
     stamp_thumb: Option<(AssetRef, Option<ThumbArt>)>,
