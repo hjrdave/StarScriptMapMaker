@@ -560,9 +560,9 @@ fn dragging_an_object_on_and_off_the_canvas_changes_its_membership_in_one_undo_s
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
     harness.run();
     assert_eq!(membership(&harness, island), Membership::Canvas);
-    assert_eq!(
-        outline_start(&harness, island)[0],
-        650.0,
+    // Screen to Canvas conversion is in f32, so allow rounding noise.
+    assert!(
+        (outline_start(&harness, island)[0] - 650.0).abs() < 0.01,
         "undo is one step"
     );
 

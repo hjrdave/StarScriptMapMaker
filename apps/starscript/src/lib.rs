@@ -25,6 +25,8 @@ use export::export_region;
 use workspace::{clipboard, credits, document, home, update};
 
 use canvas::{canvas_controls, canvas_resize, canvas_view, tessellation};
+#[cfg(target_os = "macos")]
+use chrome::window_buttons;
 use chrome::{tab_strip, tool_dock, tool_section};
 use packs::pack_page;
 use panels::{asset_browser, board_list, label_styles, layer_tree, properties};

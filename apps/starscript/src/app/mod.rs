@@ -376,6 +376,9 @@ impl eframe::App for MapMakerApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
         self.native_menu_actions(ui.ctx());
+        // AppKit resets the window buttons on resize and full screen exit, so every frame.
+        #[cfg(target_os = "macos")]
+        crate::window_buttons::center(f64::from(theme::metrics::TITLE_BAR_WITH_TABS));
         self.show(ui);
         // After the frame, so the menu shows what this frame changed.
         #[cfg(target_os = "macos")]

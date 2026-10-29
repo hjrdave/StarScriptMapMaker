@@ -8,3 +8,5 @@ pub mod theme;
 pub(crate) mod toast;
 pub(crate) mod tool_dock;
 pub(crate) mod tool_section;
+#[cfg(target_os = "macos")]
+pub(crate) mod window_buttons;
