@@ -656,7 +656,7 @@ fn slider_pointer(
         if (response.dragged() || response.clicked())
             && let Some(pos) = response.interact_pointer_pos()
         {
-            let t = f64::from((pos.x - rect.left() - 6.0) / (rect.width() - 12.0));
+            let t = f64::from((pos.x - rect.left()) / rect.width());
             let next = slider_value(min, max, t, spec.decimals, spec.log);
             if next != *value || spec.mixed {
                 *value = next;
@@ -736,7 +736,9 @@ fn paint_slider(
         )
     };
     let y = rect.center().y;
-    let (x0, x1) = (rect.left() + 6.0, rect.right() - 6.0);
+    // The track runs the width of its box so its left edge lines up with the controls in the
+    // rows around it; the thumb overhangs by its radius at either end.
+    let (x0, x1) = (rect.left(), rect.right());
     // A mixed setting has no place on the track: the thumb waits in the middle, unfilled.
     let x = if spec.mixed {
         (x0 + x1) / 2.0
