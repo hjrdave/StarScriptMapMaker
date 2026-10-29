@@ -142,6 +142,7 @@ impl MapMakerApp {
             || self.win.pack_delete_prompt.is_some()
             || self.win.template_prompt.is_some()
             || self.win.paste_prompt.is_some()
+            || self.win.asset_picker
             || self.win.new_map_dialog.open
             || self.win.export.is_busy()
             || self.win.open_dialog.is_open()

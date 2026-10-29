@@ -349,10 +349,9 @@ fn show_section(
     harness.state().shell().sidebar_section()
 }
 
-const SECTION_KEYS: [(ssmap_app::shell::SidebarSection, egui::Key); 4] = [
+const SECTION_KEYS: [(ssmap_app::shell::SidebarSection, egui::Key); 3] = [
     (ssmap_app::shell::SidebarSection::Layers, egui::Key::Num1),
     (ssmap_app::shell::SidebarSection::Boards, egui::Key::Num3),
-    (ssmap_app::shell::SidebarSection::Assets, egui::Key::Num4),
     (ssmap_app::shell::SidebarSection::History, egui::Key::Num5),
 ];
 

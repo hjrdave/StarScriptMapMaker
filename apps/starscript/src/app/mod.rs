@@ -4,7 +4,6 @@
 mod close_flow;
 mod closing;
 mod dialogs;
-mod drag_drop;
 mod export_flow;
 mod files;
 mod frame;
@@ -108,9 +107,6 @@ struct WindowState {
     home_active: bool,
     /// The tab strip's scroll position and the like.
     strip: tab_strip::State,
-    /// Where the Canvas was drawn, which an Asset dragged out of the browser can be dropped on.
-    /// `None` while the window shows no Map.
-    canvas_zone: Option<egui::Rect>,
     /// The Home tab's list, search and thumbnails.
     home: home::Home,
     /// Panel widths and collapse state, the same for every tab in the window.
@@ -137,6 +133,8 @@ struct WindowState {
     template_prompt: Option<String>,
     /// A Paste into a Map that lacks something the copied layers need: the popup asks first.
     paste_prompt: Option<PastePrompt>,
+    /// The Asset picker is open, over the window.
+    asset_picker: bool,
     /// This window's close or quit in progress.
     close: CloseFlow,
     /// The window was closed but the app keeps running, with no Map open.
@@ -250,7 +248,6 @@ impl MapMakerApp {
             active: 0,
             notices,
             strip: tab_strip::State::default(),
-            canvas_zone: None,
             home: home::Home::default(),
             delete_prompt: None,
             delete_board_prompt: None,
@@ -258,6 +255,7 @@ impl MapMakerApp {
             pack_trash: file_actions::move_to_trash,
             template_prompt: None,
             paste_prompt: None,
+            asset_picker: false,
             shell: shell::Shell::load(cc.storage),
             drop_focus: false,
             new_map_dialog: NewMapDialog::default(),
@@ -284,6 +282,11 @@ impl MapMakerApp {
     }
 
     /// The panels' widths and collapse state.
+    /// Whether the Asset picker is open.
+    pub fn asset_picker_open(&self) -> bool {
+        self.win.asset_picker
+    }
+
     pub fn shell(&self) -> &shell::Shell {
         &self.win.shell
     }

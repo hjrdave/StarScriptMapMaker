@@ -18,7 +18,6 @@ impl MapMakerApp {
         if !self.native_menu_shown() {
             egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui));
         }
-        self.win.canvas_zone = None;
         if self.home_active() || self.start_page_showing() {
             self.home_screen(ui, !self.home_active());
             self.journal(&ctx);
@@ -106,7 +105,6 @@ impl MapMakerApp {
         let canvas = egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
             .show(ui, |ui| tab.canvas_view.show(ui, &mut tab.editor));
-        self.win.canvas_zone = Some(canvas.response.rect);
         tool_dock::show(&ctx, canvas.response.rect, &mut tab.editor.active_tool);
         tab.editor.show_toasts(&ctx, canvas.response.rect);
         // After the Canvas, so the strips on its edges win the pointer over it.
@@ -119,13 +117,12 @@ impl MapMakerApp {
             }
         }
         self.show_overlays(&ctx, canvas.response.rect, [layers_rail, properties_rail]);
-        self.track_drag(&ctx);
         self.sidebar_requests();
         self.journal(&ctx);
     }
 
-    /// What the Stamp section and the Assets section asked for: the Assets section itself, or the
-    /// Asset packs page on Home.
+    /// What the Stamp section and the Asset picker asked for: the picker itself, or the Asset
+    /// packs page on Home.
     fn sidebar_requests(&mut self) {
         let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
             return;
@@ -159,9 +156,11 @@ impl MapMakerApp {
             }
         }
         if open_assets {
-            self.win.shell.show_section(shell::SidebarSection::Assets);
+            self.win.asset_picker = true;
         }
         if open_packs {
+            // The picker's "Open Asset packs" leaves it for the packs page.
+            self.win.asset_picker = false;
             self.show_slot(tab_strip::Slot::Home);
             self.win.home.show_packs();
         }

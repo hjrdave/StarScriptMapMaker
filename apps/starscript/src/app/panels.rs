@@ -180,7 +180,7 @@ impl MapMakerApp {
     }
 }
 
-/// The sidebar's panel: the section it shows (Layers, Art boards, Assets, or History) over a
+/// The sidebar's panel: the section it shows (Layers, Art boards, or History) over a
 /// bottom bar with the collapse control, whatever the section. As an overlay, collapsing
 /// closes it.
 pub(super) fn layers_panel(
@@ -232,12 +232,6 @@ fn sidebar_section(ui: &mut egui::Ui, section: shell::SidebarSection, tab: &mut 
                 }
             });
             tab.board_list.show(ui, &mut tab.editor);
-        }
-        shell::SidebarSection::Assets => {
-            shell::panel_header(ui, "Assets", |_| {});
-            egui::Frame::NONE
-                .inner_margin(egui::Margin::symmetric(theme::SPACING[3] as i8, 0))
-                .show(ui, |ui| tab.asset_browser.show(ui, &mut tab.editor));
         }
         shell::SidebarSection::History => {
             shell::panel_header(ui, "History", |_| {});

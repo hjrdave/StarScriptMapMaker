@@ -130,14 +130,16 @@ impl AssetBrowser {
         }
     }
 
-    pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+    /// Returns whether an Asset was picked this frame, which arms it and switches to the
+    /// Stamp tool.
+    pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) -> bool {
         let Some(library) = editor
             .sprites()
             .map(|sprites| sprites.library().clone())
             .filter(|library| !library.packs().is_empty())
         else {
             self.no_packs(ui);
-            return;
+            return false;
         };
         if !self.default_applied {
             self.default_applied = true;
@@ -254,11 +256,13 @@ impl AssetBrowser {
                     }
                 });
         }
+        let picked = chosen.is_some();
         if let Some(reference) = chosen {
             editor.selected_asset = Some(reference);
             editor.active_tool = ToolId::Stamp;
         }
         self.picked(ui, editor, &library);
+        picked
     }
 
     /// "No Assets match “…”" with the two ways out.
@@ -344,10 +348,6 @@ impl AssetBrowser {
             .or_insert_with(|| load_art(ui.ctx(), editor.sprites()?, reference))
             .clone();
         let response = paint_thumbnail(ui, texture, reference, asset, look);
-        // Dropped on the Canvas, it is placed there.
-        if response.dragged() {
-            response.dnd_set_drag_payload(reference.clone());
-        }
         response.clicked()
     }
 }

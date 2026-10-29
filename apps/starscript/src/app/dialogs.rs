@@ -58,6 +58,32 @@ impl MapMakerApp {
         self.pack_delete_dialog(ctx);
         self.template_dialog(ctx);
         self.paste_dialog(ctx);
+        self.asset_picker_dialog(ctx);
+    }
+
+    /// The Asset picker: pick an Asset and it arms the Stamp tool and closes. Esc, a click
+    /// outside and Close leave it without picking.
+    fn asset_picker_dialog(&mut self, ctx: &egui::Context) {
+        if !self.win.asset_picker {
+            return;
+        }
+        let Some(tab) = self.win.tabs.get_mut(self.win.active) else {
+            self.win.asset_picker = false;
+            return;
+        };
+        // The grid scrolls inside a box of its own height, not the whole screen's.
+        let height = (ctx.content_rect().height() - 220.0).clamp(240.0, 520.0);
+        let mut picked = false;
+        let mut closed = false;
+        let shown = dialog::show(ctx, "asset picker", "Choose an Asset", 560.0, |ui| {
+            ui.allocate_ui(egui::vec2(560.0, height), |ui| {
+                picked = tab.asset_browser.show(ui, &mut tab.editor);
+            });
+            dialog::buttons(ui, |ui| closed = ui.button("Close").clicked());
+        });
+        if picked || closed || shown.cancelled {
+            self.win.asset_picker = false;
+        }
     }
 
     /// Lists what the copied layers need that this Map lacks and asks whether to paste anyway.
