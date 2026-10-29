@@ -15,8 +15,8 @@ mod nodes;
 mod tests;
 
 pub use brush::{
-    BrushError, BrushStroke, brush_command, brush_region, lasso_region, preview_area,
-    simplify_tolerance, stroke_region, water_command,
+    BrushError, BrushStroke, MAX_IRREGULARITY, brush_command, brush_region, irregular_region,
+    lasso_region, preview_area, simplify_tolerance, stroke_region, water_command,
 };
 pub use nodes::{NodeEditError, delete_nodes, insert_node, move_nodes, signed_area};
 

@@ -219,3 +219,97 @@ fn a_lasso_loop_becomes_a_valid_region_even_when_it_crosses_itself() {
     assert!(lasso_region(&[[0.0, 0.0], [5.0, 5.0]], 0.0).is_empty());
     assert!(lasso_region(&[[0.0, 0.0], [5.0, 5.0], [10.0, 10.0]], 0.0).is_empty());
 }
+
+/// How far a region's outline strays from a circle about `centre`: the spread between its
+/// nearest and farthest points, as a share of the farthest.
+fn out_of_round(region: &MultiPolygon, centre: Point) -> f64 {
+    let distances: Vec<f64> = region
+        .0
+        .iter()
+        .flat_map(|polygon| polygon.exterior.iter())
+        .map(|p| (p[0] - centre[0]).hypot(p[1] - centre[1]))
+        .collect();
+    let far = distances.iter().copied().fold(0.0, f64::max);
+    let near = distances.iter().copied().fold(f64::INFINITY, f64::min);
+    (far - near) / far
+}
+
+fn stored_points(region: &MultiPolygon) -> usize {
+    region
+        .0
+        .iter()
+        .flat_map(Polygon::rings)
+        .map(<[Point]>::len)
+        .sum()
+}
+
+#[test]
+fn irregularity_zero_is_the_round_stroke() {
+    let points = [[0.0, 0.0], [80.0, 30.0], [160.0, 0.0]];
+    let tolerance = simplify_tolerance(30.0, 1.0);
+    let round = brush_region(&points, 30.0, tolerance);
+    for irregularity in [0.0, -0.2, f64::NAN] {
+        assert_eq!(
+            irregular_region(&points, 30.0, tolerance, irregularity, 7),
+            round
+        );
+    }
+}
+
+#[test]
+fn an_irregular_click_is_a_lumpy_blob() {
+    let tolerance = simplify_tolerance(60.0, 1.0);
+    // A dab: a click that moved a few units, as a lone point paints nothing.
+    let dab = [[98.0, 100.0], [102.0, 100.0]];
+    let round = irregular_region(&dab, 60.0, tolerance, 0.0, 3);
+    let blob = irregular_region(&dab, 60.0, tolerance, 0.2, 3);
+    assert!(!round.is_empty() && !blob.is_empty());
+    assert!(out_of_round(&round, [100.0, 100.0]) < 0.05);
+    assert!(out_of_round(&blob, [100.0, 100.0]) > 0.2);
+    assert!(blob.problem().is_none());
+    assert_oriented(&blob);
+}
+
+#[test]
+fn the_seed_picks_the_shape() {
+    let points = [[0.0, 0.0], [120.0, 40.0]];
+    let tolerance = simplify_tolerance(40.0, 1.0);
+    let shape = |seed| irregular_region(&points, 40.0, tolerance, 0.25, seed);
+    assert_eq!(shape(11), shape(11));
+    assert_ne!(shape(11), shape(12));
+}
+
+#[test]
+fn an_irregular_stroke_stays_light_and_valid() {
+    let points: Vec<Point> = (0..200)
+        .map(|i| {
+            let t = f64::from(i) / 10.0;
+            [t * 20.0, t.sin() * 40.0]
+        })
+        .collect();
+    let tolerance = simplify_tolerance(15.0, 1.0);
+    let round = brush_region(&points, 15.0, tolerance);
+    for seed in 0..8 {
+        let region = irregular_region(&points, 15.0, tolerance, MAX_IRREGULARITY, seed);
+        assert!(region.problem().is_none());
+        assert_oriented(&region);
+        assert!(stored_points(&region) < stored_points(&round) * 4);
+        // Pushed out and in about evenly, it covers about as much as the round stroke.
+        assert!((area(&region) - area(&round)).abs() < area(&round) * 0.25);
+    }
+}
+
+#[test]
+fn an_irregular_erase_cuts_an_uneven_bite() {
+    let points = [[50.0, 120.0], [150.0, 120.0]];
+    let tolerance = simplify_tolerance(30.0, 1.0);
+    let round = difference(&square(0.0, 200.0), &brush_region(&points, 30.0, tolerance));
+    let ragged = difference(
+        &square(0.0, 200.0),
+        &irregular_region(&points, 30.0, tolerance, 0.3, 5),
+    );
+    assert!(ragged.problem().is_none());
+    assert_oriented(&ragged);
+    assert_eq!(ragged.0.len(), 1);
+    assert!(stored_points(&ragged) > stored_points(&round));
+}

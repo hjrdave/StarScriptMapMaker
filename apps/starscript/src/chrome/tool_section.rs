@@ -188,6 +188,9 @@ fn size(ui: &mut egui::Ui, editor: &mut Editor) {
 
 fn land_brush(ui: &mut egui::Ui, editor: &mut Editor) {
     size(ui, editor);
+    if editor.active_tool == ToolId::LandBrush {
+        irregularity(ui, editor);
+    }
     let mut mode = usize::from(editor.erase_default);
     prop_widgets::field_row(ui, "Mode", Provenance::Plain, |ui| {
         if prop_widgets::segmented(ui, &["Paint", "Erase"], &mut mode) {
@@ -202,6 +205,19 @@ fn land_brush(ui: &mut egui::Ui, editor: &mut Editor) {
         .size(theme::CAPTION)
         .color(theme::palette(ui.ctx()).text_tertiary),
     );
+}
+
+/// How far the Land Brush pushes a stroke's outline out and in, as a percentage of its radius:
+/// 0 paints round strokes.
+fn irregularity(ui: &mut egui::Ui, editor: &mut Editor) {
+    let mut percent = editor.brush_irregularity * 100.0;
+    let spec = ScrubSpec::new("Irregularity")
+        .range(0.0, ssmap_core::land::MAX_IRREGULARITY * 100.0)
+        .unit("%")
+        .default_value(crate::editor::DEFAULT_BRUSH_IRREGULARITY * 100.0);
+    if prop_widgets::slider(ui, &mut percent, &spec).changed {
+        editor.brush_irregularity = percent / 100.0;
+    }
 }
 
 /// The width the next point gets, which `[` and `]` also change, and how much new Rivers bend.

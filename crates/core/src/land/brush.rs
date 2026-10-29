@@ -4,13 +4,13 @@
 use geo::{BooleanOps, Buffer, ChaikinSmoothing, LineString, Simplify, buffer::BufferStyle};
 
 use crate::command::Command;
-use crate::geometry::{MultiPolygon, Point};
+use crate::geometry::{MultiPolygon, Point, Polygon};
 use crate::id::Id;
 use crate::map::Map;
 use crate::node::{Node, ObjectKind};
 use crate::roughness::{RoughnessCache, roughen};
 
-use super::{difference, from_geo, intersects, normalised, union};
+use super::{difference, from_geo, intersects, normalised, signed_area, to_geo, union};
 
 /// Chaikin passes over a stroke's centreline before it becomes a region. Each pass doubles
 /// the points and rounds every corner.
@@ -83,10 +83,139 @@ pub fn lasso_region(points: &[Point], tolerance: f64) -> MultiPolygon {
     )
 }
 
+/// The largest Irregularity: the biggest lobes then reach out (or in) by half the brush radius.
+pub const MAX_IRREGULARITY: f64 = 0.5;
+
+/// Irregularity's noise: (wavelength, amplitude) octaves, the wavelength in brush radii and the
+/// amplitude as a share of the largest. Lobes about a brush wide, then smaller bumps on them;
+/// anything finer is left to Roughness, which would only add stored points here.
+const IRREGULARITY_OCTAVES: [(f64, f64); 2] = [(2.2, 1.0), (1.0, 0.45)];
+
+/// How far apart, in brush radii, points are put along an outline before it is pushed about,
+/// so that every lobe has points to move.
+const IRREGULARITY_SPACING: f64 = 0.2;
+
+/// Holes smaller than this share of the brush's disc are dropped from an irregular stroke: they
+/// are slivers where the outline folded back on itself, not shapes anyone painted.
+const MIN_HOLE_SHARE: f64 = 0.02;
+
+/// The region a finished brush stroke adds or erases with Irregularity: [`brush_region`] with
+/// its outline pushed out and in, at brush scale, by smooth noise that `seed` picks. The noise
+/// is periodic around each ring, so the rings close without a seam. `irregularity` is the
+/// largest push as a share of `radius`, up to [`MAX_IRREGULARITY`]; zero (or anything not
+/// positive) gives exactly [`brush_region`]. The pushed outline is simplified to within
+/// `tolerance` and untangled, so it is a valid stored outline like any other.
+pub fn irregular_region(
+    points: &[Point],
+    radius: f64,
+    tolerance: f64,
+    irregularity: f64,
+    seed: u32,
+) -> MultiPolygon {
+    let region = brush_region(points, radius, tolerance);
+    if region.is_empty() || irregularity.is_nan() || irregularity <= 0.0 {
+        return region;
+    }
+    let irregularity = irregularity.min(MAX_IRREGULARITY);
+    let mut phases = Phases::new(seed);
+    let pushed = MultiPolygon(
+        region
+            .0
+            .iter()
+            .map(|polygon| Polygon {
+                exterior: push_ring(&polygon.exterior, radius, irregularity, &mut phases),
+                holes: polygon
+                    .holes
+                    .iter()
+                    .map(|hole| push_ring(hole, radius, irregularity, &mut phases))
+                    .collect(),
+            })
+            .collect(),
+    );
+    let simplified = to_geo(&pushed).simplify(tolerance.max(0.0));
+    let mut untangled = normalised(simplified.union(&geo::MultiPolygon::<f64>::new(Vec::new())));
+    let min_hole = MIN_HOLE_SHARE * std::f64::consts::PI * radius * radius;
+    for polygon in &mut untangled.0 {
+        polygon
+            .holes
+            .retain(|hole| signed_area(hole).abs() >= min_hole);
+    }
+    untangled
+}
+
+/// `ring` pushed along its normals by the Irregularity noise. Each octave makes a whole number
+/// of waves around the ring, so the last point meets the first.
+fn push_ring(ring: &[Point], radius: f64, irregularity: f64, phases: &mut Phases) -> Vec<Point> {
+    let step = radius * IRREGULARITY_SPACING;
+    let mut dense: Vec<Point> = Vec::new();
+    for (i, &a) in ring.iter().enumerate() {
+        let b = ring[(i + 1) % ring.len()];
+        // At most a few thousand points per edge, whatever the radius.
+        let pieces = (distance(a, b) / step).ceil().clamp(1.0, 4096.0) as usize;
+        for k in 0..pieces {
+            let t = k as f64 / pieces as f64;
+            dense.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+        }
+    }
+    let n = dense.len();
+    let mut along = Vec::with_capacity(n);
+    let mut length = 0.0;
+    for (i, &p) in dense.iter().enumerate() {
+        along.push(length);
+        length += distance(p, dense[(i + 1) % n]);
+    }
+    if length.is_nan() || length <= 0.0 {
+        return ring.to_vec();
+    }
+    let amplitude = radius * irregularity;
+    let waves: Vec<(f64, f64, f64)> = IRREGULARITY_OCTAVES
+        .iter()
+        .map(|&(wavelength, share)| {
+            let cycles = (length / (wavelength * radius)).round().max(1.0);
+            (cycles, share * amplitude, phases.next())
+        })
+        .collect();
+    (0..n)
+        .map(|i| {
+            let (prev, p, next) = (dense[(i + n - 1) % n], dense[i], dense[(i + 1) % n]);
+            let (tx, ty) = (next[0] - prev[0], next[1] - prev[1]);
+            let tangent = tx.hypot(ty);
+            if tangent == 0.0 {
+                return p;
+            }
+            let angle = std::f64::consts::TAU * along[i] / length;
+            let push: f64 = waves
+                .iter()
+                .map(|&(cycles, size, phase)| size * (cycles * angle + phase).sin())
+                .sum();
+            [p[0] + ty / tangent * push, p[1] - tx / tangent * push]
+        })
+        .collect()
+}
+
+/// The phases of the Irregularity noise's waves, a seeded stream (splitmix64).
+struct Phases(u64);
+
+impl Phases {
+    fn new(seed: u32) -> Self {
+        Self(u64::from(seed))
+    }
+
+    /// The next phase, in radians.
+    fn next(&mut self) -> f64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^= z >> 31;
+        (z >> 11) as f64 / (1_u64 << 53) as f64 * std::f64::consts::TAU
+    }
+}
+
 /// One finished land brush stroke, ready to become a Command.
 #[derive(Clone, PartialEq, Debug)]
 pub struct BrushStroke {
-    /// What the stroke covers, from [`brush_region`].
+    /// What the stroke covers, from [`brush_region`] or [`irregular_region`].
     pub region: MultiPolygon,
     /// Where the stroke began, in Canvas units.
     pub start: Point,

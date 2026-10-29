@@ -50,6 +50,9 @@ pub use rivers::DEFAULT_RIVER_WIDTH;
 /// The land brush's starting diameter, in Canvas units.
 pub const DEFAULT_BRUSH_SIZE: f64 = 48.0;
 
+/// The land brush's starting Irregularity: enough that strokes look natural, not round.
+pub const DEFAULT_BRUSH_IRREGULARITY: f64 = 0.15;
+
 /// The name of the Layer the water brush paints into.
 pub const WATER_LAYER: &str = "Water";
 
@@ -73,6 +76,8 @@ pub struct Editor {
     pub active_tool: ToolId,
     /// The land brush's diameter, in Canvas units.
     pub brush_size: f64,
+    /// How far the land brush pushes a stroke's outline out and in, as a share of its radius.
+    pub brush_irregularity: f64,
     /// Whether the land brush erases by default; holding the erase modifier gives the other.
     pub erase_default: bool,
     /// The width the River tool gives the next point it places, in Canvas units.
@@ -175,6 +180,7 @@ impl Editor {
             clipboard: ClipboardSlot::default(),
             rename_request: None,
             brush_size: DEFAULT_BRUSH_SIZE,
+            brush_irregularity: DEFAULT_BRUSH_IRREGULARITY,
             erase_default: false,
             river_width: DEFAULT_RIVER_WIDTH,
             river_meander: ssmap_core::River::DEFAULT_MEANDER,

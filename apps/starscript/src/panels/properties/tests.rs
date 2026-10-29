@@ -432,6 +432,17 @@ fn the_land_brush_section_sets_the_default_mode() {
 }
 
 #[test]
+fn only_the_land_brush_has_irregularity() {
+    let (mut fixture, _, _) = fixture();
+    fixture.editor.active_tool = ToolId::LandBrush;
+    let mut harness = harness(fixture);
+    assert!(harness.query_by_label("Irregularity").is_some());
+    harness.state_mut().editor.active_tool = ToolId::WaterBrush;
+    harness.run();
+    assert!(harness.query_by_label("Irregularity").is_none());
+}
+
+#[test]
 fn tools_without_settings_have_no_section_and_the_eraser_has_only_size() {
     let (mut fixture, _, _) = fixture();
     fixture.editor.active_tool = ToolId::StampEraser;
