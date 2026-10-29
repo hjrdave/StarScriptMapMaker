@@ -430,10 +430,14 @@ pub fn ending_at_shore(path: &[RiverPoint], terrain: &Terrain) -> Vec<RiverPoint
     path.to_vec()
 }
 
-/// `path` cut short at its start, where it first reaches land from water: a River that starts in
-/// a Lake (or the sea) then begins just inside the shore, on the water side, so its square
-/// source opens into it. `None` when the path starts on land or never reaches land.
+/// `path` cut short at its start, where it first reaches land from a Lake (or another River):
+/// a River that starts there then begins just inside the shore, on the water side, so its
+/// square source opens into it. `None` when the path starts on land or in the open sea, which
+/// leave the source pointed, or never reaches land.
 pub fn starting_at_shore(path: &[RiverPoint], terrain: &Terrain) -> Option<Vec<RiverPoint>> {
+    if !terrain.in_lake(path.first()?.position) {
+        return None;
+    }
     let first = path
         .iter()
         .position(|p| terrain.allows(Placement::Land, p.position))?;
@@ -1119,6 +1123,13 @@ mod tests {
             RiverPoint::new([900.0, 900.0], 10.0),
         ];
         assert_eq!(starting_at_shore(&at_sea, &terrain), None);
+        // From the open sea onto the island, the source stays pointed too.
+        let from_the_sea = [
+            RiverPoint::new([700.0, 100.0], 8.0),
+            RiverPoint::new([400.0, 100.0], 8.0),
+            RiverPoint::new([100.0, 100.0], 8.0),
+        ];
+        assert_eq!(starting_at_shore(&from_the_sea, &terrain), None);
     }
 
     #[test]
