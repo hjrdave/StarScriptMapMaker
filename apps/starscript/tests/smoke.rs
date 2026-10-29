@@ -667,7 +667,7 @@ fn the_land_brush_paints_merges_and_erases_one_undo_step_per_stroke() {
         .iter()
         .find(|&&id| id != island)
         .expect("a new Landmass");
-    assert_eq!(harness.state().editor().undo_label(), Some("Paint Land"));
+    assert_eq!(harness.state().editor().undo_label(), Some("Raise Land"));
     assert_eq!(harness.state().editor().selection(), [created]);
     let painted = outline(&harness, created);
     assert!(painted.contains([700.0, 100.0]) && !painted.contains([700.0, 200.0]));
@@ -686,7 +686,7 @@ fn the_land_brush_paints_merges_and_erases_one_undo_step_per_stroke() {
     stroke(&mut harness, [180.0, 0.0], [180.0, 650.0]);
     harness.event(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
     harness.run();
-    assert_eq!(harness.state().editor().undo_label(), Some("Erase Land"));
+    assert_eq!(harness.state().editor().undo_label(), Some("Lower Land"));
     let cut = outline(&harness, island);
     assert!(!cut.contains([180.0, 50.0]));
     assert!(cut.0.len() > before_erase, "{} parts", cut.0.len());
@@ -708,7 +708,7 @@ fn the_land_brush_paints_merges_and_erases_one_undo_step_per_stroke() {
     harness.drop_at(to);
     harness.run();
     assert_eq!(harness.state().editor().map().view(), before);
-    assert_eq!(harness.state().editor().undo_label(), Some("Paint Land"));
+    assert_eq!(harness.state().editor().undo_label(), Some("Raise Land"));
 }
 
 #[test]

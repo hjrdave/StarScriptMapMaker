@@ -2,15 +2,15 @@ use super::*;
 
 impl Editor {
     /// What a land brush stroke started now would be called in the undo history: it paints or
-    /// erases a selected Lake, and otherwise land.
+    /// erases a selected Lake, and otherwise raises or lowers land.
     pub fn brush_label(&self, erase: bool) -> &'static str {
         let lake = self.selection.iter().any(|&id| {
             matches!(self.map.node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Lake(_)))
         });
         match (erase, lake) {
-            (false, false) => "Paint Land",
+            (false, false) => "Raise Land",
             (false, true) => "Paint Lake",
-            (true, false) => "Erase Land",
+            (true, false) => "Lower Land",
             (true, true) => "Erase Lake",
         }
     }

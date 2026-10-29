@@ -259,7 +259,7 @@ mod tests {
             false,
         );
         assert!(!editor.gesture_open() && state.stroke.is_none());
-        assert_eq!(editor.undo_label(), Some("Paint Land"));
+        assert_eq!(editor.undo_label(), Some("Raise Land"));
         assert_eq!(editor.history_steps().1, before + 1);
     }
 
@@ -275,7 +275,7 @@ mod tests {
             false,
         );
         assert!(!editor.gesture_open() && state.stroke.is_none());
-        assert_eq!(editor.undo_label(), Some("Paint Land"));
+        assert_eq!(editor.undo_label(), Some("Raise Land"));
         assert_eq!(editor.history_steps().1, before + 1);
     }
 
@@ -335,7 +335,7 @@ mod tests {
             &erase(release(180.0, 140.0)),
             false,
         );
-        assert_eq!(editor.undo_label(), Some("Erase Land"));
+        assert_eq!(editor.undo_label(), Some("Lower Land"));
     }
 
     #[test]

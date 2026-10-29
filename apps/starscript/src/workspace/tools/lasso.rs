@@ -187,7 +187,7 @@ mod tests {
         assert!(state.lasso.as_ref().is_some_and(|l| l.freehand));
         lasso_tool(&mut editor, &view, &mut state, &release(100.0, 200.0));
         assert!(state.lasso.is_none());
-        assert_eq!(editor.undo_label(), Some("Paint Land"));
+        assert_eq!(editor.undo_label(), Some("Raise Land"));
         assert_eq!(editor.history_steps().1, before + 1);
     }
 
@@ -200,7 +200,7 @@ mod tests {
         assert_eq!(lasso_points(&state), 3);
         lasso_tool(&mut editor, &view, &mut state, &click(100.0, 100.0));
         assert!(state.lasso.is_none());
-        assert_eq!(editor.undo_label(), Some("Paint Land"));
+        assert_eq!(editor.undo_label(), Some("Raise Land"));
     }
 
     #[test]
