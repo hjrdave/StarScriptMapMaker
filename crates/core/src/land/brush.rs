@@ -8,9 +8,9 @@ use crate::geometry::{MultiPolygon, Point};
 use crate::id::Id;
 use crate::map::Map;
 use crate::node::{Node, ObjectKind};
-use crate::roughness::{RoughnessCache, roughen};
+use crate::roughness::{Roughness, RoughnessCache, mix, roughen};
 
-use super::{difference, from_geo, intersects, normalised, union};
+use super::{difference, from_geo, intersects, normalised, to_geo, union};
 
 /// Chaikin passes over a stroke's centreline before it becomes a region. Each pass doubles
 /// the points and rounds every corner.
@@ -59,6 +59,81 @@ pub fn brush_region(points: &[Point], radius: f64, tolerance: f64) -> MultiPolyg
     let simplified = stroked.simplify(tolerance.max(0.0));
     // Simplifying can make a ring cross itself; uniting it with nothing cleans that up.
     normalised(simplified.union(&geo::MultiPolygon::<f64>::new(Vec::new())))
+}
+
+/// The most vertices a Natural dab keeps in one ring; past it the outline is simplified harder.
+const NATURAL_MAX_RING: usize = 160;
+
+/// The largest displacement of a Natural dab's edge, as a share of the brush radius, at
+/// roughness 1.
+const NATURAL_MAX_AMOUNT: f64 = 0.6;
+
+/// The region a finished Natural brush stroke adds or erases (WonderDraft's Raise and Lower): the
+/// stroke's outline pushed in and out by deterministic noise, then simplified to within
+/// `tolerance` so the stored vertices stay light and editable.
+///
+/// `roughness` (0 to 1) is how far the edge moves as a share of `radius`; `detail` (0 to 1) runs
+/// from a few large lobes to many small ones. The same inputs and `seed` give the same region.
+/// At roughness 0 this is exactly [`brush_region`].
+pub fn natural_region(
+    points: &[Point],
+    radius: f64,
+    tolerance: f64,
+    roughness: f64,
+    detail: f64,
+    seed: u64,
+) -> MultiPolygon {
+    if !(roughness.is_finite() && roughness > 0.0) {
+        return brush_region(points, radius, tolerance);
+    }
+    if points.is_empty() || !(radius.is_finite() && radius > 0.0) {
+        return MultiPolygon::default();
+    }
+    let tolerance = tolerance.max(0.0);
+    let mut kept: Vec<Point> = Vec::with_capacity(points.len());
+    for &point in points {
+        if kept
+            .last()
+            .is_none_or(|&last| distance(last, point) >= tolerance)
+        {
+            kept.push(point);
+        }
+    }
+    if kept.len() > 1
+        && let (Some(&last), Some(end)) = (points.last(), kept.last_mut())
+    {
+        *end = last;
+    }
+    // A lone point has no line to stroke, so it is buffered as a point: a click is a dab.
+    let stroked = match kept.as_slice() {
+        [only] => geo::Point::new(only[0], only[1]).buffer_with_style(BufferStyle::new(radius)),
+        _ => centreline(&kept)
+            .chaikin_smoothing(SMOOTHING_PASSES)
+            .buffer_with_style(BufferStyle::new(radius)),
+    };
+    // Coarsen the round caps first, so the noise has real edges to bend.
+    let base = from_geo(&stroked.simplify(tolerance.max(radius * 0.04)));
+    let scale = radius * (1.2 - 1.05 * detail.clamp(0.0, 1.0));
+    let amount = roughness.min(1.0) * NATURAL_MAX_AMOUNT * radius;
+    let rough = Roughness::new(amount, scale, (mix(seed, 0x5eed) >> 32) as u32);
+    let noisy = to_geo(&roughen(&base, &rough));
+    let empty = geo::MultiPolygon::<f64>::new(Vec::new());
+    let mut limit = tolerance.max(radius * 0.02);
+    loop {
+        // Simplifying can make a ring cross itself; uniting it with nothing cleans that up.
+        let simplified = normalised(noisy.simplify(limit).union(&empty));
+        let longest = simplified
+            .0
+            .iter()
+            .flat_map(|polygon| polygon.rings())
+            .map(<[Point]>::len)
+            .max()
+            .unwrap_or(0);
+        if longest <= NATURAL_MAX_RING || limit > radius {
+            return simplified;
+        }
+        limit *= 1.5;
+    }
 }
 
 /// The region a lasso loop encloses: a freehand path simplified to within `tolerance`, or the

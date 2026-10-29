@@ -11,7 +11,7 @@ use ssmap_core::{MultiPolygon, Point};
 use ssmap_render::View;
 
 use super::{CanvasFrame, ToolId, ToolState};
-use crate::editor::Editor;
+use crate::editor::{BrushTip, Editor};
 
 /// A land brush stroke in progress. Nothing changes in the Map until it is released; until
 /// then an overlay shows the area it covers.
@@ -79,8 +79,20 @@ pub(super) fn land_brush(
     }
 
     let tolerance = land::simplify_tolerance(radius, 1.0 / view.zoom);
+    let natural = (!water && editor.brush_tip == BrushTip::Natural)
+        .then_some((editor.natural_roughness, editor.natural_detail));
     let finished = |stroke: &Stroke| BrushStroke {
-        region: land::brush_region(&stroke.points, radius, tolerance),
+        region: match natural {
+            Some((roughness, detail)) => land::natural_region(
+                &stroke.points,
+                radius,
+                tolerance,
+                roughness,
+                detail,
+                seed_of(stroke.points.first().copied().unwrap_or_default()),
+            ),
+            None => land::brush_region(&stroke.points, radius, tolerance),
+        },
         start: stroke.points.first().copied().unwrap_or_default(),
         erase: stroke.erase,
     };
@@ -108,6 +120,12 @@ pub(super) fn land_brush(
         }
     }
     cursor
+}
+
+/// The seed of a Natural stroke: its start point, so the preview and the committed stroke agree
+/// and each dab elsewhere looks different.
+fn seed_of(start: Point) -> u64 {
+    start[0].to_bits() ^ start[1].to_bits().rotate_left(32)
 }
 
 /// Draws the brush's outline under the pointer, and the area a stroke in progress covers.
@@ -239,6 +257,21 @@ mod tests {
         assert!(!editor.gesture_open() && state.stroke.is_none());
         assert_eq!(editor.undo_label(), Some("Paint Land"));
         assert_eq!(editor.history_steps().1, before + 1);
+    }
+
+    #[test]
+    fn a_natural_land_brush_click_paints_an_irregular_dab() {
+        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+        editor.brush_tip = BrushTip::Natural;
+        land_brush(
+            &mut editor,
+            &view,
+            &mut state,
+            &click_at(250.0, 250.0),
+            false,
+        );
+        assert!(!editor.gesture_open() && state.stroke.is_none());
+        assert_eq!(editor.undo_label(), Some("Paint Land"));
     }
 
     #[test]

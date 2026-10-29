@@ -432,6 +432,22 @@ fn the_land_brush_section_sets_the_default_mode() {
 }
 
 #[test]
+fn the_natural_tip_shows_roughness_and_detail() {
+    let (mut fixture, _, _) = fixture();
+    fixture.editor.active_tool = ToolId::LandBrush;
+    let mut harness = harness(fixture);
+    assert!(harness.query_by_label("Roughness").is_none());
+    harness.get_by_label("Natural").click();
+    harness.run();
+    assert_eq!(
+        harness.state().editor.brush_tip,
+        crate::editor::BrushTip::Natural
+    );
+    assert!(harness.query_by_label("Roughness").is_some());
+    assert!(harness.query_by_label("Detail").is_some());
+}
+
+#[test]
 fn tools_without_settings_have_no_section_and_the_eraser_has_only_size() {
     let (mut fixture, _, _) = fixture();
     fixture.editor.active_tool = ToolId::StampEraser;

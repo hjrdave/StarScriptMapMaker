@@ -5,7 +5,7 @@
 use eframe::egui;
 use ssmap_core::scatter::Placement;
 
-use crate::editor::Editor;
+use crate::editor::{BrushTip, Editor};
 use crate::icons::{self, Icon};
 use crate::prop_widgets::{self, Handle, Provenance, ScrubSpec};
 use crate::theme;
@@ -194,9 +194,34 @@ fn land_brush(ui: &mut egui::Ui, editor: &mut Editor) {
             editor.erase_default = mode == 1;
         }
     });
+    let mut tip = usize::from(editor.brush_tip == BrushTip::Natural);
+    prop_widgets::field_row(ui, "Tip", Provenance::Plain, |ui| {
+        if prop_widgets::segmented(ui, &["Round", "Natural"], &mut tip) {
+            editor.brush_tip = [BrushTip::Round, BrushTip::Natural][tip];
+        }
+    });
+    if editor.brush_tip == BrushTip::Natural {
+        let mut roughness = editor.natural_roughness * 100.0;
+        let spec = ScrubSpec::new("Roughness")
+            .range(0.0, 100.0)
+            .unit("%")
+            .default_value(crate::editor::DEFAULT_NATURAL_ROUGHNESS * 100.0);
+        if prop_widgets::slider(ui, &mut roughness, &spec).changed {
+            editor.natural_roughness = roughness / 100.0;
+        }
+        let mut detail = editor.natural_detail * 100.0;
+        let spec = ScrubSpec::new("Detail")
+            .range(0.0, 100.0)
+            .unit("%")
+            .default_value(crate::editor::DEFAULT_NATURAL_DETAIL * 100.0);
+        if prop_widgets::slider(ui, &mut detail, &spec).changed {
+            editor.natural_detail = detail / 100.0;
+        }
+    }
     ui.label(
         egui::RichText::new(format!(
-            "Hold {} to get the other mode.",
+            "Natural gives the Coastline an irregular edge: Raise when painting, Lower when \
+             erasing. Hold {} to get the other mode.",
             tools::ERASE_MODIFIER
         ))
         .size(theme::CAPTION)
