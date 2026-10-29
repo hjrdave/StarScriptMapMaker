@@ -191,20 +191,29 @@ fn land_brush(ui: &mut egui::Ui, editor: &mut Editor) {
     if editor.active_tool == ToolId::LandBrush {
         irregularity(ui, editor);
     }
+    // The mode not chosen shows the key that gives it while held; holding it moves the outline.
     let mut mode = usize::from(editor.erase_default);
+    let live = mode ^ usize::from(ui.input(|i| i.modifiers.alt));
+    let hint = |i: usize| (i != mode).then_some(tools::ERASE_MODIFIER_SYMBOL);
+    let land = editor.active_tool == ToolId::LandBrush;
+    let (labels, icons) = if land {
+        (
+            ["Raise", "Lower"],
+            [Some(Icon::LandRaise), Some(Icon::LandLower)],
+        )
+    } else {
+        (["Paint", "Erase"], [None, None])
+    };
+    let options = [0, 1].map(|i| prop_widgets::Segment {
+        icon: icons[i],
+        label: labels[i],
+        hint: hint(i),
+    });
     prop_widgets::field_row(ui, "Mode", Provenance::Plain, |ui| {
-        if prop_widgets::segmented(ui, &["Paint", "Erase"], &mut mode) {
+        if prop_widgets::icon_segmented(ui, &options, &mut mode, live) {
             editor.erase_default = mode == 1;
         }
     });
-    ui.label(
-        egui::RichText::new(format!(
-            "Hold {} to get the other mode.",
-            tools::ERASE_MODIFIER
-        ))
-        .size(theme::CAPTION)
-        .color(theme::palette(ui.ctx()).text_tertiary),
-    );
 }
 
 /// How far the Land Brush pushes a stroke's outline out and in, as a percentage of its radius:

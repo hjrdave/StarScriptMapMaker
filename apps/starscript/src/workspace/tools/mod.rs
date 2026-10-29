@@ -117,6 +117,13 @@ pub const ERASE_MODIFIER: &str = if cfg!(target_os = "macos") {
     "Alt"
 };
 
+/// [`ERASE_MODIFIER`] as a key symbol, for hints beside a control.
+pub const ERASE_MODIFIER_SYMBOL: &str = if cfg!(target_os = "macos") {
+    "⌥"
+} else {
+    "Alt"
+};
+
 /// The land brush size range, as a diameter in Canvas units.
 pub const BRUSH_SIZES: std::ops::RangeInclusive<f64> = 2.0..=2000.0;
 

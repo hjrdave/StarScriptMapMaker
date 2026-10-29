@@ -423,12 +423,23 @@ fn the_land_brush_section_sets_the_default_mode() {
     fixture.editor.active_tool = ToolId::LandBrush;
     let mut harness = harness(fixture);
     assert!(harness.query_by_label("Size").is_some());
+    harness.get_by_label("Lower").click();
+    harness.run();
+    assert!(harness.state().editor.erase_default);
+    harness.get_by_label("Raise").click();
+    harness.run();
+    assert!(!harness.state().editor.erase_default);
+}
+
+#[test]
+fn the_lake_brush_modes_are_paint_and_erase() {
+    let (mut fixture, _, _) = fixture();
+    fixture.editor.active_tool = ToolId::WaterBrush;
+    let mut harness = harness(fixture);
+    assert!(harness.query_by_label("Raise").is_none());
     harness.get_by_label("Erase").click();
     harness.run();
     assert!(harness.state().editor.erase_default);
-    harness.get_by_label("Paint").click();
-    harness.run();
-    assert!(!harness.state().editor.erase_default);
 }
 
 #[test]

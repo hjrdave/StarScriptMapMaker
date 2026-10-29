@@ -49,6 +49,8 @@ icons! {
     Pan, "Pan", "pan";
     LandBrush, "Land Brush", "land-brush";
     LakeBrush, "Lake Brush", "lake-brush";
+    LandRaise, "Raise land", "land-raise";
+    LandLower, "Lower land", "land-lower";
     Lasso, "Lasso", "lasso";
     Label, "Label", "label";
     Stamp, "Stamp", "stamp";

@@ -499,6 +499,95 @@ pub fn segmented(ui: &mut egui::Ui, options: &[&str], selected: &mut usize) -> b
     changed
 }
 
+/// One option of an [`icon_segmented`] control.
+pub struct Segment<'a> {
+    pub icon: Option<Icon>,
+    pub label: &'a str,
+    /// A key shown at the option's right edge, such as "⌥": what to hold to get it.
+    pub hint: Option<&'a str>,
+}
+
+/// A segmented control whose options carry an icon and a key hint. `selected` keeps the raised
+/// fill; `live`, the option in effect right now (another while a modifier is held), gets the
+/// gold outline. Returns whether `selected` changed.
+pub fn icon_segmented(
+    ui: &mut egui::Ui,
+    options: &[Segment<'_>],
+    selected: &mut usize,
+    live: usize,
+) -> bool {
+    let palette = theme::palette(ui.ctx());
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        let width = (ui.available_width() / options.len() as f32).max(48.0);
+        for (i, option) in options.iter().enumerate() {
+            let (rect, response) =
+                ui.allocate_exact_size(Vec2::new(width, metrics::FIELD[0]), Sense::click());
+            let is_selected = *selected == i;
+            response.widget_info(|| {
+                egui::WidgetInfo::selected(
+                    egui::WidgetType::RadioButton,
+                    true,
+                    is_selected,
+                    option.label,
+                )
+            });
+            let (fill, text) = if is_selected {
+                (palette.bg_raised, palette.text_primary)
+            } else if response.hovered() {
+                (palette.hover_fill, palette.text_primary)
+            } else {
+                (palette.bg_field, palette.text_secondary)
+            };
+            let outline = if live == i {
+                palette.gold
+            } else {
+                palette.border_subtle
+            };
+            let painter = ui.painter();
+            painter.rect(
+                rect,
+                theme::RADIUS_FIELD,
+                fill,
+                Stroke::new(1.0, outline),
+                StrokeKind::Inside,
+            );
+            let galley = painter.layout_no_wrap(
+                option.label.to_owned(),
+                egui::FontId::proportional(theme::BODY),
+                text,
+            );
+            let gap = theme::SPACING[1];
+            let icon_width = option.icon.map_or(0.0, |_| icons::GRID + gap);
+            let left = rect.center().x - (icon_width + galley.size().x) / 2.0;
+            if let Some(icon) = option.icon {
+                let icon_rect = egui::Rect::from_min_size(
+                    egui::pos2(left, rect.center().y - icons::GRID / 2.0),
+                    Vec2::splat(icons::GRID),
+                );
+                icons::paint(ui, icon_rect, icon, icons::GRID, text);
+            }
+            let text_pos = egui::pos2(left + icon_width, rect.center().y - galley.size().y / 2.0);
+            painter.galley(text_pos, galley, text);
+            if let Some(hint) = option.hint {
+                painter.text(
+                    egui::pos2(rect.right() - theme::SPACING[2], rect.center().y),
+                    egui::Align2::RIGHT_CENTER,
+                    hint,
+                    egui::FontId::new(theme::CAPTION, theme::mono_family()),
+                    palette.text_tertiary,
+                );
+            }
+            if response.clicked() && !is_selected {
+                *selected = i;
+                changed = true;
+            }
+        }
+    });
+    changed
+}
+
 /// A label with the provenance dot, a control after it (a dropdown, say) and the trailing
 /// glyph or reset arrow. Returns whether reset was clicked.
 pub fn field_row(
