@@ -53,6 +53,16 @@ input_file: crates/core/tests/scripts/rivers.json
       }
     },
     {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_move_locked",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "locked": false
+        }
+      }
+    },
+    {
       "outcome": {
         "view": {
           "boards": [
@@ -709,7 +719,7 @@ input_file: crates/core/tests/scripts/rivers.json
     }
   ],
   "redo_steps": 4,
-  "undo_steps": 6,
+  "undo_steps": 7,
   "view": {
     "boards": [
       {

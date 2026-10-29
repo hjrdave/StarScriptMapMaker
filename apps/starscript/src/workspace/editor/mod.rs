@@ -596,6 +596,10 @@ impl Editor {
         let name = |id: Id| format!("“{}”", node_name(&self.map, id));
         let text = match err {
             ExecuteError::Command(CommandError::Locked(id)) => format!("{} is locked", name(*id)),
+            ExecuteError::Command(CommandError::MoveLocked(id)) => format!(
+                "{} is locked for movement. Untick “Locked for movement” in Properties to move it",
+                name(*id)
+            ),
             ExecuteError::Command(CommandError::InLockedLayer { target, layer }) => {
                 format!("{} is inside locked Layer {}", name(*target), name(*layer))
             }

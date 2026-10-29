@@ -9,6 +9,7 @@
       ],
       "seed": 7
     }}},
+    {"step": {"command": "set_move_locked", "id": "00000000-0000-7000-8000-000000000002", "locked": false}},
     "snapshot",
     {"step": {"command": "set_river", "id": "00000000-0000-7000-8000-000000000002", "river": {
       "path": [

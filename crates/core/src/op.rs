@@ -169,6 +169,8 @@ pub enum Property {
     Visible(bool),
     /// Layers and Objects.
     Locked(bool),
+    /// Objects only: whether they refuse to be moved or transformed.
+    MoveLocked(bool),
     /// Layers only.
     Opacity(f32),
     /// Layers only. Ops don't check the target, so that inverses always apply; Commands
@@ -613,11 +615,13 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
             ObjectKind::River(_) => Ok(()),
             _ => Err("river"),
         },
+        (Node::Layer(_), Property::MoveLocked(_)) => Err("move_locked"),
         (Node::Layer(_), _)
         | (
             Node::Object(_),
             Property::Name(_)
             | Property::Locked(_)
+            | Property::MoveLocked(_)
             | Property::Link(_)
             | Property::Membership(_)
             | Property::Roughness(_)
@@ -668,6 +672,9 @@ fn set_property(node: &mut Node, property: Property) -> Property {
         }
         (Node::Object(object), Property::Locked(locked)) => {
             Property::Locked(std::mem::replace(&mut object.locked, locked))
+        }
+        (Node::Object(object), Property::MoveLocked(locked)) => {
+            Property::MoveLocked(std::mem::replace(&mut object.move_locked, locked))
         }
         (Node::Object(object), Property::Membership(membership)) => {
             Property::Membership(std::mem::replace(&mut object.membership, membership))

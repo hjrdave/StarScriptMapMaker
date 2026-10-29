@@ -529,6 +529,7 @@ fn large_map(scale: f64, asset: AssetRef) -> (Map, Id) {
         "the top level takes a Layer",
     );
     for i in 0..LANDMASSES {
+        let id = Id::new();
         let geometry = coastline(
             scripts::centre_of(i),
             ((VERTICES_PER_LANDMASS as f64 * scale) as usize).max(3),
@@ -536,13 +537,18 @@ fn large_map(scale: f64, asset: AssetRef) -> (Map, Id) {
         scripts::run(
             &mut map,
             &Command::CreateLandmass {
-                id: Id::new(),
+                id,
                 parent: layer,
                 index: None,
                 geometry,
                 fill: None,
             },
             "the Layer was just created, so it takes a Landmass",
+        );
+        scripts::run(
+            &mut map,
+            &Command::SetMoveLocked { id, locked: false },
+            "a Landmass takes a move lock change",
         );
     }
     let stamps = (0..(STAMPS as f64 * scale) as usize)

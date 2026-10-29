@@ -67,5 +67,29 @@ impl PropertiesPanel {
             self.live
                 .apply_all(editor, Edit::instant(), label, || commands);
         }
+        let move_locked = ids
+            .iter()
+            .all(|&id| matches!(editor.map().node(id), Some(Node::Object(o)) if o.move_locked));
+        let mut checked = move_locked;
+        ui.horizontal(|ui| {
+            ui.add_space(theme::SPACING[3]);
+            ui.checkbox(&mut checked, "Locked for movement");
+        });
+        if checked != move_locked {
+            let commands = ids
+                .iter()
+                .map(|&id| Command::SetMoveLocked {
+                    id,
+                    locked: checked,
+                })
+                .collect();
+            let label = if checked {
+                "Lock Movement"
+            } else {
+                "Unlock Movement"
+            };
+            self.live
+                .apply_all(editor, Edit::instant(), label, || commands);
+        }
     }
 }

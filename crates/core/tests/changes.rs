@@ -139,6 +139,11 @@ fn moving_an_outline_is_an_edit_of_that_landmass() {
         fill: None,
     })
     .unwrap();
+    map.execute(&Command::SetMoveLocked {
+        id: land,
+        locked: false,
+    })
+    .unwrap();
     let before = map.revision();
     map.execute(&Command::Translate {
         ids: vec![land],

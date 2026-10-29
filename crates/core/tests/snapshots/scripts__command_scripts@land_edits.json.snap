@@ -176,6 +176,26 @@ input_file: crates/core/tests/scripts/land_edits.json
       "outcome": "ok",
       "step": {
         "step": {
+          "command": "set_move_locked",
+          "id": "00000000-0000-7000-8000-000000000011",
+          "locked": false
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "set_move_locked",
+          "id": "00000000-0000-7000-8000-000000000012",
+          "locked": false
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
           "command": "translate",
           "ids": [
             "00000000-0000-7000-8000-000000000011",
@@ -1315,7 +1335,7 @@ input_file: crates/core/tests/scripts/land_edits.json
     }
   ],
   "redo_steps": 1,
-  "undo_steps": 4,
+  "undo_steps": 6,
   "view": {
     "boards": [
       {

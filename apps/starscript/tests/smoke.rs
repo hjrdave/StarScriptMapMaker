@@ -396,6 +396,10 @@ fn island_map() -> (ssmap_core::Map, ssmap_core::Id, ssmap_core::Id) {
     ] {
         map.execute(&command).unwrap();
     }
+    for id in [island, lake] {
+        map.execute(&Command::SetMoveLocked { id, locked: false })
+            .unwrap();
+    }
     (map, island, lake)
 }
 

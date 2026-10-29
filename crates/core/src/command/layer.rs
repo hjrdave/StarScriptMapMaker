@@ -91,6 +91,15 @@ pub(super) fn set_locked(map: &Map, id: Id, locked: bool) -> Result<Vec<Op>, Com
     Ok(vec![set(id, Property::Locked(locked))])
 }
 
+pub(super) fn set_move_locked(map: &Map, id: Id, locked: bool) -> Result<Vec<Op>, CommandError> {
+    match existing(map, id)? {
+        Node::Object(_) => {}
+        Node::Layer(_) => return Err(CommandError::NotAnObject(id)),
+    }
+    unlocked(map, id)?;
+    Ok(vec![set(id, Property::MoveLocked(locked))])
+}
+
 pub(super) fn set_opacity(map: &Map, id: Id, opacity: f32) -> Result<Vec<Op>, CommandError> {
     layer(map, id)?;
     unlocked(map, id)?;

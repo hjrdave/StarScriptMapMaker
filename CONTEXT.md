@@ -134,6 +134,10 @@ _Avoid_: History entry
 A setting on a Layer or Object, inherited by everything inside a locked Layer, that makes it refuse all Commands until it is unlocked.
 _Avoid_: Freeze, protect
 
+**Move lock**:
+A setting on an Object that makes it refuse to be moved or transformed while its shape and settings stay editable. Landmasses, Lakes and Rivers start with it on; Stamps and Labels start with it off.
+_Avoid_: Position lock
+
 **Selection**:
 The Objects the user currently has picked in the editor. It is part of the editor, not of the Map, and Commands never refer to it.
 _Avoid_: Focus, active objects
