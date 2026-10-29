@@ -758,11 +758,16 @@ fn the_layer_area_shows_the_selected_layer_and_edits_its_depth_sort() {
             .is_disabled()
     );
 
+    // The hint says what the setting does now, off or on.
+    assert!(harness.query_by_label(DEPTH_SORT_OFF_HINT).is_some());
+    assert!(harness.query_by_label(DEPTH_SORT_HINT).is_none());
     harness.get_by_label("Depth sort").click();
     harness.run();
     let editor = &harness.state().editor;
     assert!(layer_data(editor, a).depth_sort);
     assert!(!layer_data(editor, b).depth_sort);
+    assert!(harness.query_by_label(DEPTH_SORT_HINT).is_some());
+    assert!(harness.query_by_label(DEPTH_SORT_OFF_HINT).is_none());
 }
 
 #[test]

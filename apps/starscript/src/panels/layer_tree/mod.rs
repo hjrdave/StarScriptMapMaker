@@ -23,6 +23,9 @@ pub(crate) const FOOTER_HEIGHT: f32 = 24.0;
 /// Why a Depth-sorted Layer's Stamps can't be reordered by hand.
 pub(crate) const DEPTH_SORT_HINT: &str = "Depth sort is on for this Layer: Stamps are listed in the order they draw, by Anchor height. Move a Stamp to re-sort it.";
 
+/// What the Layer area says while Depth sort is off.
+const DEPTH_SORT_OFF_HINT: &str = "Depth sort is off for this Layer: Stamps draw in the order listed, which you can change by dragging.";
+
 mod layer_area;
 mod model;
 mod row;

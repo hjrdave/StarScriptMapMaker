@@ -356,16 +356,41 @@ fn stamp_shows_its_asset_and_scatter_settings_and_select_shows_no_tool_section()
 }
 
 #[test]
-fn a_selected_stamp_is_not_repeated_in_the_stamp_tool_section() {
+fn a_tool_with_settings_hides_the_selection_s_properties() {
+    // With a brush active, a selected Landmass's properties stay out of the way.
+    let (mut fixture, _, island) = fixture();
+    fixture.editor.select(vec![island]);
+    fixture.editor.active_tool = ToolId::LandBrush;
+    let mut harness = harness(fixture);
+    for label in ["Brush", "Irregularity", "Mode"] {
+        assert!(harness.query_by_label(label).is_some(), "{label}");
+    }
+    for label in ["Roughness", "Shore style", "Combine"] {
+        assert!(harness.query_by_label(label).is_none(), "{label}");
+    }
+    // The Select tool shows the selection's, and not the brush's.
+    harness.state_mut().editor.active_tool = ToolId::Select;
+    harness.run();
+    for label in ["Roughness", "Shore style", "Combine"] {
+        assert!(harness.query_by_label(label).is_some(), "{label}");
+    }
+    assert!(harness.query_by_label("Irregularity").is_none());
+}
+
+#[test]
+fn the_stamp_tool_shows_its_settings_and_asset_whatever_is_selected() {
     let (mut fixture, layer, _) = fixture();
     install_test_pack(&mut fixture.editor, false);
     fixture.editor.active_tool = ToolId::Stamp;
     let stamp = add_stamp(&mut fixture, layer, 10.0);
     fixture.editor.select(vec![stamp]);
     let harness = harness(fixture);
-    assert!(harness.query_by_label("Choose Asset").is_none());
-    for label in ["Density", "Tilt jitter"] {
+    for label in ["Choose Asset", "Density", "Tilt jitter"] {
         assert!(harness.query_by_label(label).is_some(), "{label}");
+    }
+    // The selected Stamp's own sections wait for the Select tool.
+    for label in ["Transform", "Appearance"] {
+        assert!(harness.query_by_label(label).is_none(), "{label}");
     }
 }
 

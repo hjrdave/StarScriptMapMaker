@@ -123,21 +123,18 @@ impl PropertiesPanel {
             .auto_shrink([false, false])
             .max_height((rect.top() - ui.cursor().top()).max(0.0))
             .show(ui, |ui| {
-                // The tool's settings are sections like a selected Object's: with nothing
-                // selected they come first (the Stamp's with the Asset card), otherwise below
-                // the selection.
+                // A tool with settings shows only those (the Stamp's with its Asset card), so
+                // the selection's properties don't sit above them. Select, Pan, Lasso, Label
+                // and Canvas have none, and show the selection's.
                 let tool = editor.active_tool;
-                let nothing_selected = editor.selection().is_empty();
-                if nothing_selected {
+                if crate::tool_section::has_settings(tool) {
                     if tool == crate::tools::ToolId::Stamp {
                         self.tool_section.stamp_asset(ui, editor);
                         ui.add_space(theme::SPACING[2]);
                     }
                     crate::tool_section::tool_sections(ui, editor);
-                }
-                self.selection(ui, editor);
-                if !nothing_selected {
-                    crate::tool_section::tool_sections(ui, editor);
+                } else {
+                    self.selection(ui, editor);
                 }
             });
         ui.painter().hline(
