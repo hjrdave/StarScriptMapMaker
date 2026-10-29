@@ -5,12 +5,12 @@ use eframe::egui;
 use ssmap_core::{Command, Id, Map, Membership, Node};
 
 use super::{
-    PropertiesPanel, caption, heading,
+    PropertiesPanel, heading,
     map::{merge_edits, resize},
     row,
 };
 use crate::editor::Editor;
-use crate::prop_widgets::{self, Handle, ScrubSpec};
+use crate::prop_widgets::{self, Handle, Provenance, ScrubSpec, SectionHeader};
 
 /// What a board's buttons ask the window for, which owns the dialogs.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -40,36 +40,48 @@ impl PropertiesPanel {
         if !primary {
             self.board_name(ui, editor, id, &label);
         }
-        self.canvas_fields(ui, editor, id, &canvas);
-        let spec = |name, handle| {
-            ScrubSpec::new(name)
-                .handle(Handle::Text(handle))
-                .range(-1_000_000.0, 1_000_000.0)
-                .step(10.0)
+        let header = |kind, title| SectionHeader {
+            kind,
+            title,
+            badge: None,
+            action: None,
         };
-        let (mut x, mut y) = (canvas.origin[0], canvas.origin[1]);
-        let (x_edit, y_edit) = prop_widgets::pair(
-            ui,
-            |ui| prop_widgets::scrub_field(ui, &mut x, &spec("Board X", "X")),
-            |ui| prop_widgets::scrub_field(ui, &mut y, &spec("Board Y", "Y")),
-        );
-        let name = if primary { "Move Canvas" } else { "Move Board" };
-        let command = resize(editor, id, [x, y], canvas.width, canvas.height);
-        self.live
-            .apply(editor, merge_edits(x_edit, y_edit), name, || command);
-        caption(ui, "Background");
-        self.background_fields(ui, editor, id, &canvas);
-        caption(ui, "Board");
-        ui.horizontal_wrapped(|ui| {
-            if !primary && ui.button("Set as Canvas").clicked() {
-                editor.make_canvas(id);
-            }
-            if ui.button("Duplicate").clicked() {
-                self.board_requests.push(BoardRequest::Duplicate(id));
-            }
-            if !primary && ui.button("Delete").clicked() {
-                self.board_requests.push(BoardRequest::Delete(id));
-            }
+        prop_widgets::section(ui, header("board-size", "Size"), |ui| {
+            self.canvas_fields(ui, editor, id, &canvas);
+        });
+        prop_widgets::section(ui, header("board-position", "Position"), |ui| {
+            let spec = |name, handle| {
+                ScrubSpec::new(name)
+                    .handle(Handle::Text(handle))
+                    .range(-1_000_000.0, 1_000_000.0)
+                    .step(10.0)
+            };
+            let (mut x, mut y) = (canvas.origin[0], canvas.origin[1]);
+            let (x_edit, y_edit) = prop_widgets::pair(
+                ui,
+                |ui| prop_widgets::scrub_field(ui, &mut x, &spec("Board X", "X")),
+                |ui| prop_widgets::scrub_field(ui, &mut y, &spec("Board Y", "Y")),
+            );
+            let name = if primary { "Move Canvas" } else { "Move Board" };
+            let command = resize(editor, id, [x, y], canvas.width, canvas.height);
+            self.live
+                .apply(editor, merge_edits(x_edit, y_edit), name, || command);
+        });
+        prop_widgets::section(ui, header("board-background", "Background"), |ui| {
+            self.background_fields(ui, editor, id, &canvas);
+        });
+        prop_widgets::section(ui, header("board-actions", "Actions"), |ui| {
+            ui.horizontal_wrapped(|ui| {
+                if !primary && ui.button("Set as Canvas").clicked() {
+                    editor.make_canvas(id);
+                }
+                if ui.button("Duplicate").clicked() {
+                    self.board_requests.push(BoardRequest::Duplicate(id));
+                }
+                if !primary && ui.button("Delete").clicked() {
+                    self.board_requests.push(BoardRequest::Delete(id));
+                }
+            });
         });
     }
 
@@ -134,16 +146,19 @@ impl PropertiesPanel {
             Some((editing, text)) if *editing == id => text.clone(),
             _ => current.clone(),
         };
-        let field = ui
-            .horizontal(|ui| {
-                ui.label("Name");
+        let mut field = None;
+        prop_widgets::field_row(ui, "Name", Provenance::Plain, |ui| {
+            field = Some(
                 ui.add(
                     egui::TextEdit::singleline(&mut text)
                         .hint_text(shown)
                         .desired_width(f32::INFINITY),
-                )
-            })
-            .inner;
+                ),
+            );
+        });
+        let Some(field) = field else {
+            return;
+        };
         field.widget_info(|| {
             egui::WidgetInfo::text_edit(true, "Board name", text.clone(), text.clone())
         });
