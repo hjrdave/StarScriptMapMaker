@@ -628,6 +628,7 @@ impl StampRenderer {
 mod tests {
     use std::path::PathBuf;
 
+    use ssmap_core::Category;
     use ssmap_core::asset::{PackLibrary, PackRoots};
     use ssmap_core::{
         Canvas, Command, DistanceUnit, Id, Map, Node, ObjectKind, RoughnessCache, Scale,
@@ -714,7 +715,7 @@ mod tests {
             parent: None,
             index: None,
             name: "Assets".into(),
-            category: Default::default(),
+            category: Category::Assets,
         })
         .unwrap();
         let assets = ["test-pack/tree", "test-pack/castle", "test-pack/mountain-1"];
@@ -769,7 +770,7 @@ mod tests {
             parent: None,
             index: None,
             name: "Assets".into(),
-            category: Default::default(),
+            category: Category::Assets,
         })
         .unwrap();
         let ids: Vec<Id> = (0..6).map(|_| Id::new()).collect();

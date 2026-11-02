@@ -434,7 +434,7 @@ mod link_tests {
                         parent: None,
                         index: None,
                         name: format!("Layer {n}"),
-                        category: Default::default(),
+                        category: ssmap_core::Category::Assets,
                     })
                     .is_ok()
             );

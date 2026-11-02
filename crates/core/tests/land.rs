@@ -1,8 +1,8 @@
 //! Landmasses and Lakes: draw order, picking, and transforms that undo exactly.
 
 use ssmap_core::{
-    Affine, Canvas, Color, Command, DistanceUnit, History, Id, Map, MultiPolygon, Node, PickIndex,
-    Point, Polygon, Rect, Roughness, RoughnessCache, Scale,
+    Affine, Canvas, Category, Color, Command, DistanceUnit, History, Id, Map, MultiPolygon, Node,
+    PickIndex, Point, Polygon, Rect, Roughness, RoughnessCache, Scale,
 };
 
 fn square(min: [f64; 2], size: f64) -> Vec<Point> {
@@ -28,7 +28,7 @@ fn layer(map: &mut Map, name: &str) -> Id {
             parent: None,
             index: None,
             name: name.into(),
-            category: Default::default(),
+            category: Category::Land,
         },
     );
     id

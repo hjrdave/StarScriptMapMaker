@@ -1165,7 +1165,9 @@ fn polygon_path(polygon: &Polygon) -> Path {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ssmap_core::{Canvas, Command, DistanceUnit, Label, MultiPolygon, Polygon, Scale};
+    use ssmap_core::{
+        Canvas, Category, Command, DistanceUnit, Label, MultiPolygon, Polygon, Scale,
+    };
 
     fn map_with_label() -> (Map, Id, Id) {
         let mut map = Map::new(Canvas::new(800, 600, Scale::new(1.0, DistanceUnit::Miles)));
@@ -1176,7 +1178,7 @@ mod tests {
             parent: None,
             index: None,
             name: "Labels".into(),
-            category: Default::default(),
+            category: Category::Labels,
         })
         .unwrap();
         map.execute(&Command::CreateLabel {
@@ -1248,7 +1250,7 @@ mod tests {
             parent: None,
             index: None,
             name: "Land".into(),
-            category: Default::default(),
+            category: Category::Land,
         })
         .unwrap();
         map.execute(&Command::SetDefaultRoughness {
@@ -1317,7 +1319,7 @@ mod tests {
             parent: None,
             index: None,
             name: "Trees".into(),
-            category: Default::default(),
+            category: Category::Assets,
         })
         .unwrap();
         let ids: Vec<Id> = (0..count).map(|_| Id::new()).collect();
@@ -1565,14 +1567,14 @@ mod tests {
     /// Stamps under, three Landmasses in the middle and Stamps above with a Label.
     fn map_with_land() -> (Map, Vec<Id>) {
         let mut map = Map::new(Canvas::new(800, 600, Scale::new(1.0, DistanceUnit::Miles)));
-        let layer = |map: &mut Map, name: &str| {
+        let layer = |map: &mut Map, name: &str, category: Category| {
             let id = Id::new();
             map.execute(&Command::CreateLayer {
                 id,
                 parent: None,
                 index: None,
                 name: name.into(),
-                category: Default::default(),
+                category,
             })
             .unwrap();
             id
@@ -1589,10 +1591,11 @@ mod tests {
             })
             .unwrap();
         };
-        let (below, land, above) = (
-            layer(&mut map, "Below"),
-            layer(&mut map, "Land"),
-            layer(&mut map, "Above"),
+        let (below, land, above, names) = (
+            layer(&mut map, "Below", Category::Assets),
+            layer(&mut map, "Land", Category::Land),
+            layer(&mut map, "Above", Category::Assets),
+            layer(&mut map, "Names", Category::Labels),
         );
         for x in [1.0, 2.0] {
             stamp(&mut map, below, x);
@@ -1615,7 +1618,7 @@ mod tests {
         }
         map.execute(&Command::CreateLabel {
             id: Id::new(),
-            parent: above,
+            parent: names,
             index: None,
             label: Box::new(Label {
                 text: "Thule".into(),
@@ -1883,7 +1886,7 @@ mod tests {
             parent: Some(layers[0]),
             index: None,
             name: "Inner".into(),
-            category: Default::default(),
+            category: Category::Assets,
         })
         .unwrap();
         scene.content(&map, &mut roughness);

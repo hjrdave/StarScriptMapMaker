@@ -12,7 +12,8 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use ssmap_app::MapMakerApp;
 use ssmap_core::{
-    Canvas, Command, DistanceUnit, Id, MultiPolygon, Polygon, Roughness, Scale, ShoreStyle,
+    Canvas, Category, Command, DistanceUnit, Id, MultiPolygon, Polygon, Roughness, Scale,
+    ShoreStyle,
 };
 
 fn square(min: f64) -> MultiPolygon {
@@ -47,7 +48,7 @@ fn app() -> (Harness<'static, MapMakerApp>, [Id; 2]) {
             parent: None,
             index: None,
             name: "Land".into(),
-            category: Default::default(),
+            category: Category::Land,
         })
         .unwrap();
     for (i, (id, min)) in [(a, 0.0), (b, 500.0)].into_iter().enumerate() {

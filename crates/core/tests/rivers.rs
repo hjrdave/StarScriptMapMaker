@@ -9,8 +9,8 @@
 use ssmap_core::file::MapFile;
 use ssmap_core::scatter::{Placement, Terrain};
 use ssmap_core::{
-    Affine, Canvas, Color, Command, CommandError, DistanceUnit, Id, Map, MultiPolygon, Node,
-    NodeRef, ObjectKind, PickIndex, Polygon, River, RiverPoint, RoughnessCache, Scale,
+    Affine, Canvas, Category, Color, Command, CommandError, DistanceUnit, Id, Map, MultiPolygon,
+    Node, NodeRef, ObjectKind, PickIndex, Polygon, River, RiverPoint, RoughnessCache, Scale,
 };
 
 fn map_with_layer() -> (Map, Id) {
@@ -25,7 +25,7 @@ fn map_with_layer() -> (Map, Id) {
         parent: None,
         index: None,
         name: "Water".into(),
-        category: Default::default(),
+        category: Category::Land,
     })
     .unwrap();
     (map, layer)

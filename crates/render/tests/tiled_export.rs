@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use ssmap_core::asset::{PackLibrary, PackRoots};
 use ssmap_core::{
-    Canvas, Color, Command, DistanceUnit, ExportSettings, Id, Map, MultiPolygon, Polygon,
+    Canvas, Category, Color, Command, DistanceUnit, ExportSettings, Id, Map, MultiPolygon, Polygon,
     Roughness, RoughnessCache, Scale, SizeMode, Stamp,
 };
 use ssmap_render::{
@@ -41,7 +41,7 @@ fn execute(map: &mut Map, command: Command) {
     map.execute(&command).expect("the Command applies");
 }
 
-fn layer(map: &mut Map, name: &str) -> Id {
+fn layer(map: &mut Map, name: &str, category: Category) -> Id {
     let id = Id::new();
     execute(
         map,
@@ -50,7 +50,7 @@ fn layer(map: &mut Map, name: &str) -> Id {
             parent: None,
             index: None,
             name: name.into(),
-            category: Default::default(),
+            category,
         },
     );
     id
@@ -154,7 +154,7 @@ fn coastal_map() -> Map {
             roughness: Roughness::new(8.0, 40.0, 5),
         },
     );
-    let land = layer(&mut map, "Land");
+    let land = layer(&mut map, "Land", Category::Land);
     landmass(
         &mut map,
         land,
@@ -218,9 +218,9 @@ fn hidden_layers_are_absent_and_locked_layers_present() {
     let mut map = Map::new(canvas());
     let hidden_fill = Color::rgb(0xff, 0x00, 0x00);
     let locked_fill = Color::rgb(0x00, 0x00, 0xff);
-    let hidden = layer(&mut map, "Hidden");
+    let hidden = layer(&mut map, "Hidden", Category::Land);
     landmass(&mut map, hidden, square(50.0, 250.0), hidden_fill);
-    let locked = layer(&mut map, "Locked");
+    let locked = layer(&mut map, "Locked", Category::Land);
     landmass(&mut map, locked, square(350.0, 550.0), locked_fill);
     execute(
         &mut map,
@@ -258,7 +258,7 @@ fn hidden_layers_are_absent_and_locked_layers_present() {
 /// A Map with rough coasts and Stamps, whose derived data takes time to build.
 fn busy_map() -> Map {
     let mut map = coastal_map();
-    let assets = layer(&mut map, "Assets");
+    let assets = layer(&mut map, "Assets", Category::Assets);
     for i in 0..6 {
         let stamp = Stamp::new(
             "test-pack/mountain-1".parse().expect("a valid reference"),

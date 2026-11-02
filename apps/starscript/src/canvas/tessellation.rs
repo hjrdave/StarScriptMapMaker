@@ -48,7 +48,9 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use ssmap_core::{Canvas, Command, DistanceUnit, Id, Map, MultiPolygon, Polygon, Scale};
+    use ssmap_core::{
+        Canvas, Category, Command, DistanceUnit, Id, Map, MultiPolygon, Polygon, Scale,
+    };
 
     use super::*;
     use crate::editor::Editor;
@@ -65,7 +67,7 @@ mod tests {
             parent: None,
             index: None,
             name: "Land".into(),
-            category: Default::default(),
+            category: Category::Land,
         })
         .unwrap();
         for i in 0..objects {

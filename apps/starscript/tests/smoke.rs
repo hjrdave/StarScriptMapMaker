@@ -12,7 +12,7 @@ use egui_kittest::kittest::Queryable;
 mod common;
 
 use ssmap_app::MapMakerApp;
-use ssmap_core::{Canvas, DistanceUnit, Scale};
+use ssmap_core::{Canvas, Category, DistanceUnit, Scale};
 
 fn app() -> Harness<'static, MapMakerApp> {
     let mut harness = Harness::builder()
@@ -372,7 +372,7 @@ fn island_map() -> (ssmap_core::Map, ssmap_core::Id, ssmap_core::Id) {
             parent: None,
             index: None,
             name: "Land".into(),
-            category: Default::default(),
+            category: Category::Land,
         },
         Command::CreateLandmass {
             id: island,

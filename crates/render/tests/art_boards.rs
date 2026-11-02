@@ -9,8 +9,8 @@
 use std::convert::Infallible;
 
 use ssmap_core::{
-    Canvas, Color, Command, DistanceUnit, ExportSettings, Id, Map, Membership, MultiPolygon,
-    Polygon, RoughnessCache, Scale, ShoreKind, ShoreStyle, SizeMode,
+    Canvas, Category, Color, Command, DistanceUnit, ExportSettings, Id, Map, Membership,
+    MultiPolygon, Polygon, RoughnessCache, Scale, ShoreKind, ShoreStyle, SizeMode,
 };
 use ssmap_render::{
     CanvasRenderer, CanvasScene, Fonts, GpuCapabilities, Headless, MapScene, RgbaImage,
@@ -74,7 +74,7 @@ fn map(art_origin: [f64; 2], [left, right]: [f64; 2], on_art_board: Option<bool>
             parent: None,
             index: None,
             name: "Land".into(),
-            category: Default::default(),
+            category: Category::Land,
         },
         Command::CreateLandmass {
             id: block,

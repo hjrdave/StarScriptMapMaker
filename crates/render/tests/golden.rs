@@ -18,9 +18,9 @@ use std::path::PathBuf;
 use ssmap_core::asset::{ArtFormat, PackSource, read_pack};
 use ssmap_core::scatter::Terrain;
 use ssmap_core::{
-    Align, Canvas, Color, Command, DistanceUnit, FontFace, Id, Label, LabelStyle, LabelStyles,
-    Lake, Landmass, Map, MultiPolygon, Polygon, River, RiverPoint, Roughness, RoughnessCache,
-    Scale, ShoreKind, ShoreRipples, ShoreStyle, ending_at_shore, starting_at_shore,
+    Align, Canvas, Category, Color, Command, DistanceUnit, FontFace, Id, Label, LabelStyle,
+    LabelStyles, Lake, Landmass, Map, MultiPolygon, Polygon, River, RiverPoint, Roughness,
+    RoughnessCache, Scale, ShoreKind, ShoreRipples, ShoreStyle, ending_at_shore, starting_at_shore,
 };
 use ssmap_render::atlas::{Atlas, AtlasEntry, MIN_PAGE_SIZE};
 use ssmap_render::raster::{Art, Raster};
@@ -302,7 +302,7 @@ fn rivers() -> Map {
             parent: None,
             index: None,
             name: "Land".into(),
-            category: Default::default(),
+            category: Category::Land,
         },
     );
     let square = |points: &[[f64; 2]]| {
@@ -500,7 +500,7 @@ fn ripples_of_nearby_islands_never_cover_land() {
         parent: None,
         index: None,
         name: "Land".into(),
-        category: Default::default(),
+        category: Category::Land,
     })
     .expect("a Layer");
     let square = |min: [f64; 2], max: [f64; 2]| {
@@ -660,7 +660,7 @@ fn render_labels(headless: &Headless, size: [u32; 2], labels: Vec<Label>) -> Rgb
         parent: None,
         index: None,
         name: "Labels".into(),
-        category: Default::default(),
+        category: Category::Labels,
     })
     .unwrap();
     for label in labels {
@@ -807,7 +807,7 @@ fn deleting_a_style_in_use_changes_nothing_visually() {
         parent: None,
         index: None,
         name: "Labels".into(),
-        category: Default::default(),
+        category: Category::Labels,
     })
     .unwrap();
     let styles: Vec<Id> = map.label_styles().iter().map(|s| s.id).collect();
@@ -879,7 +879,7 @@ fn render_stamps_sorted(
         parent: None,
         index: None,
         name: "Assets".into(),
-        category: Default::default(),
+        category: Category::Assets,
     })
     .unwrap();
     if depth_sort {
@@ -988,20 +988,20 @@ fn render_clipped(headless: &Headless, clip: bool, stamps: &[ssmap_core::Stamp])
             holes: vec![],
         }])
     };
-    let new_layer = |map: &mut Map, name: &str| {
+    let new_layer = |map: &mut Map, name: &str, category: Category| {
         let id = Id::new();
         map.execute(&Command::CreateLayer {
             id,
             parent: None,
             index: None,
             name: name.into(),
-            category: Default::default(),
+            category,
         })
         .unwrap();
         id
     };
     let mut map = Map::new(Canvas::new(480, 320, Scale::new(1.0, DistanceUnit::Miles)));
-    let land_layer = new_layer(&mut map, "Land");
+    let land_layer = new_layer(&mut map, "Land", Category::Land);
     let land = Id::new();
     map.execute(&Command::CreateLandmass {
         id: land,
@@ -1019,7 +1019,7 @@ fn render_clipped(headless: &Headless, clip: bool, stamps: &[ssmap_core::Stamp])
         fill: None,
     })
     .unwrap();
-    let art = new_layer(&mut map, "Art");
+    let art = new_layer(&mut map, "Art", Category::Assets);
     if clip {
         map.execute(&Command::SetClip {
             id: art,
@@ -1153,7 +1153,7 @@ fn ten_thousand_stamps() {
         parent: None,
         index: None,
         name: "Assets".into(),
-        category: Default::default(),
+        category: Category::Assets,
     })
     .unwrap();
     let assets = ["test-pack/mountain-1", "test-pack/castle", "test-pack/tree"];
@@ -1234,7 +1234,7 @@ fn progressive_map() -> Map {
         parent: None,
         index: None,
         name: "Land".into(),
-        category: Default::default(),
+        category: Category::Land,
     })
     .unwrap();
     for i in 0..8 {
@@ -1257,11 +1257,21 @@ fn progressive_map() -> Map {
         })
         .unwrap();
     }
+    // The Stamps sit in an Assets Layer above the land.
+    let art = Id::new();
+    map.execute(&Command::CreateLayer {
+        id: art,
+        parent: None,
+        index: None,
+        name: "Assets".into(),
+        category: Category::Assets,
+    })
+    .unwrap();
     let assets = ["test-pack/mountain-1", "test-pack/castle", "test-pack/tree"];
     for i in 0..300usize {
         map.execute(&Command::CreateStamp {
             id: Id::new(),
-            parent: layer,
+            parent: art,
             index: None,
             stamp: Box::new(stamp(
                 assets[i % assets.len()],

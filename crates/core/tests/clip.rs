@@ -1,8 +1,8 @@
 //! Clip: a Layer restricted to a Landmass, and how it follows the Landmass's fate.
 
 use ssmap_core::{
-    Canvas, Command, CommandError, DistanceUnit, History, Id, Map, MultiPolygon, Node, Point,
-    Polygon, Scale,
+    Canvas, Category, Command, CommandError, DistanceUnit, History, Id, Map, MultiPolygon, Node,
+    Point, Polygon, Scale,
 };
 
 fn square(min: [f64; 2], size: f64) -> MultiPolygon {
@@ -28,7 +28,7 @@ fn layer(map: &mut Map, name: &str) -> Id {
             parent: None,
             index: None,
             name: name.into(),
-            category: Default::default(),
+            category: Category::Land,
         },
     );
     id

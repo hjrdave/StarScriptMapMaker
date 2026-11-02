@@ -1,4 +1,4 @@
-use ssmap_core::{River, RiverPoint, ending_at_shore, starting_at_shore};
+use ssmap_core::{Category, River, RiverPoint, ending_at_shore, starting_at_shore};
 
 use super::*;
 
@@ -44,7 +44,7 @@ impl Editor {
                         parent: None,
                         index: None,
                         name: WATER_LAYER.to_owned(),
-                        category: Default::default(),
+                        category: Category::Land,
                     });
                     if !created {
                         return Err(());

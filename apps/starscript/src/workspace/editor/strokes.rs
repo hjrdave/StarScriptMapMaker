@@ -138,7 +138,7 @@ impl Editor {
                     parent: None,
                     index: None,
                     name: WATER_LAYER.to_owned(),
-                    category: Default::default(),
+                    category: ssmap_core::Category::Land,
                 },
             );
             if !created {

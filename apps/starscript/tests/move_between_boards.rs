@@ -11,7 +11,8 @@ use egui_kittest::Harness;
 use ssmap_app::MapMakerApp;
 use ssmap_app::menu::Command as MenuCommand;
 use ssmap_core::{
-    Canvas, Command, DistanceUnit, Id, Map, Membership, MultiPolygon, Node, Polygon, Scale,
+    Canvas, Category, Command, DistanceUnit, Id, Map, Membership, MultiPolygon, Node, Polygon,
+    Scale,
 };
 
 fn square(min: f64, size: f64) -> Vec<[f64; 2]> {
@@ -38,7 +39,7 @@ fn map() -> (Map, Id, Id) {
             parent: None,
             index: None,
             name: "Land".into(),
-            category: Default::default(),
+            category: Category::Land,
         },
         Command::CreateLandmass {
             id: island,

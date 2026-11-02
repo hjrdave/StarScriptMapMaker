@@ -10,7 +10,8 @@ use std::time::{Duration, Instant};
 
 use ssmap_app::editor::Editor;
 use ssmap_core::{
-    Canvas, Command, DistanceUnit, Id, Map, MultiPolygon, Polygon, Roughness, RoughnessCache, Scale,
+    Canvas, Category, Command, DistanceUnit, Id, Map, MultiPolygon, Polygon, Roughness,
+    RoughnessCache, Scale,
 };
 use ssmap_render::{Content, Fonts, MapScene};
 
@@ -39,7 +40,7 @@ fn editor() -> Editor {
             parent: None,
             index: None,
             name: "Land".into(),
-            category: Default::default(),
+            category: Category::Land,
         })
         .unwrap();
     for x in [0.0, 500.0, 1000.0] {

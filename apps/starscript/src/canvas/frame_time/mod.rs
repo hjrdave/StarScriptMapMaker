@@ -20,8 +20,8 @@ use std::time::{Duration, Instant};
 use scripts::{Script, World};
 use ssmap_core::asset::{PackLibrary, PackRoots};
 use ssmap_core::{
-    AssetRef, Canvas, Command, DistanceUnit, Id, Map, MultiPolygon, PlacedStamp, Polygon, Scale,
-    Stamp,
+    AssetRef, Canvas, Category, Command, DistanceUnit, Id, Map, MultiPolygon, PlacedStamp, Polygon,
+    Scale, Stamp,
 };
 use ssmap_render::profile::{self, Stage, StageTimes};
 use ssmap_render::{
@@ -525,7 +525,7 @@ fn large_map(scale: f64, asset: AssetRef) -> (Map, Id) {
             parent: None,
             index: None,
             name: "Bench".to_owned(),
-            category: Default::default(),
+            category: Category::Land,
         },
         "the top level takes a Layer",
     );

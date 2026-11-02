@@ -8,7 +8,8 @@
 
 use ssmap_core::land::{BrushStroke, brush_command, difference, preview_area, signed_area};
 use ssmap_core::{
-    Canvas, Command, DistanceUnit, Id, Map, MultiPolygon, Polygon, Roughness, RoughnessCache, Scale,
+    Canvas, Category, Command, DistanceUnit, Id, Map, MultiPolygon, Polygon, Roughness,
+    RoughnessCache, Scale,
 };
 
 fn square(min: [f64; 2], size: f64) -> MultiPolygon {
@@ -42,7 +43,7 @@ fn rough_island() -> (Map, Id, Id) {
             parent: None,
             index: None,
             name: "Land".into(),
-            category: Default::default(),
+            category: Category::Land,
         },
         Command::CreateLandmass {
             id: island,

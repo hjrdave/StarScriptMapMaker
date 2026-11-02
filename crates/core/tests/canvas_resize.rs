@@ -8,8 +8,8 @@
 
 use ssmap_core::file::MapFile;
 use ssmap_core::{
-    Canvas, Command, CommandError, DistanceUnit, History, Id, Map, Membership, MultiPolygon, Node,
-    Polygon, Scale,
+    Canvas, Category, Command, CommandError, DistanceUnit, History, Id, Map, Membership,
+    MultiPolygon, Node, Polygon, Scale,
 };
 
 fn square(x: f64, y: f64, size: f64) -> MultiPolygon {
@@ -27,7 +27,7 @@ fn map_with_landmass(geometry: MultiPolygon) -> (Map, Id) {
         parent: None,
         index: None,
         name: "Land".into(),
-        category: Default::default(),
+        category: Category::Land,
     })
     .unwrap();
     let id = Id::new();
