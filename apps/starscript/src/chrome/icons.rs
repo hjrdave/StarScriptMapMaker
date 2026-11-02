@@ -142,6 +142,7 @@ icons! {
     LockFilled, "Lock filled", "lock-filled";
     LockDashed, "Lock dashed", "lock-dashed";
     Link, "Link", "link";
+    Unlink, "Unlink", "unlink";
     Shuffle, "Shuffle", "shuffle";
     Replace, "Replace", "replace";
     FlipHorizontal, "Flip horizontal", "flip-horizontal";

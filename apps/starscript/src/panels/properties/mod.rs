@@ -41,6 +41,9 @@ pub(crate) struct PropertiesPanel {
     /// The Canvas point that stays put when it is resized, as (column, row) of the 3×3
     /// anchor grid: 0 is left / top, 1 the middle, 2 right / bottom.
     canvas_anchor: (u8, u8),
+    /// The board whose width and height are chained, and the aspect ratio (width over height)
+    /// from when the chain was turned on, so repeated rounding cannot make it drift.
+    chain_ratio: Option<(Id, f64)>,
     /// The board being resized by a drag, and its box when the drag began.
     resize_base: Option<(Id, ssmap_core::Canvas)>,
     /// The templates whose look the background can take, read when the Map section first
