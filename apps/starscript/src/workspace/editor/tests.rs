@@ -1067,3 +1067,44 @@ fn history_begin_refuses_while_a_transaction_is_open() {
     assert!(!editor.end_gesture(second));
     assert!(editor.end_gesture(id));
 }
+
+#[test]
+fn pinning_the_selection_is_one_named_undo_step_and_a_lock_refuses_it() {
+    let mut editor = editor();
+    let layer = editor.new_layer().unwrap();
+    let a = add_stamp(&mut editor, layer, 10.0, 10.0);
+    let b = add_stamp(&mut editor, layer, 30.0, 20.0);
+    let pinned = |editor: &Editor, id: Id| matches!(editor.map().node(id), Some(Node::Object(o)) if o.move_locked);
+    editor.select(vec![a, b]);
+    editor.set_selection_pinned(true);
+    assert!(pinned(&editor, a) && pinned(&editor, b));
+    assert_eq!(editor.undo_label(), Some("Pin to Canvas"));
+    editor.undo();
+    assert!(!pinned(&editor, a) && !pinned(&editor, b));
+
+    // A locked Object refuses every Command, the pin included, and nothing is half done.
+    editor.select(vec![b]);
+    editor.set_selection_locked(true);
+    editor.select(vec![a, b]);
+    editor.set_selection_pinned(true);
+    assert!(!pinned(&editor, a) && !pinned(&editor, b));
+
+    editor.set_selection_locked(false);
+    assert_eq!(editor.undo_label(), Some("Unlock"));
+}
+
+#[test]
+fn a_refused_move_says_the_object_is_pinned() {
+    let (mut editor, land) = editor_with_square();
+    let err = editor
+        .run(Command::Translate {
+            ids: vec![land],
+            offset: [1.0, 1.0],
+        })
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        ExecuteError::Command(CommandError::MoveLocked(_))
+    ));
+    assert!(err.to_string().contains("is pinned to the Canvas"));
+}

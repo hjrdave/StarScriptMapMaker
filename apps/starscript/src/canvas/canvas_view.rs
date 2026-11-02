@@ -3,7 +3,7 @@
 
 use eframe::egui;
 use eframe::egui_wgpu::{self, wgpu};
-use ssmap_core::{Command, ResolvedLabel};
+use ssmap_core::{Command, Node, ResolvedLabel};
 use ssmap_render::{
     CanvasRenderer, CanvasScene, ExportError, ExportJob, ExportStep, GpuCapabilities, LabelLayout,
     Presenter, Quality, RgbaImage, SpriteStore, Suitability, TessellationCache, View,
@@ -475,6 +475,41 @@ impl CanvasView {
                 && let Some(id) = single
             {
                 editor.request_rename(id);
+                ui.close();
+            }
+            let (locked, pinned, blocked) = {
+                let map = editor.map();
+                let ids = editor.selection();
+                (
+                    !ids.is_empty() && ids.iter().all(|&id| map.node(id).is_some_and(Node::locked)),
+                    !ids.is_empty()
+                        && ids.iter().all(
+                            |&id| matches!(map.node(id), Some(Node::Object(o)) if o.move_locked),
+                        ),
+                    ids.iter().any(|&id| map.is_locked(id)),
+                )
+            };
+            if ui
+                .add_enabled(
+                    has_selection,
+                    egui::Button::new(if locked { "Unlock" } else { "Lock" }),
+                )
+                .clicked()
+            {
+                editor.set_selection_locked(!locked);
+                ui.close();
+            }
+            let pin = if pinned {
+                "Unpin from Canvas"
+            } else {
+                "Pin to Canvas"
+            };
+            if ui
+                .add_enabled(has_selection && !blocked, egui::Button::new(pin))
+                .on_disabled_hover_text("Select something unlocked first")
+                .clicked()
+            {
+                editor.set_selection_pinned(!pinned);
                 ui.close();
             }
             if ui

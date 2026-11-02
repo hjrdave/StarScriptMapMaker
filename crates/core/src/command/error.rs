@@ -19,8 +19,8 @@ pub enum CommandError {
     /// The node is locked.
     #[error("{0} is locked")]
     Locked(Id),
-    /// The Object is locked for movement.
-    #[error("{0} is locked for movement")]
+    /// The Object is pinned to the Canvas, so it cannot move.
+    #[error("{0} is pinned to the Canvas")]
     MoveLocked(Id),
     /// The node sits inside a locked Layer.
     #[error("{target} is inside locked Layer {layer}")]

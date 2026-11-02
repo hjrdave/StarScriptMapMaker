@@ -18,18 +18,18 @@ pub(crate) enum BannerAction {
     Done,
 }
 
-/// Where the zoom control's right-centre sits: on the tool dock's vertical centre line.
+/// Where the zoom control's bottom-right corner sits: on the tool dock's bottom line.
 fn zoom_control_anchor(canvas: egui::Rect) -> egui::Pos2 {
     egui::pos2(
         canvas.right() - EDGE_GAP,
-        canvas.bottom() - theme::metrics::FLOATING_BAR_CENTER_OFFSET,
+        canvas.bottom() - theme::metrics::TOOL_DOCK_BOTTOM_OFFSET,
     )
 }
 
 /// Width of the `−` and `+` sections, in points.
-const SIDE_WIDTH: f32 = 40.0;
+const SIDE_WIDTH: f32 = 28.0;
 /// Width of the percentage section. Fixed so the pill keeps its size from `5%` to `800%`.
-const MIDDLE_WIDTH: f32 = 68.0;
+const MIDDLE_WIDTH: f32 = 56.0;
 
 /// One click target of the zoom pill: plain text on the pill, a rounded fill on hover or press.
 fn section(
@@ -39,7 +39,7 @@ fn section(
     width: f32,
     tooltip: &str,
 ) -> egui::Response {
-    let size = egui::vec2(width, theme::metrics::TOOL_DOCK_HEIGHT - 2.0);
+    let size = egui::vec2(width, theme::metrics::ZOOM_BAR_HEIGHT - 2.0);
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
     let fill = if response.is_pointer_button_down_on() {
         Some(palette.border_subtle)
@@ -50,12 +50,12 @@ fn section(
     };
     if let Some(fill) = fill {
         ui.painter()
-            .rect_filled(rect.shrink(3.0), theme::RADIUS_BUTTON, fill);
+            .rect_filled(rect.shrink(2.0), theme::RADIUS_BUTTON, fill);
     }
     let font = if text.ends_with('%') {
-        egui::FontId::proportional(theme::HEADING)
+        egui::FontId::proportional(theme::BODY)
     } else {
-        egui::FontId::proportional(theme::TITLE + 3.0)
+        egui::FontId::proportional(theme::TITLE)
     };
     ui.painter().text(
         rect.center(),
@@ -70,7 +70,7 @@ fn section(
 
 /// A thin vertical line between two sections.
 fn divider(ui: &mut egui::Ui, palette: &Palette) {
-    let height = theme::metrics::TOOL_DOCK_HEIGHT - 2.0;
+    let height = theme::metrics::ZOOM_BAR_HEIGHT - 2.0;
     let (rect, _) = ui.allocate_exact_size(egui::vec2(1.0, height), egui::Sense::hover());
     ui.painter().rect_filled(rect, 0.0, palette.tab_divider);
 }
@@ -88,7 +88,7 @@ pub(crate) fn zoom_control(
     let mut chosen = None;
     egui::Area::new(egui::Id::new("zoom_control"))
         .order(egui::Order::Foreground)
-        .pivot(egui::Align2::RIGHT_CENTER)
+        .pivot(egui::Align2::RIGHT_BOTTOM)
         .fixed_pos(zoom_control_anchor(canvas))
         .show(ctx, |ui| {
             egui::Frame::NONE
@@ -231,15 +231,13 @@ mod tests {
     #[test]
     fn zoom_pill_width_is_fixed() {
         // Three sections and two 1-pt dividers, whatever the percentage says.
-        assert_eq!(SIDE_WIDTH * 2.0 + MIDDLE_WIDTH + 2.0, 150.0);
+        assert_eq!(SIDE_WIDTH * 2.0 + MIDDLE_WIDTH + 2.0, 114.0);
     }
 
     #[test]
-    fn zoom_control_centre_matches_tool_dock_centre() {
+    fn zoom_control_bottom_matches_tool_dock_bottom() {
         let canvas = egui::Rect::from_min_size(egui::pos2(10.0, 20.0), egui::vec2(800.0, 600.0));
-        let dock_centre = canvas.bottom()
-            - theme::metrics::TOOL_DOCK_BOTTOM_OFFSET
-            - theme::metrics::TOOL_DOCK_HEIGHT / 2.0;
-        assert_eq!(zoom_control_anchor(canvas).y, dock_centre);
+        let dock_bottom = canvas.bottom() - theme::metrics::TOOL_DOCK_BOTTOM_OFFSET;
+        assert_eq!(zoom_control_anchor(canvas).y, dock_bottom);
     }
 }
