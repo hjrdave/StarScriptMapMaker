@@ -6,7 +6,8 @@
 )]
 
 use ssmap_core::{
-    Canvas, Command, CommandError, DistanceUnit, Id, Map, Node, ObjectKind, Scale, Stamp, Subtree,
+    Canvas, Category, Command, CommandError, DistanceUnit, Id, Map, Node, ObjectKind, Scale, Stamp,
+    Subtree,
 };
 
 fn new_map() -> Map {
@@ -20,7 +21,7 @@ fn layer(map: &mut Map, name: &str) -> Id {
         parent: None,
         index: None,
         name: name.into(),
-        category: Default::default(),
+        category: Category::Assets,
     })
     .unwrap();
     id

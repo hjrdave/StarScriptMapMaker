@@ -22,7 +22,7 @@ Today a Layer holds any Objects and Layers, and `Map::accepts_children` only che
 
 - A migration adds the categories and gives every Layer one. A Layer holding a single kind gets that kind's category. A **mixed Layer goes to Land**, and keeps its Objects, so nothing is lost and the stacking order inside it is unchanged. An empty Layer takes the category from its name when it is one of the starting names (Labels, Assets, Land, Backdrop), and Land otherwise.
 - Moving the Layers into the fixed category order can change the Stacking order of a Map that interleaved kinds, for example Labels between Stamp Layers. The migration writes `<map>.v<old>.bak` first (ADR 0005). Stacking inside each category is kept.
-- This is a **major** format bump: an older app would draw hidden or locked categories as visible and unlocked.
+- **Amended when the first code landed (#522):** this step is **format 1.12, a minor bump**, not a major one. It adds only the optional `category` on a Layer, so an older app opens the file and keeps the field (ADR 0005), and the bundled and user templates, which a different major would refuse, keep loading. A file or template older than 1.12 gets its categories when it is read, by the rules above, and its top-level Layers are put in the fixed order; the file is rewritten at the next save. The major bump comes with the category settings (Hide, Lock, Pin, Opacity on a category, #531), because that is what an older app would get wrong.
 
 ## Rules for the rest of the model
 

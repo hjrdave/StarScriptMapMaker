@@ -9,6 +9,7 @@ input_file: crates/core/tests/scripts/label_styles.json
       "outcome": "ok",
       "step": {
         "step": {
+          "category": "labels",
           "command": "create_layer",
           "id": "00000000-0000-7000-8000-000000000001",
           "name": "Labels",
@@ -272,6 +273,7 @@ input_file: crates/core/tests/scripts/label_styles.json
           },
           "layers": [
             {
+              "category": "labels",
               "children": [
                 {
                   "id": "00000000-0000-7000-8000-000000000002",
@@ -494,6 +496,7 @@ input_file: crates/core/tests/scripts/label_styles.json
     },
     "layers": [
       {
+        "category": "labels",
         "children": [
           {
             "id": "00000000-0000-7000-8000-000000000002",

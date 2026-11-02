@@ -5,8 +5,8 @@
 )]
 use ssmap_core::file::MapFile;
 use ssmap_core::{
-    Canvas, Color, Command, DistanceUnit, FontFace, History, Id, Label, LabelStyle, LabelStyles,
-    Map, Scale,
+    Canvas, Category, Color, Command, DistanceUnit, FontFace, History, Id, Label, LabelStyle,
+    LabelStyles, Map, Scale,
 };
 
 fn map_with_layer() -> (Map, Id) {
@@ -21,7 +21,7 @@ fn map_with_layer() -> (Map, Id) {
         parent: None,
         index: None,
         name: "Labels".into(),
-        category: Default::default(),
+        category: Category::Labels,
     })
     .unwrap();
     (map, layer)

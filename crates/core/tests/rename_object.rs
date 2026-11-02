@@ -6,7 +6,7 @@
 )]
 
 use ssmap_core::{
-    Canvas, Command, CommandError, DistanceUnit, History, Id, Map, Node, Scale, Stamp,
+    Canvas, Category, Command, CommandError, DistanceUnit, History, Id, Map, Node, Scale, Stamp,
 };
 
 fn empty_map() -> Map {
@@ -22,7 +22,7 @@ fn map_with_stamp() -> (Map, Id, Id) {
         parent: None,
         index: None,
         name: "Land".into(),
-        category: Default::default(),
+        category: Category::Assets,
     })
     .unwrap();
     let stamp = Id::new();

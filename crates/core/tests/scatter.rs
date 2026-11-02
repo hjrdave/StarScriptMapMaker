@@ -10,9 +10,23 @@ use ssmap_core::scatter::{
     shuffle_commands,
 };
 use ssmap_core::{
-    AssetRef, Canvas, Command, DistanceUnit, Id, Map, MultiPolygon, Node, ObjectKind, Point,
-    Polygon, RoughnessCache, Scale, Stamp,
+    AssetRef, Canvas, Category, Command, DistanceUnit, Id, Map, MultiPolygon, Node, ObjectKind,
+    Point, Polygon, RoughnessCache, Scale, Stamp,
 };
+
+/// A new top-level Land Layer, for what does not belong in the Map's main Layer.
+fn land_layer(map: &mut Map) -> Id {
+    let id = Id::new();
+    map.execute(&Command::CreateLayer {
+        id,
+        parent: None,
+        index: None,
+        name: "Land".into(),
+        category: Category::Land,
+    })
+    .unwrap();
+    id
+}
 
 fn square(min: f64, max: f64) -> Vec<Point> {
     vec![[min, min], [max, min], [max, max], [min, max]]
@@ -36,7 +50,7 @@ fn layer(map: &mut Map, name: &str) -> Id {
         parent: None,
         index: None,
         name: name.into(),
-        category: Default::default(),
+        category: Category::Assets,
     })
     .unwrap();
     id
@@ -51,17 +65,19 @@ fn island() -> (Map, Id, Id, Id) {
     ));
     let terrain = layer(&mut map, "Terrain");
     let land = Id::new();
+    let other_parent = land_layer(&mut map);
     map.execute(&Command::CreateLandmass {
         id: land,
-        parent: terrain,
+        parent: other_parent,
         index: None,
         geometry: region(square(0.0, 400.0)),
         fill: None,
     })
     .unwrap();
+    let other_parent = land_layer(&mut map);
     map.execute(&Command::CreateLake {
         id: Id::new(),
-        parent: terrain,
+        parent: other_parent,
         index: None,
         geometry: region(square(100.0, 200.0)),
         fill: None,

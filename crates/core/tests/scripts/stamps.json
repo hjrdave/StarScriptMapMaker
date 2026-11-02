@@ -1,6 +1,6 @@
 {
   "steps": [
-    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000001", "parent": null, "name": "Assets"}},
+    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000001", "parent": null, "name": "Assets", "category": "assets"}},
     {"step": {"command": "create_stamp", "id": "00000000-0000-7000-8000-000000000002", "parent": "00000000-0000-7000-8000-000000000001", "stamp": {
       "asset": "default/mountain-1", "position": [500, 300], "scale": 1.5, "rotation": 12, "flip": true,
       "tint": "#40302080", "fill": "#d8c49a", "opacity": 0.9

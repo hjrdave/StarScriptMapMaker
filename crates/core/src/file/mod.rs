@@ -22,6 +22,9 @@
 //!   primary board for readers that know only one; a file without `boards` opens as one board.
 //!   Format 1.11 adds River Objects (`kind` `river`): their props hold the path, and their
 //!   outline is generated from it on open, so they have no `geometry` blob.
+//!   Format 1.12 adds the optional `category` (`labels`, `assets`, `land` or `backdrop`) to
+//!   Layer props (ADR 0013). A file saved before it gets one per Layer when opened, from what
+//!   the Layer holds, and its top-level Layers are put in the fixed category order.
 //!   Format 1.6 stores Groups: Layers nested inside Layers, with `parent` pointing at the
 //!   enclosing Layer. There is no compatibility with older files.
 //!
@@ -62,7 +65,7 @@ use crate::node::{Node, Object};
 /// anything else, and needs a migration.
 pub const FORMAT_VERSION: FormatVersion = FormatVersion {
     major: 1,
-    minor: 11,
+    minor: 12,
 };
 
 /// What the `boards` meta key holds.
@@ -310,7 +313,16 @@ impl MapFile {
         let generation = read_meta::<String>(&conn, "save_generation")?
             .and_then(|text| Uuid::parse_str(&text).ok())
             .unwrap_or_else(Uuid::nil);
-        let (layers, saved) = read_nodes(&conn)?;
+        let (mut layers, saved) = read_nodes(&conn)?;
+        // Layers saved before format 1.12 carry no category: work one out from what they hold.
+        if found
+            < (FormatVersion {
+                major: 1,
+                minor: 12,
+            })
+        {
+            crate::categorize::categorize(&mut layers);
+        }
         let (embedded, saved_embedded) = embed::read(&conn)?;
         let map = Map::from_view(MapView {
             canvas: canvas.clone(),

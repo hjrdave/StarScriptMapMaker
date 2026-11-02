@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use ssmap_core::asset::{AssetRef, PackSource, read_pack};
 use ssmap_core::file::{FORMAT_VERSION, MapFile};
 use ssmap_core::{
-    Blob, Canvas, Command, ContentHash, DistanceUnit, EmbedAsset, EmbedFont, History, Id, Map, Op,
-    OpError, Scale, Stamp,
+    Blob, Canvas, Category, Command, ContentHash, DistanceUnit, EmbedAsset, EmbedFont, History, Id,
+    Map, Op, OpError, Scale, Stamp,
 };
 
 fn empty_map() -> Map {
@@ -65,7 +65,7 @@ fn map_with_stamps(assets: &[&str]) -> Map {
         parent: None,
         index: None,
         name: "Land".into(),
-        category: Default::default(),
+        category: Category::Assets,
     })
     .unwrap();
     for asset in assets {
@@ -133,7 +133,7 @@ fn a_map_saved_with_a_user_pack_opens_identically_without_it() {
 
 #[test]
 fn files_are_written_with_format_1_8() {
-    assert_eq!((FORMAT_VERSION.major, FORMAT_VERSION.minor), (1, 11));
+    assert_eq!((FORMAT_VERSION.major, FORMAT_VERSION.minor), (1, 12));
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("world.ssmap");
     let (file, _) = MapFile::create(&path, &empty_map(), None).unwrap();

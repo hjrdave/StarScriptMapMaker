@@ -166,6 +166,7 @@ input_file: crates/core/tests/scripts/undo_redo.json
           },
           "layers": [
             {
+              "category": "land",
               "id": "00000000-0000-7000-8000-000000000002",
               "locked": false,
               "name": "Labels",
@@ -174,8 +175,10 @@ input_file: crates/core/tests/scripts/undo_redo.json
               "visible": false
             },
             {
+              "category": "land",
               "children": [
                 {
+                  "category": "land",
                   "id": "00000000-0000-7000-8000-000000000003",
                   "locked": false,
                   "name": "Northern islands",
@@ -439,8 +442,10 @@ input_file: crates/core/tests/scripts/undo_redo.json
           },
           "layers": [
             {
+              "category": "land",
               "children": [
                 {
+                  "category": "land",
                   "id": "00000000-0000-7000-8000-000000000003",
                   "locked": false,
                   "name": "Islands",
@@ -457,6 +462,7 @@ input_file: crates/core/tests/scripts/undo_redo.json
               "visible": true
             },
             {
+              "category": "land",
               "id": "00000000-0000-7000-8000-000000000002",
               "locked": false,
               "name": "Labels",
@@ -612,6 +618,7 @@ input_file: crates/core/tests/scripts/undo_redo.json
     },
     "layers": [
       {
+        "category": "land",
         "id": "00000000-0000-7000-8000-000000000004",
         "locked": false,
         "name": "Ocean",
@@ -620,8 +627,10 @@ input_file: crates/core/tests/scripts/undo_redo.json
         "visible": true
       },
       {
+        "category": "land",
         "children": [
           {
+            "category": "land",
             "id": "00000000-0000-7000-8000-000000000003",
             "locked": false,
             "name": "Islands",
@@ -638,6 +647,7 @@ input_file: crates/core/tests/scripts/undo_redo.json
         "visible": true
       },
       {
+        "category": "land",
         "id": "00000000-0000-7000-8000-000000000002",
         "locked": false,
         "name": "Labels",

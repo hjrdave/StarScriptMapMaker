@@ -1,6 +1,6 @@
 {
   "steps": [
-    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000001", "parent": null, "name": "Labels"}},
+    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000001", "parent": null, "name": "Labels", "category": "labels"}},
     {"step": {"command": "create_label", "id": "00000000-0000-7000-8000-000000000002", "parent": "00000000-0000-7000-8000-000000000001", "label": {
       "text": "The Northern\nReaches", "position": [500, 300], "align": "centre", "rotation": -8.5,
       "font": {"family": "Cinzel", "weight": 700, "italic": false}, "size": 64, "letter_spacing": 0.2,

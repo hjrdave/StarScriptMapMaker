@@ -6,7 +6,7 @@
 )]
 
 use ssmap_core::{
-    Canvas, Command, CommandError, DistanceUnit, Id, Map, Node, ObjectKind, Scale, Stamp,
+    Canvas, Category, Command, CommandError, DistanceUnit, Id, Map, Node, ObjectKind, Scale, Stamp,
 };
 
 fn new_map() -> Map {
@@ -20,7 +20,21 @@ fn layer(map: &mut Map, name: &str) -> Id {
         parent: None,
         index: None,
         name: name.into(),
-        category: Default::default(),
+        category: Category::Assets,
+    })
+    .unwrap();
+    id
+}
+
+/// A Land Layer, for the Landmass a clip points at.
+fn land_layer(map: &mut Map) -> Id {
+    let id = Id::new();
+    map.execute(&Command::CreateLayer {
+        id,
+        parent: None,
+        index: None,
+        name: "Land".into(),
+        category: Category::Land,
     })
     .unwrap();
     id
@@ -156,7 +170,7 @@ fn the_new_ids_must_match_what_is_copied() {
 #[test]
 fn a_clip_follows_a_copied_landmass() {
     let mut map = new_map();
-    let l = layer(&mut map, "Land");
+    let l = land_layer(&mut map);
     let land = Id::new();
     map.execute(&Command::CreateLandmass {
         id: land,

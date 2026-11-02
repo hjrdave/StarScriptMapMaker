@@ -131,6 +131,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
           },
           "layers": [
             {
+              "category": "land",
               "children": [
                 {
                   "id": "00000000-0000-7000-8000-000000000012",
@@ -310,6 +311,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
               "visible": true
             },
             {
+              "category": "land",
               "clip": "00000000-0000-7000-8000-000000000012",
               "id": "00000000-0000-7000-8000-000000000020",
               "locked": false,
@@ -429,6 +431,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
           },
           "layers": [
             {
+              "category": "land",
               "children": [
                 {
                   "id": "00000000-0000-7000-8000-000000000012",
@@ -608,6 +611,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
               "visible": true
             },
             {
+              "category": "land",
               "clip": "00000000-0000-7000-8000-000000000012",
               "id": "00000000-0000-7000-8000-000000000020",
               "locked": false,
@@ -727,6 +731,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
           },
           "layers": [
             {
+              "category": "land",
               "children": [
                 {
                   "id": "00000000-0000-7000-8000-000000000011",
@@ -906,6 +911,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
               "visible": true
             },
             {
+              "category": "land",
               "clip": "00000000-0000-7000-8000-000000000011",
               "id": "00000000-0000-7000-8000-000000000020",
               "locked": false,
@@ -1086,6 +1092,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
           },
           "layers": [
             {
+              "category": "land",
               "children": [
                 {
                   "id": "00000000-0000-7000-8000-000000000011",
@@ -1302,6 +1309,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
               "visible": true
             },
             {
+              "category": "land",
               "clip": "00000000-0000-7000-8000-000000000011",
               "id": "00000000-0000-7000-8000-000000000020",
               "locked": false,
@@ -1479,6 +1487,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
           },
           "layers": [
             {
+              "category": "land",
               "children": [
                 {
                   "id": "00000000-0000-7000-8000-000000000011",
@@ -1747,6 +1756,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
               "visible": true
             },
             {
+              "category": "land",
               "clip": "00000000-0000-7000-8000-000000000011",
               "id": "00000000-0000-7000-8000-000000000020",
               "locked": false,
@@ -1861,6 +1871,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
     },
     "layers": [
       {
+        "category": "land",
         "children": [
           {
             "id": "00000000-0000-7000-8000-000000000011",
@@ -2129,6 +2140,7 @@ input_file: crates/core/tests/scripts/boolean_commands.json
         "visible": true
       },
       {
+        "category": "land",
         "clip": "00000000-0000-7000-8000-000000000011",
         "id": "00000000-0000-7000-8000-000000000020",
         "locked": false,

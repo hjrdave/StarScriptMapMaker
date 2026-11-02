@@ -302,6 +302,7 @@ input_file: crates/core/tests/scripts/boards.json
           },
           "layers": [
             {
+              "category": "land",
               "children": [
                 {
                   "id": "00000000-0000-7000-8000-000000000011",
@@ -535,6 +536,7 @@ input_file: crates/core/tests/scripts/boards.json
           },
           "layers": [
             {
+              "category": "land",
               "children": [
                 {
                   "id": "00000000-0000-7000-8000-000000000011",
@@ -768,6 +770,7 @@ input_file: crates/core/tests/scripts/boards.json
     },
     "layers": [
       {
+        "category": "land",
         "children": [
           {
             "id": "00000000-0000-7000-8000-000000000011",

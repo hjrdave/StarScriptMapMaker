@@ -7,7 +7,7 @@
 
 use ssmap_core::file::MapFile;
 use ssmap_core::{
-    Canvas, Command, CommandError, DistanceUnit, History, Id, Map, Node, Scale, Stamp,
+    Canvas, Category, Command, CommandError, DistanceUnit, History, Id, Map, Node, Scale, Stamp,
 };
 
 fn empty_map() -> Map {
@@ -21,7 +21,7 @@ fn layer(map: &mut Map, parent: Option<Id>, name: &str) -> Id {
         parent,
         index: None,
         name: name.into(),
-        category: Default::default(),
+        category: Category::Assets,
     })
     .unwrap();
     id
@@ -191,7 +191,7 @@ fn a_locked_group_refuses_new_content() {
                 parent: Some(parent),
                 index: None,
                 name: "New".into(),
-                category: Default::default(),
+                category: Category::Assets,
             })
             .is_err()
         );

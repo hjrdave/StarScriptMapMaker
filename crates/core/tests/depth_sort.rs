@@ -5,7 +5,7 @@
     reason = "tests and benches may panic on failure"
 )]
 
-use ssmap_core::{Canvas, Command, CommandError, DistanceUnit, Id, Map, Scale, Stamp};
+use ssmap_core::{Canvas, Category, Command, CommandError, DistanceUnit, Id, Map, Scale, Stamp};
 
 fn stamp(y: f64) -> Stamp {
     Stamp::new("pack/asset".parse().unwrap(), [0.0, y])
@@ -20,7 +20,7 @@ fn map_with(heights: &[f64]) -> (Map, Id, Vec<Id>) {
         parent: None,
         index: None,
         name: "Mountains".into(),
-        category: Default::default(),
+        category: Category::Assets,
     })
     .unwrap();
     let ids = heights
@@ -76,7 +76,7 @@ fn layers_and_other_objects_keep_tree_order() {
         parent: Some(layer),
         index: Some(1),
         name: "Inner".into(),
-        category: Default::default(),
+        category: Category::Assets,
     })
     .unwrap();
     let inner_stamp = Id::new();

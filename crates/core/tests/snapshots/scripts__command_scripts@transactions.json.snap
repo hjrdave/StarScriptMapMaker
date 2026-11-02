@@ -154,6 +154,7 @@ input_file: crates/core/tests/scripts/transactions.json
           },
           "layers": [
             {
+              "category": "land",
               "id": "00000000-0000-7000-8000-000000000001",
               "locked": false,
               "name": "Land",
@@ -307,6 +308,7 @@ input_file: crates/core/tests/scripts/transactions.json
           },
           "layers": [
             {
+              "category": "land",
               "id": "00000000-0000-7000-8000-000000000001",
               "locked": false,
               "name": "Land",
@@ -315,6 +317,7 @@ input_file: crates/core/tests/scripts/transactions.json
               "visible": true
             },
             {
+              "category": "land",
               "id": "00000000-0000-7000-8000-000000000002",
               "locked": false,
               "name": "Assets",
@@ -323,6 +326,7 @@ input_file: crates/core/tests/scripts/transactions.json
               "visible": true
             },
             {
+              "category": "land",
               "id": "00000000-0000-7000-8000-000000000003",
               "locked": false,
               "name": "Labels",
@@ -429,6 +433,7 @@ input_file: crates/core/tests/scripts/transactions.json
           },
           "layers": [
             {
+              "category": "land",
               "id": "00000000-0000-7000-8000-000000000001",
               "locked": false,
               "name": "Land",
@@ -583,6 +588,7 @@ input_file: crates/core/tests/scripts/transactions.json
     },
     "layers": [
       {
+        "category": "land",
         "id": "00000000-0000-7000-8000-000000000001",
         "locked": false,
         "name": "Land",
@@ -591,6 +597,7 @@ input_file: crates/core/tests/scripts/transactions.json
         "visible": true
       },
       {
+        "category": "land",
         "id": "00000000-0000-7000-8000-000000000002",
         "locked": false,
         "name": "Assets",
@@ -599,6 +606,7 @@ input_file: crates/core/tests/scripts/transactions.json
         "visible": true
       },
       {
+        "category": "land",
         "id": "00000000-0000-7000-8000-000000000003",
         "locked": false,
         "name": "Labels",

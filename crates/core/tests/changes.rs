@@ -6,8 +6,22 @@
 )]
 
 use ssmap_core::{
-    Canvas, Changes, Command, DistanceUnit, Id, Map, MultiPolygon, Polygon, Scale, Stamp,
+    Canvas, Category, Changes, Command, DistanceUnit, Id, Map, MultiPolygon, Polygon, Scale, Stamp,
 };
+
+/// A new top-level Land Layer, for what does not belong in the Map's main Layer.
+fn land_layer(map: &mut Map) -> Id {
+    let id = Id::new();
+    map.execute(&Command::CreateLayer {
+        id,
+        parent: None,
+        index: None,
+        name: "Land".into(),
+        category: Category::Land,
+    })
+    .unwrap();
+    id
+}
 
 fn new_map() -> Map {
     Map::new(Canvas::new(100, 80, Scale::new(1.0, DistanceUnit::Miles)))
@@ -26,7 +40,7 @@ fn with_stamps(count: usize) -> (Map, Id, Vec<Id>) {
         parent: None,
         index: None,
         name: "Trees".into(),
-        category: Default::default(),
+        category: Category::Assets,
     })
     .unwrap();
     let ids: Vec<Id> = (0..count).map(|_| Id::new()).collect();
@@ -127,11 +141,12 @@ fn undo_is_a_change_like_any_other() {
 
 #[test]
 fn moving_an_outline_is_an_edit_of_that_landmass() {
-    let (mut map, layer, _) = with_stamps(1);
+    let (mut map, _, _) = with_stamps(1);
     let land = Id::new();
+    let other_parent = land_layer(&mut map);
     map.execute(&Command::CreateLandmass {
         id: land,
-        parent: layer,
+        parent: other_parent,
         index: None,
         geometry: MultiPolygon(vec![Polygon {
             exterior: vec![[0.0, 0.0], [40.0, 0.0], [40.0, 40.0], [0.0, 40.0]],

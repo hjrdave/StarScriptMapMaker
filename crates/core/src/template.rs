@@ -133,6 +133,16 @@ impl MapTemplate {
         if found.major != FORMAT_VERSION.major {
             return Err(TemplateError::UnsupportedVersion { found });
         }
+        let mut file = file;
+        // A template from before format 1.12 has Layers with no category.
+        if found
+            < (FormatVersion {
+                major: 1,
+                minor: 12,
+            })
+        {
+            crate::categorize::categorize(&mut file.view.layers);
+        }
         // Checked now, so a broken template fails when loaded and not when a Map is made.
         Map::from_view(file.view.clone())?;
         Ok(Self {

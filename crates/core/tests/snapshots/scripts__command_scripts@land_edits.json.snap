@@ -296,6 +296,7 @@ input_file: crates/core/tests/scripts/land_edits.json
           },
           "layers": [
             {
+              "category": "land",
               "children": [
                 {
                   "id": "00000000-0000-7000-8000-000000000011",
@@ -384,6 +385,7 @@ input_file: crates/core/tests/scripts/land_edits.json
               "visible": true
             },
             {
+              "category": "land",
               "id": "00000000-0000-7000-8000-000000000020",
               "locked": true,
               "name": "Locked",
@@ -503,6 +505,7 @@ input_file: crates/core/tests/scripts/land_edits.json
           },
           "layers": [
             {
+              "category": "land",
               "children": [
                 {
                   "id": "00000000-0000-7000-8000-000000000011",
@@ -591,6 +594,7 @@ input_file: crates/core/tests/scripts/land_edits.json
               "visible": true
             },
             {
+              "category": "land",
               "id": "00000000-0000-7000-8000-000000000020",
               "locked": true,
               "name": "Locked",
@@ -757,6 +761,7 @@ input_file: crates/core/tests/scripts/land_edits.json
           },
           "layers": [
             {
+              "category": "land",
               "children": [
                 {
                   "id": "00000000-0000-7000-8000-000000000011",
@@ -845,6 +850,7 @@ input_file: crates/core/tests/scripts/land_edits.json
               "visible": true
             },
             {
+              "category": "land",
               "id": "00000000-0000-7000-8000-000000000020",
               "locked": true,
               "name": "Locked",
@@ -1029,6 +1035,7 @@ input_file: crates/core/tests/scripts/land_edits.json
           },
           "layers": [
             {
+              "category": "land",
               "children": [
                 {
                   "id": "00000000-0000-7000-8000-000000000011",
@@ -1117,6 +1124,7 @@ input_file: crates/core/tests/scripts/land_edits.json
               "visible": true
             },
             {
+              "category": "land",
               "id": "00000000-0000-7000-8000-000000000020",
               "locked": true,
               "name": "Locked",
@@ -1277,6 +1285,7 @@ input_file: crates/core/tests/scripts/land_edits.json
           },
           "layers": [
             {
+              "category": "land",
               "children": [
                 {
                   "id": "00000000-0000-7000-8000-000000000012",
@@ -1314,6 +1323,7 @@ input_file: crates/core/tests/scripts/land_edits.json
               "visible": true
             },
             {
+              "category": "land",
               "id": "00000000-0000-7000-8000-000000000020",
               "locked": true,
               "name": "Locked",
@@ -1421,6 +1431,7 @@ input_file: crates/core/tests/scripts/land_edits.json
     },
     "layers": [
       {
+        "category": "land",
         "children": [
           {
             "id": "00000000-0000-7000-8000-000000000011",
@@ -1509,6 +1520,7 @@ input_file: crates/core/tests/scripts/land_edits.json
         "visible": true
       },
       {
+        "category": "land",
         "id": "00000000-0000-7000-8000-000000000020",
         "locked": true,
         "name": "Locked",

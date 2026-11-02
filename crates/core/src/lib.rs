@@ -5,6 +5,7 @@
 
 pub mod asset;
 mod background;
+mod categorize;
 mod changes;
 mod color;
 mod command;

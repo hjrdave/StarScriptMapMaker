@@ -9,6 +9,7 @@ input_file: crates/core/tests/scripts/stamps.json
       "outcome": "ok",
       "step": {
         "step": {
+          "category": "assets",
           "command": "create_layer",
           "id": "00000000-0000-7000-8000-000000000001",
           "name": "Assets",
@@ -126,6 +127,7 @@ input_file: crates/core/tests/scripts/stamps.json
           },
           "layers": [
             {
+              "category": "assets",
               "children": [
                 {
                   "id": "00000000-0000-7000-8000-000000000002",
@@ -411,6 +413,7 @@ input_file: crates/core/tests/scripts/stamps.json
           },
           "layers": [
             {
+              "category": "assets",
               "children": [
                 {
                   "id": "00000000-0000-7000-8000-000000000002",
@@ -541,6 +544,7 @@ input_file: crates/core/tests/scripts/stamps.json
     },
     "layers": [
       {
+        "category": "assets",
         "children": [
           {
             "id": "00000000-0000-7000-8000-000000000002",

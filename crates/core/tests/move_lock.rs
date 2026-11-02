@@ -6,9 +6,23 @@
 )]
 
 use ssmap_core::{
-    Canvas, Command, CommandError, DistanceUnit, History, Id, Map, MultiPolygon, Node, Polygon,
-    Scale, Stamp,
+    Canvas, Category, Command, CommandError, DistanceUnit, History, Id, Map, MultiPolygon, Node,
+    Polygon, Scale, Stamp,
 };
+
+/// A new top-level Assets Layer, for what does not belong in the Map's main Layer.
+fn assets_layer(map: &mut Map) -> Id {
+    let id = Id::new();
+    map.execute(&Command::CreateLayer {
+        id,
+        parent: None,
+        index: None,
+        name: "Assets".into(),
+        category: Category::Assets,
+    })
+    .unwrap();
+    id
+}
 
 fn square() -> MultiPolygon {
     MultiPolygon(vec![Polygon {
@@ -25,7 +39,7 @@ fn map_with_layer() -> (Map, Id) {
         parent: None,
         index: None,
         name: "Land".into(),
-        category: Default::default(),
+        category: Category::Land,
     })
     .unwrap();
     (map, layer)
@@ -66,9 +80,10 @@ fn land_and_water_start_locked_for_movement_but_stamps_do_not() {
         fill: None,
     })
     .unwrap();
+    let other_parent = assets_layer(&mut map);
     map.execute(&Command::CreateStamp {
         id: stamp,
-        parent: layer,
+        parent: other_parent,
         index: None,
         stamp: Box::new(Stamp::default()),
     })

@@ -7,8 +7,8 @@
 
 use ssmap_core::file::MapFile;
 use ssmap_core::{
-    Canvas, Command, CommandError, DistanceUnit, History, Id, Map, MultiPolygon, Node, Point,
-    Polygon, Scale, Stamp, Subtree,
+    Canvas, Category, Command, CommandError, DistanceUnit, History, Id, Map, MultiPolygon, Node,
+    Point, Polygon, Scale, Stamp, Subtree,
 };
 
 fn empty_map() -> Map {
@@ -26,7 +26,7 @@ fn layer(map: &mut Map, parent: Option<Id>, name: &str) -> Id {
         parent,
         index: None,
         name: name.into(),
-        category: Default::default(),
+        category: Category::Land,
     })
     .unwrap();
     id
@@ -267,7 +267,18 @@ fn links_round_trip_through_the_map_file_and_undo_restores_them() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("links.ssmap");
     let (mut map, a, b, g1, _) = linked_pair();
-    let s = stamp(&mut map, g1);
+    // A Stamp is Assets, so it sits in a Layer of its own, linked across categories.
+    let assets = Id::new();
+    map.execute(&Command::CreateLayer {
+        id: assets,
+        parent: None,
+        index: None,
+        name: "Assets".into(),
+        category: Category::Assets,
+    })
+    .unwrap();
+    let s = stamp(&mut map, assets);
+    let _ = g1;
     link(&mut map, &[b, s]);
 
     MapFile::create(&path, &map, None).unwrap();

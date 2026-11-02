@@ -1,6 +1,6 @@
 {
   "steps": [
-    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000001", "parent": null, "name": "Labels"}},
+    {"step": {"command": "create_layer", "id": "00000000-0000-7000-8000-000000000001", "parent": null, "name": "Labels", "category": "labels"}},
     {"step": {"command": "create_label_style", "style": {"id": "00000000-0000-7000-8000-0000000000a1", "name": "Realm", "size": 96, "all_caps": true}}},
     {"step": {"command": "create_label_style", "style": {"id": "00000000-0000-7000-8000-0000000000a2", "name": "Realm", "size": 20}}},
     {"step": {"command": "create_label_style", "style": {"id": "00000000-0000-7000-8000-0000000000a3", "name": "  ", "size": 20}}},
