@@ -108,13 +108,44 @@ impl PropertiesPanel {
         self.tool_section.take_open_assets() || replace
     }
 
+    /// The panel's header: the active tool's icon and name with its mode chip, while the tool
+    /// has settings or nothing is selected; otherwise "Properties" over the selection.
+    fn header(&self, ui: &mut egui::Ui, editor: &Editor) {
+        let tool = editor.active_tool;
+        let nothing = editor.selection().is_empty() && editor.selected_board().is_none();
+        if !(crate::tool_section::has_settings(tool) || nothing) {
+            crate::shell::panel_header(ui, "Properties", |_| {});
+            return;
+        }
+        let alt = ui.input(|i| i.modifiers.alt);
+        let header = crate::tool_section::tool_header(editor, alt);
+        let palette = theme::palette(ui.ctx());
+        let erasing = header.chip.is_some_and(|(_, erase)| erase);
+        let tint = if erasing {
+            palette.danger
+        } else {
+            palette.text_primary
+        };
+        crate::shell::icon_header(
+            ui,
+            crate::tool_section::icon(tool),
+            tint,
+            header.name,
+            |ui| {
+                if let Some((text, danger)) = header.chip {
+                    crate::shell::mode_chip(ui, text, danger);
+                }
+            },
+        );
+    }
+
     /// Returns true when the collapse control at the bottom was clicked.
     pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) -> bool {
         // A change ends when the pointer is released, or when Escape cancelled it.
         self.live.apply(editor, Edit::default(), "", || {
             unreachable!("nothing changed")
         });
-        crate::shell::panel_header(ui, "Properties", |_| {});
+        self.header(ui, editor);
         let footer = crate::layer_tree::FOOTER_HEIGHT;
         // The control is pinned to the panel's bottom edge, where the collapsed strip has it too.
         let panel = ui.max_rect();
