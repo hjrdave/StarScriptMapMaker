@@ -114,6 +114,45 @@ impl Editor {
         !ids.is_empty() && self.run(Command::Unlink { ids }).is_ok()
     }
 
+    /// Locks or unlocks everything selected as one Undo step.
+    pub fn set_selection_locked(&mut self, locked: bool) {
+        let ids = self.selection.clone();
+        if ids.is_empty() {
+            return;
+        }
+        let label = if locked { "Lock" } else { "Unlock" };
+        self.in_gesture(label, |gesture| {
+            for id in ids {
+                if !gesture.run(Command::SetLocked { id, locked }) {
+                    return Err(());
+                }
+            }
+            Ok(())
+        });
+    }
+
+    /// Pins the selected Objects to the Canvas, or unpins them, as one Undo step.
+    pub fn set_selection_pinned(&mut self, pinned: bool) {
+        let ids = self.selection.clone();
+        if ids.is_empty() {
+            return;
+        }
+        let label = if pinned {
+            "Pin to Canvas"
+        } else {
+            "Unpin from Canvas"
+        };
+        self.in_gesture(label, |gesture| {
+            for id in ids {
+                let command = Command::SetMoveLocked { id, locked: pinned };
+                if !gesture.run(command) {
+                    return Err(());
+                }
+            }
+            Ok(())
+        });
+    }
+
     pub fn delete_selection(&mut self) {
         if self.selection.is_empty() {
             return;

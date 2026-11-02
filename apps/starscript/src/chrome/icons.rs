@@ -148,6 +148,8 @@ icons! {
     FlipHorizontal, "Flip horizontal", "flip-horizontal";
     FlipVertical, "Flip vertical", "flip-vertical";
     Rotate, "Rotate", "rotate";
+    Pin, "Pin", "pin";
+    PinFilled, "Pin filled", "pin-filled";
 }
 
 /// Hand-hinted 1x replacements, by icon. None yet: the thinned 1 px stroke is crisp enough
