@@ -96,17 +96,17 @@ fn at_1360_and_wider_both_panels_show_in_full() {
     let layout = expanded().layout(1360.0);
     assert_eq!(layout.layers, full(232.0));
     assert_eq!(layout.properties, full(288.0));
-    assert!(layout.layers_footer && layout.real_world_coordinates);
+    assert!(layout.real_world_coordinates);
     assert_eq!(expanded().layout(2400.0).layers, full(232.0));
 }
 
 #[test]
-fn from_1180_to_1359_layers_narrows_and_loses_its_footer() {
+fn from_1180_to_1359_layers_narrows() {
     for width in [1180.0, 1359.0] {
         let layout = expanded().layout(width);
         assert_eq!(layout.layers, full(200.0));
         assert_eq!(layout.properties, full(288.0));
-        assert!(!layout.layers_footer && layout.real_world_coordinates);
+        assert!(layout.real_world_coordinates);
     }
 }
 
@@ -265,4 +265,52 @@ fn grouping_puts_separators_every_three_digits() {
     assert_eq!(grouped(999), "999");
     assert_eq!(grouped(1000), "1,000");
     assert_eq!(grouped(-1234567), "-1,234,567");
+}
+
+#[test]
+fn a_rail_click_opens_a_section_switches_to_another_and_the_open_one_closes() {
+    let mut shell = Shell::default();
+    shell.set_window_width(1500.0);
+    assert!(shell.layers_collapsed() && !shell.panel_open());
+
+    shell.click_layers_rail(SidebarSection::Map);
+    assert!(!shell.layers_collapsed() && shell.panel_open());
+    assert_eq!(shell.sidebar_section(), SidebarSection::Map);
+
+    // Another icon switches the open panel; the same icon closes it.
+    shell.click_layers_rail(SidebarSection::History);
+    assert!(shell.panel_open());
+    assert_eq!(shell.sidebar_section(), SidebarSection::History);
+    shell.click_layers_rail(SidebarSection::History);
+    assert!(shell.layers_collapsed() && !shell.panel_open());
+    // The section stays, so the next open shows it again.
+    assert_eq!(shell.sidebar_section(), SidebarSection::History);
+}
+
+#[test]
+fn in_a_narrow_window_a_rail_click_opens_over_the_canvas_and_the_same_icon_closes_it() {
+    let mut shell = Shell::default();
+    shell.set_window_width(1100.0);
+    shell.click_layers_rail(SidebarSection::Layers);
+    assert!(shell.layers_overlay() && shell.layers_collapsed());
+    shell.click_layers_rail(SidebarSection::Map);
+    assert!(shell.layers_overlay());
+    assert_eq!(shell.sidebar_section(), SidebarSection::Map);
+    shell.click_layers_rail(SidebarSection::Map);
+    assert!(!shell.layers_overlay());
+}
+
+#[test]
+fn the_panel_beside_the_rail_pushes_the_canvas_over_by_the_rail_and_the_panel() {
+    let closed = Shell::default().layout(1500.0);
+    let open = expanded().layout(1500.0);
+    let (rail, panel) = (metrics::LAYERS_PANEL_RAIL, metrics::LAYERS_PANEL_DEFAULT);
+    assert_eq!(
+        closed.canvas_width(1500.0) - open.canvas_width(1500.0),
+        panel
+    );
+    assert_eq!(
+        1500.0 - open.canvas_width(1500.0) - open.properties.width(),
+        rail + panel
+    );
 }

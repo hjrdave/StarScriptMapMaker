@@ -18,9 +18,10 @@ pub(crate) fn item_label(title: &str, command: Command) -> String {
     }
 }
 
-/// Expands the left sidebar, which starts collapsed to its rail.
+/// Opens the left sidebar's panel on Layers, by the rail's Layers icon. The panel starts
+/// closed, with only the rail.
 pub(crate) fn expand_layers<S>(harness: &mut Harness<'_, S>) {
-    harness.get_by_label("Expand Layers (⌘⌥1)").click();
+    harness.get_by_label("Layers (⌘⌥1)").click();
     harness.run();
 }
 

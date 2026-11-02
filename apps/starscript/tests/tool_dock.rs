@@ -97,18 +97,24 @@ fn all_ten_tools_show_at_the_minimum_window_size() {
 #[test]
 fn the_dock_stays_inside_the_canvas_and_recentres_when_layers_collapses() {
     let mut harness = app(egui::vec2(WIDTH, 800.0));
-    let layers = harness.state().shell().current_layout().layers.width();
+    // The left edge of the Canvas: the rail, and beside it the panel when that is open.
+    let sidebar = |harness: &Harness<'static, MapMakerApp>| {
+        let layout = harness.state().shell().current_layout();
+        WIDTH - layout.properties.width() - layout.canvas_width(WIDTH)
+    };
     let properties = harness.state().shell().width(ssmap_app::shell::Side::Right);
     let (left, right) = dock_span(&harness);
-    assert!(left >= layers && right <= WIDTH - properties);
+    let open = sidebar(&harness);
+    assert!(left >= open && right <= WIDTH - properties);
     let before = (left + right) / 2.0;
 
-    harness.get_by_label("Collapse Layers (⌘⌥1)").click();
+    // The Layers icon is the open section's, so it closes the panel; the rail stays.
+    harness.get_by_label("Layers (⌘⌥1)").click();
     harness.run();
-    let layers = harness.state().shell().current_layout().layers.width();
-    assert!(layers < 100.0);
+    let closed = sidebar(&harness);
+    assert!(closed < open && closed < 100.0);
     let (left, right) = dock_span(&harness);
-    assert!(left >= layers && right <= WIDTH - properties);
+    assert!(left >= closed && right <= WIDTH - properties);
     assert!(((left + right) / 2.0 - before).abs() > 1.0);
 }
 
