@@ -3,11 +3,13 @@
 use crate::geometry::Point;
 use crate::id::Id;
 use crate::map::{Map, Subtree};
-use crate::node::{Layer, Node, Object, ObjectKind};
+use crate::node::{Category, Layer, Node, Object, ObjectKind};
 use crate::op::{Op, Property};
 
 use super::CommandError;
-use super::check::{existing, layer, locked_ancestor, set, unlocked, unlocked_branch};
+use super::check::{
+    category_of, existing, fits, layer, locked_ancestor, set, unlocked, unlocked_branch,
+};
 
 pub(super) fn create_layer(
     map: &Map,
@@ -15,6 +17,7 @@ pub(super) fn create_layer(
     parent: Option<Id>,
     index: Option<usize>,
     name: &str,
+    category: Category,
 ) -> Result<Vec<Op>, CommandError> {
     if map.contains(id) {
         return Err(CommandError::IdInUse(id));
@@ -22,13 +25,14 @@ pub(super) fn create_layer(
     if let Some(parent) = parent {
         layer(map, parent)?;
         unlocked(map, parent)?;
+        fits(map, parent, id, category)?;
     }
     Ok(vec![Op::Insert {
         parent,
         index: index.unwrap_or(map.children(parent).len()),
         subtree: Subtree {
             id,
-            node: Node::Layer(Layer::new(name)),
+            node: Node::Layer(Layer::in_category(name, category)),
             children: Vec::new(),
         },
     }])
@@ -72,6 +76,7 @@ pub(super) fn move_node(
     if let Some(parent) = parent {
         layer(map, parent)?;
         unlocked(map, parent)?;
+        fits(map, parent, id, category_of(map, id)?)?;
     }
     Ok(vec![Op::Move { id, parent, index }])
 }

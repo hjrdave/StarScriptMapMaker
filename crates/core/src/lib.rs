@@ -50,7 +50,8 @@ pub use map::{
     Board, Canvas, DistanceUnit, InvariantError, Map, MapDefaults, MapView, Scale, Subtree,
 };
 pub use node::{
-    Align, FontFace, Halo, Lake, Landmass, Layer, Membership, Node, Object, ObjectKind, Stamp,
+    Align, Category, FontFace, Halo, Lake, Landmass, Layer, Membership, Node, Object, ObjectKind,
+    Stamp,
 };
 pub use op::{Op, OpError, Property};
 pub use paste_gaps::PasteGaps;

@@ -4,12 +4,12 @@
 use crate::geometry::{NodeRef, Point};
 use crate::id::Id;
 use crate::map::{Map, Subtree};
-use crate::node::{Node, Object, ObjectKind};
+use crate::node::{Category, Node, Object, ObjectKind};
 use crate::op::{Op, Property};
 use crate::river::{River, RiverPoint};
 
 use super::CommandError;
-use super::check::{existing, layer, set, unlocked};
+use super::check::{existing, fits, layer, set, unlocked};
 
 pub(super) fn create_river(
     map: &Map,
@@ -23,6 +23,7 @@ pub(super) fn create_river(
     }
     layer(map, parent)?;
     unlocked(map, parent)?;
+    fits(map, parent, id, Category::Land)?;
     check_river(id, river)?;
     Ok(vec![Op::Insert {
         parent: Some(parent),

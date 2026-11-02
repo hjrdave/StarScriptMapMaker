@@ -31,6 +31,7 @@ impl Editor {
             parent,
             index,
             name,
+            category: Default::default(),
         };
         self.run_selecting(command, vec![id]).is_ok().then_some(id)
     }

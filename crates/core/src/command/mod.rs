@@ -31,7 +31,7 @@ use crate::id::Id;
 use crate::label::{Label, LabelStyle};
 use crate::land as outlines;
 use crate::map::{Map, Subtree};
-use crate::node::{Membership, Stamp};
+use crate::node::{Category, Membership, Stamp};
 use crate::op::Op;
 use crate::river::River;
 use crate::roughness::Roughness;
@@ -58,6 +58,10 @@ pub enum Command {
         index: Option<usize>,
         /// The new Layer's name.
         name: String,
+        /// What the Layer holds. Inside a Group it must be the Group's. Commands from before
+        /// categories read as Land.
+        #[serde(default)]
+        category: Category,
     },
     /// Renames a Layer.
     RenameLayer {
@@ -640,7 +644,8 @@ impl Command {
                 parent,
                 index,
                 name,
-            } => layer::create_layer(map, *id, *parent, *index, name),
+                category,
+            } => layer::create_layer(map, *id, *parent, *index, name, *category),
             Command::RenameLayer { id, name } => layer::rename_layer(map, *id, name),
             Command::RenameObject { id, name } => layer::rename_object(map, *id, name),
             Command::Move { id, parent, index } => layer::move_node(map, *id, *parent, *index),

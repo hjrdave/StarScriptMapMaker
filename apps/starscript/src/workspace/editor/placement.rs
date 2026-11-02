@@ -352,6 +352,7 @@ impl Editor {
             parent: None,
             index: None,
             name,
+            category: Default::default(),
         };
         Err(Box::new((id, command)))
     }

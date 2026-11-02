@@ -58,6 +58,62 @@ impl Node {
     }
 }
 
+/// What a Layer holds. A Map has four, always in this order from top to bottom (ADR 0013).
+/// An Object goes only into a Layer of its own category.
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Debug,
+    Default,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Category {
+    /// Labels.
+    Labels,
+    /// Stamps, placed Assets.
+    Assets,
+    /// Landmasses, Lakes and Rivers. Layers of a Map from before categories that held more
+    /// than one kind are Land too.
+    #[default]
+    Land,
+    /// Holds nothing yet: the Map's background is a setting, not an Object.
+    Backdrop,
+}
+
+impl Category {
+    /// Every category, from the top of the Stacking order to the bottom.
+    pub const ALL: [Category; 4] = [
+        Category::Labels,
+        Category::Assets,
+        Category::Land,
+        Category::Backdrop,
+    ];
+
+    /// The name the Layers panel shows.
+    pub fn name(self) -> &'static str {
+        match self {
+            Category::Labels => "Labels",
+            Category::Assets => "Assets",
+            Category::Land => "Land",
+            Category::Backdrop => "Backdrop",
+        }
+    }
+}
+
+impl std::fmt::Display for Category {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
 /// A container of Objects and other Layers. A Group is just a nested Layer.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Layer {
@@ -69,6 +125,10 @@ pub struct Layer {
     pub locked: bool,
     /// From 0 (transparent) to 1 (opaque).
     pub opacity: f32,
+    /// What the Layer holds. A Layer nested in a Group has the Group's. Files from before
+    /// categories have none stored, so they read as Land until migrated.
+    #[serde(default)]
+    pub category: Category,
     /// The Landmass this Layer is clipped to, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clip: Option<Id>,
@@ -85,13 +145,19 @@ pub struct Layer {
 }
 
 impl Layer {
-    /// A visible, unlocked, fully opaque Layer called `name`, with nothing set.
+    /// A visible, unlocked, fully opaque Land Layer called `name`, with nothing set.
     pub fn new(name: impl Into<String>) -> Self {
+        Self::in_category(name, Category::Land)
+    }
+
+    /// [`Layer::new`] in `category`.
+    pub fn in_category(name: impl Into<String>, category: Category) -> Self {
         Self {
             name: name.into(),
             visible: true,
             locked: false,
             opacity: 1.0,
+            category,
             clip: None,
             depth_sort: false,
             link: None,
@@ -184,6 +250,15 @@ pub enum ObjectKind {
 }
 
 impl ObjectKind {
+    /// The category of Layer this kind goes into.
+    pub fn category(&self) -> Category {
+        match self {
+            ObjectKind::Label(_) => Category::Labels,
+            ObjectKind::Stamp(_) => Category::Assets,
+            ObjectKind::Landmass(_) | ObjectKind::Lake(_) | ObjectKind::River(_) => Category::Land,
+        }
+    }
+
     /// The outline of kinds that have one.
     pub fn geometry(&self) -> Option<&MultiPolygon> {
         match self {

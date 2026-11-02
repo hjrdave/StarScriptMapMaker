@@ -714,6 +714,7 @@ mod tests {
             parent: None,
             index: None,
             name: "Assets".into(),
+            category: Default::default(),
         })
         .unwrap();
         let assets = ["test-pack/tree", "test-pack/castle", "test-pack/mountain-1"];
@@ -768,6 +769,7 @@ mod tests {
             parent: None,
             index: None,
             name: "Assets".into(),
+            category: Default::default(),
         })
         .unwrap();
         let ids: Vec<Id> = (0..6).map(|_| Id::new()).collect();

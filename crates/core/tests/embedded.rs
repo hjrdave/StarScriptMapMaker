@@ -65,6 +65,7 @@ fn map_with_stamps(assets: &[&str]) -> Map {
         parent: None,
         index: None,
         name: "Land".into(),
+        category: Default::default(),
     })
     .unwrap();
     for asset in assets {

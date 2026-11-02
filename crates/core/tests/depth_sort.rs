@@ -20,6 +20,7 @@ fn map_with(heights: &[f64]) -> (Map, Id, Vec<Id>) {
         parent: None,
         index: None,
         name: "Mountains".into(),
+        category: Default::default(),
     })
     .unwrap();
     let ids = heights
@@ -75,6 +76,7 @@ fn layers_and_other_objects_keep_tree_order() {
         parent: Some(layer),
         index: Some(1),
         name: "Inner".into(),
+        category: Default::default(),
     })
     .unwrap();
     let inner_stamp = Id::new();

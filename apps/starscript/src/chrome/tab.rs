@@ -163,6 +163,7 @@ mod tests {
                     parent: None,
                     index: None,
                     name: "Roads".into(),
+                    category: Default::default(),
                 })
                 .is_ok()
         );

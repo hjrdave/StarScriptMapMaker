@@ -26,6 +26,7 @@ pub(super) fn land_editor() -> Editor {
             parent: None,
             index: None,
             name: "Land".into(),
+            category: Default::default(),
         })
         .unwrap();
     // Selecting a Layer makes it the active one; the Selection can then be emptied.

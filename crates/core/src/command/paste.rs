@@ -8,7 +8,7 @@ use crate::map::{Map, Subtree};
 use crate::node::{Lake, Landmass, Node, ObjectKind};
 use crate::op::Op;
 
-use super::check::{existing, layer, unlocked};
+use super::check::{existing, fits, layer, unlocked};
 use super::{CommandError, is_zero};
 
 /// The name a copy of `name` gets: "Pine copy", then "Pine copy 2", the first not in `taken`.
@@ -155,6 +155,13 @@ pub(super) fn paste(
     if let Some(parent) = parent {
         layer(map, parent)?;
         unlocked(map, parent)?;
+        for root in subtrees {
+            let category = match &root.node {
+                Node::Layer(layer) => layer.category,
+                Node::Object(object) => object.kind.category(),
+            };
+            fits(map, parent, root.id, category)?;
+        }
     }
     let siblings = map.children(parent);
     let index = index.unwrap_or(siblings.len());

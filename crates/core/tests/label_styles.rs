@@ -21,6 +21,7 @@ fn map_with_layer() -> (Map, Id) {
         parent: None,
         index: None,
         name: "Labels".into(),
+        category: Default::default(),
     })
     .unwrap();
     (map, layer)

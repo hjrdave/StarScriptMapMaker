@@ -3,11 +3,11 @@
 use crate::id::Id;
 use crate::label::{Label, LabelStyle, LabelStyles};
 use crate::map::{Map, MapDefaults, Subtree};
-use crate::node::{Node, Object, ObjectKind};
+use crate::node::{Category, Node, Object, ObjectKind};
 use crate::op::{Op, Property};
 
 use super::CommandError;
-use super::check::{existing, layer, set, unlocked};
+use super::check::{existing, fits, layer, set, unlocked};
 
 pub(super) fn create_label(
     map: &Map,
@@ -21,6 +21,7 @@ pub(super) fn create_label(
     }
     layer(map, parent)?;
     unlocked(map, parent)?;
+    fits(map, parent, id, Category::Labels)?;
     check_label(map, label)?;
     Ok(vec![Op::Insert {
         parent: Some(parent),

@@ -26,6 +26,7 @@ fn with_stamps(count: usize) -> (Map, Id, Vec<Id>) {
         parent: None,
         index: None,
         name: "Trees".into(),
+        category: Default::default(),
     })
     .unwrap();
     let ids: Vec<Id> = (0..count).map(|_| Id::new()).collect();

@@ -25,6 +25,7 @@ fn map_with_layer() -> (Map, Id) {
         parent: None,
         index: None,
         name: "Land".into(),
+        category: Default::default(),
     })
     .unwrap();
     (map, layer)

@@ -21,6 +21,7 @@ fn layer(map: &mut Map, parent: Option<Id>, name: &str) -> Id {
         parent,
         index: None,
         name: name.into(),
+        category: Default::default(),
     })
     .unwrap();
     id
@@ -189,7 +190,8 @@ fn a_locked_group_refuses_new_content() {
                 id: Id::new(),
                 parent: Some(parent),
                 index: None,
-                name: "New".into()
+                name: "New".into(),
+                category: Default::default(),
             })
             .is_err()
         );

@@ -59,6 +59,7 @@ fn map_with_block(
             parent: None,
             index: None,
             name: "Land".into(),
+            category: Default::default(),
         },
         Command::CreateLandmass {
             id: block,

@@ -2,6 +2,7 @@ use thiserror::Error;
 
 use crate::geometry::Point;
 use crate::id::Id;
+use crate::node::Category;
 use crate::op::OpError;
 
 /// Why a Command was refused. The Map is left unchanged.
@@ -10,6 +11,23 @@ pub enum CommandError {
     /// No Layer or Object has this id.
     #[error("nothing has id {0}")]
     NotFound(Id),
+    /// The Object or Layer belongs to a different category from the Layer it was to go into.
+    #[error(
+        "{target} is {target_category} and cannot go into {layer}, which holds {layer_category}"
+    )]
+    WrongCategory {
+        /// The Object or Layer being placed.
+        target: Id,
+        /// Its category.
+        target_category: Category,
+        /// The Layer it was to go into.
+        layer: Id,
+        /// What that Layer holds.
+        layer_category: Category,
+    },
+    /// The nodes to group belong to more than one category.
+    #[error("{0} belongs to a different category from the other nodes to group")]
+    MixedCategories(Id),
     /// The node is an Object where a Layer is needed.
     #[error("{0} is not a Layer")]
     NotALayer(Id),

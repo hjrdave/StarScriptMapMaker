@@ -996,6 +996,7 @@ mod tests {
                 parent: None,
                 index: None,
                 name: "Land".into(),
+                category: Default::default(),
             },
             Command::CreateLandmass {
                 id: Id::new(),

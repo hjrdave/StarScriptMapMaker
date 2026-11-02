@@ -302,6 +302,7 @@ fn rivers() -> Map {
             parent: None,
             index: None,
             name: "Land".into(),
+            category: Default::default(),
         },
     );
     let square = |points: &[[f64; 2]]| {
@@ -499,6 +500,7 @@ fn ripples_of_nearby_islands_never_cover_land() {
         parent: None,
         index: None,
         name: "Land".into(),
+        category: Default::default(),
     })
     .expect("a Layer");
     let square = |min: [f64; 2], max: [f64; 2]| {
@@ -658,6 +660,7 @@ fn render_labels(headless: &Headless, size: [u32; 2], labels: Vec<Label>) -> Rgb
         parent: None,
         index: None,
         name: "Labels".into(),
+        category: Default::default(),
     })
     .unwrap();
     for label in labels {
@@ -804,6 +807,7 @@ fn deleting_a_style_in_use_changes_nothing_visually() {
         parent: None,
         index: None,
         name: "Labels".into(),
+        category: Default::default(),
     })
     .unwrap();
     let styles: Vec<Id> = map.label_styles().iter().map(|s| s.id).collect();
@@ -875,6 +879,7 @@ fn render_stamps_sorted(
         parent: None,
         index: None,
         name: "Assets".into(),
+        category: Default::default(),
     })
     .unwrap();
     if depth_sort {
@@ -990,6 +995,7 @@ fn render_clipped(headless: &Headless, clip: bool, stamps: &[ssmap_core::Stamp])
             parent: None,
             index: None,
             name: name.into(),
+            category: Default::default(),
         })
         .unwrap();
         id
@@ -1147,6 +1153,7 @@ fn ten_thousand_stamps() {
         parent: None,
         index: None,
         name: "Assets".into(),
+        category: Default::default(),
     })
     .unwrap();
     let assets = ["test-pack/mountain-1", "test-pack/castle", "test-pack/tree"];
@@ -1227,6 +1234,7 @@ fn progressive_map() -> Map {
         parent: None,
         index: None,
         name: "Land".into(),
+        category: Default::default(),
     })
     .unwrap();
     for i in 0..8 {

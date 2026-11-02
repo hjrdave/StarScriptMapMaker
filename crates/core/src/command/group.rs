@@ -8,7 +8,7 @@ use crate::node::{Layer, Node};
 use crate::op::Op;
 
 use super::CommandError;
-use super::check::{layer, unlocked, unlocked_branch};
+use super::check::{category_of, layer, unlocked, unlocked_branch};
 
 pub(super) fn create_group(
     map: &Map,
@@ -23,8 +23,13 @@ pub(super) fn create_group(
         return Err(CommandError::NothingToGroup);
     };
     let parent = map.parent(first);
+    // The Group holds one category: the members' (a Group cannot hold Layers of two).
+    let category = category_of(map, first)?;
     let mut seen = HashSet::new();
     for &member in ids {
+        if category_of(map, member)? != category {
+            return Err(CommandError::MixedCategories(member));
+        }
         unlocked_branch(map, member)?;
         if !seen.insert(member) {
             return Err(CommandError::DuplicateTarget(member));
@@ -50,7 +55,7 @@ pub(super) fn create_group(
         index: top + 1,
         subtree: Subtree {
             id,
-            node: Node::Layer(Layer::new(name.trim())),
+            node: Node::Layer(Layer::in_category(name.trim(), category)),
             children: Vec::new(),
         },
     }];

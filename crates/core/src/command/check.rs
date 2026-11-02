@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use crate::id::Id;
 use crate::map::Map;
-use crate::node::{Layer, Node};
+use crate::node::{Category, Layer, Node};
 use crate::op::{Op, Property};
 
 use super::CommandError;
@@ -22,6 +22,35 @@ pub(super) fn layer(map: &Map, id: Id) -> Result<&Layer, CommandError> {
         Node::Layer(layer) => Ok(layer),
         Node::Object(_) => Err(CommandError::NotALayer(id)),
     }
+}
+
+/// Fails unless the Layer `parent` holds `category`, the category of `target` (the new or
+/// moved Object or Layer).
+pub(super) fn fits(
+    map: &Map,
+    parent: Id,
+    target: Id,
+    category: Category,
+) -> Result<(), CommandError> {
+    let layer_category = layer(map, parent)?.category;
+    if layer_category == category {
+        Ok(())
+    } else {
+        Err(CommandError::WrongCategory {
+            target,
+            target_category: category,
+            layer: parent,
+            layer_category,
+        })
+    }
+}
+
+/// The category of a node already in the Map: a Layer's own, or an Object's by kind.
+pub(super) fn category_of(map: &Map, id: Id) -> Result<Category, CommandError> {
+    Ok(match existing(map, id)? {
+        Node::Layer(layer) => layer.category,
+        Node::Object(object) => object.kind.category(),
+    })
 }
 
 /// The nearest locked Layer above `id`.

@@ -1176,6 +1176,7 @@ mod tests {
             parent: None,
             index: None,
             name: "Labels".into(),
+            category: Default::default(),
         })
         .unwrap();
         map.execute(&Command::CreateLabel {
@@ -1247,6 +1248,7 @@ mod tests {
             parent: None,
             index: None,
             name: "Land".into(),
+            category: Default::default(),
         })
         .unwrap();
         map.execute(&Command::SetDefaultRoughness {
@@ -1315,6 +1317,7 @@ mod tests {
             parent: None,
             index: None,
             name: "Trees".into(),
+            category: Default::default(),
         })
         .unwrap();
         let ids: Vec<Id> = (0..count).map(|_| Id::new()).collect();
@@ -1569,6 +1572,7 @@ mod tests {
                 parent: None,
                 index: None,
                 name: name.into(),
+                category: Default::default(),
             })
             .unwrap();
             id
@@ -1879,6 +1883,7 @@ mod tests {
             parent: Some(layers[0]),
             index: None,
             name: "Inner".into(),
+            category: Default::default(),
         })
         .unwrap();
         scene.content(&map, &mut roughness);

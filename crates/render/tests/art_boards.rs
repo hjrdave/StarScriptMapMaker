@@ -74,6 +74,7 @@ fn map(art_origin: [f64; 2], [left, right]: [f64; 2], on_art_board: Option<bool>
             parent: None,
             index: None,
             name: "Land".into(),
+            category: Default::default(),
         },
         Command::CreateLandmass {
             id: block,

@@ -10,7 +10,7 @@ use crate::node::{Lake, Landmass, Membership, Node, Object, ObjectKind};
 use crate::op::{Op, Property};
 
 use super::CommandError;
-use super::check::{collect_branch, existing, layer, set, unlocked, unlocked_branch};
+use super::check::{collect_branch, existing, fits, layer, set, unlocked, unlocked_branch};
 use super::land::{outline, outlined};
 
 pub(super) fn delete(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
@@ -60,6 +60,7 @@ pub(super) fn create_object(
     }
     layer(map, parent)?;
     unlocked(map, parent)?;
+    fits(map, parent, id, kind.category())?;
     let geometry = kind.geometry().ok_or(CommandError::NoOutline(id))?;
     if let Some(problem) = geometry.problem() {
         return Err(CommandError::InvalidGeometry { id, problem });

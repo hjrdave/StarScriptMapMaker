@@ -50,6 +50,7 @@ fn layer(map: &mut Map, name: &str) -> Id {
             parent: None,
             index: None,
             name: name.into(),
+            category: Default::default(),
         },
     );
     id

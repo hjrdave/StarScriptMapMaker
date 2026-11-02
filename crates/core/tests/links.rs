@@ -26,6 +26,7 @@ fn layer(map: &mut Map, parent: Option<Id>, name: &str) -> Id {
         parent,
         index: None,
         name: name.into(),
+        category: Default::default(),
     })
     .unwrap();
     id

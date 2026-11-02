@@ -434,6 +434,7 @@ mod link_tests {
                         parent: None,
                         index: None,
                         name: format!("Layer {n}"),
+                        category: Default::default(),
                     })
                     .is_ok()
             );

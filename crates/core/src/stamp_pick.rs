@@ -208,6 +208,7 @@ mod tests {
             parent: None,
             index: None,
             name: "Assets".into(),
+            category: Default::default(),
         })
         .unwrap();
         let ids: Vec<Id> = (0..2).map(|_| Id::new()).collect();

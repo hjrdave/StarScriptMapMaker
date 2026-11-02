@@ -525,6 +525,7 @@ fn large_map(scale: f64, asset: AssetRef) -> (Map, Id) {
             parent: None,
             index: None,
             name: "Bench".to_owned(),
+            category: Default::default(),
         },
         "the top level takes a Layer",
     );

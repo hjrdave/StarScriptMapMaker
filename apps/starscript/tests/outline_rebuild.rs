@@ -39,6 +39,7 @@ fn editor() -> Editor {
             parent: None,
             index: None,
             name: "Land".into(),
+            category: Default::default(),
         })
         .unwrap();
     for x in [0.0, 500.0, 1000.0] {

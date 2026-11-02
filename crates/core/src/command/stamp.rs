@@ -4,10 +4,10 @@ use std::collections::HashSet;
 
 use crate::id::Id;
 use crate::map::{Map, Subtree};
-use crate::node::{Node, Object, ObjectKind, Stamp};
+use crate::node::{Category, Node, Object, ObjectKind, Stamp};
 use crate::op::{Op, Property};
 
-use super::check::{existing, layer, set, unlocked};
+use super::check::{existing, fits, layer, set, unlocked};
 use super::{CommandError, PlacedStamp};
 
 pub(super) fn create_stamp(
@@ -22,6 +22,7 @@ pub(super) fn create_stamp(
     }
     layer(map, parent)?;
     unlocked(map, parent)?;
+    fits(map, parent, id, Category::Assets)?;
     check_stamp(stamp)?;
     Ok(vec![Op::Insert {
         parent: Some(parent),
@@ -54,6 +55,9 @@ pub(super) fn place_stamps(
 ) -> Result<Vec<Op>, CommandError> {
     layer(map, parent)?;
     unlocked(map, parent)?;
+    if let Some(first) = stamps.first() {
+        fits(map, parent, first.id, Category::Assets)?;
+    }
     let start = map.children(Some(parent)).len();
     let mut seen = HashSet::new();
     let mut ops = Vec::with_capacity(stamps.len());

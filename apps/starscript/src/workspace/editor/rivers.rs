@@ -44,6 +44,7 @@ impl Editor {
                         parent: None,
                         index: None,
                         name: WATER_LAYER.to_owned(),
+                        category: Default::default(),
                     });
                     if !created {
                         return Err(());

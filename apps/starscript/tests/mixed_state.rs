@@ -47,6 +47,7 @@ fn app() -> (Harness<'static, MapMakerApp>, [Id; 2]) {
             parent: None,
             index: None,
             name: "Land".into(),
+            category: Default::default(),
         })
         .unwrap();
     for (i, (id, min)) in [(a, 0.0), (b, 500.0)].into_iter().enumerate() {

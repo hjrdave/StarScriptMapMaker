@@ -1,0 +1,509 @@
+---
+source: crates/core/tests/scripts.rs
+assertion_line: 173
+expression: run(script)
+input_file: crates/core/tests/scripts/labels.json
+---
+{
+  "log": [
+    {
+      "outcome": "ok",
+      "step": {
+        "step": {
+          "command": "create_layer",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "name": "Labels",
+          "parent": null
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000002 is Labels and cannot go into 00000000-0000-7000-8000-000000000001, which holds Land"
+      },
+      "step": {
+        "step": {
+          "command": "create_label",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "label": {
+            "align": "centre",
+            "all_caps": true,
+            "fill": "#2b2118",
+            "font": {
+              "family": "Cinzel",
+              "italic": false,
+              "weight": 700
+            },
+            "halo": {
+              "color": "#f4ecd8c0",
+              "width": 3
+            },
+            "letter_spacing": 0.2,
+            "line_height": 1.1,
+            "opacity": 0.9,
+            "position": [
+              500,
+              300
+            ],
+            "rotation": -8.5,
+            "size": 64,
+            "text": "The Northern\nReaches"
+          },
+          "parent": "00000000-0000-7000-8000-000000000001"
+        }
+      }
+    },
+    {
+      "outcome": {
+        "view": {
+          "boards": [
+            {
+              "height": 1000,
+              "id": "00000000-0000-0000-0000-000000000001",
+              "scale": {
+                "distance_per_unit": 1.0,
+                "unit": "miles"
+              },
+              "width": 1000
+            }
+          ],
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "defaults": {
+            "label_styles": [
+              {
+                "all_caps": false,
+                "arch": 0.0,
+                "fill": "#2b2118",
+                "font": {
+                  "family": "Cinzel",
+                  "italic": false,
+                  "weight": 400
+                },
+                "halo": {
+                  "color": "#f4ecd8",
+                  "width": 0.0
+                },
+                "id": "00000000-0000-0000-0000-000000000001",
+                "letter_spacing": 0.0,
+                "line_height": 1.2,
+                "name": "Default",
+                "opacity": 1.0,
+                "size": 48.0
+              }
+            ],
+            "lake_shore": {
+              "outline": {
+                "color": "#3a6a8a",
+                "width": 1.0
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 0,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#2a5a7a60",
+                "width": 8.0
+              }
+            },
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            },
+            "shore": {
+              "outline": {
+                "color": "#5a4628",
+                "width": 1.5
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 3,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#8a6a3870",
+                "width": 18.0
+              }
+            }
+          },
+          "layers": [
+            {
+              "category": "land",
+              "id": "00000000-0000-7000-8000-000000000001",
+              "locked": false,
+              "name": "Labels",
+              "opacity": 1.0,
+              "type": "layer",
+              "visible": true
+            }
+          ],
+          "primary": "00000000-0000-0000-0000-000000000001"
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "begin": {
+          "label": "Move",
+          "selection": [
+            "00000000-0000-7000-8000-000000000002"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "nothing has id 00000000-0000-7000-8000-000000000002"
+      },
+      "step": {
+        "execute": {
+          "command": "set_label",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "label": {
+            "position": [
+              510,
+              300
+            ],
+            "size": 64,
+            "text": "The Northern\nReaches"
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "nothing has id 00000000-0000-7000-8000-000000000002"
+      },
+      "step": {
+        "execute": {
+          "command": "set_label",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "label": {
+            "position": [
+              540,
+              310
+            ],
+            "size": 64,
+            "text": "The Northern\nReaches"
+          }
+        }
+      }
+    },
+    {
+      "outcome": "ok",
+      "step": {
+        "commit": {
+          "selection": [
+            "00000000-0000-7000-8000-000000000002"
+          ]
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "nothing has id 00000000-0000-7000-8000-000000000002"
+      },
+      "step": {
+        "step": {
+          "command": "set_label",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "label": {
+            "text": ""
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "nothing has id 00000000-0000-7000-8000-000000000002"
+      },
+      "step": {
+        "step": {
+          "command": "set_label",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "label": {
+            "size": 0,
+            "text": "Ærendál"
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "nothing has id 00000000-0000-7000-8000-000000000002"
+      },
+      "step": {
+        "step": {
+          "command": "set_label",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "label": {
+            "opacity": 1.5,
+            "text": "Ærendál"
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "00000000-0000-7000-8000-000000000001 is not a Label"
+      },
+      "step": {
+        "step": {
+          "command": "set_label",
+          "id": "00000000-0000-7000-8000-000000000001",
+          "label": {
+            "text": "Not a Label"
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "nothing has id 00000000-0000-7000-8000-000000000002"
+      },
+      "step": {
+        "step": {
+          "command": "create_label",
+          "id": "00000000-0000-7000-8000-000000000003",
+          "label": {
+            "text": "Inside an Object"
+          },
+          "parent": "00000000-0000-7000-8000-000000000002"
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "nothing has id 00000000-0000-7000-8000-000000000002"
+      },
+      "step": {
+        "step": {
+          "command": "set_locked",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "locked": true
+        }
+      }
+    },
+    {
+      "outcome": {
+        "error": "nothing has id 00000000-0000-7000-8000-000000000002"
+      },
+      "step": {
+        "step": {
+          "command": "set_label",
+          "id": "00000000-0000-7000-8000-000000000002",
+          "label": {
+            "text": "Locked"
+          }
+        }
+      }
+    },
+    {
+      "outcome": {
+        "selection": []
+      },
+      "step": "undo"
+    },
+    {
+      "outcome": "nothing to do",
+      "step": "undo"
+    },
+    {
+      "outcome": {
+        "view": {
+          "boards": [
+            {
+              "height": 1000,
+              "id": "00000000-0000-0000-0000-000000000001",
+              "scale": {
+                "distance_per_unit": 1.0,
+                "unit": "miles"
+              },
+              "width": 1000
+            }
+          ],
+          "canvas": {
+            "height": 1000,
+            "scale": {
+              "distance_per_unit": 1.0,
+              "unit": "miles"
+            },
+            "width": 1000
+          },
+          "defaults": {
+            "label_styles": [
+              {
+                "all_caps": false,
+                "arch": 0.0,
+                "fill": "#2b2118",
+                "font": {
+                  "family": "Cinzel",
+                  "italic": false,
+                  "weight": 400
+                },
+                "halo": {
+                  "color": "#f4ecd8",
+                  "width": 0.0
+                },
+                "id": "00000000-0000-0000-0000-000000000001",
+                "letter_spacing": 0.0,
+                "line_height": 1.2,
+                "name": "Default",
+                "opacity": 1.0,
+                "size": 48.0
+              }
+            ],
+            "lake_shore": {
+              "outline": {
+                "color": "#3a6a8a",
+                "width": 1.0
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 0,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#2a5a7a60",
+                "width": 8.0
+              }
+            },
+            "roughness": {
+              "amount": 0.0,
+              "scale": 32.0,
+              "seed": 0
+            },
+            "shore": {
+              "outline": {
+                "color": "#5a4628",
+                "width": 1.5
+              },
+              "ripples": {
+                "color": "#ffffff90",
+                "count": 3,
+                "fade": 0.6,
+                "spacing": 12.0,
+                "width": 1.5
+              },
+              "shading": {
+                "color": "#8a6a3870",
+                "width": 18.0
+              }
+            }
+          },
+          "layers": [],
+          "primary": "00000000-0000-0000-0000-000000000001"
+        }
+      },
+      "step": "snapshot"
+    },
+    {
+      "outcome": "nothing to do",
+      "step": "undo"
+    }
+  ],
+  "redo_steps": 1,
+  "undo_steps": 0,
+  "view": {
+    "boards": [
+      {
+        "height": 1000,
+        "id": "00000000-0000-0000-0000-000000000001",
+        "scale": {
+          "distance_per_unit": 1.0,
+          "unit": "miles"
+        },
+        "width": 1000
+      }
+    ],
+    "canvas": {
+      "height": 1000,
+      "scale": {
+        "distance_per_unit": 1.0,
+        "unit": "miles"
+      },
+      "width": 1000
+    },
+    "defaults": {
+      "label_styles": [
+        {
+          "all_caps": false,
+          "arch": 0.0,
+          "fill": "#2b2118",
+          "font": {
+            "family": "Cinzel",
+            "italic": false,
+            "weight": 400
+          },
+          "halo": {
+            "color": "#f4ecd8",
+            "width": 0.0
+          },
+          "id": "00000000-0000-0000-0000-000000000001",
+          "letter_spacing": 0.0,
+          "line_height": 1.2,
+          "name": "Default",
+          "opacity": 1.0,
+          "size": 48.0
+        }
+      ],
+      "lake_shore": {
+        "outline": {
+          "color": "#3a6a8a",
+          "width": 1.0
+        },
+        "ripples": {
+          "color": "#ffffff90",
+          "count": 0,
+          "fade": 0.6,
+          "spacing": 12.0,
+          "width": 1.5
+        },
+        "shading": {
+          "color": "#2a5a7a60",
+          "width": 8.0
+        }
+      },
+      "roughness": {
+        "amount": 0.0,
+        "scale": 32.0,
+        "seed": 0
+      },
+      "shore": {
+        "outline": {
+          "color": "#5a4628",
+          "width": 1.5
+        },
+        "ripples": {
+          "color": "#ffffff90",
+          "count": 3,
+          "fade": 0.6,
+          "spacing": 12.0,
+          "width": 1.5
+        },
+        "shading": {
+          "color": "#8a6a3870",
+          "width": 18.0
+        }
+      }
+    },
+    "layers": [],
+    "primary": "00000000-0000-0000-0000-000000000001"
+  }
+}

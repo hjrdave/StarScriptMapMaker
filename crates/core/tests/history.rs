@@ -10,6 +10,7 @@ fn create(id: Id, name: &str) -> Command {
         parent: None,
         index: None,
         name: name.into(),
+        category: Default::default(),
     }
 }
 
