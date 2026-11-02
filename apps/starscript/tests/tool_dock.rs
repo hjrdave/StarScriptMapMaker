@@ -111,3 +111,25 @@ fn the_dock_stays_inside_the_canvas_and_recentres_when_layers_collapses() {
     assert!(left >= layers && right <= WIDTH - properties);
     assert!(((left + right) / 2.0 - before).abs() > 1.0);
 }
+
+#[test]
+fn l_is_paint_lasso_and_b_goes_back_to_the_last_stroke_mode() {
+    use ssmap_app::editor::LandMode;
+    let mut harness = app(egui::vec2(WIDTH, 800.0));
+    harness
+        .state_mut()
+        .active_editor_mut()
+        .unwrap()
+        .set_land_mode(LandMode::Erase);
+    harness.key_press(egui::Key::L);
+    harness.run();
+    let editor = harness.state().editor();
+    assert_eq!(editor.active_tool, ToolId::LandBrush);
+    assert_eq!(editor.land_mode(), LandMode::PaintLasso);
+
+    harness.key_press(egui::Key::B);
+    harness.run();
+    let editor = harness.state().editor();
+    assert_eq!(editor.active_tool, ToolId::LandBrush);
+    assert_eq!(editor.land_mode(), LandMode::Erase);
+}

@@ -6,7 +6,7 @@
 use eframe::egui;
 use ssmap_core::scatter::Placement;
 
-use crate::editor::{DrawMode, Editor};
+use crate::editor::{DrawMode, Editor, LandMode};
 use crate::icons::{self, Icon};
 use crate::prop_widgets::{self, Provenance, ScrubSpec, SectionHeader};
 use crate::theme;
@@ -163,12 +163,9 @@ pub(crate) fn tool_sections(ui: &mut egui::Ui, editor: &mut Editor) {
     match editor.active_tool {
         ToolId::LandBrush | ToolId::WaterBrush => {
             let land = editor.active_tool == ToolId::LandBrush;
-            if land {
-                prop_widgets::section(ui, header("brush-draw", "Draw"), |ui| {
-                    draw_mode(ui, editor);
-                });
-            }
-            if !(land && editor.draw_mode == DrawMode::Lasso) {
+            // The mode comes first, under the header.
+            mode_control(ui, editor, land);
+            if !(land && editor.land_mode() == LandMode::PaintLasso) {
                 prop_widgets::section(ui, header("brush", "Brush"), |ui| {
                     size(ui, editor);
                     if land {
@@ -176,7 +173,6 @@ pub(crate) fn tool_sections(ui: &mut egui::Ui, editor: &mut Editor) {
                     }
                 });
             }
-            prop_widgets::section(ui, header("brush-mode", "Behaviour"), |ui| mode(ui, editor));
         }
         ToolId::River => {
             prop_widgets::section(ui, header("river", "Shape"), |ui| river(ui, editor));
@@ -200,36 +196,63 @@ fn size(ui: &mut egui::Ui, editor: &mut Editor) {
     prop_widgets::slider(ui, &mut editor.brush_size, &spec);
 }
 
-/// Whether the Land Brush paints a stroke or draws a closed shape (a Landmass outline).
-fn draw_mode(ui: &mut egui::Ui, editor: &mut Editor) {
-    let mut mode = usize::from(editor.draw_mode == DrawMode::Lasso);
-    prop_widgets::field_row(ui, "Draw mode", Provenance::Plain, |ui| {
-        if prop_widgets::segmented(ui, &["Brush", "Lasso"], &mut mode) {
-            editor.draw_mode = if mode == 1 {
-                DrawMode::Lasso
-            } else {
-                DrawMode::Brush
+/// The Land Brush's mode as three icon buttons (Paint, Paint Lasso, Erase), or the Lake
+/// Brush's as two (Paint, Erase), with the hint for getting the other mode.
+fn mode_control(ui: &mut egui::Ui, editor: &mut Editor, land: bool) {
+    ui.add_space(theme::SPACING[2]);
+    ui.horizontal(|ui| {
+        ui.add_space(theme::SPACING[3]);
+        if land {
+            let options = [
+                (Icon::Paint, "Paint", false),
+                (Icon::Lasso, "Paint Lasso", false),
+                (Icon::Eraser, "Erase", true),
+            ];
+            let selected = match editor.land_mode() {
+                LandMode::Paint => 0,
+                LandMode::PaintLasso => 1,
+                LandMode::Erase => 2,
             };
+            if let Some(index) = prop_widgets::mode_buttons(ui, &options, selected) {
+                editor
+                    .set_land_mode([LandMode::Paint, LandMode::PaintLasso, LandMode::Erase][index]);
+            }
+        } else {
+            let options = [(Icon::Paint, "Paint", false), (Icon::Eraser, "Erase", true)];
+            let selected = usize::from(editor.erase_default);
+            if let Some(index) = prop_widgets::mode_buttons(ui, &options, selected) {
+                editor.erase_default = index == 1;
+            }
         }
     });
+    ui.horizontal(|ui| {
+        ui.add_space(theme::SPACING[3]);
+        ui.label(
+            egui::RichText::new(format!(
+                "Hold {} to get the other mode.",
+                tools::ERASE_MODIFIER
+            ))
+            .size(theme::CAPTION)
+            .color(theme::palette(ui.ctx()).text_tertiary),
+        );
+    });
+    ui.add_space(theme::SPACING[2]);
 }
 
-/// Whether the Land Brush and Lake Brush paint or erase, and how to get the other one.
-fn mode(ui: &mut egui::Ui, editor: &mut Editor) {
-    let mut mode = usize::from(editor.erase_default);
-    prop_widgets::field_row(ui, "Mode", Provenance::Plain, |ui| {
-        if prop_widgets::segmented(ui, &["Paint", "Erase"], &mut mode) {
-            editor.erase_default = mode == 1;
+/// Where the Stamp tool places: on Land, on Water or Anywhere. It sits under the header, above
+/// the Asset card, because it changes what a click does.
+pub(crate) fn place_on(ui: &mut egui::Ui, editor: &mut Editor) {
+    let brush = &mut editor.scatter;
+    let mut place = match brush.placement {
+        Placement::Land => 0,
+        Placement::Water => 1,
+        Placement::Anywhere => 2,
+    };
+    prop_widgets::field_row(ui, "Place on", Provenance::Plain, |ui| {
+        if prop_widgets::segmented(ui, &["Land", "Water", "Any"], &mut place) {
+            brush.placement = [Placement::Land, Placement::Water, Placement::Anywhere][place];
         }
     });
-    ui.label(
-        egui::RichText::new(format!(
-            "Hold {} to get the other mode.",
-            tools::ERASE_MODIFIER
-        ))
-        .size(theme::CAPTION)
-        .color(theme::palette(ui.ctx()).text_tertiary),
-    );
 }
 
 /// How far the Land Brush pushes a stroke's outline out and in, as a percentage of its radius:
@@ -282,17 +305,6 @@ pub(crate) fn scatter_sections(ui: &mut egui::Ui, editor: &mut Editor) {
         action: None,
     };
     prop_widgets::section(ui, header("scatter", "Scatter"), |ui| {
-        let brush = &mut editor.scatter;
-        let mut place = match brush.placement {
-            Placement::Land => 0,
-            Placement::Water => 1,
-            Placement::Anywhere => 2,
-        };
-        prop_widgets::field_row(ui, "Place on", Provenance::Plain, |ui| {
-            if prop_widgets::segmented(ui, &["Land", "Water", "Any"], &mut place) {
-                brush.placement = [Placement::Land, Placement::Water, Placement::Anywhere][place];
-            }
-        });
         size(ui, editor);
         let brush = &mut editor.scatter;
         let density = ScrubSpec::new("Density")

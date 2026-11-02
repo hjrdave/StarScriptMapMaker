@@ -97,6 +97,8 @@ icons! {
     LandBrush, "Land Brush", "land-brush";
     LakeBrush, "Lake Brush", "lake-brush";
     Lasso, "Lasso", "lasso";
+    Paint, "Paint", "paint";
+    Eraser, "Eraser", "eraser";
     Label, "Label", "label";
     Stamp, "Stamp", "stamp";
     StampEraser, "Stamp Eraser", "stamp-eraser";
