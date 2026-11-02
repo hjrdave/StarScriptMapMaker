@@ -122,7 +122,13 @@ fn tool_button(ui: &mut egui::Ui, palette: &Palette, tool: ToolId, active: bool)
                 egui::StrokeKind::Inside,
             );
         }
-        icons::paint(ui, rect, tool_section::icon(tool), icons::GRID, tint);
+        icons::paint(
+            ui,
+            rect,
+            tool_section::icon(tool),
+            theme::metrics::TOOL_ICON,
+            tint,
+        );
     }
     tooltip(ui, palette, &response, &label);
     response

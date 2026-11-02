@@ -3,6 +3,10 @@
 //! strokes) and a 2x atlas (32 px cells, 1.5 pt = 3 px strokes). Glyphs are white on
 //! transparent and tinted when drawn.
 //!
+//! Icons drawn at [`TOOL_GRID`] (the tool dock's 20 pt) get their own pair of atlases, rasterised
+//! at 20 px and 40 px cells with the stroke rescaled to still land on 1 px and 3 px, so they are
+//! drawn 1:1 rather than stretched from the 16 pt cells.
+//!
 //! The atlases are built at startup, on first use of each scale, rather than in a `build.rs`:
 //! about 40 tiny paths rasterise in well under a millisecond, and a build script would need
 //! resvg as a host build-dependency for no gain.
@@ -18,6 +22,49 @@ use ssmap_render::raster::Art;
 
 /// Side of an icon's grid in points; the default size an icon is drawn at.
 pub(crate) const GRID: f32 = 16.0;
+
+/// Side of the larger icon grid in points, used by the tool dock.
+pub(crate) const TOOL_GRID: f32 = 20.0;
+
+/// Which grid an atlas is rasterised for: the cell is `points * scale` pixels.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub(crate) enum Grid {
+    /// [`GRID`] points.
+    Standard,
+    /// [`TOOL_GRID`] points.
+    Tool,
+}
+
+impl Grid {
+    /// The grid for an icon drawn at `size` points: sizes of [`TOOL_GRID`] and up use the
+    /// larger one.
+    fn for_size(size: f32) -> Self {
+        if size >= TOOL_GRID - 1e-3 {
+            Grid::Tool
+        } else {
+            Grid::Standard
+        }
+    }
+
+    fn points(self) -> u32 {
+        match self {
+            Grid::Standard => GRID as u32,
+            Grid::Tool => TOOL_GRID as u32,
+        }
+    }
+
+    /// The `stroke-width` in SVG units (the SVGs are on a 16 unit grid) that is 1 px at 1x
+    /// and 3 px at 2x, if it differs from the 1.5 the SVGs carry.
+    fn stroke_width(self, scale: Scale) -> Option<&'static str> {
+        match (self, scale) {
+            (Grid::Standard, Scale::X1) => Some("1"),
+            (Grid::Standard, Scale::X2) => None,
+            // A unit is 1.25 px at 1x and 2.5 px at 2x.
+            (Grid::Tool, Scale::X1) => Some("0.8"),
+            (Grid::Tool, Scale::X2) => Some("1.2"),
+        }
+    }
+}
 
 macro_rules! icons {
     ($($variant:ident, $label:literal, $file:literal;)*) => {
@@ -136,12 +183,13 @@ impl Scale {
         }
     }
 
-    /// Side of one atlas cell in pixels.
-    pub(crate) fn cell(self) -> u32 {
-        match self {
-            Scale::X1 => 16,
-            Scale::X2 => 32,
-        }
+    /// Side of one atlas cell in pixels on `grid`.
+    pub(crate) fn cell(self, grid: Grid) -> u32 {
+        grid.points()
+            * match self {
+                Scale::X1 => 1,
+                Scale::X2 => 2,
+            }
     }
 }
 
@@ -149,20 +197,20 @@ const COLUMNS: u32 = 8;
 
 /// All icons rasterised at one scale: premultiplied RGBA8, white glyphs on transparent.
 struct Atlas {
-    scale: Scale,
+    cell: u32,
     width: u32,
     height: u32,
     pixels: Vec<u8>,
 }
 
 impl Atlas {
-    pub(crate) fn build(scale: Scale) -> Self {
-        let cell = scale.cell();
+    pub(crate) fn build(scale: Scale, grid: Grid) -> Self {
+        let cell = scale.cell(grid);
         let rows = (Icon::ALL.len() as u32).div_ceil(COLUMNS);
         let (width, height) = (COLUMNS * cell, rows * cell);
         let mut pixels = vec![0; (width * height * 4) as usize];
         for (index, &icon) in Icon::ALL.iter().enumerate() {
-            let raster = rasterise(icon, scale);
+            let raster = rasterise(icon, scale, grid);
             let (x0, y0) = (
                 (index as u32 % COLUMNS) * cell,
                 (index as u32 / COLUMNS) * cell,
@@ -175,28 +223,28 @@ impl Atlas {
             }
         }
         Self {
-            scale,
+            cell,
             width,
             height,
             pixels,
         }
     }
 
-    /// The icon's cell as `[x, y]` of its top-left pixel; the cell is `scale.cell()` square.
+    /// The icon's cell as `[x, y]` of its top-left pixel; the cell is `self.cell` square.
     #[allow(clippy::expect_used, reason = "every icon is in ALL")]
     fn cell_origin(&self, icon: Icon) -> [u32; 2] {
         let index = Icon::ALL
             .iter()
             .position(|&i| i == icon)
             .expect("every icon is in ALL") as u32;
-        let cell = self.scale.cell();
+        let cell = self.cell;
         [(index % COLUMNS) * cell, (index / COLUMNS) * cell]
     }
 
     /// The icon's cell as premultiplied RGBA8 rows.
     #[cfg(test)]
     fn cell_pixels(&self, icon: Icon) -> Vec<u8> {
-        let cell = self.scale.cell();
+        let cell = self.cell;
         let [x0, y0] = self.cell_origin(icon);
         let mut out = Vec::with_capacity((cell * cell * 4) as usize);
         for row in 0..cell {
@@ -209,7 +257,7 @@ impl Atlas {
     /// The icon's cell in texture coordinates.
     pub(crate) fn uv(&self, icon: Icon) -> egui::Rect {
         let [x, y] = self.cell_origin(icon);
-        let cell = self.scale.cell();
+        let cell = self.cell;
         let (w, h) = (self.width as f32, self.height as f32);
         egui::Rect::from_min_max(
             egui::pos2(x as f32 / w, y as f32 / h),
@@ -226,34 +274,35 @@ impl Atlas {
 }
 
 #[allow(clippy::expect_used, reason = "embedded icons are valid SVG")]
-fn rasterise(icon: Icon, scale: Scale) -> ssmap_render::raster::Raster {
-    let svg = match scale {
-        Scale::X1 => match icon.one_x_override() {
-            Some(hinted) => hinted.to_owned(),
-            // 1.5 pt strokes become 1 px; the dot icons' heavier strokes stay as drawn.
-            None => icon
+fn rasterise(icon: Icon, scale: Scale, grid: Grid) -> ssmap_render::raster::Raster {
+    let svg = match (scale, icon.one_x_override()) {
+        (Scale::X1, Some(hinted)) => hinted.to_owned(),
+        // 1.5 pt strokes become 1 px (3 px at 2x on the tool grid); the dot icons' heavier
+        // strokes stay as drawn.
+        _ => match grid.stroke_width(scale) {
+            Some(width) => icon
                 .svg()
-                .replace("stroke-width=\"1.5\"", "stroke-width=\"1\""),
+                .replace("stroke-width=\"1.5\"", &format!("stroke-width=\"{width}\"")),
+            None => icon.svg().to_owned(),
         },
-        Scale::X2 => icon.svg().to_owned(),
     };
     Art::from_svg(svg.as_bytes())
         .expect("embedded icons are valid SVG")
-        .rasterise(scale.cell())
+        .rasterise(scale.cell(grid))
 }
 
 /// The atlas textures, uploaded once per egui context and scale.
 #[derive(Clone)]
 struct Texture(Arc<(egui::TextureHandle, Atlas)>);
 
-fn texture(ctx: &egui::Context, scale: Scale) -> Texture {
-    let id = egui::Id::new(("ssmap-icon-atlas", scale));
+fn texture(ctx: &egui::Context, scale: Scale, grid: Grid) -> Texture {
+    let id = egui::Id::new(("ssmap-icon-atlas", scale, grid));
     if let Some(texture) = ctx.data(|d| d.get_temp::<Texture>(id)) {
         return texture;
     }
-    let atlas = Atlas::build(scale);
+    let atlas = Atlas::build(scale, grid);
     let handle = ctx.load_texture(
-        format!("icon-atlas-{scale:?}"),
+        format!("icon-atlas-{scale:?}-{grid:?}"),
         atlas.color_image(),
         egui::TextureOptions::LINEAR,
     );
@@ -271,7 +320,7 @@ fn snapped_rect(container: egui::Rect, size: f32, pixels_per_point: f32) -> egui
     egui::Rect::from_min_size(min, egui::Vec2::splat(pixels / pixels_per_point))
 }
 
-/// Paints `icon` centred in `container` at `size` points (use [`GRID`] for the native size),
+/// Paints `icon` centred in `container` at `size` points (use [`GRID`] or [`TOOL_GRID`] for a native size),
 /// tinted with `tint`.
 pub(crate) fn paint(
     ui: &egui::Ui,
@@ -293,7 +342,11 @@ pub(crate) fn paint_flipped(
     flip: bool,
 ) {
     let ppp = ui.ctx().pixels_per_point();
-    let texture = texture(ui.ctx(), Scale::for_pixels_per_point(ppp));
+    let texture = texture(
+        ui.ctx(),
+        Scale::for_pixels_per_point(ppp),
+        Grid::for_size(size),
+    );
     let (handle, atlas) = &*texture.0;
     let mut uv = atlas.uv(icon);
     if flip {
@@ -376,20 +429,35 @@ mod tests {
         assert_eq!(Scale::for_pixels_per_point(1.25), Scale::X2);
         assert_eq!(Scale::for_pixels_per_point(1.5), Scale::X2);
         assert_eq!(Scale::for_pixels_per_point(2.0), Scale::X2);
-        assert_eq!(Scale::X1.cell(), 16);
-        assert_eq!(Scale::X2.cell(), 32);
+        assert_eq!(Scale::X1.cell(Grid::Standard), 16);
+        assert_eq!(Scale::X2.cell(Grid::Standard), 32);
+        assert_eq!(Scale::X1.cell(Grid::Tool), 20);
+        assert_eq!(Scale::X2.cell(Grid::Tool), 40);
     }
 
     #[test]
-    fn every_icon_has_a_non_empty_cell_at_both_scales() {
-        for scale in [Scale::X1, Scale::X2] {
-            let atlas = Atlas::build(scale);
+    fn the_grid_follows_the_icon_size() {
+        assert_eq!(Grid::for_size(GRID), Grid::Standard);
+        assert_eq!(Grid::for_size(TOOL_GRID), Grid::Tool);
+    }
+
+    const ALL_ATLASES: [(Scale, Grid); 4] = [
+        (Scale::X1, Grid::Standard),
+        (Scale::X2, Grid::Standard),
+        (Scale::X1, Grid::Tool),
+        (Scale::X2, Grid::Tool),
+    ];
+
+    #[test]
+    fn every_icon_has_a_non_empty_cell_at_every_scale_and_grid() {
+        for (scale, grid) in ALL_ATLASES {
+            let atlas = Atlas::build(scale, grid);
             for &icon in Icon::ALL {
                 let cell = atlas.cell_pixels(icon);
-                assert_eq!(cell.len(), (scale.cell() * scale.cell() * 4) as usize);
+                assert_eq!(cell.len(), (scale.cell(grid).pow(2) * 4) as usize);
                 assert!(
                     cell.chunks_exact(4).any(|px| px[3] > 0),
-                    "{} is blank at {scale:?}",
+                    "{} is blank at {scale:?} {grid:?}",
                     icon.name()
                 );
             }
@@ -398,7 +466,7 @@ mod tests {
 
     #[test]
     fn glyphs_are_white_on_transparent() {
-        let atlas = Atlas::build(Scale::X2);
+        let atlas = Atlas::build(Scale::X2, Grid::Tool);
         for px in atlas.cell_pixels(Icon::Add).chunks_exact(4) {
             // Premultiplied white: every colour channel equals alpha.
             assert!(px[0] == px[3] && px[1] == px[3] && px[2] == px[3]);
@@ -406,19 +474,34 @@ mod tests {
     }
 
     #[test]
-    fn strokes_are_one_pixel_at_1x_and_three_at_2x() {
-        // Add is a plus centred on x = 8: a vertical bar from y 3 to 13.
-        let row = |scale: Scale| {
-            let atlas = Atlas::build(scale);
-            let cell = scale.cell() as usize;
+    fn tool_icons_are_rasterised_at_the_target_size() {
+        let atlas = Atlas::build(Scale::X1, Grid::Tool);
+        assert_eq!(atlas.cell, 20);
+        // Add's vertical bar spans 10 of 16 units: 12.5 px at 20 px, not a stretched 10.
+        let cell = atlas.cell_pixels(Icon::Add);
+        // The bar is centred on the x = 10 pixel boundary, so sum the two columns it spans.
+        let column: u32 = (0..20)
+            .flat_map(|y| [9, 10].map(|x| u32::from(cell[(y * 20 + x) * 4 + 3])))
+            .sum();
+        assert!(column > 12 * 255, "bar is {column} / 255 px tall");
+    }
+
+    #[test]
+    fn strokes_are_one_pixel_at_1x_and_three_at_2x_on_both_grids() {
+        // Add is a plus centred in the cell: a vertical bar crosses the row at a quarter.
+        let row = |scale: Scale, grid: Grid| {
+            let atlas = Atlas::build(scale, grid);
+            let cell = scale.cell(grid) as usize;
             let pixels = atlas.cell_pixels(Icon::Add);
             let y = cell / 4; // above the horizontal bar, inside the vertical one
             (0..cell)
                 .map(|x| u32::from(pixels[(y * cell + x) * 4 + 3]))
                 .sum::<u32>()
         };
-        assert!(row(Scale::X1).abs_diff(255) <= 3);
-        assert!(row(Scale::X2).abs_diff(3 * 255) <= 3);
+        for grid in [Grid::Standard, Grid::Tool] {
+            assert!(row(Scale::X1, grid).abs_diff(255) <= 3, "{grid:?} 1x");
+            assert!(row(Scale::X2, grid).abs_diff(3 * 255) <= 3, "{grid:?} 2x");
+        }
     }
 
     #[test]
@@ -437,7 +520,7 @@ mod tests {
 
     #[test]
     fn the_stamp_and_land_brush_icons_are_distinct() {
-        let atlas = Atlas::build(Scale::X2);
+        let atlas = Atlas::build(Scale::X2, Grid::Standard);
         assert_ne!(
             atlas.cell_pixels(Icon::Stamp),
             atlas.cell_pixels(Icon::LandBrush)
