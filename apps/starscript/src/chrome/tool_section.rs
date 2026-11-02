@@ -6,7 +6,7 @@
 use eframe::egui;
 use ssmap_core::scatter::Placement;
 
-use crate::editor::Editor;
+use crate::editor::{DrawMode, Editor};
 use crate::icons::{self, Icon};
 use crate::prop_widgets::{self, Provenance, ScrubSpec, SectionHeader};
 use crate::theme;
@@ -26,7 +26,6 @@ pub(crate) fn icon(tool: ToolId) -> Icon {
         ToolId::LandBrush => Icon::LandBrush,
         ToolId::WaterBrush => Icon::LakeBrush,
         ToolId::River => Icon::River,
-        ToolId::Lasso => Icon::Lasso,
         ToolId::Label => Icon::Label,
         ToolId::Stamp => Icon::Stamp,
         ToolId::StampEraser => Icon::StampEraser,
@@ -122,12 +121,20 @@ pub(crate) fn tool_sections(ui: &mut egui::Ui, editor: &mut Editor) {
     };
     match editor.active_tool {
         ToolId::LandBrush | ToolId::WaterBrush => {
-            prop_widgets::section(ui, header("brush", "Brush"), |ui| {
-                size(ui, editor);
-                if editor.active_tool == ToolId::LandBrush {
-                    irregularity(ui, editor);
-                }
-            });
+            let land = editor.active_tool == ToolId::LandBrush;
+            if land {
+                prop_widgets::section(ui, header("brush-draw", "Draw"), |ui| {
+                    draw_mode(ui, editor);
+                });
+            }
+            if !(land && editor.draw_mode == DrawMode::Lasso) {
+                prop_widgets::section(ui, header("brush", "Brush"), |ui| {
+                    size(ui, editor);
+                    if land {
+                        irregularity(ui, editor);
+                    }
+                });
+            }
             prop_widgets::section(ui, header("brush-mode", "Behaviour"), |ui| mode(ui, editor));
         }
         ToolId::River => {
@@ -150,6 +157,20 @@ fn size(ui: &mut egui::Ui, editor: &mut Editor) {
         .logarithmic()
         .default_value(crate::editor::DEFAULT_BRUSH_SIZE);
     prop_widgets::slider(ui, &mut editor.brush_size, &spec);
+}
+
+/// Whether the Land Brush paints a stroke or draws a closed shape (a Landmass outline).
+fn draw_mode(ui: &mut egui::Ui, editor: &mut Editor) {
+    let mut mode = usize::from(editor.draw_mode == DrawMode::Lasso);
+    prop_widgets::field_row(ui, "Draw mode", Provenance::Plain, |ui| {
+        if prop_widgets::segmented(ui, &["Brush", "Lasso"], &mut mode) {
+            editor.draw_mode = if mode == 1 {
+                DrawMode::Lasso
+            } else {
+                DrawMode::Brush
+            };
+        }
+    });
 }
 
 /// Whether the Land Brush and Lake Brush paint or erase, and how to get the other one.

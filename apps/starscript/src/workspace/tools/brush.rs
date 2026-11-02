@@ -145,6 +145,9 @@ pub(super) fn paint_brush(
     if !matches!(editor.active_tool, ToolId::LandBrush | ToolId::WaterBrush) {
         return;
     }
+    if super::lassoing(editor) {
+        return;
+    }
     let palette = crate::theme::palette(painter.ctx());
     let erase_held = painter.ctx().input(|i| i.modifiers.alt) != editor.erase_default;
     let erasing = state.stroke.as_ref().map_or(erase_held, |s| s.erase);

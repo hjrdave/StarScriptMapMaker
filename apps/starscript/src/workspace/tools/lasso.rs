@@ -1,4 +1,4 @@
-//! The Lasso tool.
+//! The Land Brush's Lasso mode.
 
 use eframe::egui;
 use ssmap_core::Point;
@@ -24,7 +24,7 @@ const HALO: egui::Stroke = egui::Stroke {
 const DASH: f32 = 6.0;
 const GAP: f32 = 4.0;
 
-/// Draw a region to add to land, or with the erase modifier to cut out: drag a freehand loop, or
+/// Draw a region to add to land, or with Erase (or the erase modifier) to cut out: drag a freehand loop, or
 /// click corners and close the loop by clicking the first one, double-clicking or pressing
 /// Enter. Escape drops a loop in progress. The region follows the land brush's merge rules.
 pub(super) fn lasso_tool(
@@ -33,7 +33,7 @@ pub(super) fn lasso_tool(
     state: &mut ToolState,
     input: &CanvasFrame,
 ) {
-    let (alt, enter) = (input.alt, input.enter);
+    let (erase, enter) = (input.alt != editor.erase_default, input.enter);
     if std::mem::take(&mut editor.cancel_tool) {
         state.lasso = None;
         return;
@@ -56,7 +56,7 @@ pub(super) fn lasso_tool(
         state.lasso = Some(Lasso {
             points: vec![input.canvas_point(view, origin)],
             freehand: true,
-            erase: alt,
+            erase,
         });
     }
     if input.dragging
@@ -83,7 +83,7 @@ pub(super) fn lasso_tool(
                 state.lasso = Some(Lasso {
                     points: vec![point],
                     freehand: false,
-                    erase: alt,
+                    erase,
                 });
             }
             Some(lasso) if near_first(lasso, point) => close = true,
@@ -216,6 +216,21 @@ mod tests {
         assert!(state.lasso.as_ref().is_some_and(|l| l.erase));
         lasso_tool(&mut editor, &view, &mut state, &enter_key());
         assert!(state.lasso.is_none());
+    }
+
+    #[test]
+    fn the_erase_setting_makes_a_lasso_an_erase_without_the_modifier() {
+        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+        editor.erase_default = true;
+        lasso_tool(&mut editor, &view, &mut state, &click(100.0, 100.0));
+        assert!(state.lasso.as_ref().is_some_and(|l| l.erase));
+        state.lasso = None;
+        let alt_click = CanvasFrame {
+            alt: true,
+            ..click(100.0, 100.0)
+        };
+        lasso_tool(&mut editor, &view, &mut state, &alt_click);
+        assert!(state.lasso.as_ref().is_some_and(|l| !l.erase));
     }
 
     #[test]

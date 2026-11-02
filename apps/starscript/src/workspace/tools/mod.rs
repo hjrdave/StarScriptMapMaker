@@ -21,7 +21,7 @@ use eframe::egui;
 use ssmap_core::{Command, ExportRegion, Id, Point};
 use ssmap_render::View;
 
-use crate::editor::{Editor, GestureId};
+use crate::editor::{DrawMode, Editor, GestureId};
 use crate::export_region::RegionDrag;
 
 use self::brush::Stroke;
@@ -43,7 +43,6 @@ pub enum ToolId {
     LandBrush,
     WaterBrush,
     River,
-    Lasso,
     Label,
     Stamp,
     StampEraser,
@@ -53,13 +52,12 @@ pub enum ToolId {
 }
 
 impl ToolId {
-    pub const ALL: [ToolId; 10] = [
+    pub const ALL: [ToolId; 9] = [
         ToolId::Select,
         ToolId::Pan,
         ToolId::LandBrush,
         ToolId::WaterBrush,
         ToolId::River,
-        ToolId::Lasso,
         ToolId::Label,
         ToolId::Stamp,
         ToolId::StampEraser,
@@ -73,7 +71,6 @@ impl ToolId {
             ToolId::LandBrush => "Land Brush",
             ToolId::WaterBrush => "Lake Brush",
             ToolId::River => "River",
-            ToolId::Lasso => "Lasso",
             ToolId::Label => "Label",
             ToolId::Stamp => "Stamp",
             ToolId::StampEraser => "Stamp Eraser",
@@ -91,7 +88,6 @@ impl ToolId {
             ToolId::LandBrush => (none, egui::Key::B),
             ToolId::WaterBrush => (none, egui::Key::W),
             ToolId::River => (none, egui::Key::R),
-            ToolId::Lasso => (none, egui::Key::L),
             ToolId::Label => (none, egui::Key::T),
             ToolId::Stamp => (none, egui::Key::S),
             ToolId::StampEraser => (none, egui::Key::E),
@@ -122,6 +118,11 @@ pub const BRUSH_SIZES: std::ops::RangeInclusive<f64> = 2.0..=2000.0;
 
 /// Where the Size slider's track ends; the number box types on up to the hard maximum.
 pub const BRUSH_SIZE_SLIDER_MAX: f64 = 200.0;
+
+/// Whether the Land Brush is drawing a closed shape rather than a stroke.
+fn lassoing(editor: &Editor) -> bool {
+    editor.active_tool == ToolId::LandBrush && editor.draw_mode == DrawMode::Lasso
+}
 
 /// Whether the tool paints with the shared brush size.
 pub fn uses_brush_size(tool: ToolId) -> bool {
@@ -326,15 +327,15 @@ pub fn canvas_input(
             node_edit::node_edit_tool(editor, view, state, &frame)
         }
         ToolId::Select => select::select_tool(editor, view, state, &frame),
+        ToolId::LandBrush if editor.draw_mode == DrawMode::Lasso => {
+            lasso::lasso_tool(editor, view, state, &frame);
+            frame.hovered.then_some(egui::CursorIcon::Crosshair)
+        }
         ToolId::LandBrush | ToolId::WaterBrush => {
             let water = editor.active_tool == ToolId::WaterBrush;
             brush::land_brush(editor, view, state, &frame, water)
         }
         ToolId::River => river::river_tool(editor, view, state, &frame),
-        ToolId::Lasso => {
-            lasso::lasso_tool(editor, view, state, &frame);
-            frame.hovered.then_some(egui::CursorIcon::Crosshair)
-        }
         ToolId::Pan => None,
         ToolId::Stamp | ToolId::StampEraser => {
             let erase = editor.active_tool == ToolId::StampEraser;
@@ -353,7 +354,7 @@ pub fn canvas_input(
     if editor.active_tool != ToolId::ExportRegion {
         state.region_drag = None;
     }
-    if editor.active_tool != ToolId::Lasso {
+    if !lassoing(editor) {
         state.lasso = None;
     }
     if editor.active_tool != ToolId::River {
@@ -388,7 +389,7 @@ pub fn paint_overlay(
         select::paint_select_box(painter, view, state, origin, ppp);
     }
     export_region::paint_region(painter, editor, view, origin, ppp);
-    if editor.active_tool == ToolId::Lasso {
+    if lassoing(editor) {
         lasso::paint_lasso(painter, view, state, origin, hover, ppp);
     }
     if editor.active_tool == ToolId::River {
