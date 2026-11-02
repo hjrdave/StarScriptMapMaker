@@ -104,3 +104,30 @@ fn the_section_lists_the_steps_and_a_click_jumps_to_one() {
     assert_eq!(layer_count(&harness), before);
     assert!(!harness.state().tabs()[0].editor().can_undo());
 }
+
+#[test]
+fn step_back_and_step_forward_move_one_step_like_undo_and_redo() {
+    let mut harness = app();
+    let before = layer_count(&harness);
+    for _ in 0..2 {
+        harness.state_mut().active_editor_mut().unwrap().new_layer();
+    }
+    harness.run();
+    show_history(&mut harness);
+
+    let applied =
+        |harness: &Harness<'_, MapMakerApp>| harness.state().tabs()[0].editor().history_steps().1;
+    harness.get_by_label_contains("Step Back").click();
+    harness.run();
+    assert_eq!((applied(&harness), layer_count(&harness)), (1, before + 1));
+    harness.get_by_label_contains("Step Forward").click();
+    harness.run();
+    assert_eq!((applied(&harness), layer_count(&harness)), (2, before + 2));
+
+    // On Original there is nothing to step back to: the button is disabled and does nothing.
+    harness.get_by_label("Original").click();
+    harness.run();
+    harness.get_by_label_contains("Step Back").click();
+    harness.run();
+    assert_eq!(applied(&harness), 0);
+}

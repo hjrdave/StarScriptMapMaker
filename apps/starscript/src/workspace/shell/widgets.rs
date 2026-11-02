@@ -3,7 +3,7 @@
 
 use eframe::egui;
 
-use super::{DIVIDER, RailClick, Shell, Side, SidebarSection};
+use super::{DIVIDER, RailClick, Shell, Side, SidebarSection, history_icon};
 use crate::icons::{self, Icon};
 use crate::theme::{self, metrics};
 
@@ -37,32 +37,90 @@ pub fn panel_header(ui: &mut egui::Ui, title: &str, trailing: impl FnOnce(&mut e
     );
 }
 
-/// The undo history as a list: "Original" and then every step, oldest first. `applied` steps
-/// are in effect; the rest are dimmed and can be redone. Returns how many steps should be
-/// applied after a click on an entry.
+/// Height of one history row.
+const HISTORY_ROW: f32 = metrics::PANEL_HEADER * 0.8;
+
+/// The undo history as a list: "Original" and then every step, oldest first, each with its
+/// icon and its name on the left. `applied` steps are in effect; the current one is gold and
+/// the rest are dimmed and can be redone. A hovered step shows "Step here" at its right edge.
+/// Returns how many steps should be applied after a click on an entry.
 pub fn history_list(ui: &mut egui::Ui, steps: &[String], applied: usize) -> Option<usize> {
     let palette = theme::palette(ui.ctx());
     let mut clicked = None;
+    // The list follows the current step when it moves, and otherwise leaves the scroll alone.
+    let seen_id = ui.id().with("history applied");
+    let moved = ui.data_mut(|data| data.get_temp::<usize>(seen_id)) != Some(applied);
+    ui.data_mut(|data| data.insert_temp(seen_id, applied));
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
             let entries = std::iter::once("Original").chain(steps.iter().map(String::as_str));
             for (position, label) in entries.enumerate() {
-                let color = if position > applied {
+                let current = position == applied;
+                let (rect, response) = ui.allocate_exact_size(
+                    egui::vec2(ui.available_width(), HISTORY_ROW),
+                    egui::Sense::click(),
+                );
+                response.widget_info(|| {
+                    egui::WidgetInfo::selected(egui::WidgetType::Button, true, current, label)
+                });
+                if current && moved {
+                    response.scroll_to_me(None);
+                }
+                let hovered = response.hovered() || response.has_focus();
+                if current {
+                    ui.painter()
+                        .rect_filled(rect, theme::RADIUS_BUTTON, palette.hover_fill);
+                } else if hovered {
+                    ui.painter().rect_filled(
+                        rect,
+                        theme::RADIUS_BUTTON,
+                        palette.hover_fill.gamma_multiply(0.5),
+                    );
+                }
+                let color = if current {
+                    palette.gold_text
+                } else if position > applied {
                     palette.text_secondary
                 } else {
                     palette.text_primary
                 };
-                let text = egui::RichText::new(label).color(color);
-                let response = ui.add_sized(
-                    [ui.available_width(), metrics::PANEL_HEADER * 0.8],
-                    egui::Button::selectable(position == applied, text).frame_when_inactive(false),
+                let icon_box = egui::Rect::from_center_size(
+                    egui::pos2(
+                        rect.left() + theme::SPACING[3] + icons::GRID / 2.0,
+                        rect.center().y,
+                    ),
+                    egui::Vec2::splat(icons::GRID),
                 );
-                if response
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .clicked()
-                    && position != applied
-                {
+                match history_icon::step_icon(label) {
+                    Some(icon) => icons::paint(ui, icon_box, icon, icons::GRID, color),
+                    None => {
+                        ui.painter().circle_filled(icon_box.center(), 2.0, color);
+                    }
+                }
+                ui.painter().text(
+                    egui::pos2(icon_box.right() + theme::SPACING[2], rect.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    label,
+                    egui::FontId::proportional(theme::BODY),
+                    color,
+                );
+                if hovered && !current {
+                    ui.painter().text(
+                        egui::pos2(rect.right() - theme::SPACING[3], rect.center().y),
+                        egui::Align2::RIGHT_CENTER,
+                        "Step here",
+                        egui::FontId::proportional(theme::CAPTION),
+                        palette.text_tertiary,
+                    );
+                }
+                let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+                let response = if current {
+                    response
+                } else {
+                    response.on_hover_text("Step here")
+                };
+                if response.clicked() && !current {
                     clicked = Some(position);
                 }
             }
