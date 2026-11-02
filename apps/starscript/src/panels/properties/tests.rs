@@ -362,8 +362,12 @@ fn a_tool_with_settings_hides_the_selection_s_properties() {
     fixture.editor.select(vec![island]);
     fixture.editor.active_tool = ToolId::LandBrush;
     let mut harness = harness(fixture);
-    for label in ["Brush", "Irregularity", "Mode"] {
-        assert!(harness.query_by_label(label).is_some(), "{label}");
+    // "Brush" is both the section and the draw mode's first value.
+    for label in ["Brush", "Irregularity", "Mode", "Draw mode", "Lasso"] {
+        assert!(
+            harness.query_all_by_label(label).next().is_some(),
+            "{label}"
+        );
     }
     for label in ["Roughness", "Shore style", "Combine"] {
         assert!(harness.query_by_label(label).is_none(), "{label}");
@@ -508,7 +512,6 @@ fn tools_without_settings_have_no_section_and_the_eraser_has_only_size() {
     for tool in [
         ToolId::Select,
         ToolId::Pan,
-        ToolId::Lasso,
         ToolId::Label,
         ToolId::ExportRegion,
     ] {

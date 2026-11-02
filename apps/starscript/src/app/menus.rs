@@ -534,6 +534,11 @@ fn edit_shortcuts(editor: &mut Editor, input: &mut egui::InputState, off: &HashS
             editor.active_tool = tool;
         }
     }
+    // L is the Land Brush in Lasso mode; B keeps the mode it was last used in.
+    if input.consume_key(Modifiers::NONE, Key::L) {
+        editor.active_tool = ToolId::LandBrush;
+        editor.draw_mode = crate::editor::DrawMode::Lasso;
+    }
     let river_points = editor.node_edit().is_some() && editor.edited_is_path();
     if tools::uses_brush_size(editor.active_tool)
         || editor.active_tool == ToolId::River

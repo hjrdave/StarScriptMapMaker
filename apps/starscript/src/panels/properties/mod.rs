@@ -124,7 +124,7 @@ impl PropertiesPanel {
             .max_height((rect.top() - ui.cursor().top()).max(0.0))
             .show(ui, |ui| {
                 // A tool with settings shows only those (the Stamp's with its Asset card), so
-                // the selection's properties don't sit above them. Select, Pan, Lasso, Label
+                // the selection's properties don't sit above them. Select, Pan, Label
                 // and Canvas have none, and show the selection's.
                 let tool = editor.active_tool;
                 if crate::tool_section::has_settings(tool) {

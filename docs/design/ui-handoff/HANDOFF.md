@@ -72,10 +72,10 @@ Never: project, element, symbol, folder (except real filesystem folders on the H
 ### Right: Properties (always)
 Stacks two things:
 1. **Active tool section** (tinted bg `#1F1D17`, tool icon + shortcut in header) — only for tools with settings:
-   - Land Brush: brush-tip row (Round, Rough, Crag, Shoal, Fjord, Soft), Mode (Paint / Erase ⌥), Size, Smoothing, Paint into (Landmass dropdown incl. New Landmass / New Lake).
+   - Land Brush: Draw mode (Brush / Lasso; Lasso hides Size and Irregularity), brush-tip row (Round, Rough, Crag, Shoal, Fjord, Soft), Mode (Paint / Erase ⌥), Size, Smoothing, Paint into (Landmass dropdown incl. New Landmass / New Lake).
    - Scatter Brush (and Stamp): **Asset picker** — search, category dropdown, 4-column thumbnail grid (variant count badge, gold dot = attribution needed), picked Asset's pack · author · licence + attribution notice, then Place on (Land / Water / Any), Density, Spacing, Size jitter, Rotation jitter, Random flip, Variant (Random / Cycle / Fixed).
    - Label: handled by the Label section itself (style dropdown + overrides).
-   - Select, Pan, Lasso, Stamp Eraser, Export Region: no tool section.
+   - Select, Pan, Stamp Eraser, Export Region: no tool section.
 2. **Selection section(s)** — breadcrumb (`Layer › Object`), then collapsible sections. When nothing is selected, show the **active Layer** (Opacity, Clip to Landmass, Depth-sort).
    - Landmass: Name, Fill, Roughness (Amount, Scale, Seed + Re-roll), Shore style (Outline, Ripples, Inner shade — each inherited from Map default or overridden), Transform (collapsed), Combine (Union / Subtract / Split apart; Union/Subtract need 2+ Landmasses).
    - Label: Text (multi-line), Label style + override count + Reset all / Update style / Manage Label styles…, Font, Size, Tracking, Line height, All caps, Align, Rotation, Fill, Opacity, Halo.
@@ -84,7 +84,7 @@ Stacks two things:
    - Multi-selection: shared fields show **Mixed**; scrubbing a Mixed field offsets all relatively, typing sets all.
 
 ### Canvas overlays
-- **Tool dock**: floating, bottom-centre of the canvas area (never over a panel), 40 px from bottom. Groups: Select V, Pan H │ Land Brush B, Lasso L, Label T │ Stamp S, Scatter Brush ⇧S, Stamp Eraser E │ Export Region X. Active = gold-subtle fill + gold inset ring. Tooltip above after 500 ms: name + shortcut.
+- **Tool dock**: floating, bottom-centre of the canvas area (never over a panel), 40 px from bottom. Groups: Select V, Pan H │ Land Brush B (L picks it in Lasso mode), Label T │ Stamp S, Scatter Brush ⇧S, Stamp Eraser E │ Export Region X. Active = gold-subtle fill + gold inset ring. Tooltip above after 500 ms: name + shortcut.
 - **Zoom control**: bottom-right: − | `84%` | +. The dropdown: editable % field, Zoom to Fit (⇧1), Zoom to Selection (⇧2), 25 / 50 / 100 (⇧0) / 200 / 400 / 800 %.
 - **Cursor HUD**: small pill near the cursor during a gesture ("Paint · 48 px → Valdren mainland", "Scatter · Pine cluster · Land only · +212 this stroke").
 - Selection = blue `#4FA3E0` bounds + white handles. Brush cursor = white ring over a dark ring. In-progress stroke = gold dashed outline.
@@ -146,4 +146,4 @@ Text ≥ 11 px; contrast ≥ 4.5:1 (ratios in `Foundations.html`); every state h
 ## Known gaps in the mockups
 - Screens are fixed at 1440 × 900; use `Responsive.html` for other sizes.
 - Light theme is defined in tokens and sampled in `Foundations.html` only.
-- Stamp tool (single placement), Lasso and Export Region have no dedicated screen; follow the patterns above.
+- Stamp tool (single placement) and Export Region have no dedicated screen; follow the patterns above.

@@ -352,7 +352,7 @@ mod tests {
         select_tool(&mut editor, &view, &mut state, &press(150.0, 125.0));
         select_tool(&mut editor, &view, &mut state, &drag_to(190.0, 165.0));
         assert!(state.drag.is_some());
-        editor.active_tool = ToolId::Lasso;
+        editor.active_tool = ToolId::Pan;
         state.drop_held_for_other_tool(&mut editor);
         assert!(state.drag.is_none() && !editor.gesture_open());
         assert_eq!(Bounds::of_selection(&mut editor).map(|b| b.min), start);

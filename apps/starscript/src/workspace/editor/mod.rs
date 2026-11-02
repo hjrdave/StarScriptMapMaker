@@ -56,6 +56,16 @@ pub const DEFAULT_BRUSH_IRREGULARITY: f64 = 0.15;
 /// The name of the Layer the water brush paints into.
 pub const WATER_LAYER: &str = "Water";
 
+/// How the Land Brush draws: a stroke, or a closed shape that fills with land.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum DrawMode {
+    /// Paints a stroke.
+    #[default]
+    Brush,
+    /// Draws a closed shape.
+    Lasso,
+}
+
 pub struct Editor {
     /// Read through [`Editor::map`]. Only Commands change it, through History (ADR 0004).
     map: Map,
@@ -78,6 +88,8 @@ pub struct Editor {
     pub brush_size: f64,
     /// How far the land brush pushes a stroke's outline out and in, as a share of its radius.
     pub brush_irregularity: f64,
+    /// Whether the Land Brush draws strokes or closed shapes.
+    pub draw_mode: DrawMode,
     /// Whether the land brush erases by default; holding the erase modifier gives the other.
     pub erase_default: bool,
     /// The width the River tool gives the next point it places, in Canvas units.
@@ -181,6 +193,7 @@ impl Editor {
             rename_request: None,
             brush_size: DEFAULT_BRUSH_SIZE,
             brush_irregularity: DEFAULT_BRUSH_IRREGULARITY,
+            draw_mode: DrawMode::default(),
             erase_default: false,
             river_width: DEFAULT_RIVER_WIDTH,
             river_meander: ssmap_core::River::DEFAULT_MEANDER,
