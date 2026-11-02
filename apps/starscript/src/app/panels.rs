@@ -128,6 +128,11 @@ impl MapMakerApp {
                     }
                 }
                 home::Action::Delete(path) => self.win.delete_prompt = Some(path),
+                home::Action::ShowHome => self.show_slot(tab_strip::Slot::Home),
+                home::Action::ShowPacks => {
+                    self.show_slot(tab_strip::Slot::Home);
+                    self.win.home.show_packs();
+                }
                 home::Action::Credits => self.app.credits.open = true,
                 home::Action::AddPack => self.win.pack_dialog.folder(&ctx, "Add Asset pack", None),
                 home::Action::AddPackFolder(folder) => self.add_pack(&ctx, folder),
