@@ -229,10 +229,12 @@ pub mod metrics {
     pub const PROPERTIES_PANEL_MIN: f32 = 260.0;
     pub const PROPERTIES_PANEL_MAX: f32 = 360.0;
     /// Tool button size, width then height.
-    pub const TOOL_BUTTON: [f32; 2] = [32.0, 30.0];
+    pub const TOOL_BUTTON: [f32; 2] = [40.0, 38.0];
+    /// Size the tool dock paints its icons at; the icon atlas rasterises them at this size.
+    pub const TOOL_ICON: f32 = 20.0;
     pub const TOOL_DOCK_BOTTOM_OFFSET: f32 = 40.0;
     /// Inner margin of the tool dock's frame, per side.
-    pub const TOOL_DOCK_MARGIN: f32 = 4.0;
+    pub const TOOL_DOCK_MARGIN: f32 = 6.0;
     /// Height of the tool dock: one button row, the margins and the 1pt stroke on both sides.
     pub const TOOL_DOCK_HEIGHT: f32 = TOOL_BUTTON[1] + 2.0 * TOOL_DOCK_MARGIN + 2.0;
     /// Distance from the Canvas's bottom edge to the shared centre line of the floating bars.
