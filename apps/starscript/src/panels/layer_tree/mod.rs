@@ -338,37 +338,3 @@ impl LayerTree {
         }
     }
 }
-
-/// The sidebar's bottom bar: the Object and Layer counts (when `text` is given) and, at its
-/// end, the collapse control. Returns true when that was clicked.
-pub(crate) fn footer(ui: &mut egui::Ui, text: Option<&str>) -> bool {
-    let palette = theme::palette(ui.ctx());
-    let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), FOOTER_HEIGHT),
-        egui::Sense::hover(),
-    );
-    ui.painter().hline(
-        rect.x_range(),
-        rect.top(),
-        egui::Stroke::new(1.0, palette.border_subtle),
-    );
-    let mut child = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(rect)
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-    );
-    child.add_space(theme::SPACING[3]);
-    if let Some(text) = text {
-        child.label(
-            egui::RichText::new(text)
-                .size(theme::CAPTION)
-                .color(palette.text_tertiary),
-        );
-    }
-    child
-        .with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.add_space(theme::SPACING[2]);
-            crate::shell::collapse_button(ui, false).clicked()
-        })
-        .inner
-}

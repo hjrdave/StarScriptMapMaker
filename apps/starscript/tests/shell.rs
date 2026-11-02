@@ -1,5 +1,5 @@
-//! The window shell: collapsing Layers and Properties, hiding both with Tab, divider drags and
-//! the status bar (no window needed).
+//! The window shell: the left sidebar's rail and the panel it opens, collapsing Properties,
+//! hiding both with Tab, divider drags and the status bar (no window needed).
 
 use eframe::egui;
 use egui_kittest::Harness;
@@ -36,10 +36,10 @@ fn app_sized(step_dt: f32, width: f32) -> Harness<'static, MapMakerApp> {
         Scale::new(0.25, DistanceUnit::Miles),
     ));
     harness.run();
-    // The sidebar starts collapsed; most tests here begin with it expanded. A narrow window
-    // shows the rail whatever the user chose.
+    // The sidebar's panel starts closed, with only the rail; most tests here begin with it
+    // open. A narrow window shows the rail whatever the user chose.
     if width >= 1180.0 {
-        harness.get_by_label("Expand Layers (⌘⌥1)").click();
+        harness.get_by_label(RAIL_LAYERS).click();
         harness.run();
         // Let the panel finish opening, as the step is tiny in some tests.
         for _ in 0..60 {
@@ -48,6 +48,9 @@ fn app_sized(step_dt: f32, width: f32) -> Harness<'static, MapMakerApp> {
     }
     harness
 }
+
+/// The Layers icon on the sidebar's rail.
+const RAIL_LAYERS: &str = "Layers (⌘⌥1)";
 
 const BOTH: egui::Modifiers = egui::Modifiers {
     alt: true,
@@ -58,41 +61,52 @@ const BOTH: egui::Modifiers = egui::Modifiers {
 };
 
 #[test]
-fn the_layers_shortcut_collapses_to_the_rail_and_expands_again() {
+fn the_layers_shortcut_closes_the_panel_and_opens_it_again() {
     let mut harness = app();
-    assert!(harness.query_by_label("Collapse Layers (⌘⌥1)").is_some());
+    assert!(harness.query_by_label("New Layer (⇧⌘N)").is_some());
     harness.key_press_modifiers(BOTH, egui::Key::Num1);
     harness.run();
     assert!(harness.state().shell().layers_collapsed());
-    assert!(harness.query_by_label("Collapse Layers (⌘⌥1)").is_none());
-    assert!(harness.query_by_label("Expand Layers (⌘⌥1)").is_some());
-    harness.key_press_modifiers(BOTH, egui::Key::Num1);
-    harness.run();
-    assert!(!harness.state().shell().layers_collapsed());
-}
-
-#[test]
-fn the_header_button_collapses_layers_and_clicking_the_rail_expands_it() {
-    let mut harness = app();
-    harness.get_by_label("Collapse Layers (⌘⌥1)").click();
-    harness.run();
-    assert!(harness.state().shell().layers_collapsed());
-    harness.get_by_label("Expand Layers (⌘⌥1)").click();
-    harness.run();
-    assert!(!harness.state().shell().layers_collapsed());
-}
-
-#[test]
-fn the_collapse_control_sits_at_the_bottom_and_stays_put_when_toggled() {
-    let mut harness = app();
-    let expanded = harness.get_by_label("Collapse Layers (⌘⌥1)").rect();
-    let header = harness.get_by_label("New Layer (⇧⌘N)").rect();
-    assert!(expanded.center().y > header.center().y + 200.0);
-    harness.get_by_label("Collapse Layers (⌘⌥1)").click();
-    harness.run();
-    let collapsed = harness.get_by_label("Expand Layers (⌘⌥1)").rect();
-    assert_eq!(expanded.center().y, collapsed.center().y);
     assert!(harness.query_by_label("New Layer (⇧⌘N)").is_none());
+    // The rail stays on screen with the panel closed.
+    assert!(harness.query_by_label(RAIL_LAYERS).is_some());
+    harness.key_press_modifiers(BOTH, egui::Key::Num1);
+    harness.run();
+    assert!(!harness.state().shell().layers_collapsed());
+}
+
+#[test]
+fn the_active_rail_icon_closes_the_panel_and_an_icon_opens_its_section() {
+    let mut harness = app();
+    // The open section's icon closes the panel; there is no collapse button any more.
+    assert!(harness.query_by_label("Collapse Layers (⌘⌥1)").is_none());
+    harness.get_by_label(RAIL_LAYERS).click();
+    harness.run();
+    assert!(harness.state().shell().layers_collapsed());
+    harness.get_by_label(RAIL_LAYERS).click();
+    harness.run();
+    assert!(!harness.state().shell().layers_collapsed());
+    // Another icon switches the open panel to its section instead of closing it.
+    harness.get_by_label("History (⌘⌥5)").click();
+    harness.run();
+    assert!(!harness.state().shell().layers_collapsed());
+    assert_eq!(
+        harness.state().shell().sidebar_section(),
+        ssmap_app::shell::SidebarSection::History
+    );
+}
+
+#[test]
+fn the_rail_stays_put_when_the_panel_opens_and_closes_and_the_canvas_makes_room() {
+    let mut harness = app();
+    let open = harness.get_by_label(RAIL_LAYERS).rect();
+    let wide = harness.state().shell().current_layout().canvas_width(WIDTH);
+    harness.get_by_label(RAIL_LAYERS).click();
+    harness.run();
+    assert_eq!(harness.get_by_label(RAIL_LAYERS).rect(), open);
+    let narrow = harness.state().shell().current_layout().canvas_width(WIDTH);
+    // The panel pushes the Canvas over rather than floating above it.
+    assert!(narrow > wide, "{narrow} {wide}");
 }
 
 #[test]
@@ -158,7 +172,7 @@ fn tab_hides_both_panels_and_brings_back_what_was_collapsed() {
     harness.run();
     assert!(harness.state().shell().panels_hidden());
     assert!(harness.query_by_label(PANEL_HEADER).is_none());
-    assert!(harness.query_by_label("Expand Layers (⌘⌥1)").is_none());
+    assert!(harness.query_by_label(RAIL_LAYERS).is_none());
     harness.key_press(egui::Key::Tab);
     harness.run();
     // Layers is back as the rail it was collapsed to, not as the full panel.
@@ -171,13 +185,19 @@ fn tab_hides_both_panels_and_brings_back_what_was_collapsed() {
 fn dragging_a_divider_resizes_within_its_range() {
     let mut harness = app();
     let y = 400.0;
-    // The Layers column starts at the window's left edge.
-    drag(&mut harness, metrics::LAYERS_PANEL_DEFAULT, 5000.0, y);
+    // The panel's edge is just right of the 40 pt rail at the window's left edge.
+    let rail = metrics::LAYERS_PANEL_RAIL;
+    drag(
+        &mut harness,
+        rail + metrics::LAYERS_PANEL_DEFAULT,
+        5000.0,
+        y,
+    );
     assert_eq!(
         harness.state().shell().width(Side::Left),
         metrics::LAYERS_PANEL_MAX
     );
-    drag(&mut harness, metrics::LAYERS_PANEL_MAX, 0.0, y);
+    drag(&mut harness, rail + metrics::LAYERS_PANEL_MAX, 0.0, y);
     assert_eq!(
         harness.state().shell().width(Side::Left),
         metrics::LAYERS_PANEL_MIN
@@ -196,10 +216,11 @@ fn double_clicking_a_divider_resets_its_width() {
     // Frames a few milliseconds apart, so two clicks make a double click.
     let mut harness = app_with_step(0.01);
     let y = 400.0;
-    drag(&mut harness, metrics::LAYERS_PANEL_DEFAULT, 300.0, y);
+    let rail = metrics::LAYERS_PANEL_RAIL;
+    drag(&mut harness, rail + metrics::LAYERS_PANEL_DEFAULT, 340.0, y);
     let width = harness.state().shell().width(Side::Left);
     assert_ne!(width, metrics::LAYERS_PANEL_DEFAULT);
-    let at = egui::pos2(width, y);
+    let at = egui::pos2(rail + width, y);
     harness.hover_at(at);
     harness.run();
     for _ in 0..2 {
@@ -242,41 +263,44 @@ fn the_status_bar_shows_the_cursor_in_pixels_and_real_world_units() {
 }
 
 #[test]
-fn a_narrow_window_shows_layers_as_a_rail_that_opens_over_the_canvas() {
+fn a_narrow_window_shows_the_rail_and_its_panel_opens_over_the_canvas() {
     let mut harness = app_sized(0.25, 1100.0);
-    assert!(harness.query_by_label("Collapse Layers (⌘⌥1)").is_none());
-    harness.get_by_label("Expand Layers (⌘⌥1)").click();
+    assert!(harness.query_by_label("New Layer (⇧⌘N)").is_none());
+    harness.get_by_label(RAIL_LAYERS).click();
     harness.run();
-    // Open over the Canvas; the user's own choice (collapsed, the default) is untouched.
+    // Open over the Canvas; the user's own choice (closed, the default) is untouched.
     assert!(harness.state().shell().layers_overlay());
     assert!(harness.state().shell().layers_collapsed());
-    assert!(harness.query_by_label("Collapse Layers (⌘⌥1)").is_some());
+    assert!(harness.query_by_label("New Layer (⇧⌘N)").is_some());
     harness.key_press(egui::Key::Escape);
     harness.run();
     assert!(!harness.state().shell().layers_overlay());
-    assert!(harness.query_by_label("Collapse Layers (⌘⌥1)").is_none());
+    assert!(harness.query_by_label("New Layer (⇧⌘N)").is_none());
 }
 
 #[test]
-fn the_collapsed_rail_shows_the_section_icons_and_a_click_expands_to_that_section() {
+fn the_rail_shows_the_section_icons_and_a_click_opens_that_section() {
     let mut harness = app();
-    harness.get_by_label("Collapse Layers (⌘⌥1)").click();
+    harness.get_by_label(RAIL_LAYERS).click();
     harness.run();
     assert!(harness.state().shell().layers_collapsed());
-    harness.get_by_label("Layers (⌘⌥1)").click();
+    // The icons are still there with the panel closed.
+    for label in ["Layers (⌘⌥1)", "Map (⌘⌥6)", "History (⌘⌥5)"] {
+        assert!(harness.query_by_label(label).is_some(), "{label}");
+    }
+    harness.get_by_label("Map (⌘⌥6)").click();
     harness.run();
     assert!(!harness.state().shell().layers_collapsed());
     assert_eq!(
         harness.state().shell().sidebar_section(),
-        ssmap_app::shell::SidebarSection::Layers
+        ssmap_app::shell::SidebarSection::Map
     );
-    assert!(harness.query_by_label("Collapse Layers (⌘⌥1)").is_some());
 }
 
 #[test]
 fn a_press_outside_the_overlay_closes_it() {
     let mut harness = app_sized(0.25, 1100.0);
-    harness.get_by_label("Expand Layers (⌘⌥1)").click();
+    harness.get_by_label(RAIL_LAYERS).click();
     harness.run();
     assert!(harness.state().shell().layers_overlay());
     harness.hover_at(egui::pos2(800.0, 500.0));
@@ -359,27 +383,21 @@ const SECTION_KEYS: [(ssmap_app::shell::SidebarSection, egui::Key); 3] = [
 ];
 
 #[test]
-fn the_collapse_button_is_in_every_sidebar_section_at_the_same_place() {
+fn the_active_icon_closes_the_panel_in_every_sidebar_section() {
     let mut harness = app();
     harness
         .state_mut()
         .run_command(ssmap_app::menu::Command::NewArtBoard);
     harness.run();
-    let home = harness.get_by_label("Collapse Layers (⌘⌥1)").rect();
     for (section, key) in SECTION_KEYS {
-        // The Layers shortcut collapses the sidebar when Layers is already showing.
+        // The Layers shortcut closes the panel when Layers is already showing.
         if harness.state().shell().sidebar_section() != section {
             assert_eq!(show_section(&mut harness, key), section);
         }
-        assert_eq!(
-            harness.get_by_label("Collapse Layers (⌘⌥1)").rect(),
-            home,
-            "{section:?}"
-        );
-        harness.get_by_label("Collapse Layers (⌘⌥1)").click();
+        harness.get_by_label(section.label()).click();
         harness.run();
         assert!(harness.state().shell().layers_collapsed(), "{section:?}");
-        // The shortcut expands it again, to the same section.
+        // The shortcut opens it again, on the same section.
         assert_eq!(show_section(&mut harness, key), section);
         assert!(!harness.state().shell().layers_collapsed(), "{section:?}");
     }
@@ -393,13 +411,13 @@ fn the_overlay_closes_from_every_sidebar_section() {
             .state_mut()
             .run_command(ssmap_app::menu::Command::NewArtBoard);
         harness.run();
-        // The sidebar starts collapsed, and in a narrow window the shortcut opens it over the
-        // Canvas on the first press, leaving the user's collapse as it was (#492).
+        // The panel starts closed, and in a narrow window the shortcut opens it over the
+        // Canvas on the first press, leaving the user's choice as it was (#492).
         assert!(harness.state().shell().layers_collapsed(), "{section:?}");
         assert_eq!(show_section(&mut harness, key), section);
         assert!(harness.state().shell().layers_overlay(), "{section:?}");
         assert!(harness.state().shell().layers_collapsed(), "{section:?}");
-        harness.get_by_label("Collapse Layers (⌘⌥1)").click();
+        harness.get_by_label(section.label()).click();
         harness.run();
         assert!(!harness.state().shell().layers_overlay(), "{section:?}");
         assert!(harness.state().shell().layers_collapsed(), "{section:?}");

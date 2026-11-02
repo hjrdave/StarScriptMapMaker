@@ -3,7 +3,7 @@
 
 use eframe::egui;
 
-use super::{DIVIDER, RailClick, Shell, Side, SidebarSection, history_icon};
+use super::{DIVIDER, Shell, Side, SidebarSection, history_icon};
 use crate::icons::{self, Icon};
 use crate::theme::{self, metrics};
 
@@ -223,20 +223,8 @@ pub fn divider(ui: &mut egui::Ui, shell: &mut Shell, side: Side, panel: egui::Re
         .vline(x, panel.y_range(), egui::Stroke::new(1.0, color));
 }
 
-/// The Layers collapse control: a double chevron that points left while the panel is
-/// expanded and is mirrored to point right once `collapsed`. Its place is the bottom of the
-/// panel in both states.
-pub fn collapse_button(ui: &mut egui::Ui, collapsed: bool) -> egui::Response {
-    let label = if collapsed {
-        "Expand Layers (⌘⌥1)"
-    } else {
-        "Collapse Layers (⌘⌥1)"
-    };
-    icons::icon_button_flipped(ui, Icon::CollapseDouble, label, collapsed)
-}
-
-/// The Properties collapse control: the Layers double chevron mirrored, so it points right
-/// while the panel is expanded and left once `collapsed`.
+/// The Properties collapse control: a double chevron that points right while the panel is
+/// expanded and left once `collapsed`. Its place is the bottom of the panel in both states.
 pub fn properties_collapse_button(ui: &mut egui::Ui, collapsed: bool) -> egui::Response {
     let label = if collapsed {
         "Expand Properties (⌘⌥2)"
@@ -246,9 +234,9 @@ pub fn properties_collapse_button(ui: &mut egui::Ui, collapsed: bool) -> egui::R
     icons::icon_button_flipped(ui, Icon::CollapseDouble, label, !collapsed)
 }
 
-/// The 40 pt rail Layers collapses to: only the section icons, with the expand control pinned
-/// to the bottom. Returns what was clicked, which expands the sidebar.
-pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<RailClick> {
+/// The 40 pt rail of the left sidebar, always on screen: the section icons, with the open
+/// section's in the primary colour. Returns the section whose icon was clicked.
+pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<SidebarSection> {
     let current = shell.sidebar_section();
     let palette = theme::palette(ui.ctx());
     let rect = ui.max_rect();
@@ -272,7 +260,7 @@ pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<
         response.widget_info(|| {
             egui::WidgetInfo::labeled(egui::WidgetType::Button, true, section.label())
         });
-        let tint = if section == current || response.hovered() {
+        let tint = if (section == current && shell.panel_open()) || response.hovered() {
             palette.text_primary
         } else {
             palette.text_secondary
@@ -283,7 +271,7 @@ pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()
         {
-            clicked = Some(RailClick::Section(section));
+            clicked = Some(section);
         }
         count += 1.0;
     }
@@ -304,23 +292,6 @@ pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<
         let shape = egui::epaint::TextShape::new(origin, galley, palette.text_secondary)
             .with_angle(std::f32::consts::FRAC_PI_2);
         ui.painter().add(shape);
-    }
-    let bar = egui::Rect::from_min_max(
-        egui::pos2(
-            rect.left(),
-            rect.bottom() - crate::layer_tree::FOOTER_HEIGHT,
-        ),
-        rect.right_bottom(),
-    );
-    let mut bottom =
-        ui.new_child(egui::UiBuilder::new().max_rect(bar).layout(
-            egui::Layout::top_down(egui::Align::Center).with_main_align(egui::Align::Center),
-        ));
-    if collapse_button(&mut bottom, true)
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
-    {
-        clicked = Some(RailClick::Expand);
     }
     clicked
 }

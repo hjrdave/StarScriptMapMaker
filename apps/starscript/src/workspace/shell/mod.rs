@@ -65,15 +65,6 @@ impl SidebarSection {
     }
 }
 
-/// What a click on the Layers rail asked for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RailClick {
-    /// The collapse control: expand the sidebar to the section it last showed.
-    Expand,
-    /// A section icon: expand the sidebar to that section.
-    Section(SidebarSection),
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Shell {
@@ -160,8 +151,6 @@ impl PanelMode {
 pub struct Layout {
     pub layers: PanelMode,
     pub properties: PanelMode,
-    /// The Object and Layer counts under the Layers list.
-    pub layers_footer: bool,
     /// Real-world distances in the status bar.
     pub real_world_coordinates: bool,
 }
@@ -169,7 +158,15 @@ pub struct Layout {
 impl Layout {
     /// The width left to the Canvas in a window `window_width` wide.
     pub fn canvas_width(&self, window_width: f32) -> f32 {
-        window_width - self.layers.width() - self.properties.width()
+        window_width - sidebar_width(self.layers) - self.properties.width()
+    }
+}
+
+/// The width the left sidebar takes: the rail, and beside it the panel when that is open.
+fn sidebar_width(layers: PanelMode) -> f32 {
+    match layers {
+        PanelMode::Full(width) => metrics::LAYERS_PANEL_RAIL + width,
+        other => other.width(),
     }
 }
 
@@ -309,7 +306,12 @@ impl Shell {
         }
     }
 
-    /// Whether Layers is collapsed to its rail.
+    /// Whether the sidebar's panel shows beside the rail, or over the Canvas in a narrow window.
+    pub fn panel_open(&self) -> bool {
+        self.layers_overlay || matches!(self.current_layout().layers, PanelMode::Full(_))
+    }
+
+    /// Whether the sidebar's panel is closed, leaving only the rail.
     pub fn layers_collapsed(&self) -> bool {
         self.layers_collapsed
     }
@@ -388,7 +390,7 @@ impl Shell {
         };
         // The Canvas keeps its room: Properties gives way first, then Layers.
         let canvas = |layers: PanelMode, properties: PanelMode| {
-            window_width - layers.width() - properties.width()
+            window_width - sidebar_width(layers) - properties.width()
         };
         if canvas(layers, properties) < CANVAS_MIN_WIDTH && matches!(properties, PanelMode::Full(_))
         {
@@ -400,7 +402,6 @@ impl Shell {
         Layout {
             layers,
             properties,
-            layers_footer: window_width >= FULL_WIDTH,
             real_world_coordinates: window_width >= NARROW_WIDTH,
         }
     }
@@ -437,18 +438,19 @@ impl Shell {
         }
     }
 
-    /// The Layers rail was clicked. If the user collapsed Layers and the window has room, that
-    /// expands it; otherwise the window is too narrow and Layers opens over the Canvas.
-    pub fn click_layers_rail(&mut self, click: RailClick) {
-        if let RailClick::Section(section) = click {
-            self.set_sidebar_section(section);
-        }
+    /// A section icon on the sidebar rail was clicked. A section other than the open one opens
+    /// (the panel switches to it); the open section's icon closes the panel. In a window too
+    /// narrow to dock the panel, it opens over the Canvas instead and closes the same way.
+    pub fn click_layers_rail(&mut self, section: SidebarSection) {
+        let was = self.sidebar_section;
+        self.set_sidebar_section(section);
+        let same = was == self.sidebar_section;
         let mut expanded = self.clone();
         expanded.layers_collapsed = false;
         if expanded.layout(self.window_width).layers == PanelMode::Rail {
-            self.set_layers_overlay(!self.layers_overlay);
+            self.set_layers_overlay(!(self.layers_overlay && same));
         } else {
-            self.layers_collapsed = false;
+            self.layers_collapsed = !self.layers_collapsed && same;
         }
     }
 
@@ -498,6 +500,6 @@ mod widgets;
 
 pub use status::{cursor_text, selection_path, selection_summary};
 pub use widgets::{
-    collapse_button, divider, history_list, icon_header, layers_rail, mode_chip, panel_header,
+    divider, history_list, icon_header, layers_rail, mode_chip, panel_header,
     properties_collapse_button, properties_rail,
 };

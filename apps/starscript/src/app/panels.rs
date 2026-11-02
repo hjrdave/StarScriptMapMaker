@@ -184,51 +184,23 @@ impl MapMakerApp {
                 ui.separator();
                 ui.label(text(summary));
             }
+            // The Object and Layer counts the Layers list used to show under it.
+            if let Some(counts) = tab.layer_tree.counts_text() {
+                ui.separator();
+                ui.label(text(counts));
+            }
         });
     }
 }
 
-/// The sidebar's panel: the section it shows (Layers, Map, Art boards, or History) over a
-/// bottom bar with the collapse control, whatever the section. As an overlay, collapsing
-/// closes it.
-pub(super) fn layers_panel(
-    ui: &mut egui::Ui,
-    shell: &mut shell::Shell,
-    tab: &mut MapTab,
-    footer: bool,
-    overlay: bool,
-) {
-    let rect = ui.max_rect();
-    let height = crate::layer_tree::FOOTER_HEIGHT.min(rect.height());
-    let bar_top = rect.bottom() - height;
-    let mut body = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(egui::Rect::from_min_max(
-                rect.min,
-                egui::pos2(rect.right(), bar_top),
-            ))
-            .layout(*ui.layout()),
-    );
+/// The sidebar's panel: the section the rail's open icon names (Layers, Map, Art boards, or
+/// History). It has no controls of its own for closing: the rail's icon does that.
+pub(super) fn layers_panel(ui: &mut egui::Ui, shell: &mut shell::Shell, tab: &mut MapTab) {
     let section = shell.sidebar_section();
-    sidebar_section(&mut body, section, tab);
-    // The bar is pinned to the panel's bottom edge, so it doesn't move between sections.
-    let mut bar = ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_max(
-        egui::pos2(rect.left(), bar_top),
-        rect.max,
-    )));
-    let counts = (footer && section == shell::SidebarSection::Layers)
-        .then(|| tab.layer_tree.counts_text())
-        .flatten();
-    if crate::layer_tree::footer(&mut bar, counts.as_deref()) {
-        if overlay {
-            shell.close_overlays();
-        } else {
-            shell.set_layers_collapsed(true);
-        }
-    }
+    sidebar_section(ui, section, tab);
 }
 
-/// The content of one sidebar section, above the bottom bar.
+/// The content of one sidebar section.
 fn sidebar_section(ui: &mut egui::Ui, section: shell::SidebarSection, tab: &mut MapTab) {
     match section {
         shell::SidebarSection::Map => {

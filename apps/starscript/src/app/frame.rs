@@ -51,29 +51,25 @@ impl MapMakerApp {
         let mut properties_divider = None;
         let mut layers_rail = None;
         let mut properties_rail = None;
-        match layout.layers {
-            shell::PanelMode::Hidden => {}
-            shell::PanelMode::Rail => {
-                let panel = egui::Panel::left("layers")
-                    .resizable(false)
-                    .exact_size(layout.layers.width())
-                    .show(ui, |ui| {
-                        let path = shell::selection_path(tab.editor.map(), tab.editor.selection());
-                        if let Some(click) = shell::layers_rail(ui, &path, &self.win.shell) {
-                            self.win.shell.click_layers_rail(click);
-                        }
-                    });
-                layers_rail = Some(panel.response.rect);
-            }
-            shell::PanelMode::Full(width) => {
-                let panel = egui::Panel::left("layers")
-                    .resizable(false)
-                    .exact_size(width)
-                    .show(ui, |ui| {
-                        layers_panel(ui, &mut self.win.shell, tab, layout.layers_footer, false)
-                    });
-                layers_divider = Some(panel.response.rect);
-            }
+        // The rail is always on screen; the panel opens beside it and pushes the Canvas over.
+        if layout.layers != shell::PanelMode::Hidden {
+            let panel = egui::Panel::left("layers rail")
+                .resizable(false)
+                .exact_size(theme::metrics::LAYERS_PANEL_RAIL)
+                .show(ui, |ui| {
+                    let path = shell::selection_path(tab.editor.map(), tab.editor.selection());
+                    if let Some(section) = shell::layers_rail(ui, &path, &self.win.shell) {
+                        self.win.shell.click_layers_rail(section);
+                    }
+                });
+            layers_rail = Some(panel.response.rect);
+        }
+        if let shell::PanelMode::Full(width) = layout.layers {
+            let panel = egui::Panel::left("layers")
+                .resizable(false)
+                .exact_size(width)
+                .show(ui, |ui| layers_panel(ui, &mut self.win.shell, tab));
+            layers_divider = Some(panel.response.rect);
         }
         match layout.properties {
             shell::PanelMode::Hidden => {}
@@ -255,7 +251,7 @@ impl MapMakerApp {
                     overlay_frame.show(ui, |ui| {
                         ui.set_width(width);
                         ui.set_height(canvas_rect.height());
-                        layers_panel(ui, &mut self.win.shell, tab, true, true);
+                        layers_panel(ui, &mut self.win.shell, tab);
                     });
                 });
             overlay_rect = Some(area.response.rect);
