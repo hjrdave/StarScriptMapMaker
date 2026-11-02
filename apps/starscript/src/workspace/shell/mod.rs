@@ -490,6 +490,7 @@ impl Shell {
     }
 }
 
+mod history_icon;
 mod status;
 #[cfg(test)]
 mod tests;

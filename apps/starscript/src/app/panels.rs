@@ -246,7 +246,29 @@ fn sidebar_section(ui: &mut egui::Ui, section: shell::SidebarSection, tab: &mut 
             tab.board_list.show(ui, &mut tab.editor);
         }
         shell::SidebarSection::History => {
-            shell::panel_header(ui, "History", |_| {});
+            // Step Back and Step Forward are Undo and Redo, so they carry their shortcuts.
+            let mac = cfg!(target_os = "macos");
+            let hint = |command| {
+                crate::menu::shortcut(command)
+                    .map(|shortcut| format!(" ({})", shortcut.label(mac)))
+                    .unwrap_or_default()
+            };
+            let back = format!("Step Back{}", hint(crate::menu::Command::Undo));
+            let forward = format!("Step Forward{}", hint(crate::menu::Command::Redo));
+            let (can_back, can_forward) = (tab.editor.can_undo(), tab.editor.can_redo());
+            shell::panel_header(ui, "History", |ui| {
+                // Right to left: Step Forward is added first so Step Back sits left of it.
+                ui.add_enabled_ui(can_forward, |ui| {
+                    if icons::icon_button_flipped(ui, icons::Icon::Undo, &forward, true).clicked() {
+                        tab.editor.redo();
+                    }
+                });
+                ui.add_enabled_ui(can_back, |ui| {
+                    if icons::icon_button(ui, icons::Icon::Undo, &back).clicked() {
+                        tab.editor.undo();
+                    }
+                });
+            });
             let (steps, applied) = tab.editor.history_steps();
             if let Some(target) = shell::history_list(ui, &steps, applied) {
                 tab.editor.jump_to_history(target);
