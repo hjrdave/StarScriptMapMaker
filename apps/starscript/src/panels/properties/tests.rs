@@ -362,8 +362,7 @@ fn a_tool_with_settings_hides_the_selection_s_properties() {
     fixture.editor.select(vec![island]);
     fixture.editor.active_tool = ToolId::LandBrush;
     let mut harness = harness(fixture);
-    // "Brush" is both the section and the draw mode's first value.
-    for label in ["Brush", "Irregularity", "Mode", "Draw mode", "Lasso"] {
+    for label in ["Brush", "Irregularity", "Paint", "Paint Lasso", "Erase"] {
         assert!(
             harness.query_all_by_label(label).next().is_some(),
             "{label}"
@@ -477,17 +476,54 @@ fn the_board_row_says_mixed_for_objects_on_different_boards() {
 }
 
 #[test]
-fn the_land_brush_section_sets_the_default_mode() {
+fn the_land_brush_mode_is_three_icon_buttons_that_set_the_mode() {
+    use crate::editor::LandMode;
     let (mut fixture, _, _) = fixture();
     fixture.editor.active_tool = ToolId::LandBrush;
     let mut harness = harness(fixture);
     assert!(harness.query_by_label("Size").is_some());
+    // The old Draw and Behaviour sections are gone.
+    for label in ["Draw", "Behaviour", "Draw mode", "Mode"] {
+        assert!(harness.query_by_label(label).is_none(), "{label}");
+    }
+
+    harness.get_by_label("Erase").click();
+    harness.run();
+    assert_eq!(harness.state().editor.land_mode(), LandMode::Erase);
+    assert!(harness.state().editor.erase_default);
+    harness.get_by_label("Paint Lasso").click();
+    harness.run();
+    assert_eq!(harness.state().editor.land_mode(), LandMode::PaintLasso);
+    assert!(!harness.state().editor.erase_default);
+    // The lasso hides the Brush section, as before.
+    assert!(harness.query_by_label("Irregularity").is_none());
+    harness.get_by_label("Paint").click();
+    harness.run();
+    assert_eq!(harness.state().editor.land_mode(), LandMode::Paint);
+    assert!(harness.query_by_label("Irregularity").is_some());
+}
+
+#[test]
+fn the_lake_brush_has_paint_and_erase_only_and_the_stamp_places_from_the_top() {
+    let (mut fixture, _, _) = fixture();
+    fixture.editor.active_tool = ToolId::WaterBrush;
+    let mut harness = harness(fixture);
+    harness.get_by_label("Paint");
+    harness.get_by_label("Erase");
+    assert!(harness.query_by_label("Paint Lasso").is_none());
     harness.get_by_label("Erase").click();
     harness.run();
     assert!(harness.state().editor.erase_default);
-    harness.get_by_label("Paint").click();
+
+    harness.state_mut().editor.active_tool = ToolId::Stamp;
     harness.run();
-    assert!(!harness.state().editor.erase_default);
+    for label in ["Place on", "Choose Asset"] {
+        harness.get_by_label(label);
+    }
+    // Place on is above the Asset card.
+    let place = harness.get_by_label("Place on").rect().top();
+    let asset = harness.get_by_label("Choose Asset").rect().top();
+    assert!(place < asset);
 }
 
 #[test]

@@ -1108,3 +1108,24 @@ fn a_refused_move_says_the_object_is_pinned() {
     ));
     assert!(err.to_string().contains("is pinned to the Canvas"));
 }
+
+#[test]
+fn the_land_brush_mode_is_one_of_three_and_b_returns_to_the_stroke_mode() {
+    let mut editor = editor();
+    assert_eq!(editor.land_mode(), LandMode::Paint);
+
+    editor.set_land_mode(LandMode::Erase);
+    assert!(editor.erase_default);
+    // The lasso paints; Option on it erases (the tool reads the modifier).
+    editor.set_land_mode(LandMode::PaintLasso);
+    assert_eq!(editor.land_mode(), LandMode::PaintLasso);
+    assert!(!editor.erase_default);
+
+    // B goes back to the stroke mode used before the lasso.
+    editor.use_stroke_mode();
+    assert_eq!(editor.land_mode(), LandMode::Erase);
+    // And does nothing when already in a stroke mode.
+    editor.set_land_mode(LandMode::Paint);
+    editor.use_stroke_mode();
+    assert_eq!(editor.land_mode(), LandMode::Paint);
+}

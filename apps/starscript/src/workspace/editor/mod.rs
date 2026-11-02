@@ -66,6 +66,17 @@ pub enum DrawMode {
     Lasso,
 }
 
+/// What the Land Brush does, as the Properties mode control names it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LandMode {
+    /// Paints a stroke that adds land.
+    Paint,
+    /// Draws a closed shape that fills with land.
+    PaintLasso,
+    /// Removes land with a stroke.
+    Erase,
+}
+
 pub struct Editor {
     /// Read through [`Editor::map`]. Only Commands change it, through History (ADR 0004).
     map: Map,
@@ -92,6 +103,9 @@ pub struct Editor {
     pub draw_mode: DrawMode,
     /// Whether the land brush erases by default; holding the erase modifier gives the other.
     pub erase_default: bool,
+    /// Whether strokes erased the last time the Land Brush was in a stroke mode, which `B`
+    /// goes back to after the lasso.
+    stroke_erase: bool,
     /// The width the River tool gives the next point it places, in Canvas units.
     pub river_width: f64,
     /// How much the River tool's new Rivers bend, from 0 to 1.
@@ -174,6 +188,39 @@ pub struct NodeEdit {
 }
 
 impl Editor {
+    /// The Land Brush's mode: the draw mode and the erase default as one of three.
+    pub fn land_mode(&self) -> LandMode {
+        match (self.draw_mode, self.erase_default) {
+            (DrawMode::Lasso, _) => LandMode::PaintLasso,
+            (DrawMode::Brush, true) => LandMode::Erase,
+            (DrawMode::Brush, false) => LandMode::Paint,
+        }
+    }
+
+    /// Sets the Land Brush's mode. Paint Lasso paints; holding the erase modifier erases with
+    /// it. Paint and Erase are remembered for [`Editor::use_stroke_mode`].
+    pub fn set_land_mode(&mut self, mode: LandMode) {
+        match mode {
+            LandMode::Paint | LandMode::Erase => {
+                self.draw_mode = DrawMode::Brush;
+                self.erase_default = mode == LandMode::Erase;
+                self.stroke_erase = self.erase_default;
+            }
+            LandMode::PaintLasso => {
+                self.draw_mode = DrawMode::Lasso;
+                self.erase_default = false;
+            }
+        }
+    }
+
+    /// The Land Brush back in the stroke mode it was last used in (`B` after the lasso).
+    pub fn use_stroke_mode(&mut self) {
+        if self.draw_mode == DrawMode::Lasso {
+            self.draw_mode = DrawMode::Brush;
+            self.erase_default = self.stroke_erase;
+        }
+    }
+
     pub fn new(map: Map) -> Self {
         let mut history = History::default();
         history.set_recording(true);
@@ -195,6 +242,7 @@ impl Editor {
             brush_irregularity: DEFAULT_BRUSH_IRREGULARITY,
             draw_mode: DrawMode::default(),
             erase_default: false,
+            stroke_erase: false,
             river_width: DEFAULT_RIVER_WIDTH,
             river_meander: ssmap_core::River::DEFAULT_MEANDER,
             node_edit: None,

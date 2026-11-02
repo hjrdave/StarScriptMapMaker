@@ -163,6 +163,7 @@ impl PropertiesPanel {
                 let tool = editor.active_tool;
                 if crate::tool_section::has_settings(tool) {
                     if tool == crate::tools::ToolId::Stamp {
+                        crate::tool_section::place_on(ui, editor);
                         self.tool_section.stamp_asset(ui, editor);
                         ui.add_space(theme::SPACING[2]);
                     }
