@@ -12,6 +12,9 @@ use ssmap_core::{Canvas, DistanceUnit, Scale};
 /// Wide enough for both panels in full.
 const WIDTH: f32 = 1440.0;
 
+/// The Properties header with nothing selected and the Select tool active: the tool's name.
+const PANEL_HEADER: &str = "Select";
+
 fn app() -> Harness<'static, MapMakerApp> {
     app_with_step(0.25)
 }
@@ -95,15 +98,15 @@ fn the_collapse_control_sits_at_the_bottom_and_stays_put_when_toggled() {
 #[test]
 fn the_properties_shortcut_hides_and_shows_properties() {
     let mut harness = app();
-    assert!(harness.query_by_label("Properties").is_some());
+    assert!(harness.query_by_label(PANEL_HEADER).is_some());
     harness.key_press_modifiers(BOTH, egui::Key::Num2);
     harness.run();
     assert!(harness.state().shell().properties_collapsed());
-    assert!(harness.query_by_label("Properties").is_none());
+    assert!(harness.query_by_label(PANEL_HEADER).is_none());
     harness.key_press_modifiers(BOTH, egui::Key::Num2);
     harness.run();
     assert!(!harness.state().shell().properties_collapsed());
-    assert!(harness.query_by_label("Properties").is_some());
+    assert!(harness.query_by_label(PANEL_HEADER).is_some());
 }
 
 #[test]
@@ -112,12 +115,12 @@ fn the_collapse_button_collapses_properties_to_a_strip_and_the_strip_expands_it(
     harness.get_by_label("Collapse Properties (⌘⌥2)").click();
     harness.run();
     assert!(harness.state().shell().properties_collapsed());
-    assert!(harness.query_by_label("Properties").is_none());
+    assert!(harness.query_by_label(PANEL_HEADER).is_none());
     assert!(harness.query_by_label("Open Properties (⌘⌥2)").is_some());
     harness.get_by_label("Expand Properties (⌘⌥2)").click();
     harness.run();
     assert!(!harness.state().shell().properties_collapsed());
-    assert!(harness.query_by_label("Properties").is_some());
+    assert!(harness.query_by_label(PANEL_HEADER).is_some());
 }
 
 #[test]
@@ -154,14 +157,14 @@ fn tab_hides_both_panels_and_brings_back_what_was_collapsed() {
     harness.key_press(egui::Key::Tab);
     harness.run();
     assert!(harness.state().shell().panels_hidden());
-    assert!(harness.query_by_label("Properties").is_none());
+    assert!(harness.query_by_label(PANEL_HEADER).is_none());
     assert!(harness.query_by_label("Expand Layers (⌘⌥1)").is_none());
     harness.key_press(egui::Key::Tab);
     harness.run();
     // Layers is back as the rail it was collapsed to, not as the full panel.
     assert!(harness.state().shell().layers_shown());
     assert!(harness.state().shell().layers_collapsed());
-    assert!(harness.query_by_label("Properties").is_some());
+    assert!(harness.query_by_label(PANEL_HEADER).is_some());
 }
 
 #[test]
@@ -288,11 +291,11 @@ fn a_press_outside_the_overlay_closes_it() {
 #[test]
 fn at_the_minimum_properties_is_a_rail_that_opens_a_floating_inspector() {
     let mut harness = app_sized(0.25, 1024.0);
-    assert!(harness.query_by_label("Properties").is_none());
+    assert!(harness.query_by_label(PANEL_HEADER).is_none());
     harness.get_by_label("Open Properties (⌘⌥2)").click();
     harness.run();
     assert!(harness.state().shell().properties_overlay());
-    assert!(harness.query_by_label("Properties").is_some());
+    assert!(harness.query_by_label(PANEL_HEADER).is_some());
     harness.key_press(egui::Key::Escape);
     harness.run();
     assert!(!harness.state().shell().properties_overlay());

@@ -517,8 +517,58 @@ fn tools_without_settings_have_no_section_and_the_eraser_has_only_size() {
     ] {
         harness.state_mut().editor.active_tool = tool;
         harness.run();
-        assert!(harness.query_by_label(tool.label()).is_none(), "{tool:?}");
+        // The header names the tool; the body has no section.
+        assert!(harness.query_by_label(tool.label()).is_some(), "{tool:?}");
+        for section in ["Size", "Density", "Eraser", "Brush"] {
+            assert!(
+                harness.query_by_label(section).is_none(),
+                "{tool:?} {section}"
+            );
+        }
     }
+}
+
+#[test]
+fn the_header_names_the_tool_and_a_chip_names_its_mode() {
+    let (mut fixture, _, _) = fixture();
+    fixture.editor.active_tool = ToolId::LandBrush;
+    let mut harness = harness(fixture);
+    harness.get_by_label("Land Brush");
+    harness.get_by_label("Mode: Paint");
+
+    // The lasso and the erase default change the chip, as the stroke would change.
+    harness.state_mut().editor.draw_mode = crate::editor::DrawMode::Lasso;
+    harness.run();
+    harness.get_by_label("Mode: Paint Lasso");
+    harness.state_mut().editor.erase_default = true;
+    harness.run();
+    harness.get_by_label("Mode: Erase Lasso");
+
+    // The Lake Brush has no lasso; the Stamp's chip is where it places.
+    harness.state_mut().editor.active_tool = ToolId::WaterBrush;
+    harness.run();
+    harness.get_by_label("Lake Brush");
+    harness.get_by_label("Mode: Erase");
+    harness.state_mut().editor.active_tool = ToolId::Stamp;
+    harness.run();
+    harness.get_by_label("Mode: Land");
+
+    // The Stamp Eraser and the River have no modes, so no chip.
+    harness.state_mut().editor.active_tool = ToolId::StampEraser;
+    harness.run();
+    harness.get_by_label("Stamp Eraser");
+    assert!(harness.query_by_label_contains("Mode: ").is_none());
+}
+
+#[test]
+fn sections_do_not_collapse() {
+    let (mut fixture, _, _) = fixture();
+    fixture.editor.active_tool = ToolId::StampEraser;
+    let mut harness = harness(fixture);
+    // Clicking the heading changes nothing: the section's body stays.
+    harness.get_by_label("Eraser").click();
+    harness.run();
+    assert!(harness.query_by_label("Size").is_some());
 }
 
 #[test]
