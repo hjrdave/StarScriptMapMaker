@@ -34,7 +34,7 @@ Today a Layer holds any Objects and Layers, and `Map::accepts_children` only che
 
 ## Open
 
-- **Backdrop holds nothing yet.** The Map's background is a setting on the Canvas and Art boards, not an Object. Either Backdrop is a category with no Object kind until Backdrop images exist (it shows in the panel but cannot take a drop), or it is left out of the first release and the panel shows three categories. This needs an answer before the code starts.
+- **Backdrop holds nothing yet.** The Map's background is a setting on the Canvas and Art boards, not an Object. Backdrop is still a category: it shows in the panel with its own Hide, Lock, Pin and Opacity, but it has no Object kind, so it cannot take a drop until Backdrop images exist. A Map can hold Backdrop Layers, and they stay empty.
 - **Collapsed state** of each category in the panel is saved per Map with the other panel state; it is not part of the model.
 
 ## Considered options
