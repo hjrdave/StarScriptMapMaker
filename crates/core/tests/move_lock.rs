@@ -152,3 +152,12 @@ fn layers_have_no_move_lock() {
         Err(CommandError::NotAnObject(layer))
     );
 }
+
+#[test]
+fn the_refusal_says_the_object_is_pinned_to_the_canvas() {
+    let id = Id::new();
+    assert_eq!(
+        CommandError::MoveLocked(id).to_string(),
+        format!("{id} is pinned to the Canvas")
+    );
+}

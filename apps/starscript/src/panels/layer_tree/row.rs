@@ -208,7 +208,7 @@ impl RowPaint<'_> {
     }
 }
 
-/// Lays out the lock, Link, eye, active Layer, opacity, Depth sort and Clip indicators at the
+/// Lays out the lock, pin, Link, eye, active Layer, opacity, Depth sort and Clip indicators at the
 /// right of a row, right to left, and returns the x where they start.
 fn trailing_indicators(
     ui: &mut egui::Ui,
@@ -271,6 +271,9 @@ fn trailing_indicators(
                 locked: !state.locked,
             }));
         }
+        trailing_left = trailing.min_rect().left();
+    }
+    if pin_button(&mut trailing, paint, actions) {
         trailing_left = trailing.min_rect().left();
     }
     if map.is_linked(row.id) {
@@ -347,6 +350,37 @@ fn trailing_indicators(
         }
     }
     trailing_left
+}
+
+/// The Pin to Canvas button of an Object row, left of the lock: always when pinned, otherwise
+/// on hover. A lock already stops movement, so a locked Object shows no pin. Returns whether
+/// it was drawn.
+fn pin_button(trailing: &mut egui::Ui, paint: &RowPaint<'_>, actions: &mut Vec<Action>) -> bool {
+    let RowPaint {
+        row,
+        state,
+        hovering,
+        ..
+    } = *paint;
+    let palette = theme::palette(trailing.ctx());
+    let Node::Object(object) = paint.node else {
+        return false;
+    };
+    if state.locked || state.locked_by_parent || !(object.move_locked || hovering) {
+        return false;
+    }
+    let (icon, label, tint) = if object.move_locked {
+        (Icon::PinFilled, "Unpin from Canvas", palette.text_primary)
+    } else {
+        (Icon::Pin, "Pin to Canvas", palette.text_tertiary)
+    };
+    if icons::icon_button_with(trailing, icon, label, ROW_BUTTON, ROW_GLYPH, Some(tint)).clicked() {
+        actions.push(Action::Run(Command::SetMoveLocked {
+            id: row.id,
+            locked: !object.move_locked,
+        }));
+    }
+    true
 }
 
 /// The right-click menu of a row.
@@ -436,6 +470,25 @@ fn row_context_menu(
                 actions.push(Action::Run(Command::SetLocked {
                     id: row.id,
                     locked: !state.locked,
+                }));
+                ui.close();
+            }
+        }
+        if let Node::Object(object) = paint.node {
+            let pin = if object.move_locked {
+                "Unpin from Canvas"
+            } else {
+                "Pin to Canvas"
+            };
+            let locked = state.locked || state.locked_by_parent;
+            if ui
+                .add_enabled(!locked, egui::Button::new(pin))
+                .on_disabled_hover_text("Unlock it first to change the pin")
+                .clicked()
+            {
+                actions.push(Action::Run(Command::SetMoveLocked {
+                    id: row.id,
+                    locked: !object.move_locked,
                 }));
                 ui.close();
             }

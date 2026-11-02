@@ -977,3 +977,38 @@ fn a_labels_halo_colour_appears_with_a_halo_and_overrides_can_be_reset_from_the_
     );
     assert!(harness.query_by_label("Reset overrides").is_none());
 }
+
+fn pinned(harness: &Harness<'_, Fixture>, id: Id) -> bool {
+    matches!(harness.state().editor.map().node(id), Some(ssmap_core::Node::Object(o)) if o.move_locked)
+}
+
+#[test]
+fn the_header_pin_button_pins_and_unpins_and_a_lock_disables_it() {
+    let (mut fixture, layer, _) = fixture();
+    install_test_pack(&mut fixture.editor, false);
+    let stamp = add_stamp(&mut fixture, layer, 10.0);
+    fixture.editor.select(vec![stamp]);
+    let mut harness = harness(fixture);
+    // The checkbox is gone; the pin button sits beside the padlock.
+    assert!(harness.query_by_label("Locked for movement").is_none());
+
+    harness.get_by_label("Pin to Canvas").click();
+    harness.run();
+    assert!(pinned(&harness, stamp));
+    assert_eq!(harness.state().editor.undo_label(), Some("Pin to Canvas"));
+
+    harness.get_by_label("Unpin from Canvas").click();
+    harness.run();
+    assert!(!pinned(&harness, stamp));
+    assert_eq!(
+        harness.state().editor.undo_label(),
+        Some("Unpin from Canvas")
+    );
+
+    // A locked Object refuses the pin: the button is there but does nothing.
+    harness.get_by_label("Lock Stamp").click();
+    harness.run();
+    harness.get_by_label("Pin to Canvas").click();
+    harness.run();
+    assert!(!pinned(&harness, stamp));
+}

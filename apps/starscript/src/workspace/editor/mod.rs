@@ -610,7 +610,7 @@ impl Editor {
         let text = match err {
             ExecuteError::Command(CommandError::Locked(id)) => format!("{} is locked", name(*id)),
             ExecuteError::Command(CommandError::MoveLocked(id)) => format!(
-                "{} is locked for movement. Untick “Locked for movement” in Properties to move it",
+                "{} is pinned to the Canvas. Unpin it from Properties or the right-click menu to move it",
                 name(*id)
             ),
             ExecuteError::Command(CommandError::InLockedLayer { target, layer }) => {
