@@ -490,7 +490,9 @@ mod tests {
             100,
             Scale::new(1.0, DistanceUnit::Miles),
         )));
-        let layer = editor.new_layer().expect("a Layer");
+        let layer = editor
+            .new_layer_in(ssmap_core::Category::Labels)
+            .expect("a Layer");
         let style = LabelStyle::new(Id::new(), "Realm");
         let style_id = style.id;
         assert!(editor.run(Command::CreateLabelStyle { style }).is_ok());

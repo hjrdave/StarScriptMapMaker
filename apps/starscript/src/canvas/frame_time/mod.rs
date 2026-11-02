@@ -299,8 +299,8 @@ fn measure(
     options: &Options,
     take_stages: &dyn Fn() -> Option<StageTimes>,
 ) -> Measured {
-    let (map, layer) = large_map(options.scale, asset.clone());
-    let mut world = World::new(map, layer, LANDMASSES, script);
+    let (map, layers) = large_map(options.scale, asset.clone());
+    let mut world = World::new(map, layers, LANDMASSES, script);
     let mut renderer = CanvasRenderer::new(&gpu.device, capabilities);
     renderer.set_sprites(SpriteStore::synchronous(library.clone()));
     let mut scene = MapScene::new(Fonts::bundled());
@@ -509,9 +509,9 @@ fn coverage(measured: &Measured) -> Option<f64> {
     (!total.is_zero()).then(|| staged.as_secs_f64() / total.as_secs_f64())
 }
 
-/// A Map like the `large_map` benchmark's, scaled by `scale`, and its Layer, which holds the
-/// landmasses and then the Stamps.
-fn large_map(scale: f64, asset: AssetRef) -> (Map, Id) {
+/// A Map like the `large_map` benchmark's, scaled by `scale`, and its two Layers: a Land Layer
+/// with the landmasses, and an Assets Layer above it with the Stamps.
+fn large_map(scale: f64, asset: AssetRef) -> (Map, [Id; 2]) {
     let mut map = Map::new(Canvas::new(
         16_384,
         16_384,
@@ -526,6 +526,18 @@ fn large_map(scale: f64, asset: AssetRef) -> (Map, Id) {
             index: None,
             name: "Bench".to_owned(),
             category: Category::Land,
+        },
+        "the top level takes a Layer",
+    );
+    let assets = Id::new();
+    scripts::run(
+        &mut map,
+        &Command::CreateLayer {
+            id: assets,
+            parent: None,
+            index: None,
+            name: "Stamps".to_owned(),
+            category: Category::Assets,
         },
         "the top level takes a Layer",
     );
@@ -564,12 +576,12 @@ fn large_map(scale: f64, asset: AssetRef) -> (Map, Id) {
     scripts::run(
         &mut map,
         &Command::PlaceStamps {
-            parent: layer,
+            parent: assets,
             stamps,
         },
         "the Layer was just created in this Map, so placing Stamps on it cannot fail",
     );
-    (map, layer)
+    (map, [layer, assets])
 }
 
 fn coastline(centre: [f64; 2], vertices: usize) -> MultiPolygon {
@@ -672,8 +684,8 @@ mod tests {
     fn every_script_runs_without_a_gpu() {
         let asset = AssetRef::new("bench", "peak").unwrap();
         for script in Script::ALL {
-            let (map, layer) = large_map(0.02, asset.clone());
-            let mut world = World::new(map, layer, LANDMASSES, script);
+            let (map, layers) = large_map(0.02, asset.clone());
+            let mut world = World::new(map, layers, LANDMASSES, script);
             let before = world.map.revision();
             for frame in 0..scripts::frames(script).min(scripts::EDIT_FRAMES) {
                 scripts::edit(script, frame, &mut world);

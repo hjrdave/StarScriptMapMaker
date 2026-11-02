@@ -45,7 +45,9 @@ fn launches_and_creates_a_layer() {
     assert!(harness.query_all_by_label("Layer 5").next().is_some());
     assert_eq!(
         harness.state().editor().selection(),
-        &map.children(None)[4..]
+        // A new Layer is a Land Layer, so it sits above the template's Land Layer and below
+        // its Assets and Labels.
+        &map.children(None)[2..3]
     );
 
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
@@ -111,13 +113,7 @@ fn a_locked_layer_refuses_edits_with_a_visible_message() {
     harness.run();
     harness.query_all_by_label("Lock").next().unwrap().click();
     harness.run();
-    let layer = *harness
-        .state()
-        .editor()
-        .map()
-        .children(None)
-        .last()
-        .unwrap();
+    let layer = harness.state().editor().map().children(None)[2];
     assert!(harness.state().editor().map().node(layer).unwrap().locked());
 
     // The hide toggle is refused, and the reason shows as a toast.

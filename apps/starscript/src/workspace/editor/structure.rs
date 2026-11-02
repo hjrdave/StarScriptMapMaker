@@ -6,6 +6,27 @@ impl Editor {
         self.new_container("Layer")
     }
 
+    /// Creates a Layer of `category` at the top of its category, selects it and returns its id.
+    pub fn new_layer_in(&mut self, category: ssmap_core::Category) -> Option<Id> {
+        let id = Id::new();
+        let command = Command::CreateLayer {
+            id,
+            parent: None,
+            index: Some(self.category_index(category)),
+            name: format!("{} {}", category.name(), self.layer_count() + 1),
+            category,
+        };
+        self.run_selecting(command, vec![id]).is_ok().then_some(id)
+    }
+
+    /// What the Layer `id` holds: Land for anything that is not a Layer.
+    pub fn layer_category(&self, id: Id) -> ssmap_core::Category {
+        match self.map.node(id) {
+            Some(Node::Layer(layer)) => layer.category,
+            _ => ssmap_core::Category::Land,
+        }
+    }
+
     /// Creates an empty Group (a Layer named "Group N") where `new_layer` would put a Layer.
     pub fn new_group(&mut self) -> Option<Id> {
         self.new_container("Group")
@@ -26,12 +47,23 @@ impl Editor {
         };
         let id = Id::new();
         let name = format!("{kind} {}", self.layer_count() + 1);
+        // The new Layer holds what the active one does; with none active it is a Land Layer, put
+        // where the fixed category order has it.
+        let category = match self.active_layer.filter(|&id| self.map.contains(id)) {
+            Some(active) => self.layer_category(active),
+            None => ssmap_core::Category::Land,
+        };
+        let (parent, index) = if parent.is_none() && index.is_none() {
+            (None, Some(self.category_index(category)))
+        } else {
+            (parent, index)
+        };
         let command = Command::CreateLayer {
             id,
             parent,
             index,
             name,
-            category: Default::default(),
+            category,
         };
         self.run_selecting(command, vec![id]).is_ok().then_some(id)
     }

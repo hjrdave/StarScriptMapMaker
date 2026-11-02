@@ -205,17 +205,18 @@ fn a_multi_selection_is_summarised_and_can_be_combined() {
 
 #[test]
 fn an_overridden_label_size_resets_to_the_styles_size() {
-    let (mut fixture, layer, _) = fixture();
+    let (mut fixture, _layer, _) = fixture();
     let style_size = Label::default()
         .resolve(fixture.editor.map().label_styles())
         .size;
     let label = Id::new();
+    let labels = labels_layer(&mut fixture);
     assert!(
         fixture
             .editor
             .run(Command::CreateLabel {
                 id: label,
-                parent: layer,
+                parent: labels,
                 index: None,
                 label: Box::new(Label {
                     text: "Hello".to_owned(),
@@ -244,14 +245,15 @@ fn an_overridden_label_size_resets_to_the_styles_size() {
 
 #[test]
 fn manage_label_styles_asks_for_the_window() {
-    let (mut fixture, layer, _) = fixture();
+    let (mut fixture, _layer, _) = fixture();
     let label = Id::new();
+    let labels = labels_layer(&mut fixture);
     assert!(
         fixture
             .editor
             .run(Command::CreateLabel {
                 id: label,
-                parent: layer,
+                parent: labels,
                 index: None,
                 label: Box::new(Label {
                     text: "Hello".to_owned(),
@@ -849,8 +851,32 @@ fn a_changed_background_and_the_template_name_survive_save_and_reopen() {
     assert_eq!(reopened.canvas().template.as_deref(), Some("Ocean"));
 }
 
-/// A Stamp of the test pack's tree on the fixture's Layer, at `x`.
+/// The fixture's Labels Layer: the topmost one, made if there is none.
+fn labels_layer(fixture: &mut Fixture) -> Id {
+    top_layer_of(fixture, ssmap_core::Category::Labels)
+}
+
+fn top_layer_of(fixture: &mut Fixture, category: ssmap_core::Category) -> Id {
+    let map = fixture.editor.map();
+    let found =
+        map.children(None).iter().rev().copied().find(
+            |&id| matches!(map.node(id), Some(Node::Layer(layer)) if layer.category == category),
+        );
+    found.unwrap_or_else(|| fixture.editor.new_layer_in(category).expect("a Layer"))
+}
+
+/// A Stamp of the test pack's tree at `x`, in `layer` if that holds Assets, else in the
+/// fixture's Assets Layer (the Land Layer most tests hold does not take Stamps).
 fn add_stamp(fixture: &mut Fixture, layer: Id, x: f64) -> Id {
+    let is_assets = matches!(
+        fixture.editor.map().node(layer),
+        Some(Node::Layer(l)) if l.category == ssmap_core::Category::Assets
+    );
+    let layer = if is_assets {
+        layer
+    } else {
+        top_layer_of(fixture, ssmap_core::Category::Assets)
+    };
     let id = Id::new();
     let stamp = ssmap_core::Stamp::new("test-pack/tree".parse().expect("an Asset ref"), [x, 10.0]);
     fixture
@@ -1028,13 +1054,14 @@ fn a_selected_landmass_has_a_lock_in_its_header_and_no_locked_checkbox() {
 
 #[test]
 fn a_labels_halo_colour_appears_with_a_halo_and_overrides_can_be_reset_from_the_header() {
-    let (mut fixture, layer, _) = fixture();
+    let (mut fixture, _layer, _) = fixture();
     let id = Id::new();
+    let labels = labels_layer(&mut fixture);
     fixture
         .editor
         .run(Command::CreateLabel {
             id,
-            parent: layer,
+            parent: labels,
             index: None,
             label: Box::new(Label {
                 text: "Hello".to_owned(),
@@ -1193,21 +1220,25 @@ fn the_chain_is_off_at_first_and_keeps_the_aspect_ratio_once_on() {
 
 #[test]
 fn every_object_breadcrumb_has_a_layers_icon_while_the_selection_shares_a_layer() {
-    let (mut fixture, layer, island) = fixture();
+    let (mut fixture, layer, _) = fixture();
     install_test_pack(&mut fixture.editor, false);
     let stamp = add_stamp(&mut fixture, layer, 10.0);
+    let neighbour = add_stamp(&mut fixture, layer, 20.0);
     // One Object: the breadcrumb shows its Layer, so it has the icon.
     fixture.editor.select(vec![stamp]);
     let harness = harness(fixture);
     harness.get_by_label("Layer");
     let (mut fixture, ..) = (harness.into_state(), ());
     // Objects in the same Layer still share it.
-    fixture.editor.select(vec![stamp, island]);
+    fixture.editor.select(vec![stamp, neighbour]);
     let harness = self::harness(fixture);
     harness.get_by_label("Layer");
     // Objects in different Layers have no Layer to show, and no icon.
     let mut fixture = harness.into_state();
-    let other = fixture.editor.new_layer().expect("a Layer");
+    let other = fixture
+        .editor
+        .new_layer_in(ssmap_core::Category::Assets)
+        .expect("a Layer");
     let apart = add_stamp(&mut fixture, other, 30.0);
     fixture.editor.select(vec![stamp, apart]);
     let harness = self::harness(fixture);
@@ -1216,13 +1247,14 @@ fn every_object_breadcrumb_has_a_layers_icon_while_the_selection_shares_a_layer(
 
 #[test]
 fn the_label_panel_groups_its_fields_into_divider_sections() {
-    let (mut fixture, layer, _) = fixture();
+    let (mut fixture, _layer, _) = fixture();
     let id = Id::new();
+    let labels = labels_layer(&mut fixture);
     fixture
         .editor
         .run(Command::CreateLabel {
             id,
-            parent: layer,
+            parent: labels,
             index: None,
             label: Box::new(Label {
                 text: "Hello".to_owned(),

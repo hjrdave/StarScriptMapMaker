@@ -109,7 +109,8 @@ pub(super) fn names() -> String {
 pub(super) struct World {
     pub map: Map,
     pub cache: RoughnessCache,
-    layer: Id,
+    /// The Land Layer and the Assets Layer above it.
+    layers: [Id; 2],
     landmasses: Vec<Id>,
     stamps: Vec<Id>,
     terrain: Terrain,
@@ -118,12 +119,12 @@ pub(super) struct World {
 }
 
 impl World {
-    /// Wraps a generated Map: `layer` holds its `landmasses`, then its Stamps. For a script
+    /// Wraps a generated Map: `layers[0]` holds its `landmasses`, `layers[1]` its Stamps. For a script
     /// that needs it, the Map gets a high Map-wide Roughness first.
-    pub(super) fn new(mut map: Map, layer: Id, landmasses: usize, script: Script) -> Self {
-        let children = map.children(Some(layer)).to_vec();
-        let (land, stamps) = children.split_at(landmasses.min(children.len()));
-        let (land, stamps) = (land.to_vec(), stamps.to_vec());
+    pub(super) fn new(mut map: Map, layers: [Id; 2], landmasses: usize, script: Script) -> Self {
+        let mut land = map.children(Some(layers[0])).to_vec();
+        land.truncate(landmasses);
+        let stamps = map.children(Some(layers[1])).to_vec();
         if script.rough() {
             let (amount, scale, seed) = ROUGHNESS;
             run(
@@ -144,7 +145,7 @@ impl World {
         Self {
             map,
             cache,
-            layer,
+            layers,
             landmasses: land,
             stamps,
             terrain,
@@ -239,7 +240,7 @@ pub(super) fn edit(script: Script, frame: usize, world: &mut World) {
                 &world.map,
                 &mut world.cache,
                 selection,
-                Some(world.layer),
+                Some(world.layers[0]),
                 stroke,
                 Id::new(),
             )
@@ -293,7 +294,7 @@ pub(super) fn edit(script: Script, frame: usize, world: &mut World) {
                 ScatterStroke {
                     points: &points,
                     radius: 150.0,
-                    parent: world.layer,
+                    parent: world.layers[1],
                     base: &world.base_stamp,
                     variants: &[],
                 },

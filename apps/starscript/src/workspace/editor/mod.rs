@@ -142,6 +142,17 @@ enum Placing {
     Label,
 }
 
+impl Placing {
+    /// The category of Layer this goes into.
+    fn category(self) -> ssmap_core::Category {
+        match self {
+            Placing::Land => ssmap_core::Category::Land,
+            Placing::Stamp => ssmap_core::Category::Assets,
+            Placing::Label => ssmap_core::Category::Labels,
+        }
+    }
+}
+
 /// Whether the app bundles a font family.
 fn bundled_family(family: &str) -> bool {
     ssmap_fonts::FAMILIES.iter().any(|f| f.name == family)

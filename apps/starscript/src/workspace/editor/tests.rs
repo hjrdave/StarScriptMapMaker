@@ -27,8 +27,8 @@ fn new_layers_go_above_the_active_one_and_get_selected() {
 #[test]
 fn duplicating_selects_the_copy_and_is_one_named_undo_step() {
     let mut editor = editor();
-    let first = editor.new_layer().unwrap();
-    let second = editor.new_layer().unwrap();
+    let first = editor.new_layer_in(ssmap_core::Category::Assets).unwrap();
+    let second = editor.new_layer_in(ssmap_core::Category::Assets).unwrap();
     editor.select(vec![first]);
     let copy = editor.duplicate_selection().unwrap();
     assert_eq!(editor.map.children(None), &[first, copy[0], second]);
@@ -60,7 +60,7 @@ fn stamp_position(editor: &Editor, id: Id) -> [f64; 2] {
 #[test]
 fn a_paste_puts_the_middle_of_the_copied_objects_under_the_point() {
     let mut editor = editor();
-    let layer = editor.new_layer().unwrap();
+    let layer = editor.new_layer_in(ssmap_core::Category::Assets).unwrap();
     let a = add_stamp(&mut editor, layer, 10.0, 10.0);
     let b = add_stamp(&mut editor, layer, 30.0, 20.0);
     editor.select(vec![a, b]);
@@ -89,7 +89,7 @@ fn member(editor: &Editor, id: Id) -> Membership {
 fn a_paste_joins_the_board_under_the_paste_point_in_one_undo_step() {
     let mut editor = editor();
     let board = editor.new_art_board().unwrap();
-    let layer = editor.new_layer().unwrap();
+    let layer = editor.new_layer_in(ssmap_core::Category::Assets).unwrap();
     let a = add_stamp(&mut editor, layer, 10.0, 10.0);
     editor.select(vec![a]);
     assert!(editor.copy_selection());
@@ -116,16 +116,16 @@ fn a_paste_joins_the_board_under_the_paste_point_in_one_undo_step() {
 #[test]
 fn pasted_layers_go_above_the_selected_layer_and_keep_their_structure() {
     let mut editor = editor();
-    let first = editor.new_layer().unwrap();
+    let first = editor.new_layer_in(ssmap_core::Category::Assets).unwrap();
     let stamp = add_stamp(&mut editor, first, 5.0, 5.0);
-    let second = editor.new_layer().unwrap();
+    let second = editor.new_layer_in(ssmap_core::Category::Assets).unwrap();
     editor.select(vec![first]);
     editor.copy_selection();
     let pasted = editor.paste([0.0, 0.0]).unwrap();
     assert_eq!(editor.map.children(None), &[first, pasted[0], second]);
     assert_eq!(editor.map.children(Some(pasted[0])).len(), 1);
     assert_ne!(editor.map.children(Some(pasted[0])), &[stamp]);
-    assert_eq!(node_name(&editor.map, pasted[0]), "Layer 1 copy");
+    assert_eq!(node_name(&editor.map, pasted[0]), "Assets 1 copy");
     // With nothing selected a paste lands on top.
     editor.deselect();
     let top = editor.paste([0.0, 0.0]).unwrap();
@@ -135,8 +135,8 @@ fn pasted_layers_go_above_the_selected_layer_and_keep_their_structure() {
 #[test]
 fn cut_removes_the_originals_in_one_step_and_skips_locked_layers() {
     let mut editor = editor();
-    let open = editor.new_layer().unwrap();
-    let locked = editor.new_layer().unwrap();
+    let open = editor.new_layer_in(ssmap_core::Category::Labels).unwrap();
+    let locked = editor.new_layer_in(ssmap_core::Category::Labels).unwrap();
     assert!(
         editor
             .run(Command::SetLocked {
@@ -160,7 +160,7 @@ fn cut_removes_the_originals_in_one_step_and_skips_locked_layers() {
 #[test]
 fn pasting_objects_needs_a_layer() {
     let mut editor = editor();
-    let layer = editor.new_layer().unwrap();
+    let layer = editor.new_layer_in(ssmap_core::Category::Assets).unwrap();
     let a = add_stamp(&mut editor, layer, 1.0, 1.0);
     editor.select(vec![a]);
     editor.copy_selection();
@@ -197,11 +197,13 @@ fn label_of(editor: &Editor, id: Id) -> Label {
 
 /// Copies `ids` in one Map and hands the copy to a second, empty one.
 fn copy_into_another_map(from: &mut Editor, ids: Vec<Id>) -> (Editor, Id) {
+    // The other Map's Layer holds what is copied.
+    let category = from.layer_category(from.map.parent(ids[0]).unwrap());
     from.select(ids);
     assert!(from.copy_selection());
     let text = from.take_clipboard_text().unwrap();
     let mut to = editor();
-    let layer = to.new_layer().unwrap();
+    let layer = to.new_layer_in(category).unwrap();
     to.set_clipboard(Clipboard::from_text(&text).unwrap());
     (to, layer)
 }
@@ -209,7 +211,7 @@ fn copy_into_another_map(from: &mut Editor, ids: Vec<Id>) -> (Editor, Id) {
 #[test]
 fn pasting_into_another_map_needs_nothing_when_it_has_it_all() {
     let mut from = editor();
-    let layer = from.new_layer().unwrap();
+    let layer = from.new_layer_in(ssmap_core::Category::Labels).unwrap();
     let label = add_label(&mut from, layer, Label::default());
     let (mut to, target) = copy_into_another_map(&mut from, vec![label]);
     assert_eq!(to.paste_gaps(), Some(PasteGaps::default()));
@@ -224,7 +226,7 @@ fn pasting_into_another_map_needs_nothing_when_it_has_it_all() {
 #[test]
 fn a_label_style_the_other_map_lacks_falls_back_to_its_default() {
     let mut from = editor();
-    let layer = from.new_layer().unwrap();
+    let layer = from.new_layer_in(ssmap_core::Category::Labels).unwrap();
     let style = Id::new();
     assert!(
         from.run(Command::CreateLabelStyle {
@@ -253,7 +255,7 @@ fn a_label_style_the_other_map_lacks_falls_back_to_its_default() {
 #[test]
 fn a_font_the_other_map_cannot_draw_gets_the_fallback_font() {
     let mut from = editor();
-    let layer = from.new_layer().unwrap();
+    let layer = from.new_layer_in(ssmap_core::Category::Labels).unwrap();
     let label = add_label(
         &mut from,
         layer,
@@ -275,7 +277,7 @@ fn a_font_the_other_map_cannot_draw_gets_the_fallback_font() {
 #[test]
 fn an_asset_the_other_map_lacks_pastes_as_a_placeholder_and_cancel_pastes_nothing() {
     let mut from = editor();
-    let layer = from.new_layer().unwrap();
+    let layer = from.new_layer_in(ssmap_core::Category::Assets).unwrap();
     let stamp = add_stamp(&mut from, layer, 1.0, 1.0);
     let (mut to, target) = copy_into_another_map(&mut from, vec![stamp]);
     // No pack is installed here, and nothing is embedded.
@@ -381,7 +383,7 @@ fn refusals_show_a_message_and_change_nothing() {
 #[test]
 fn a_gesture_is_one_undo_step_and_cancel_restores() {
     let mut editor = editor();
-    let layer = editor.new_layer().unwrap();
+    let layer = editor.new_layer_in(ssmap_core::Category::Labels).unwrap();
     let gesture = editor.begin_gesture("Change Opacity");
     for opacity in [0.8, 0.5, 0.2] {
         editor.gesture(&gesture, Command::SetOpacity { id: layer, opacity });
@@ -429,7 +431,7 @@ fn placing_a_label_creates_a_layer_and_is_one_undo_step() {
 #[test]
 fn cancelling_a_placement_restores_the_selection() {
     let mut editor = editor();
-    let layer = editor.new_layer().unwrap();
+    let layer = editor.new_layer_in(ssmap_core::Category::Labels).unwrap();
     let (_, gesture) = editor.place_label([50.0, 50.0]).unwrap();
     editor.cancel_gesture(gesture);
     assert_eq!(editor.map.children(Some(layer)).len(), 0);
@@ -795,11 +797,11 @@ fn square(min: f64, max: f64) -> MultiPolygon {
 /// An Editor with a Landmass over (0,0)-(200,200) holding a Lake over (80,80)-(120,120).
 fn editor_with_island() -> (Editor, Id) {
     let mut editor = editor_with_assets();
-    let layer = editor.new_layer().unwrap();
+    let land = editor.new_layer_in(ssmap_core::Category::Land).unwrap();
     editor
         .run(Command::CreateLandmass {
             id: Id::new(),
-            parent: layer,
+            parent: land,
             index: None,
             geometry: square(0.0, 200.0),
             fill: None,
@@ -808,7 +810,7 @@ fn editor_with_island() -> (Editor, Id) {
     editor
         .run(Command::CreateLake {
             id: Id::new(),
-            parent: layer,
+            parent: land,
             index: None,
             geometry: square(80.0, 120.0),
             fill: None,
@@ -818,6 +820,8 @@ fn editor_with_island() -> (Editor, Id) {
     editor.brush_size = 400.0;
     editor.scatter.density = 40.0;
     editor.scatter.spacing = 0.0;
+    // Stamps go in an Assets Layer, which stays the active one.
+    let layer = editor.new_layer_in(ssmap_core::Category::Assets).unwrap();
     (editor, layer)
 }
 
@@ -865,7 +869,7 @@ fn the_stamp_eraser_only_touches_the_active_layer() {
     let (mut editor, layer) = editor_with_island();
     editor.scatter.placement = ssmap_core::scatter::Placement::Anywhere;
     assert!(editor.scatter_stamps(&[[100.0, 100.0]]));
-    let other = editor.new_layer().unwrap();
+    let other = editor.new_layer_in(ssmap_core::Category::Assets).unwrap();
     assert!(editor.scatter_stamps(&[[100.0, 100.0]]));
     assert_eq!(editor.active_layer(), Some(other));
     let (here, there) = (
@@ -929,7 +933,7 @@ fn create_stamp(layer: Id) -> (Id, Command) {
 #[test]
 fn a_gesture_commits_one_undo_step() {
     let mut editor = editor();
-    let layer = editor.new_layer().unwrap();
+    let layer = editor.new_layer_in(ssmap_core::Category::Assets).unwrap();
     let undo_steps = editor.history.undo_len();
     let id = editor.begin_gesture("Two Stamps");
     assert!(editor.gesture_open());
@@ -948,7 +952,7 @@ fn a_gesture_commits_one_undo_step() {
 #[test]
 fn cancelling_a_gesture_rolls_it_back() {
     let mut editor = editor();
-    let layer = editor.new_layer().unwrap();
+    let layer = editor.new_layer_in(ssmap_core::Category::Assets).unwrap();
     let undo_steps = editor.history.undo_len();
     let selection = editor.selection().to_vec();
     let id = editor.begin_gesture("Stamp");
@@ -964,7 +968,7 @@ fn cancelling_a_gesture_rolls_it_back() {
 #[test]
 fn replacing_in_a_gesture_keeps_one_commands_worth() {
     let mut editor = editor();
-    let layer = editor.new_layer().unwrap();
+    let layer = editor.new_layer_in(ssmap_core::Category::Assets).unwrap();
     let id = editor.begin_gesture("Stamp");
     let (first, command) = create_stamp(layer);
     assert!(editor.gesture(&id, command));
@@ -1007,7 +1011,7 @@ fn a_stale_token_is_a_no_op() {
 #[test]
 fn cancel_open_gesture_invalidates_the_token() {
     let mut editor = editor();
-    let layer = editor.new_layer().unwrap();
+    let layer = editor.new_layer_in(ssmap_core::Category::Assets).unwrap();
     assert!(!editor.cancel_open_gesture());
     let id = editor.begin_gesture("Stamp");
     let (stamp, command) = create_stamp(layer);
@@ -1023,7 +1027,7 @@ fn cancel_open_gesture_invalidates_the_token() {
 #[test]
 fn in_gesture_commits_on_ok_and_rolls_back_on_err() {
     let mut editor = editor();
-    let layer = editor.new_layer().unwrap();
+    let layer = editor.new_layer_in(ssmap_core::Category::Assets).unwrap();
     let undo_steps = editor.history.undo_len();
     let (kept, command) = create_stamp(layer);
     let result = editor.in_gesture("Keep", |g| {
@@ -1071,7 +1075,7 @@ fn history_begin_refuses_while_a_transaction_is_open() {
 #[test]
 fn pinning_the_selection_is_one_named_undo_step_and_a_lock_refuses_it() {
     let mut editor = editor();
-    let layer = editor.new_layer().unwrap();
+    let layer = editor.new_layer_in(ssmap_core::Category::Assets).unwrap();
     let a = add_stamp(&mut editor, layer, 10.0, 10.0);
     let b = add_stamp(&mut editor, layer, 30.0, 20.0);
     let pinned = |editor: &Editor, id: Id| matches!(editor.map().node(id), Some(Node::Object(o)) if o.move_locked);
@@ -1128,4 +1132,47 @@ fn the_land_brush_mode_is_one_of_three_and_b_returns_to_the_stroke_mode() {
     editor.set_land_mode(LandMode::Paint);
     editor.use_stroke_mode();
     assert_eq!(editor.land_mode(), LandMode::Paint);
+}
+
+#[test]
+fn tools_put_each_kind_in_a_layer_of_its_category_and_make_one_in_order_when_missing() {
+    use ssmap_core::Category;
+    let mut editor = editor_with_assets();
+    // A Map with only a Land Layer active: a Label gets a Labels Layer on top, made for it.
+    let land = editor.new_layer_in(Category::Land).unwrap();
+    let label = editor.place_label([10.0, 10.0]).map(|(id, gesture)| {
+        editor.end_gesture(gesture);
+        id
+    });
+    let label = label.expect("a Label is placed");
+    let labels = editor.map.parent(label).unwrap();
+    assert_eq!(editor.layer_category(labels), Category::Labels);
+    assert_eq!(editor.map.children(None), &[land, labels]);
+
+    // A Stamp gets an Assets Layer between the two, and a second Stamp reuses it.
+    editor.selected_asset = Some(asset("test-pack/mountain-1"));
+    let first = editor.place_stamp([1.0, 1.0]).unwrap();
+    let assets = editor.map.parent(first).unwrap();
+    assert_eq!(editor.layer_category(assets), Category::Assets);
+    assert_eq!(editor.map.children(None), &[land, assets, labels]);
+    let second = editor.place_stamp([2.0, 2.0]).unwrap();
+    assert_eq!(editor.map.parent(second), Some(assets));
+
+    // New Layers keep the fixed order: Assets above Land, below Labels.
+    let more = editor.new_layer_in(Category::Assets).unwrap();
+    assert_eq!(editor.map.children(None), &[land, assets, more, labels]);
+}
+
+#[test]
+fn pasting_into_a_layer_of_another_category_is_refused_with_a_message() {
+    use ssmap_core::Category;
+    let mut editor = editor();
+    let assets = editor.new_layer_in(Category::Assets).unwrap();
+    let stamp = add_stamp(&mut editor, assets, 1.0, 1.0);
+    editor.select(vec![stamp]);
+    editor.copy_selection();
+    let land = editor.new_layer_in(Category::Land).unwrap();
+    editor.select(vec![land]);
+    assert!(editor.paste([0.0, 0.0]).is_none());
+    assert!(editor.map.children(Some(land)).is_empty());
 }

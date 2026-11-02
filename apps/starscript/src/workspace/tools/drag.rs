@@ -434,7 +434,11 @@ mod link_tests {
                         parent: None,
                         index: None,
                         name: format!("Layer {n}"),
-                        category: ssmap_core::Category::Assets,
+                        category: if n == 2 {
+                            ssmap_core::Category::Assets
+                        } else {
+                            ssmap_core::Category::Land
+                        },
                     })
                     .is_ok()
             );

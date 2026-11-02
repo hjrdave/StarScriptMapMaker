@@ -301,24 +301,37 @@ impl Editor {
         layer.filter(|&id| matches!(self.map.node(id), Some(Node::Layer(_))))
     }
 
-    /// The template's Layer for `placing` if no Layer is active, or if the active one is the
-    /// template's Layer for something else (placing a Stamp makes its Layer active, and the next
-    /// Label should still go to the Labels Layer); else the active Layer.
+    /// The Layer a new Object of kind `placing` goes into: the active Layer if it holds that
+    /// category (placing a Stamp makes its Layer active, and the next Label should still go to a
+    /// Labels Layer), else the template's Layer for it, else the topmost Layer of the category.
+    /// `None` when the Map has no Layer of the category.
     pub(super) fn target_layer(&self, placing: Placing) -> Option<Id> {
-        let active = self.active_layer.filter(|&id| self.map.contains(id));
-        let layers = &self.default_layers;
-        let taken_by_other = |id: Id| {
-            let others = match placing {
-                Placing::Land => [layers.assets, layers.labels],
-                Placing::Stamp => [layers.land, layers.labels],
-                Placing::Label => [layers.land, layers.assets],
-            };
-            others.contains(&Some(id))
-        };
-        match active {
-            Some(id) if !taken_by_other(id) => Some(id),
-            _ => self.default_layer(placing).or(active),
-        }
+        let category = placing.category();
+        let holds = |id: Id| matches!(self.map.node(id), Some(Node::Layer(layer)) if layer.category == category);
+        self.active_layer
+            .filter(|&id| holds(id))
+            .or_else(|| self.default_layer(placing).filter(|&id| holds(id)))
+            .or_else(|| {
+                self.map
+                    .children(None)
+                    .iter()
+                    .rev()
+                    .copied()
+                    .find(|&id| holds(id))
+            })
+    }
+
+    /// Where a new top-level Layer of `category` goes so the Layers stay in the fixed order
+    /// (Labels on top, then Assets, Land and Backdrop): above the Layers of the categories
+    /// below it, at the top of its own.
+    pub(super) fn category_index(&self, category: ssmap_core::Category) -> usize {
+        self.map
+            .children(None)
+            .iter()
+            .filter(|&&id| {
+                matches!(self.map.node(id), Some(Node::Layer(layer)) if layer.category >= category)
+            })
+            .count()
     }
 
     /// The Layer new Objects go into: see [`Self::target_layer`], else the top Layer, creating
@@ -342,17 +355,15 @@ impl Editor {
         if let Some(layer) = self.target_layer(placing) {
             return Ok(layer);
         }
-        if let Some(&top) = self.map.children(None).last() {
-            return Ok(top);
-        }
+        // The Map has no Layer of this category: make one, where the fixed order puts it.
+        let category = placing.category();
         let id = Id::new();
-        let name = format!("Layer {}", self.layer_count() + 1);
         let command = Command::CreateLayer {
             id,
             parent: None,
-            index: None,
-            name,
-            category: Default::default(),
+            index: Some(self.category_index(category)),
+            name: category.name().to_owned(),
+            category,
         };
         Err(Box::new((id, command)))
     }

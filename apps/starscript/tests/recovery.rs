@@ -286,10 +286,10 @@ fn a_map_never_saved_journals_under_the_data_dir_and_is_offered_at_startup() {
     harness.get_by_label("Recover").click();
     harness.run();
     let state = harness.state();
-    // The starter template's four Layers, then the two made above.
+    // The starter template's four Layers, with the two made above in the Land group.
     assert_eq!(
         layer_names(state.editor().map()),
-        ["Backdrop", "Land", "Assets", "Labels", "Layer 5", "Layer 6"]
+        ["Backdrop", "Land", "Layer 5", "Layer 6", "Assets", "Labels"]
     );
     assert!(state.document().path().is_none());
     assert!(state.document().has_unsaved_changes(state.editor().map()));
