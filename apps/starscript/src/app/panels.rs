@@ -37,6 +37,9 @@ impl MapMakerApp {
             })
             .collect();
         let current = self.current_slot();
+        // macOS hides the window buttons in full screen, so the strip keeps no gap for them.
+        let full_screen = ui.ctx().input(|i| i.viewport().fullscreen.unwrap_or(false));
+        let inset = if full_screen { 0.0 } else { CHROME_INSET };
         let actions = ui
             .add_enabled_ui(enabled, |ui| {
                 tab_strip::show(
@@ -44,7 +47,7 @@ impl MapMakerApp {
                     &infos,
                     current,
                     &mut self.win.strip,
-                    CHROME_INSET,
+                    inset,
                     CUSTOM_CHROME,
                 )
             })
