@@ -273,6 +273,29 @@ impl Atlas {
     }
 }
 
+/// The standard stroke width of the icon SVGs, in units of the 16 unit grid.
+const STROKE: f32 = 1.5;
+/// The finer stroke some icons use for detail such as the waves in the Lake icon.
+const FINE_STROKE: &str = "1.25";
+
+/// Rewrites the standard stroke of `svg` to `width` and its fine stroke by the same factor, so
+/// the detail keeps its weight relative to the outline.
+fn rescale_strokes(svg: &str, width: &str) -> String {
+    let fine = width.parse::<f32>().map_or_else(
+        |_| width.to_owned(),
+        |w| format!("{}", (w * 1.25 / STROKE * 100.0).round() / 100.0),
+    );
+    // The fine stroke first: the standard one may be rewritten to the fine value.
+    svg.replace(
+        &format!("stroke-width=\"{FINE_STROKE}\""),
+        &format!("stroke-width=\"{fine}\""),
+    )
+    .replace(
+        &format!("stroke-width=\"{STROKE}\""),
+        &format!("stroke-width=\"{width}\""),
+    )
+}
+
 #[allow(clippy::expect_used, reason = "embedded icons are valid SVG")]
 fn rasterise(icon: Icon, scale: Scale, grid: Grid) -> ssmap_render::raster::Raster {
     let svg = match (scale, icon.one_x_override()) {
@@ -280,9 +303,7 @@ fn rasterise(icon: Icon, scale: Scale, grid: Grid) -> ssmap_render::raster::Rast
         // 1.5 pt strokes become 1 px (3 px at 2x on the tool grid); the dot icons' heavier
         // strokes stay as drawn.
         _ => match grid.stroke_width(scale) {
-            Some(width) => icon
-                .svg()
-                .replace("stroke-width=\"1.5\"", &format!("stroke-width=\"{width}\"")),
+            Some(width) => rescale_strokes(icon.svg(), width),
             None => icon.svg().to_owned(),
         },
     };
@@ -508,6 +529,32 @@ mod tests {
     fn a_hinted_1x_svg_replaces_the_thinned_raster() {
         // The override table is empty today, so only the lookup is checked.
         assert!(Icon::ALL.iter().all(|i| i.one_x_override().is_none()));
+    }
+
+    #[test]
+    fn fine_strokes_are_thinned_with_the_standard_ones() {
+        let svg = r#"<path stroke-width="1.25"/><path stroke-width="1.5"/>"#;
+        assert_eq!(
+            rescale_strokes(svg, "1"),
+            r#"<path stroke-width="0.83"/><path stroke-width="1"/>"#
+        );
+        // When the standard stroke becomes 1.2, the fine one must not be caught by the swap.
+        assert_eq!(
+            rescale_strokes(svg, "1.2"),
+            r#"<path stroke-width="1"/><path stroke-width="1.2"/>"#
+        );
+    }
+
+    #[test]
+    fn the_lake_icons_waves_are_a_finer_stroke_than_their_outline() {
+        for icon in [Icon::Lake, Icon::LakeBrush] {
+            let svg = icon.svg();
+            assert!(
+                svg.contains(&format!("stroke-width=\"{FINE_STROKE}\"")),
+                "{}",
+                icon.name()
+            );
+        }
     }
 
     #[test]
