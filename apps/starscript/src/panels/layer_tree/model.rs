@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use ssmap_core::{Command, Id, Map, Node, Object, ObjectKind};
+use ssmap_core::{Category, Command, Id, Map, Node, Object, ObjectKind};
 
 use crate::icons::Icon;
 
@@ -49,38 +49,111 @@ pub(crate) fn rows(map: &Map, collapsed: &HashSet<Id>) -> Vec<Row> {
     out
 }
 
-/// The Move Command for dropping `dragged` on `target`, or `None` if it would do nothing
-/// or move a Layer into itself.
+/// Why a drop is refused, when the user should be told. A drop that only does nothing (onto
+/// itself, back where it was) has no reason to give.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Refusal {
+    /// The target Layer holds another category.
+    Category { dragged: Category, target: Category },
+    /// A top-level Layer stays among the Layers of its own category, in the fixed order.
+    Order(Category),
+}
+
+impl Refusal {
+    /// What the tooltip says.
+    pub(crate) fn message(self) -> String {
+        match self {
+            Refusal::Category { dragged, target } => {
+                format!("{dragged} can’t go into {target} Layers")
+            }
+            Refusal::Order(category) => format!(
+                "{category} Layers stay in their place: Labels, Assets, Land, then Backdrop"
+            ),
+        }
+    }
+}
+
+/// What a node holds or is: a Layer's category, or the category of an Object's kind.
+pub(crate) fn category_of(map: &Map, id: Id) -> Option<Category> {
+    match map.node(id)? {
+        Node::Layer(layer) => Some(layer.category),
+        Node::Object(object) => Some(object.kind.category()),
+    }
+}
+
+/// The Move Command for dropping `dragged` on `target`, or `None` if it would do nothing,
+/// move a Layer into itself or is refused (see [`refusal`]).
 pub(crate) fn move_command(map: &Map, dragged: Id, target: DropTarget) -> Option<Command> {
+    plan(map, dragged, target).ok()
+}
+
+/// Why dropping `dragged` on `target` is refused, if there is a reason to tell the user.
+pub(crate) fn refusal(map: &Map, dragged: Id, target: DropTarget) -> Option<Refusal> {
+    plan(map, dragged, target).err().flatten()
+}
+
+/// The Move for a drop, or `Err` with the reason it is refused (`None` for a drop that just
+/// does nothing).
+fn plan(map: &Map, dragged: Id, target: DropTarget) -> Result<Command, Option<Refusal>> {
     let position = |id: Id| {
         map.children(map.parent(id))
             .iter()
             .position(|&sibling| sibling == id)
     };
     let (parent, mut index) = match target {
-        DropTarget::Above(row) => (map.parent(row), position(row)? + 1),
-        DropTarget::Below(row) => (map.parent(row), position(row)?),
+        DropTarget::Above(row) => (map.parent(row), position(row).ok_or(None)? + 1),
+        DropTarget::Below(row) => (map.parent(row), position(row).ok_or(None)?),
         DropTarget::Into(layer) => (Some(layer), map.children(Some(layer)).len()),
     };
     if let Some(parent) = parent
         && (map.is_ancestor_or_self(dragged, parent) || !map.accepts_children(parent))
     {
         // Into itself, or onto a locked Group (itself or through one above it).
-        return None;
+        return Err(None);
+    }
+    // An Object or Layer goes only into a Layer of its own category.
+    let held = category_of(map, dragged).ok_or(None)?;
+    if let Some(parent) = parent
+        && let Some(target) = category_of(map, parent)
+        && target != held
+    {
+        return Err(Some(Refusal::Category {
+            dragged: held,
+            target,
+        }));
     }
     // Move counts the index after the dragged node leaves its old place.
     let old_parent = map.parent(dragged);
-    let old_index = position(dragged)?;
+    let old_index = position(dragged).ok_or(None)?;
     if old_parent == parent && is_depth_sorted_stamp(map, dragged) {
-        return None;
+        return Err(None);
     }
     if old_parent == parent && old_index < index {
         index -= 1;
     }
     if old_parent == parent && old_index == index {
-        return None;
+        return Err(None);
     }
-    Some(Command::Move {
+    // At the top level the Layers stay in category order (the lowest category first).
+    if parent.is_none() {
+        let siblings: Vec<Id> = map
+            .children(None)
+            .iter()
+            .copied()
+            .filter(|&id| id != dragged)
+            .collect();
+        let at = index.min(siblings.len());
+        let below_ok = siblings[..at]
+            .iter()
+            .all(|&id| category_of(map, id).is_some_and(|c| c >= held));
+        let above_ok = siblings[at..]
+            .iter()
+            .all(|&id| category_of(map, id).is_some_and(|c| c <= held));
+        if !(below_ok && above_ok) {
+            return Err(Some(Refusal::Order(held)));
+        }
+    }
+    Ok(Command::Move {
         id: dragged,
         parent,
         index,

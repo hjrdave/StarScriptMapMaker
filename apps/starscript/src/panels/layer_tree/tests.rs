@@ -854,3 +854,106 @@ fn a_rename_request_expands_the_row_and_opens_its_rename_box() {
     assert_eq!(tree.renaming.as_ref().map(|(id, _)| *id), Some(child));
     assert!(harness.state_mut().editor.take_rename_request().is_none());
 }
+
+/// Top level, bottom first: Backdrop, Land, Assets, Labels. Land holds a Landmass, Assets a
+/// Stamp and a second, empty Assets Layer sits above it.
+fn categorized() -> (Map, [Id; 7]) {
+    use ssmap_core::{Category, Landmass, Stamp};
+    let mut map = Map::new(Canvas::new(10, 10, Scale::new(1.0, DistanceUnit::Miles)));
+    let ids = [
+        Id::new(),
+        Id::new(),
+        Id::new(),
+        Id::new(),
+        Id::new(),
+        Id::new(),
+        Id::new(),
+    ];
+    let [backdrop, land, assets, more_assets, labels, landmass, stamp] = ids;
+    let layer = |id, category, children| Subtree {
+        id,
+        node: Node::Layer(Layer::in_category("", category)),
+        children,
+    };
+    let object = |id, kind| Subtree {
+        id,
+        node: Node::Object(Object::new(kind)),
+        children: Vec::new(),
+    };
+    let tops = [
+        layer(backdrop, Category::Backdrop, vec![]),
+        layer(
+            land,
+            Category::Land,
+            vec![object(landmass, ObjectKind::Landmass(Landmass::default()))],
+        ),
+        layer(
+            assets,
+            Category::Assets,
+            vec![object(stamp, ObjectKind::Stamp(Stamp::default()))],
+        ),
+        layer(more_assets, Category::Assets, vec![]),
+        layer(labels, Category::Labels, vec![]),
+    ];
+    for (index, subtree) in tops.into_iter().enumerate() {
+        map.apply(Op::Insert {
+            parent: None,
+            index,
+            subtree,
+        })
+        .unwrap();
+    }
+    (map, ids)
+}
+
+#[test]
+fn an_object_is_refused_by_a_layer_of_another_category_and_the_reason_names_both() {
+    use super::model::Refusal;
+    use ssmap_core::Category;
+    let (map, [_, land, assets, more_assets, _, landmass, stamp]) = categorized();
+    // A Stamp into a Land Layer: no Command, and a reason to tell the user.
+    let target = DropTarget::Into(land);
+    assert_eq!(move_command(&map, stamp, target), None);
+    let reason = refusal(&map, stamp, target).expect("a reason");
+    assert_eq!(
+        reason,
+        Refusal::Category {
+            dragged: Category::Assets,
+            target: Category::Land
+        }
+    );
+    assert_eq!(reason.message(), "Assets can’t go into Land Layers");
+    // Dropping beside a row in that Layer is refused the same way.
+    assert!(move_command(&map, stamp, DropTarget::Above(landmass)).is_none());
+    assert!(refusal(&map, stamp, DropTarget::Above(landmass)).is_some());
+    // Its own category is fine, and so is the empty one.
+    assert!(move_command(&map, stamp, DropTarget::Into(more_assets)).is_some());
+    assert_eq!(refusal(&map, stamp, DropTarget::Into(more_assets)), None);
+    // A drop that only does nothing has no reason to give.
+    assert_eq!(move_command(&map, stamp, DropTarget::Into(assets)), None);
+    assert_eq!(refusal(&map, stamp, DropTarget::Into(assets)), None);
+}
+
+#[test]
+fn a_layer_nests_only_in_a_group_of_its_category() {
+    let (map, [_, land, assets, more_assets, ..]) = categorized();
+    assert!(move_command(&map, more_assets, DropTarget::Into(assets)).is_some());
+    assert!(move_command(&map, land, DropTarget::Into(assets)).is_none());
+    assert!(refusal(&map, land, DropTarget::Into(assets)).is_some());
+}
+
+#[test]
+fn top_level_layers_stay_in_category_order() {
+    use super::model::Refusal;
+    let (map, [backdrop, land, assets, more_assets, labels, ..]) = categorized();
+    // Among its own category it can move: the second Assets Layer goes below the first.
+    assert!(move_command(&map, more_assets, DropTarget::Below(assets)).is_some());
+    // Out of its place it cannot: Land above Labels, Labels below Backdrop.
+    let above_labels = DropTarget::Above(labels);
+    assert_eq!(move_command(&map, land, above_labels), None);
+    assert!(matches!(
+        refusal(&map, land, above_labels),
+        Some(Refusal::Order(_))
+    ));
+    assert!(move_command(&map, labels, DropTarget::Below(backdrop)).is_none());
+}

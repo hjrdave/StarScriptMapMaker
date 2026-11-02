@@ -174,14 +174,19 @@ impl LayerTree {
             response.clone().on_hover_text(DEPTH_SORT_HINT);
         }
         row_context_menu(&response, editor, &paint, actions);
-        // No indicator where the drop would be refused, such as onto a locked Group.
+        // No indicator where the drop would be refused, such as onto a locked Group. Where it is
+        // refused for a reason the user can act on, the pointer says so and a tooltip says why.
         if let Some(dragged) = response.dnd_hover_payload::<Id>()
             && let Some(target) = drop_target(ui, rect, row.id, paint.layer().is_some())
-            && let Some(command) = move_command(map, *dragged, target)
         {
-            paint_drop_indicator(ui, palette, rect, target);
-            if response.dnd_release_payload::<Id>().is_some() {
-                actions.push(Action::Run(command));
+            if let Some(command) = move_command(map, *dragged, target) {
+                paint_drop_indicator(ui, palette, rect, target);
+                if response.dnd_release_payload::<Id>().is_some() {
+                    actions.push(Action::Run(command));
+                }
+            } else if let Some(reason) = refusal(map, *dragged, target) {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::NotAllowed);
+                response.clone().show_tooltip_text(reason.message());
             }
         }
     }

@@ -32,7 +32,7 @@ mod row;
 use model::kind_icon;
 pub(crate) use model::{
     DropTarget, Row, RowState, counts, footer_text, is_depth_sorted_stamp, landmass_name,
-    landmasses, move_command, node_name, rows, selected_landmass,
+    landmasses, move_command, node_name, refusal, rows, selected_landmass,
 };
 #[cfg(test)]
 mod tests;
