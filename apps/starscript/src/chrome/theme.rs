@@ -231,7 +231,7 @@ pub mod metrics {
     /// Tool button size, width then height.
     pub const TOOL_BUTTON: [f32; 2] = [40.0, 38.0];
     /// Size the tool dock paints its icons at; the icon atlas rasterises them at this size.
-    pub const TOOL_ICON: f32 = 20.0;
+    pub const TOOL_ICON: f32 = crate::icons::TOOL_GRID;
     pub const TOOL_DOCK_BOTTOM_OFFSET: f32 = 40.0;
     /// Inner margin of the tool dock's frame, per side.
     pub const TOOL_DOCK_MARGIN: f32 = 6.0;
