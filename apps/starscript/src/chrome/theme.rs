@@ -238,13 +238,13 @@ pub mod metrics {
     pub const TOOL_BUTTON: [f32; 2] = [40.0, 38.0];
     /// Size the tool dock paints its icons at; the icon atlas rasterises them at this size.
     pub const TOOL_ICON: f32 = crate::icons::TOOL_GRID;
-    pub const TOOL_DOCK_BOTTOM_OFFSET: f32 = 40.0;
+    pub const TOOL_DOCK_BOTTOM_OFFSET: f32 = 24.0;
     /// Inner margin of the tool dock's frame, per side.
     pub const TOOL_DOCK_MARGIN: f32 = 6.0;
     /// Height of the tool dock: one button row, the margins and the 1pt stroke on both sides.
     pub const TOOL_DOCK_HEIGHT: f32 = TOOL_BUTTON[1] + 2.0 * TOOL_DOCK_MARGIN + 2.0;
-    /// Distance from the Canvas's bottom edge to the shared centre line of the floating bars.
-    pub const FLOATING_BAR_CENTER_OFFSET: f32 = TOOL_DOCK_BOTTOM_OFFSET + TOOL_DOCK_HEIGHT / 2.0;
+    /// Height of the zoom bar: a compact pill, shorter than the tool dock it shares a bottom line with.
+    pub const ZOOM_BAR_HEIGHT: f32 = 32.0;
     pub const MIN_WINDOW: [f32; 2] = [1024.0, 640.0];
 }
 

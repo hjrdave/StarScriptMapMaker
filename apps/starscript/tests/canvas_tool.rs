@@ -35,6 +35,10 @@ fn app() -> (Harness<'static, MapMakerApp>, Id) {
     editor.select(Vec::new());
     editor.active_tool = ToolId::Canvas;
     harness.run();
+    // A fitted Canvas leaves its bottom-right handle under the zoom bar; zoom out one step so
+    // the handle is clear of it.
+    harness.get_by_label("−").click();
+    harness.run();
     (harness, id)
 }
 
