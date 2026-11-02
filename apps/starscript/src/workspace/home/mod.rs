@@ -11,6 +11,7 @@
 
 mod cards;
 mod entries;
+mod start;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -46,6 +47,10 @@ pub(crate) enum Action {
     /// Ask to move the file to the Trash.
     Delete(PathBuf),
     Credits,
+    /// Leave the start page for the Home tab.
+    ShowHome,
+    /// Leave the start page for the Asset packs page.
+    ShowPacks,
     /// The folder dialog for a pack to add.
     AddPack,
     /// Install this pack folder.
@@ -85,6 +90,11 @@ pub(crate) struct Home {
     pub view: View,
     pub query: String,
     pub sort: Sort,
+    /// The start page's search text and whether its results panel is open.
+    start_query: String,
+    start_search_open: bool,
+    /// Where the results panel was last drawn.
+    start_panel: Option<egui::Rect>,
     pack_page: PackPage,
     infos: HashMap<PathBuf, Info>,
     thumbnails: HashMap<PathBuf, egui::TextureHandle>,
@@ -258,83 +268,6 @@ impl Home {
         actions
     }
 
-    /// Draws a new tab's start page: the New Map card, the latest of the known Maps and an
-    /// Open… button. A lighter Home, without the rail, search or sorting.
-    pub(crate) fn start_page(&mut self, ui: &mut egui::Ui, data: &Data<'_>) -> Vec<Action> {
-        let mut out = Vec::new();
-        let p = theme::palette(ui.ctx());
-        let now = SystemTime::now();
-        egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(p.bg_window))
-            .show(ui, |ui| {
-                egui::Frame::NONE
-                    .inner_margin(egui::Margin {
-                        left: 32,
-                        right: 32,
-                        top: 24,
-                        bottom: 0,
-                    })
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            let title = if data.known.is_empty() {
-                                "New Tab"
-                            } else {
-                                "Recent maps"
-                            };
-                            ui.label(
-                                egui::RichText::new(title)
-                                    .size(20.0)
-                                    .color(p.text_primary)
-                                    .strong(),
-                            );
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if ui.button("Open…").clicked() {
-                                        out.push(Action::OpenDialog);
-                                    }
-                                },
-                            );
-                        });
-                    });
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        egui::Frame::NONE
-                            .inner_margin(egui::Margin::symmetric(24, 16))
-                            .show(ui, |ui| {
-                                let gap = 8.0;
-                                let width = ((ui.available_width() - gap * (COLUMNS as f32 - 1.0))
-                                    / COLUMNS as f32)
-                                    .floor()
-                                    .max(120.0);
-                                ui.spacing_mut().item_spacing = vec2(gap, gap);
-                                let mut cards: Vec<Option<&Entry>> = vec![None];
-                                cards.extend(data.known.iter().take(START_RECENT).map(Some));
-                                for row in cards.chunks(COLUMNS) {
-                                    ui.horizontal_top(|ui| {
-                                        for card in row {
-                                            match card {
-                                                None => new_map_card(ui, width, &mut out),
-                                                Some(entry) => {
-                                                    let texture = entry
-                                                        .path
-                                                        .as_deref()
-                                                        .and_then(|path| self.thumbnails.get(path));
-                                                    map_card(
-                                                        ui, width, entry, texture, now, &mut out,
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    });
-                                }
-                            });
-                    });
-            });
-        out
-    }
-
     fn rail(&mut self, ui: &mut egui::Ui, data: &Data<'_>, counts: Counts, out: &mut Vec<Action>) {
         ui.horizontal(|ui| {
             crate::logo::show(ui, 32.0);
@@ -488,5 +421,3 @@ impl Home {
 
 const RAIL_WIDTH: f32 = 232.0;
 const COLUMNS: usize = 4;
-/// How many recent Maps a new tab's start page lists after the New Map card: two rows.
-const START_RECENT: usize = 7;

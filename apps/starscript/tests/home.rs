@@ -116,8 +116,10 @@ fn a_new_tab_shows_a_start_page_that_is_not_a_map() {
     assert_eq!(harness.state().tabs().len(), 1);
     assert!(harness.state().tabs()[0].is_blank());
     assert!(!harness.state().home_active());
-    harness.get_by_label("New Map: blank or from template");
+    harness.get_by_label("New Map");
     harness.get_by_label("Open…");
+    harness.get_by_label("Asset packs");
+    harness.get_by_label("Recents");
     // Neither the rail nor the Map's panels.
     assert!(harness.query_by_label("Credits & licences").is_none());
     assert!(harness.query_by_label("New Layer").is_none());
@@ -125,6 +127,77 @@ fn a_new_tab_shows_a_start_page_that_is_not_a_map() {
     harness.state_mut().close_tab(0);
     harness.run();
     assert!(harness.state().tabs().is_empty());
+}
+
+#[test]
+fn the_start_pages_search_lists_only_matching_maps_and_enter_opens_the_top_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let eldoria = saved_map(dir.path(), "Eldoria.ssmap");
+    let coast = saved_map(dir.path(), "Coast.ssmap");
+    let mut harness = app();
+    harness.state_mut().open_path(&eldoria);
+    harness.state_mut().open_path(&coast);
+    harness.state_mut().close_tab(1);
+    harness.state_mut().close_tab(0);
+    harness.state_mut().new_blank_tab();
+    settle(&mut harness);
+
+    // Focusing the field opens the results over the Recents: each Map appears twice.
+    harness
+        .get_by_role(egui::accesskit::Role::TextInput)
+        .click();
+    settle(&mut harness);
+    assert_eq!(harness.get_all_by_label("Open Eldoria").count(), 2);
+    assert_eq!(harness.get_all_by_label("Open Coast").count(), 2);
+
+    // A query leaves only the matching Map in the results.
+    harness
+        .get_by_role(egui::accesskit::Role::TextInput)
+        .type_text("eld");
+    settle(&mut harness);
+    assert_eq!(harness.get_all_by_label("Open Eldoria").count(), 2);
+    assert_eq!(harness.get_all_by_label("Open Coast").count(), 1);
+
+    // Enter opens the top result in the blank tab.
+    harness.key_press(egui::Key::Enter);
+    settle(&mut harness);
+    assert_eq!(harness.state().tabs().len(), 1);
+    assert_eq!(harness.state().tabs()[0].document().name(), "Eldoria.ssmap");
+}
+
+#[test]
+fn escape_closes_the_start_pages_search_results() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = saved_map(dir.path(), "Eldoria.ssmap");
+    let mut harness = app();
+    harness.state_mut().open_path(&path);
+    harness.state_mut().close_tab(0);
+    harness.state_mut().new_blank_tab();
+    settle(&mut harness);
+    harness
+        .get_by_role(egui::accesskit::Role::TextInput)
+        .click();
+    settle(&mut harness);
+    assert_eq!(harness.get_all_by_label("Open Eldoria").count(), 2);
+    harness.key_press(egui::Key::Escape);
+    settle(&mut harness);
+    assert_eq!(harness.get_all_by_label("Open Eldoria").count(), 1);
+}
+
+#[test]
+fn the_start_page_links_to_home_and_the_asset_packs() {
+    let mut harness = app();
+    harness.state_mut().new_blank_tab();
+    harness.run();
+    harness.get_by_label("Browse all maps").click();
+    harness.run();
+    assert!(harness.state().home_active());
+
+    harness.state_mut().new_blank_tab();
+    harness.run();
+    harness.get_by_label("Asset packs").click();
+    harness.run();
+    assert!(harness.state().home_active());
 }
 
 #[test]
@@ -172,9 +245,7 @@ fn a_map_created_from_the_start_page_opens_in_that_tab() {
     let mut harness = app();
     harness.state_mut().new_blank_tab();
     harness.run();
-    harness
-        .get_by_label("New Map: blank or from template")
-        .click();
+    harness.get_by_label("New Map").click();
     harness.run();
     harness.get_by_label("Create").click();
     harness.run();
