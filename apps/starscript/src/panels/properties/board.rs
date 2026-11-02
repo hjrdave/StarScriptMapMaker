@@ -47,7 +47,7 @@ impl PropertiesPanel {
             action: None,
         };
         prop_widgets::section(ui, header("board-size", "Size"), |ui| {
-            self.canvas_fields(ui, editor, id, &canvas);
+            self.canvas_fields(ui, editor, id, &canvas, None);
         });
         prop_widgets::section(ui, header("board-position", "Position"), |ui| {
             let spec = |name, handle| {

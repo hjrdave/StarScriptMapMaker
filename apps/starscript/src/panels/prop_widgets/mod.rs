@@ -433,6 +433,148 @@ pub fn section(
 }
 
 // ---------------------------------------------------------------------------------------------
+// Tabs, divider sections and the icon switch
+
+/// A bar of tabs under a panel header. The selected tab has a gold underline. Returns whether
+/// the selection changed. Each tab is a button named for its label.
+pub fn tab_bar(ui: &mut egui::Ui, tabs: &[&str], selected: &mut usize) -> bool {
+    let palette = theme::palette(ui.ctx());
+    let mut changed = false;
+    let width = ui.available_width();
+    let (bar, _) = ui.allocate_exact_size(Vec2::new(width, 30.0), Sense::hover());
+    let each = width / tabs.len().max(1) as f32;
+    for (index, &name) in tabs.iter().enumerate() {
+        let rect = egui::Rect::from_min_size(
+            egui::pos2(bar.left() + each * index as f32, bar.top()),
+            Vec2::new(each, bar.height()),
+        );
+        let on = *selected == index;
+        let response = ui.interact(rect, ui.id().with(("tab", name)), Sense::click());
+        response.widget_info(|| {
+            egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), on, name)
+        });
+        let colour = if on {
+            palette.text_primary
+        } else if response.hovered() {
+            palette.text_secondary
+        } else {
+            palette.text_tertiary
+        };
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            name,
+            egui::FontId::proportional(theme::HEADING),
+            colour,
+        );
+        if on {
+            ui.painter().hline(
+                rect.x_range(),
+                rect.bottom() - 1.0,
+                Stroke::new(2.0, palette.gold),
+            );
+        }
+        if response.clicked() && !on {
+            *selected = index;
+            changed = true;
+        }
+    }
+    ui.painter().hline(
+        bar.x_range(),
+        bar.bottom(),
+        Stroke::new(1.0, palette.border_subtle),
+    );
+    changed
+}
+
+/// A section that is always open: its title, whatever `trailing` puts at the right edge, and a
+/// divider line, then `body`. The panels of a tabbed page use these in place of [`section`].
+pub fn divider_section(
+    ui: &mut egui::Ui,
+    title: &str,
+    trailing: impl FnOnce(&mut egui::Ui),
+    body: impl FnOnce(&mut egui::Ui),
+) {
+    let palette = theme::palette(ui.ctx());
+    ui.add_space(theme::SPACING[2]);
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(title)
+                .size(theme::HEADING)
+                .strong()
+                .color(palette.text_primary),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), trailing);
+    });
+    let rect = ui.available_rect_before_wrap();
+    ui.painter().hline(
+        rect.x_range(),
+        rect.top(),
+        Stroke::new(1.0, palette.border_subtle),
+    );
+    ui.add_space(theme::SPACING[2]);
+    body(ui);
+}
+
+/// A switch of icon-only options (which shore to edit): 32 × 28 buttons, the selected one in
+/// gold. Each has `name` as its tooltip and accessible name. Returns whether the selection
+/// changed.
+pub fn icon_switch(ui: &mut egui::Ui, options: &[(Icon, &str)], selected: &mut usize) -> bool {
+    let palette = theme::palette(ui.ctx());
+    let mut changed = false;
+    // Right to left: add the last option first so they read in order.
+    for (index, &(icon, name)) in options.iter().enumerate().rev() {
+        let (rect, response) = ui.allocate_exact_size(Vec2::new(32.0, 28.0), Sense::click());
+        let on = *selected == index;
+        response.widget_info(|| {
+            egui::WidgetInfo::selected(egui::WidgetType::RadioButton, ui.is_enabled(), on, name)
+        });
+        let (fill, glyph) = if on {
+            (palette.gold_subtle, palette.gold_text)
+        } else if response.hovered() {
+            (palette.hover_fill, palette.text_primary)
+        } else {
+            (Color32::TRANSPARENT, palette.text_secondary)
+        };
+        ui.painter().rect_filled(rect, theme::RADIUS_FIELD, fill);
+        icons::paint(ui, rect, icon, 24.0, glyph);
+        if response.on_hover_text(name).clicked() && !on {
+            *selected = index;
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// The chain between two linked fields: a broken chain when off and a gold linked chain when on.
+/// Flips `linked` and returns whether it was clicked.
+pub fn chain_button(ui: &mut egui::Ui, linked: &mut bool) -> bool {
+    let palette = theme::palette(ui.ctx());
+    let label = if *linked {
+        "Unlink width and height"
+    } else {
+        "Keep aspect ratio"
+    };
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), *linked, label)
+    });
+    let (icon, tint) = if *linked {
+        (Icon::Link, palette.gold)
+    } else if response.hovered() {
+        (Icon::Unlink, palette.text_primary)
+    } else {
+        (Icon::Unlink, palette.text_tertiary)
+    };
+    icons::paint(ui, rect, icon, icons::GRID, tint);
+    let clicked = response.on_hover_text(label).clicked();
+    if clicked {
+        *linked = !*linked;
+    }
+    clicked
+}
+
+// ---------------------------------------------------------------------------------------------
 // Segmented control and checkbox row
 
 /// A row of mutually exclusive options (Paint / Erase, Land / Water / Any). Returns whether

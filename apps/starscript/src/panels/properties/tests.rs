@@ -685,7 +685,8 @@ fn look_of(name: &str) -> ssmap_core::Background {
 
 #[test]
 fn map_settings_name_the_template_the_map_was_made_from() {
-    let harness = map_harness(ocean_fixture());
+    let mut harness = map_harness(ocean_fixture());
+    click(&mut harness, "Style");
     harness.get_by_label("Template");
     harness.get_by_label("Ocean");
 }
@@ -695,6 +696,7 @@ fn taking_another_templates_look_is_one_undo_step_and_keeps_the_template() {
     let fixture = ocean_fixture();
     let original = fixture.editor.map().canvas().background.clone();
     let mut harness = map_harness(fixture);
+    click(&mut harness, "Style");
     click(&mut harness, "Parchment look");
     let state = harness.state();
     assert_eq!(state.editor.map().canvas().background, look_of("Parchment"));
@@ -716,6 +718,7 @@ fn changing_one_background_field_leaves_the_rest_and_is_one_undo_step() {
     let fixture = ocean_fixture();
     let original = fixture.editor.map().canvas().background.clone();
     let mut harness = map_harness(fixture);
+    click(&mut harness, "Style");
     type_into(&mut harness, "1.0", "2.5");
     let state = harness.state();
     let background = &state.editor.map().canvas().background;
@@ -745,6 +748,7 @@ fn changing_one_background_field_leaves_the_rest_and_is_one_undo_step() {
 #[test]
 fn a_changed_background_and_the_template_name_survive_save_and_reopen() {
     let mut harness = map_harness(ocean_fixture());
+    click(&mut harness, "Style");
     click(&mut harness, "Winter look");
     let shown = format!("{:.1}", look_of("Winter").texture.scale);
     type_into(&mut harness, &shown, "2.5");
@@ -1011,4 +1015,90 @@ fn the_header_pin_button_pins_and_unpins_and_a_lock_disables_it() {
     harness.get_by_label("Pin to Canvas").click();
     harness.run();
     assert!(!pinned(&harness, stamp));
+}
+
+fn board_size(harness: &Harness<'static, Fixture>) -> (u32, u32) {
+    let canvas = harness.state().editor.map().canvas();
+    (canvas.width, canvas.height)
+}
+
+#[test]
+fn the_map_panel_has_three_tabs_and_starts_on_canvas() {
+    let mut harness = map_harness(ocean_fixture());
+    // "Canvas" is also the name of the first section, so look for the tab buttons.
+    for tab in ["Canvas", "Style", "Shores"] {
+        harness.get_by_role_and_label(egui::accesskit::Role::Button, tab);
+    }
+    harness.get_by_label("Canvas width");
+    assert!(harness.query_by_label("Parchment look").is_none());
+    assert!(harness.query_by_label("Landmass shore").is_none());
+
+    click(&mut harness, "Style");
+    harness.get_by_label("Parchment look");
+    assert!(harness.query_by_label("Canvas width").is_none());
+
+    click(&mut harness, "Shores");
+    harness.get_by_label("Landmass shore");
+    assert!(harness.query_by_label("Parchment look").is_none());
+}
+
+#[test]
+fn the_shores_tab_edits_one_shore_and_the_switch_picks_which() {
+    let mut harness = map_harness(ocean_fixture());
+    click(&mut harness, "Shores");
+    for label in ["Outline", "Ripples", "Inner shade", "Landmass", "Lake"] {
+        harness.get_by_label(label);
+    }
+    let landmass = harness
+        .state()
+        .editor
+        .map()
+        .defaults()
+        .shore_for(ssmap_core::ShoreKind::Landmass)
+        .clone();
+    click(&mut harness, "Lake");
+    harness.get_by_label("Lake shore");
+    assert!(harness.query_by_label("Landmass shore").is_none());
+    // Switching only changes which shore is shown.
+    assert_eq!(
+        harness
+            .state()
+            .editor
+            .map()
+            .defaults()
+            .shore_for(ssmap_core::ShoreKind::Landmass),
+        &landmass
+    );
+}
+
+#[test]
+fn the_chain_is_off_at_first_and_keeps_the_aspect_ratio_once_on() {
+    let (mut fixture, _, _) = fixture();
+    fixture
+        .editor
+        .run(Command::ResizeCanvas {
+            origin: [0.0, 0.0],
+            width: 200,
+            height: 100,
+        })
+        .unwrap();
+    let mut harness = map_harness(fixture);
+    assert!(harness.query_by_label("Unlink width and height").is_none());
+
+    // Off: the two fields are independent.
+    type_into(&mut harness, "200", "300");
+    assert_eq!(board_size(&harness), (300, 100));
+
+    // On: the ratio is the one at this moment (3 : 1), so a new width sets the height.
+    click(&mut harness, "Keep aspect ratio");
+    harness.get_by_label("Unlink width and height");
+    type_into(&mut harness, "300", "600");
+    assert_eq!(board_size(&harness), (600, 200));
+    assert_eq!(harness.state().editor.undo_label(), Some("Resize Canvas"));
+
+    // The height changes the width the same way, and one Undo step puts both back.
+    type_into(&mut harness, "200", "100");
+    assert_eq!(board_size(&harness), (300, 100));
+    harness.state_mut().editor.undo();
+    assert_eq!(board_size(&harness), (600, 200));
 }
