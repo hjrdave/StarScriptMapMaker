@@ -7,7 +7,7 @@ use ssmap_fonts::LABEL_FAMILIES;
 use super::PropertiesPanel;
 use crate::editor::Editor;
 use crate::icons::{self, Icon};
-use crate::prop_widgets::{self, Edit, Provenance, ScrubSpec, SectionHeader};
+use crate::prop_widgets::{self, Edit, Handle, Provenance, ScrubSpec};
 
 /// What a Label field needs to write its edit back.
 struct LabelEdit<'a> {
@@ -46,17 +46,57 @@ impl PropertiesPanel {
         .into_iter()
         .filter(|&overridden| overridden)
         .count();
-        let badge = format!("{overrides} overridden");
-        let header = SectionHeader {
-            kind: "label",
-            title: "Label",
-            badge: (overrides > 0).then_some(badge.as_str()),
-            action: (overrides > 0).then_some((Icon::Reset, "Reset overrides")),
-        };
         let mut restyled = None;
-        let reset = prop_widgets::section(ui, header, |ui| {
-            self.label_fields(ui, editor, id, label, overrides, &mut restyled);
-        });
+        let mut reset = false;
+        prop_widgets::divider_section(
+            ui,
+            "Text",
+            |_| {},
+            |ui| self.label_text_field(ui, editor, id, label),
+        );
+        let styles = editor.map().label_styles().clone();
+        // Edits are made on the resolved settings; only what changed becomes an override.
+        let mut next = label.resolve(&styles);
+        let ctx = LabelEdit {
+            id,
+            label,
+            styles: &styles,
+        };
+        prop_widgets::divider_section(
+            ui,
+            "Typography",
+            |ui| {
+                if overrides > 0 {
+                    reset = icons::icon_button(ui, Icon::Reset, "Reset overrides").clicked();
+                }
+            },
+            |ui| {
+                if self.label_style_row(ui, label, &styles, &mut restyled) {
+                    return;
+                }
+                self.label_typography(ui, editor, &ctx, &mut next);
+            },
+        );
+        if restyled.is_none() && !reset {
+            prop_widgets::divider_section(
+                ui,
+                "Fill",
+                |_| {},
+                |ui| self.label_fill(ui, editor, &ctx, &mut next),
+            );
+            prop_widgets::divider_section(
+                ui,
+                "Halo",
+                |_| {},
+                |ui| self.label_halo(ui, editor, &ctx, &mut next),
+            );
+            prop_widgets::divider_section(
+                ui,
+                "Appearance",
+                |_| {},
+                |ui| self.label_appearance(ui, editor, &ctx, &mut next),
+            );
+        }
         if reset {
             restyled = Some(Label {
                 font: None,
@@ -79,39 +119,8 @@ impl PropertiesPanel {
         }
     }
 
-    fn label_fields(
-        &mut self,
-        ui: &mut egui::Ui,
-        editor: &mut Editor,
-        id: Id,
-        label: &Label,
-        overrides: usize,
-        restyled: &mut Option<Label>,
-    ) {
-        let _ = overrides;
-        self.label_text_field(ui, editor, id, label);
-        let styles = editor.map().label_styles().clone();
-        if self.label_style_row(ui, label, &styles, restyled) {
-            return;
-        }
-
-        // Edits are made on the resolved settings; only what changed becomes an override.
-        let mut next = label.resolve(&styles);
-        let ctx = LabelEdit {
-            id,
-            label,
-            styles: &styles,
-        };
-
-        self.label_font_fields(ui, editor, &ctx, &mut next);
-        self.label_format_row(ui, editor, &ctx, &mut next);
-        self.label_metric_fields(ui, editor, &ctx, &mut next);
-        self.label_look_fields(ui, editor, &ctx, &mut next);
-    }
-
     /// The Label's text box. Edits to it are one Undo step when it loses focus.
     fn label_text_field(&mut self, ui: &mut egui::Ui, editor: &mut Editor, id: Id, label: &Label) {
-        ui.label("Text");
         if self
             .text_edit
             .as_ref()
@@ -183,8 +192,23 @@ impl PropertiesPanel {
         restyled.is_some()
     }
 
-    /// The font family, weight and italic.
-    fn label_font_fields(
+    /// The font family, weight and size, line height and letter spacing, arch and format, and align.
+    fn label_typography(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        ctx: &LabelEdit<'_>,
+        next: &mut ResolvedLabel,
+    ) {
+        self.label_font_family(ui, editor, ctx, next);
+        self.label_weight_size(ui, editor, ctx, next);
+        self.label_spacing(ui, editor, ctx, next);
+        self.label_arch_format(ui, editor, ctx, next);
+        self.label_align(ui, editor, ctx, next);
+    }
+
+    /// The font family, full width.
+    fn label_font_family(
         &mut self,
         ui: &mut egui::Ui,
         editor: &mut Editor,
@@ -194,61 +218,36 @@ impl PropertiesPanel {
         let label = ctx.label;
         let font = provenance(label.font.is_some());
         let mut edit = Edit::default();
-        let reset = prop_widgets::field_row(ui, "Font", font, |ui| {
-            egui::ComboBox::from_id_salt("font")
-                .selected_text(&*next.font.family)
-                .show_ui(ui, |ui| {
-                    for family in LABEL_FAMILIES {
-                        if ui
-                            .selectable_value(&mut next.font.family, (*family).to_owned(), *family)
-                            .clicked()
-                        {
-                            edit = Edit::instant();
+        let reset = prop_widgets::named_above(ui, "Font", font, |ui| {
+            ui.horizontal(|ui| {
+                egui::ComboBox::from_id_salt("font")
+                    .width(ui.available_width() - 28.0)
+                    .selected_text(&*next.font.family)
+                    .show_ui(ui, |ui| {
+                        for family in LABEL_FAMILIES {
+                            if ui
+                                .selectable_value(
+                                    &mut next.font.family,
+                                    (*family).to_owned(),
+                                    *family,
+                                )
+                                .clicked()
+                            {
+                                edit = Edit::instant();
+                            }
                         }
-                    }
-                });
+                    });
+                font == Provenance::Overridden
+                    && icons::icon_button(ui, Icon::Reset, "Reset Font").clicked()
+            })
+            .inner
         });
         edit.reset = reset;
         self.label_apply(editor, ctx, edit, &*next, |l| l.font = None);
-
-        let mut weight = f64::from(next.font.weight);
-        let edit = prop_widgets::scrub_field(
-            ui,
-            &mut weight,
-            &ScrubSpec::new("Weight")
-                .range(100.0, 900.0)
-                .step(100.0)
-                .provenance(font),
-        );
-        if edit.changed {
-            next.font.weight = weight as u16;
-        }
-        self.label_apply_as("Change Label Weight", editor, ctx, edit, &*next, |l| {
-            l.font = None
-        });
     }
 
-    /// Italic and All caps as chips on one row. They carry no reset of their own: the
-    /// section's Reset overrides clears them with the rest.
-    fn label_format_row(
-        &mut self,
-        ui: &mut egui::Ui,
-        editor: &mut Editor,
-        ctx: &LabelEdit<'_>,
-        next: &mut ResolvedLabel,
-    ) {
-        let mut changed = false;
-        prop_widgets::field_row(ui, "Format", Provenance::Plain, |ui| {
-            changed |= prop_widgets::chip_toggle(ui, "Italic", &mut next.font.italic);
-            changed |= prop_widgets::chip_toggle(ui, "All caps", &mut next.all_caps);
-        });
-        if changed {
-            self.label_apply(editor, ctx, Edit::instant(), &*next, |_| {});
-        }
-    }
-
-    /// The size, letter spacing, line height and arch.
-    fn label_metric_fields(
+    /// Weight and size on one row, each name above its field and a handle inside it.
+    fn label_weight_size(
         &mut self,
         ui: &mut egui::Ui,
         editor: &mut Editor,
@@ -256,73 +255,120 @@ impl PropertiesPanel {
         next: &mut ResolvedLabel,
     ) {
         let label = ctx.label;
-        let edit = prop_widgets::scrub_field(
+        let font = provenance(label.font.is_some());
+        let mut weight = f64::from(next.font.weight);
+        let (weight_edit, size_edit) = prop_widgets::pair(
             ui,
-            &mut next.size,
-            &ScrubSpec::new("Size")
-                .unit(" u")
-                .range(0.1, 100_000.0)
-                .step(0.5)
-                .decimals(1)
-                .provenance(provenance(label.size.is_some())),
+            |ui| {
+                prop_widgets::named_above(ui, "Weight", font, |ui| {
+                    prop_widgets::scrub_field(
+                        ui,
+                        &mut weight,
+                        &ScrubSpec::new("Weight")
+                            .handle(Handle::Text("W"))
+                            .range(100.0, 900.0)
+                            .step(100.0)
+                            .provenance(font),
+                    )
+                })
+            },
+            |ui| {
+                let size = provenance(label.size.is_some());
+                prop_widgets::named_above(ui, "Size", size, |ui| {
+                    prop_widgets::scrub_field(
+                        ui,
+                        &mut next.size,
+                        &ScrubSpec::new("Size")
+                            .handle(Handle::Text("S"))
+                            .unit(" u")
+                            .range(0.1, 100_000.0)
+                            .step(0.5)
+                            .decimals(1)
+                            .provenance(size),
+                    )
+                })
+            },
         );
-        self.label_apply_as("Change Label Size", editor, ctx, edit, &*next, |l| {
+        if weight_edit.changed {
+            next.font.weight = weight as u16;
+        }
+        self.label_apply_as(
+            "Change Label Weight",
+            editor,
+            ctx,
+            weight_edit,
+            &*next,
+            |l| l.font = None,
+        );
+        self.label_apply_as("Change Label Size", editor, ctx, size_edit, &*next, |l| {
             l.size = None
         });
+    }
 
-        let edit = prop_widgets::scrub_field(
+    /// Line height and letter spacing on one row.
+    fn label_spacing(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        ctx: &LabelEdit<'_>,
+        next: &mut ResolvedLabel,
+    ) {
+        let label = ctx.label;
+        let (height_edit, spacing_edit) = prop_widgets::pair(
             ui,
-            &mut next.letter_spacing,
-            &ScrubSpec::new("Letter spacing")
-                .unit(" em")
-                .range(-1.0, 5.0)
-                .step(0.005)
-                .decimals(3)
-                .provenance(provenance(label.letter_spacing.is_some())),
+            |ui| {
+                let line = provenance(label.line_height.is_some());
+                prop_widgets::named_above(ui, "Line height", line, |ui| {
+                    prop_widgets::scrub_field(
+                        ui,
+                        &mut next.line_height,
+                        &ScrubSpec::new("Line height")
+                            .handle(Handle::Text("↕"))
+                            .unit("×")
+                            .range(0.1, 10.0)
+                            .step(0.01)
+                            .decimals(2)
+                            .provenance(line),
+                    )
+                })
+            },
+            |ui| {
+                let spacing = provenance(label.letter_spacing.is_some());
+                prop_widgets::named_above(ui, "Letter spacing", spacing, |ui| {
+                    prop_widgets::scrub_field(
+                        ui,
+                        &mut next.letter_spacing,
+                        &ScrubSpec::new("Letter spacing")
+                            .handle(Handle::Text("↔"))
+                            .unit(" em")
+                            .range(-1.0, 5.0)
+                            .step(0.005)
+                            .decimals(3)
+                            .provenance(spacing),
+                    )
+                })
+            },
+        );
+        self.label_apply_as(
+            "Change Label Line Height",
+            editor,
+            ctx,
+            height_edit,
+            &*next,
+            |l| l.line_height = None,
         );
         self.label_apply_as(
             "Change Label Letter Spacing",
             editor,
             ctx,
-            edit,
+            spacing_edit,
             &*next,
             |l| l.letter_spacing = None,
         );
-
-        let edit = prop_widgets::scrub_field(
-            ui,
-            &mut next.line_height,
-            &ScrubSpec::new("Line height")
-                .unit("×")
-                .range(0.1, 10.0)
-                .step(0.01)
-                .decimals(2)
-                .provenance(provenance(label.line_height.is_some())),
-        );
-        self.label_apply_as("Change Label Line Height", editor, ctx, edit, &*next, |l| {
-            l.line_height = None
-        });
-
-        let mut percent = next.arch * 100.0;
-        let edit = prop_widgets::scrub_field(
-            ui,
-            &mut percent,
-            &ScrubSpec::new("Arch")
-                .unit("%")
-                .range(-100.0, 100.0)
-                .decimals(0)
-                .provenance(provenance(label.arch.is_some())),
-        );
-        if edit.changed {
-            next.arch = (percent / 100.0).clamp(-1.0, 1.0);
-        }
-        self.label_apply_as("Change Label Arch", editor, ctx, edit, &*next, |l| {
-            l.arch = None
-        });
     }
 
-    /// The case, alignment, rotation, colours, opacity and halo.
-    fn label_look_fields(
+    /// Arch, and Format as two icon toggles.
+    fn label_arch_format(
         &mut self,
         ui: &mut egui::Ui,
         editor: &mut Editor,
@@ -330,79 +376,201 @@ impl PropertiesPanel {
         next: &mut ResolvedLabel,
     ) {
         let label = ctx.label;
-        let mut align = match next.align {
-            Align::Left => 0,
-            Align::Centre => 1,
-            Align::Right => 2,
-        };
-        let mut aligned = false;
-        prop_widgets::field_row(ui, "Align", Provenance::Plain, |ui| {
-            aligned = prop_widgets::segmented(ui, &["Left", "Centre", "Right"], &mut align);
+        let mut percent = next.arch * 100.0;
+        let mut toggled = false;
+        let arch_edit = prop_widgets::pair(
+            ui,
+            |ui| {
+                let arch = provenance(label.arch.is_some());
+                prop_widgets::named_above(ui, "Arch", arch, |ui| {
+                    prop_widgets::scrub_field(
+                        ui,
+                        &mut percent,
+                        &ScrubSpec::new("Arch")
+                            .handle(Handle::Icon(Icon::Shape))
+                            .unit("%")
+                            .range(-100.0, 100.0)
+                            .decimals(0)
+                            .provenance(arch),
+                    )
+                })
+            },
+            |ui| {
+                prop_widgets::named_above(ui, "Format", Provenance::Plain, |ui| {
+                    ui.horizontal(|ui| {
+                        toggled |=
+                            prop_widgets::icon_toggle(ui, Icon::Italic, "Italic", next.font.italic)
+                                .then(|| next.font.italic = !next.font.italic)
+                                .is_some();
+                        toggled |=
+                            prop_widgets::icon_toggle(ui, Icon::AllCaps, "All caps", next.all_caps)
+                                .then(|| next.all_caps = !next.all_caps)
+                                .is_some();
+                    });
+                });
+            },
+        )
+        .0;
+        if arch_edit.changed {
+            next.arch = (percent / 100.0).clamp(-1.0, 1.0);
+        }
+        self.label_apply_as("Change Label Arch", editor, ctx, arch_edit, &*next, |l| {
+            l.arch = None
         });
-        if aligned {
-            next.align = [Align::Left, Align::Centre, Align::Right][align];
+        if toggled {
             self.label_apply(editor, ctx, Edit::instant(), &*next, |_| {});
         }
+    }
 
-        let edit = prop_widgets::scrub_field(
-            ui,
-            &mut next.rotation,
-            &ScrubSpec::new("Rotation").unit("°").step(0.5).decimals(1),
-        );
-        self.label_apply(editor, ctx, edit, &*next, |_| {});
+    /// Align: three icon buttons.
+    fn label_align(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        ctx: &LabelEdit<'_>,
+        next: &mut ResolvedLabel,
+    ) {
+        let mut aligned = None;
+        prop_widgets::named_above(ui, "Align", Provenance::Plain, |ui| {
+            ui.horizontal(|ui| {
+                for (align, icon, name) in [
+                    (Align::Left, Icon::AlignLeft, "Align left"),
+                    (Align::Centre, Icon::AlignCentre, "Align centre"),
+                    (Align::Right, Icon::AlignRight, "Align right"),
+                ] {
+                    if prop_widgets::icon_toggle(ui, icon, name, next.align == align) {
+                        aligned = Some(align);
+                    }
+                }
+            });
+        });
+        if let Some(align) = aligned {
+            next.align = align;
+            self.label_apply(editor, ctx, Edit::instant(), &*next, |_| {});
+        }
+    }
 
+    /// The Label's colour.
+    fn label_fill(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        ctx: &LabelEdit<'_>,
+        next: &mut ResolvedLabel,
+    ) {
         let mut colour = Some(next.fill);
         let response = prop_widgets::swatch(
             ui,
             "Fill",
             &mut colour,
             false,
-            provenance(label.fill.is_some()),
+            provenance(ctx.label.fill.is_some()),
         );
         if response.edit.changed {
             next.fill = colour.unwrap_or(next.fill);
         }
         self.label_apply(editor, ctx, response.edit, &*next, |l| l.fill = None);
+    }
 
-        let mut percent = f64::from(next.opacity) * 100.0;
-        let edit = prop_widgets::scrub_field(
+    /// The halo's size and, once it has a size, its colour.
+    fn label_halo(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        ctx: &LabelEdit<'_>,
+        next: &mut ResolvedLabel,
+    ) {
+        let halo = provenance(ctx.label.halo.is_some());
+        let has_halo = next.halo.width > 0.0;
+        let mut colour = Some(next.halo.color);
+        let (size_edit, colour_edit) = prop_widgets::pair(
             ui,
-            &mut percent,
-            &ScrubSpec::new("Opacity")
-                .unit("%")
-                .range(0.0, 100.0)
-                .provenance(provenance(label.opacity.is_some())),
+            |ui| {
+                prop_widgets::named_above(ui, "Size", halo, |ui| {
+                    prop_widgets::scrub_field(
+                        ui,
+                        &mut next.halo.width,
+                        &ScrubSpec::new("Halo")
+                            .handle(Handle::Text("S"))
+                            .unit(" u")
+                            .range(0.0, 100_000.0)
+                            .step(0.1)
+                            .decimals(1)
+                            .provenance(halo),
+                    )
+                })
+            },
+            |ui| {
+                // The halo's colour matters only once it has a width.
+                has_halo.then(|| {
+                    prop_widgets::named_above(ui, "Colour", halo, |ui| {
+                        prop_widgets::swatch(ui, "Halo colour", &mut colour, false, halo).edit
+                    })
+                })
+            },
         );
-        if edit.changed {
-            next.opacity = (percent / 100.0).clamp(0.0, 1.0) as f32;
-        }
-        self.label_apply_as("Change Label Opacity", editor, ctx, edit, &*next, |l| {
-            l.opacity = None
-        });
-
-        let halo = provenance(label.halo.is_some());
-        let edit = prop_widgets::scrub_field(
-            ui,
-            &mut next.halo.width,
-            &ScrubSpec::new("Halo")
-                .unit(" u")
-                .range(0.0, 100_000.0)
-                .step(0.1)
-                .decimals(1)
-                .provenance(halo),
-        );
-        self.label_apply_as("Change Label Halo", editor, ctx, edit, &*next, |l| {
+        self.label_apply_as("Change Label Halo", editor, ctx, size_edit, &*next, |l| {
             l.halo = None
         });
-        // The halo's colour matters only once it has a width.
-        if next.halo.width > 0.0 {
-            let mut colour = Some(next.halo.color);
-            let response = prop_widgets::swatch(ui, "Halo colour", &mut colour, false, halo);
-            if response.edit.changed {
+        if let Some(edit) = colour_edit {
+            if edit.changed {
                 next.halo.color = colour.unwrap_or(next.halo.color);
             }
-            self.label_apply(editor, ctx, response.edit, &*next, |l| l.halo = None);
+            self.label_apply(editor, ctx, edit, &*next, |l| l.halo = None);
         }
+    }
+
+    /// Opacity and rotation.
+    fn label_appearance(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        ctx: &LabelEdit<'_>,
+        next: &mut ResolvedLabel,
+    ) {
+        let mut percent = f64::from(next.opacity) * 100.0;
+        let (opacity_edit, rotation_edit) = prop_widgets::pair(
+            ui,
+            |ui| {
+                let opacity = provenance(ctx.label.opacity.is_some());
+                prop_widgets::named_above(ui, "Opacity", opacity, |ui| {
+                    prop_widgets::scrub_field(
+                        ui,
+                        &mut percent,
+                        &ScrubSpec::new("Opacity")
+                            .handle(Handle::Text("O"))
+                            .unit("%")
+                            .range(0.0, 100.0)
+                            .provenance(opacity),
+                    )
+                })
+            },
+            |ui| {
+                prop_widgets::named_above(ui, "Rotation", Provenance::Plain, |ui| {
+                    prop_widgets::scrub_field(
+                        ui,
+                        &mut next.rotation,
+                        &ScrubSpec::new("Rotation")
+                            .handle(Handle::Icon(Icon::Rotate))
+                            .unit("°")
+                            .step(0.5)
+                            .decimals(1),
+                    )
+                })
+            },
+        );
+        if opacity_edit.changed {
+            next.opacity = (percent / 100.0).clamp(0.0, 1.0) as f32;
+        }
+        self.label_apply_as(
+            "Change Label Opacity",
+            editor,
+            ctx,
+            opacity_edit,
+            &*next,
+            |l| l.opacity = None,
+        );
+        self.label_apply(editor, ctx, rotation_edit, &*next, |_| {});
     }
 
     /// Applies what a Label field did: a reset clears that one override with `clear`, anything

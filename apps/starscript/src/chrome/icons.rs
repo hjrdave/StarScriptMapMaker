@@ -143,6 +143,11 @@ icons! {
     LockDashed, "Lock dashed", "lock-dashed";
     Link, "Link", "link";
     Unlink, "Unlink", "unlink";
+    AlignLeft, "Align left", "align-left";
+    AlignCentre, "Align centre", "align-centre";
+    AlignRight, "Align right", "align-right";
+    Italic, "Italic", "italic";
+    AllCaps, "All caps", "all-caps";
     Shuffle, "Shuffle", "shuffle";
     Replace, "Replace", "replace";
     FlipHorizontal, "Flip horizontal", "flip-horizontal";
