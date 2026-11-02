@@ -692,6 +692,27 @@ pub fn pair<A, B>(
     })
 }
 
+/// `body` with `name` above it, small and muted, in the field's provenance style (a gold dot
+/// when overridden). The name is painted, not a widget, so the field keeps its own accessible
+/// name.
+pub fn named_above<R>(
+    ui: &mut egui::Ui,
+    name: &str,
+    provenance: Provenance,
+    body: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 2.0;
+        let (rect, _) = ui.allocate_exact_size(
+            Vec2::new(ui.available_width(), theme::CAPTION + 4.0),
+            Sense::hover(),
+        );
+        paint_label(ui, rect, name, provenance);
+        body(ui)
+    })
+    .inner
+}
+
 /// The side of an icon toggle or icon action: 26 × 24.
 const ICON_BUTTON: Vec2 = Vec2::new(26.0, 24.0);
 

@@ -964,7 +964,9 @@ fn a_labels_halo_colour_appears_with_a_halo_and_overrides_can_be_reset_from_the_
         "Manage Label styles…",
         "Italic",
         "All caps",
-        "Align",
+        "Align left",
+        "Align centre",
+        "Align right",
     ] {
         assert!(harness.query_by_label(label).is_some(), "{label}");
     }
@@ -1066,4 +1068,74 @@ fn the_chain_is_off_at_first_and_keeps_the_aspect_ratio_once_on() {
     assert_eq!(board_size(&harness), (300, 100));
     harness.state_mut().editor.undo();
     assert_eq!(board_size(&harness), (600, 200));
+}
+
+#[test]
+fn every_object_breadcrumb_has_a_layers_icon_while_the_selection_shares_a_layer() {
+    let (mut fixture, layer, island) = fixture();
+    install_test_pack(&mut fixture.editor, false);
+    let stamp = add_stamp(&mut fixture, layer, 10.0);
+    // One Object: the breadcrumb shows its Layer, so it has the icon.
+    fixture.editor.select(vec![stamp]);
+    let harness = harness(fixture);
+    harness.get_by_label("Layer");
+    let (mut fixture, ..) = (harness.into_state(), ());
+    // Objects in the same Layer still share it.
+    fixture.editor.select(vec![stamp, island]);
+    let harness = self::harness(fixture);
+    harness.get_by_label("Layer");
+    // Objects in different Layers have no Layer to show, and no icon.
+    let mut fixture = harness.into_state();
+    let other = fixture.editor.new_layer().expect("a Layer");
+    let apart = add_stamp(&mut fixture, other, 30.0);
+    fixture.editor.select(vec![stamp, apart]);
+    let harness = self::harness(fixture);
+    assert!(harness.query_by_label("Layer").is_none());
+}
+
+#[test]
+fn the_label_panel_groups_its_fields_into_divider_sections() {
+    let (mut fixture, layer, _) = fixture();
+    let id = Id::new();
+    fixture
+        .editor
+        .run(Command::CreateLabel {
+            id,
+            parent: layer,
+            index: None,
+            label: Box::new(Label {
+                text: "Hello".to_owned(),
+                ..Label::default()
+            }),
+        })
+        .expect("a Label is made");
+    fixture.editor.select(vec![id]);
+    let mut harness = harness(fixture);
+    // "Fill" and "Halo" also name a field, so a section may match more than one node.
+    for section in ["Text", "Typography", "Fill", "Halo", "Appearance"] {
+        assert!(
+            harness.query_all_by_label(section).next().is_some(),
+            "{section}"
+        );
+    }
+    // The sections are always open: no chevrons to collapse them.
+    for field in [
+        "Weight",
+        "Size",
+        "Line height",
+        "Letter spacing",
+        "Arch",
+        "Opacity",
+        "Rotation",
+    ] {
+        harness.get_by_label(field);
+    }
+    // Alignment is three icon buttons, and choosing one is one Undo step.
+    harness.get_by_label("Align right").click();
+    harness.run();
+    assert_eq!(
+        harness.state().editor.label(id).expect("a Label").align,
+        ssmap_core::Align::Right
+    );
+    assert_eq!(harness.state().editor.undo_label(), Some("Edit Label"));
 }

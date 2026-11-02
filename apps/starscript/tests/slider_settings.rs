@@ -11,7 +11,7 @@ use ssmap_core::{Canvas, DistanceUnit, Id, Scale};
 
 fn app() -> Harness<'static, MapMakerApp> {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(1280.0, 800.0))
+        .with_size(egui::vec2(1280.0, 1200.0))
         .build_eframe(|cc| MapMakerApp::with_recovery_dir(cc, None));
     harness.run();
     harness.state_mut().new_map(Canvas::new(

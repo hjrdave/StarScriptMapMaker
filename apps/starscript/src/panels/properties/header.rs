@@ -38,6 +38,20 @@ impl PropertiesPanel {
             ui.add_space(theme::SPACING[3]);
             ui.spacing_mut().item_spacing.x = theme::SPACING[1];
             if let Some(layer) = layer {
+                // The Layers icon says the first part of the breadcrumb is the Layer.
+                let (rect, hover) =
+                    ui.allocate_exact_size(egui::Vec2::splat(16.0), egui::Sense::hover());
+                hover.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), "Layer")
+                });
+                icons::paint(
+                    ui,
+                    rect,
+                    Icon::LayerGroup,
+                    icons::GRID,
+                    palette.text_tertiary,
+                );
+                hover.on_hover_text("Layer");
                 for (text, colour) in [
                     (node_name(map, layer), palette.text_tertiary),
                     ("›".to_owned(), palette.text_tertiary),
