@@ -1,5 +1,5 @@
-//! Keeps the macOS window buttons (close, minimise, zoom) vertically centered in the tab strip.
-//! macOS only.
+//! Keeps the macOS window buttons (close, minimise, zoom) vertically centered in the tab strip
+//! and pads them from the window's left edge. macOS only.
 //!
 //! AppKit places the buttons for its own title bar and puts them back on resize, full screen
 //! exit and similar events, so `center` runs every frame and only writes a frame that differs.
@@ -19,11 +19,17 @@ const BUTTONS: [NSWindowButton; 3] = [
     NSWindowButton::ZoomButton,
 ];
 
-/// Grows the title bar container of every window to `bar` points and centers the buttons in it.
+/// Distance between the left edges of neighbouring buttons in AppKit's own layout.
+const BUTTON_STEP: f64 = 20.0;
+
+/// Grows the title bar container of every window to `bar` points, centers the buttons in it and
+/// sets their left padding.
 pub(crate) fn center(bar: f64) {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
     };
+    let left = f64::from(crate::theme::metrics::TRAFFIC_LIGHTS_LEFT);
+    let step = BUTTON_STEP;
     let app = NSApplication::sharedApplication(mtm);
     for window in app.windows() {
         if window.styleMask().contains(NSWindowStyleMask::FullScreen) {
@@ -45,14 +51,16 @@ pub(crate) fn center(bar: f64) {
                 container.setFrame(frame);
             }
         }
-        for kind in BUTTONS {
+        for (index, kind) in BUTTONS.into_iter().enumerate() {
             let Some(button) = window.standardWindowButton(kind) else {
                 continue;
             };
             let mut frame = button.frame();
             let y = ((bar - frame.size.height) / 2.0).round();
-            if (frame.origin.y - y).abs() > 0.5 {
+            let x = left + step * index as f64;
+            if (frame.origin.y - y).abs() > 0.5 || (frame.origin.x - x).abs() > 0.5 {
                 frame.origin.y = y;
+                frame.origin.x = x;
                 button.setFrame(frame);
             }
         }

@@ -208,7 +208,13 @@ pub const SCRIM: Color32 = Color32::from_rgba_unmultiplied_const(8, 9, 11, 140);
 /// Layout metrics (px) from `tokens.json`.
 pub mod metrics {
     pub const TITLE_BAR_WITH_TABS: f32 = 37.0;
-    pub const TRAFFIC_LIGHTS_INSET: f32 = 84.0;
+    /// The space the tab strip reserves for the window buttons: their left padding plus the
+    /// 84 pt AppKit's own layout takes (7 pt margin, three buttons, and the gap after them).
+    pub const TRAFFIC_LIGHTS_INSET: f32 = 84.0 + TRAFFIC_LIGHTS_PAD_EXTRA;
+    /// Left padding of the window buttons: 12 pt from the window edge, 5 pt more than AppKit's 7.
+    pub const TRAFFIC_LIGHTS_LEFT: f32 = 12.0;
+    /// How far the buttons move right of where AppKit puts them.
+    pub const TRAFFIC_LIGHTS_PAD_EXTRA: f32 = TRAFFIC_LIGHTS_LEFT - 7.0;
     pub const HOME_TAB: f32 = 44.0;
     pub const MAP_TAB_WIDTH: f32 = 220.0;
     pub const MAP_TAB_MIN: f32 = 120.0;
