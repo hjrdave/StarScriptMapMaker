@@ -10,6 +10,50 @@ use crate::theme::{self, metrics};
 /// A panel's 34 pt header: `title` in the heading style and, on the right, whatever `trailing`
 /// adds.
 pub fn panel_header(ui: &mut egui::Ui, title: &str, trailing: impl FnOnce(&mut egui::Ui)) {
+    header(ui, None, title, trailing);
+}
+
+/// [`panel_header`] with an icon before the title, painted in `tint` (a tool's icon and name).
+pub fn icon_header(
+    ui: &mut egui::Ui,
+    icon: Icon,
+    tint: egui::Color32,
+    title: &str,
+    trailing: impl FnOnce(&mut egui::Ui),
+) {
+    header(ui, Some((icon, tint)), title, trailing);
+}
+
+/// A small rounded label at a header's right edge, such as the tool's mode. `danger` paints it
+/// in the danger colour instead of the gold accent. Named "Mode: <text>" for assistive tools.
+pub fn mode_chip(ui: &mut egui::Ui, text: &str, danger: bool) {
+    let palette = theme::palette(ui.ctx());
+    let (fill, ink) = if danger {
+        (palette.danger.gamma_multiply(0.18), palette.danger)
+    } else {
+        (palette.gold_subtle, palette.gold_text)
+    };
+    let galley = ui.painter().layout_no_wrap(
+        text.to_owned(),
+        egui::FontId::proportional(theme::CAPTION),
+        ink,
+    );
+    let size = galley.size() + egui::vec2(12.0, 6.0);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Label, true, format!("Mode: {text}"))
+    });
+    ui.painter().rect_filled(rect, theme::RADIUS_CHIP, fill);
+    ui.painter()
+        .galley(rect.min + egui::vec2(6.0, 3.0), galley, ink);
+}
+
+fn header(
+    ui: &mut egui::Ui,
+    lead: Option<(Icon, egui::Color32)>,
+    title: &str,
+    trailing: impl FnOnce(&mut egui::Ui),
+) {
     let palette = theme::palette(ui.ctx());
     let width = ui.available_width();
     let header = ui.allocate_ui_with_layout(
@@ -17,6 +61,11 @@ pub fn panel_header(ui: &mut egui::Ui, title: &str, trailing: impl FnOnce(&mut e
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
             ui.add_space(theme::SPACING[3]);
+            if let Some((icon, tint)) = lead {
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::Vec2::splat(icons::GRID), egui::Sense::hover());
+                icons::paint(ui, rect, icon, icons::GRID, tint);
+            }
             ui.label(
                 egui::RichText::new(title)
                     .size(theme::HEADING)

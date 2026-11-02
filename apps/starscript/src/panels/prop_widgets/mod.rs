@@ -319,25 +319,9 @@ fn paint_value(
 // ---------------------------------------------------------------------------------------------
 // Section header
 
-fn section_id(kind: &str) -> egui::Id {
-    egui::Id::new(("section", kind))
-}
-
-/// Whether the section of this kind is open. Remembered per kind, not per Map.
-pub fn section_open(ctx: &egui::Context, kind: &str) -> bool {
-    ctx.data_mut(|d| *d.get_persisted_mut_or(section_id(kind), true))
-}
-
-/// Makes the section of this kind start collapsed, until the user opens it.
-pub fn default_closed(ctx: &egui::Context, kind: &str) {
-    ctx.data_mut(|d| {
-        d.get_persisted_mut_or(section_id(kind), false);
-    });
-}
-
 /// What a section header offers.
 pub struct SectionHeader<'a> {
-    /// Names the section kind, and remembers whether it is collapsed.
+    /// Names the section kind. It keeps the section's widgets apart from another's.
     pub kind: &'a str,
     pub title: &'a str,
     /// For example "1 override".
@@ -346,25 +330,28 @@ pub struct SectionHeader<'a> {
     pub action: Option<(Icon, &'a str)>,
 }
 
-/// A collapsible section: heading, optional badge and trailing action, then `body` while open.
-/// Returns whether the trailing action was clicked.
+/// A section: a divider line (none above the first), the heading with an optional badge and
+/// trailing action, then `body`. Sections do not collapse. Returns whether the trailing action
+/// was clicked.
 pub fn section(
     ui: &mut egui::Ui,
     header: SectionHeader<'_>,
     body: impl FnOnce(&mut egui::Ui),
 ) -> bool {
-    let open = section_open(ui.ctx(), header.kind);
     let palette = theme::palette(ui.ctx());
     let width = ui.available_width();
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 28.0), Sense::click());
+    let first = ui.min_rect().height() < 1.0;
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 28.0), Sense::hover());
     response.widget_info(|| {
-        egui::WidgetInfo::selected(
-            egui::WidgetType::CollapsingHeader,
-            ui.is_enabled(),
-            open,
-            header.title,
-        )
+        egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), header.title)
     });
+    if !first {
+        ui.painter().hline(
+            rect.x_range(),
+            rect.top(),
+            Stroke::new(1.0, palette.border_subtle),
+        );
+    }
     let mut clicked_action = false;
     let mut right = rect.right();
     // The action takes one id when it is there; the fields below must keep theirs when it
@@ -384,21 +371,8 @@ pub fn section(
             .clicked();
         right -= 28.0;
     }
-    let chevron = if open {
-        Icon::ChevronDown
-    } else {
-        Icon::ChevronRight
-    };
-    let chevron_rect = egui::Rect::from_min_size(rect.left_top(), Vec2::new(18.0, rect.height()));
-    icons::paint(
-        ui,
-        chevron_rect,
-        chevron,
-        icons::GRID,
-        palette.text_secondary,
-    );
     let title = ui.painter().text(
-        egui::pos2(rect.left() + 20.0, rect.center().y),
+        egui::pos2(rect.left() + theme::SPACING[3], rect.center().y),
         egui::Align2::LEFT_CENTER,
         header.title,
         egui::FontId::proportional(theme::HEADING),
@@ -422,13 +396,7 @@ pub fn section(
                 .galley(chip.min + Vec2::new(4.0, 1.0), galley, palette.gold_text);
         }
     }
-    if response.clicked() && !clicked_action {
-        ui.ctx()
-            .data_mut(|d| d.insert_persisted(section_id(header.kind), !open));
-    }
-    if open {
-        body(ui);
-    }
+    body(ui);
     clicked_action
 }
 

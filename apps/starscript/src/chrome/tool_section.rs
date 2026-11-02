@@ -33,6 +33,47 @@ pub(crate) fn icon(tool: ToolId) -> Icon {
     }
 }
 
+/// What the Properties header shows for the active tool: its name, and a chip naming its mode.
+pub(crate) struct ToolHeader {
+    /// The tool's name.
+    pub(crate) name: &'static str,
+    /// The mode chip for a tool with modes, and whether it is the erasing one.
+    pub(crate) chip: Option<(&'static str, bool)>,
+}
+
+/// The header for `tool`. `alt` is whether the erase modifier is held, which gives the other
+/// mode, so the chip says what a stroke will do.
+pub(crate) fn tool_header(editor: &Editor, alt: bool) -> ToolHeader {
+    let tool = editor.active_tool;
+    let erasing = alt != editor.erase_default;
+    let chip = match tool {
+        ToolId::LandBrush => Some(match (editor.draw_mode == DrawMode::Lasso, erasing) {
+            (false, false) => ("Paint", false),
+            (true, false) => ("Paint Lasso", false),
+            (false, true) => ("Erase", true),
+            (true, true) => ("Erase Lasso", true),
+        }),
+        ToolId::WaterBrush => Some(if erasing {
+            ("Erase", true)
+        } else {
+            ("Paint", false)
+        }),
+        ToolId::Stamp => Some((
+            match editor.scatter.placement {
+                Placement::Land => "Land",
+                Placement::Water => "Water",
+                Placement::Anywhere => "Anywhere",
+            },
+            false,
+        )),
+        _ => None,
+    };
+    ToolHeader {
+        name: tool.label(),
+        chip,
+    }
+}
+
 /// Whether the tool has settings in Properties.
 pub(crate) fn has_settings(tool: ToolId) -> bool {
     matches!(

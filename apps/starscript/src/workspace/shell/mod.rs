@@ -498,6 +498,6 @@ mod widgets;
 
 pub use status::{cursor_text, selection_path, selection_summary};
 pub use widgets::{
-    collapse_button, divider, history_list, layers_rail, panel_header, properties_collapse_button,
-    properties_rail,
+    collapse_button, divider, history_list, icon_header, layers_rail, mode_chip, panel_header,
+    properties_collapse_button, properties_rail,
 };
