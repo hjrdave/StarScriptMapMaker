@@ -91,6 +91,9 @@ enum Action {
     Cut(Id),
     /// Deletes the row, or the whole selection if the row is part of it.
     Delete(Id),
+    /// Hides, locks or pins the selection (the row first, if it is not part of it) in one
+    /// Undo step.
+    Flip(Id, settings_row::Toggle),
     /// Wraps the selection in a Group.
     Group,
     /// Dissolves the selected Groups.
@@ -244,6 +247,13 @@ impl LayerTree {
                         }
                         None => editor.delete_selection(),
                     }
+                }
+                Action::Flip(id, toggle) => {
+                    if !editor.is_selected(id) {
+                        editor.select(vec![id]);
+                    }
+                    let ids = editor.selection().to_vec();
+                    settings_row::apply_toggle(editor, &ids, toggle);
                 }
                 Action::Group => {
                     editor.group_selection();
