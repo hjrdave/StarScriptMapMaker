@@ -26,13 +26,14 @@ pub(crate) const DEPTH_SORT_HINT: &str = "Depth sort is on for this Layer: Stamp
 /// What the Layer area says while Depth sort is off.
 const DEPTH_SORT_OFF_HINT: &str = "Depth sort is off for this Layer: Stamps draw in the order listed, which you can change by dragging.";
 
+mod category_row;
 mod layer_area;
 mod model;
 mod row;
 use model::kind_icon;
 pub(crate) use model::{
-    DropTarget, Row, RowState, counts, footer_text, is_depth_sorted_stamp, landmass_name,
-    landmasses, move_command, node_name, refusal, rows, selected_landmass,
+    DropTarget, ListRow, Row, RowState, counts, footer_text, is_depth_sorted_stamp, landmass_name,
+    landmasses, list, move_command, node_name, refusal, selected_landmass,
 };
 #[cfg(test)]
 mod tests;
@@ -44,8 +45,11 @@ pub(crate) struct LayerTree {
     renaming: Option<(Id, String)>,
     /// A row to scroll to on the next frame.
     scroll_to: Option<Id>,
-    /// Rows cached by Map revision and collapse state, so huge trees aren't walked every frame.
-    cache: Option<(u64, u64, Vec<Row>)>,
+    /// Categories whose Layers are folded away, leaving only the header.
+    collapsed_categories: HashSet<ssmap_core::Category>,
+    /// The list cached by Map revision and collapse state, so huge trees aren't walked every
+    /// frame.
+    cache: Option<(u64, u64, Vec<ListRow>)>,
     /// Object and Layer counts by Map revision, for the same reason.
     counts: Option<(u64, (usize, usize))>,
     collapse_generation: u64,
@@ -70,6 +74,16 @@ pub(crate) enum Pick {
     Toggle,
     /// Shift-click: every visible row from the anchor to this one, across Groups.
     Range,
+}
+
+/// The node rows alone, for ranges and scrolling.
+fn node_rows(list: &[ListRow]) -> Vec<Row> {
+    list.iter()
+        .filter_map(|row| match *row {
+            ListRow::Node(row) => Some(row),
+            ListRow::Category { .. } => None,
+        })
+        .collect()
 }
 
 /// The ids of the visible `rows` from `from` to `to`, whichever comes first.
@@ -104,6 +118,10 @@ enum Action {
     Link,
     /// Takes the selection out of its Link sets.
     Unlink,
+    /// Folds a category's header open or shut.
+    ToggleCategory(ssmap_core::Category),
+    /// Makes a Layer of the category, at the top of it, and opens the category.
+    NewLayer(ssmap_core::Category),
     FinishRename,
     CancelRename,
 }
@@ -149,17 +167,16 @@ impl LayerTree {
         {
             self.start_rename_revealed(editor, id);
         }
-        let rows = match self.cache.take() {
-            Some((r, g, rows)) if r == revision && g == self.collapse_generation => rows,
-            _ => rows(editor.map(), &self.collapsed),
+        let list = match self.cache.take() {
+            Some((r, g, list)) if r == revision && g == self.collapse_generation => list,
+            _ => list(editor.map(), &self.collapsed, &self.collapsed_categories),
         };
+        let rows = node_rows(&list);
         if !matches!(self.counts, Some((r, _)) if r == revision) {
             self.counts = Some((revision, counts(editor.map())));
         }
-        if rows.is_empty() {
-            ui.weak("No Layers yet. Use New Layer to add one.");
-        }
 
+        let generation = self.collapse_generation;
         let mut actions = Vec::new();
         ui.spacing_mut().item_spacing.y = 0.0;
         // A change ends when the pointer is released, or when Escape cancelled it.
@@ -171,16 +188,20 @@ impl LayerTree {
         let mut scroll = egui::ScrollArea::vertical()
             .auto_shrink(false)
             .max_height(list_height);
-        if let Some(index) = self
-            .scroll_to
-            .take()
-            .and_then(|id| rows.iter().position(|row| row.id == id))
-        {
+        if let Some(index) = self.scroll_to.take().and_then(|id| {
+            list.iter()
+                .position(|row| matches!(row, ListRow::Node(r) if r.id == id))
+        }) {
             scroll = scroll.vertical_scroll_offset(index as f32 * ROW_HEIGHT);
         }
-        scroll.show_rows(ui, ROW_HEIGHT, rows.len(), |ui, range| {
-            for row in &rows[range] {
-                self.row(ui, editor, *row, &mut actions);
+        scroll.show_rows(ui, ROW_HEIGHT, list.len(), |ui, range| {
+            for row in &list[range] {
+                match *row {
+                    ListRow::Node(row) => self.row(ui, editor, row, &mut actions),
+                    ListRow::Category { category, layers } => {
+                        self.category_row(ui, editor, category, layers, &mut actions);
+                    }
+                }
             }
         });
         let area_height = self.layer_area(ui, editor);
@@ -225,6 +246,8 @@ impl LayerTree {
                     }
                     self.collapse_generation += 1;
                 }
+                Action::ToggleCategory(category) => self.toggle_category(category),
+                Action::NewLayer(category) => self.new_layer_in_category(editor, category),
                 Action::Duplicate(id) => {
                     if !editor.is_selected(id) {
                         editor.select(vec![id]);
@@ -284,8 +307,27 @@ impl LayerTree {
                 Action::CancelRename => self.renaming = None,
             }
         }
-        self.cache = Some((revision, self.collapse_generation, rows));
+        // Stored under the generation the list was built for, so a fold this frame rebuilds it.
+        self.cache = Some((revision, generation, list));
         self.confirm_delete_dialog(ui.ctx(), editor);
+    }
+
+    /// Folds a category's header open or shut.
+    fn toggle_category(&mut self, category: ssmap_core::Category) {
+        if !self.collapsed_categories.remove(&category) {
+            self.collapsed_categories.insert(category);
+        }
+        self.collapse_generation += 1;
+    }
+
+    /// Makes a Layer of `category` and selects it; adding to a collapsed category opens it.
+    fn new_layer_in_category(&mut self, editor: &mut Editor, category: ssmap_core::Category) {
+        if self.collapsed_categories.remove(&category) {
+            self.collapse_generation += 1;
+        }
+        if let Some(id) = editor.new_category_layer(category) {
+            self.scroll_to = Some(id);
+        }
     }
 
     /// Opens the rename box on `id`, expanding the Layers around it and scrolling to its row.

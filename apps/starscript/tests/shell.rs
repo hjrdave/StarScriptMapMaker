@@ -63,11 +63,11 @@ const BOTH: egui::Modifiers = egui::Modifiers {
 #[test]
 fn the_layers_shortcut_closes_the_panel_and_opens_it_again() {
     let mut harness = app();
-    assert!(harness.query_by_label("New Layer (⇧⌘N)").is_some());
+    assert!(harness.query_by_label("New Land Layer").is_some());
     harness.key_press_modifiers(BOTH, egui::Key::Num1);
     harness.run();
     assert!(harness.state().shell().layers_collapsed());
-    assert!(harness.query_by_label("New Layer (⇧⌘N)").is_none());
+    assert!(harness.query_by_label("New Land Layer").is_none());
     // The rail stays on screen with the panel closed.
     assert!(harness.query_by_label(RAIL_LAYERS).is_some());
     harness.key_press_modifiers(BOTH, egui::Key::Num1);
@@ -265,17 +265,17 @@ fn the_status_bar_shows_the_cursor_in_pixels_and_real_world_units() {
 #[test]
 fn a_narrow_window_shows_the_rail_and_its_panel_opens_over_the_canvas() {
     let mut harness = app_sized(0.25, 1100.0);
-    assert!(harness.query_by_label("New Layer (⇧⌘N)").is_none());
+    assert!(harness.query_by_label("New Land Layer").is_none());
     harness.get_by_label(RAIL_LAYERS).click();
     harness.run();
     // Open over the Canvas; the user's own choice (closed, the default) is untouched.
     assert!(harness.state().shell().layers_overlay());
     assert!(harness.state().shell().layers_collapsed());
-    assert!(harness.query_by_label("New Layer (⇧⌘N)").is_some());
+    assert!(harness.query_by_label("New Land Layer").is_some());
     harness.key_press(egui::Key::Escape);
     harness.run();
     assert!(!harness.state().shell().layers_overlay());
-    assert!(harness.query_by_label("New Layer (⇧⌘N)").is_none());
+    assert!(harness.query_by_label("New Land Layer").is_none());
 }
 
 #[test]

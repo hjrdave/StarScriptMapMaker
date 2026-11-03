@@ -19,6 +19,44 @@ impl Editor {
         self.run_selecting(command, vec![id]).is_ok().then_some(id)
     }
 
+    /// Creates a Layer of `category` at the top of its category, for the Layers panel's plus,
+    /// selects it and returns its id. A new Assets Layer starts with Depth sort on. One Undo step.
+    pub fn new_category_layer(&mut self, category: ssmap_core::Category) -> Option<Id> {
+        let id = Id::new();
+        let name = format!("{} {}", category.name(), self.layer_count() + 1);
+        let index = Some(self.category_index(category));
+        let selection = self.selection.clone();
+        let created = self
+            .in_gesture("New Layer", |gesture| {
+                let create = Command::CreateLayer {
+                    id,
+                    parent: None,
+                    index,
+                    name,
+                    category,
+                };
+                if !gesture.run(create) {
+                    return Err(());
+                }
+                let depth_sort = Command::SetDepthSort {
+                    id,
+                    depth_sort: category == ssmap_core::Category::Assets,
+                };
+                if category == ssmap_core::Category::Assets && !gesture.run(depth_sort) {
+                    return Err(());
+                }
+                Ok(())
+            })
+            .is_some_and(|result| result.is_ok());
+        if created {
+            self.select(vec![id]);
+            Some(id)
+        } else {
+            self.select(selection);
+            None
+        }
+    }
+
     /// What the Layer `id` holds: Land for anything that is not a Layer.
     pub fn layer_category(&self, id: Id) -> ssmap_core::Category {
         match self.map.node(id) {

@@ -49,6 +49,59 @@ pub(crate) fn rows(map: &Map, collapsed: &HashSet<Id>) -> Vec<Row> {
     out
 }
 
+/// One line of the list: a category's header, or a node's row under it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum ListRow {
+    /// A category's header, with how many Layers (Groups included) it holds.
+    Category { category: Category, layers: usize },
+    /// A Layer or Object row.
+    Node(Row),
+}
+
+/// How many Layers, Groups included, `id` is or holds at any depth.
+fn layers_in(map: &Map, id: Id) -> usize {
+    if !map.node(id).is_some_and(Node::is_layer) {
+        return 0;
+    }
+    1 + map
+        .children(Some(id))
+        .iter()
+        .map(|&child| layers_in(map, child))
+        .sum::<usize>()
+}
+
+/// The list the tree shows, top of the Stacking order first: a header for each category, in
+/// the fixed order, then its Layers. A category in `collapsed_categories` shows only its header.
+pub(crate) fn list(
+    map: &Map,
+    collapsed: &HashSet<Id>,
+    collapsed_categories: &HashSet<Category>,
+) -> Vec<ListRow> {
+    // Each node row belongs to the category of the top-level Layer above it.
+    let mut by_category: Vec<(Vec<Row>, usize)> = vec![(Vec::new(), 0); Category::ALL.len()];
+    let mut slot = 0;
+    for row in rows(map, collapsed) {
+        if row.depth == 0 {
+            slot = category_of(map, row.id)
+                .and_then(|c| Category::ALL.iter().position(|&x| x == c))
+                .unwrap_or(2);
+        }
+        let (group, layers) = &mut by_category[slot];
+        if row.depth == 0 {
+            *layers += layers_in(map, row.id);
+        }
+        group.push(row);
+    }
+    let mut out = Vec::new();
+    for (category, (group, layers)) in Category::ALL.into_iter().zip(by_category) {
+        out.push(ListRow::Category { category, layers });
+        if !collapsed_categories.contains(&category) {
+            out.extend(group.into_iter().map(ListRow::Node));
+        }
+    }
+    out
+}
+
 /// Why a drop is refused, when the user should be told. A drop that only does nothing (onto
 /// itself, back where it was) has no reason to give.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

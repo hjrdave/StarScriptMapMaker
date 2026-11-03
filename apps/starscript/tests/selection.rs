@@ -201,10 +201,11 @@ fn the_canvas_and_the_layers_panel_share_one_selection() {
     assert_eq!(harness.state().editor().map().parent(b), Some(layer));
     assert_eq!(harness.state().editor().active_layer(), Some(layer));
     // And the other way: a row clicked in the panel is what the Canvas now has selected.
-    // The Properties header names the Layer too; the Layers panel is the first match.
+    // The Layers panel's category header has the same name and comes first; the Layer's own
+    // row is the second match.
     harness
         .get_all_by_label("Labels")
-        .next()
+        .nth(1)
         .expect("the Layers row")
         .click();
     harness.run();
@@ -303,7 +304,7 @@ fn the_panel_menu_pastes_what_the_canvas_copied() {
     let before = harness.state().editor().map().children(Some(layer)).len();
     harness
         .get_all_by_label("Labels")
-        .next()
+        .nth(1)
         .expect("the Layers row")
         .click_secondary();
     harness.run();

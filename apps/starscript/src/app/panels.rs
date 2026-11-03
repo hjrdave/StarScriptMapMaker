@@ -247,11 +247,7 @@ fn sidebar_section(ui: &mut egui::Ui, section: shell::SidebarSection, tab: &mut 
             }
         }
         shell::SidebarSection::Layers => {
-            shell::panel_header(ui, "Layers", |ui| {
-                if icons::icon_button(ui, icons::Icon::Add, "New Layer (⇧⌘N)").clicked() {
-                    tab.editor.new_layer();
-                }
-            });
+            shell::panel_header(ui, "Layers", |_| {});
             tab.layer_tree.show(ui, &mut tab.editor);
             if std::mem::take(&mut tab.layer_tree.paste_requested)
                 && let Some(at) = tab.canvas_view.paste_point(None)

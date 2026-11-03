@@ -1,3 +1,4 @@
+use super::model::rows;
 use super::*;
 use ssmap_core::{Canvas, DistanceUnit, Layer, Object, ObjectKind, Op, Scale, Subtree};
 
@@ -250,7 +251,7 @@ struct Fixture {
 
 fn harness(editor: Editor) -> Harness<'static, Fixture> {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(260.0, 400.0))
+        .with_size(egui::vec2(260.0, 700.0))
         .build_ui_state(
             |ui, fixture: &mut Fixture| {
                 theme::install(&ui.ctx().clone());
@@ -956,4 +957,115 @@ fn top_level_layers_stay_in_category_order() {
         Some(Refusal::Order(_))
     ));
     assert!(move_command(&map, labels, DropTarget::Below(backdrop)).is_none());
+}
+
+#[test]
+fn the_list_has_a_header_per_category_in_order_and_counts_the_layers_under_each() {
+    use ssmap_core::Category;
+    let (map, [_, land, assets, more_assets, _, landmass, stamp]) = categorized();
+    let list = list(&map, &HashSet::new(), &HashSet::new());
+    let headers: Vec<(Category, usize)> = list
+        .iter()
+        .filter_map(|row| match *row {
+            ListRow::Category { category, layers } => Some((category, layers)),
+            ListRow::Node(_) => None,
+        })
+        .collect();
+    // Labels and Backdrop are empty or hold one empty Layer; Assets holds two, Land one.
+    assert_eq!(
+        headers,
+        [
+            (Category::Labels, 1),
+            (Category::Assets, 2),
+            (Category::Land, 1),
+            (Category::Backdrop, 1)
+        ]
+    );
+    // A node row sits under its own category's header, top of the Stacking order first.
+    let position = |id| {
+        list.iter()
+            .position(|row| matches!(row, ListRow::Node(r) if r.id == id))
+            .unwrap()
+    };
+    assert!(position(more_assets) < position(assets));
+    assert!(position(assets) < position(stamp));
+    assert!(position(stamp) < position(land));
+    assert!(position(land) < position(landmass));
+    // A collapsed category keeps its header and loses its rows.
+    let folded = list_with(&map, Category::Assets);
+    assert!(
+        !folded
+            .iter()
+            .any(|row| matches!(row, ListRow::Node(r) if r.id == stamp))
+    );
+    assert!(
+        folded
+            .iter()
+            .any(|row| matches!(row, ListRow::Node(r) if r.id == landmass))
+    );
+}
+
+fn list_with(map: &Map, folded: ssmap_core::Category) -> Vec<ListRow> {
+    list(map, &HashSet::new(), &HashSet::from([folded]))
+}
+
+#[test]
+fn every_category_shows_even_with_no_layers_and_its_plus_makes_one() {
+    use ssmap_core::Category;
+    let mut harness = harness(Editor::new(Map::new(Canvas::new(
+        10,
+        10,
+        Scale::new(1.0, DistanceUnit::Miles),
+    ))));
+    for name in ["Labels", "Assets", "Land", "Backdrop"] {
+        harness.get_by_label(name);
+    }
+    // The plus of Assets makes an Assets Layer with Depth sort on, selected, as one Undo step.
+    harness.get_by_label("New Asset Layer").click();
+    harness.run();
+    let editor = &harness.state().editor;
+    let [layer] = editor.selection() else {
+        panic!("the new Layer is selected")
+    };
+    let Some(Node::Layer(made)) = editor.map().node(*layer) else {
+        panic!("a Layer")
+    };
+    assert_eq!(made.category, Category::Assets);
+    assert!(made.depth_sort);
+    assert_eq!(editor.undo_label(), Some("New Layer"));
+
+    // A Land Layer has no Depth sort.
+    harness.get_by_label("New Land Layer").click();
+    harness.run();
+    let editor = &harness.state().editor;
+    let Some(Node::Layer(land)) = editor
+        .selection()
+        .first()
+        .and_then(|&id| editor.map().node(id))
+    else {
+        panic!("a Layer")
+    };
+    assert_eq!((land.category, land.depth_sort), (Category::Land, false));
+}
+
+#[test]
+fn a_category_folds_to_its_header_with_a_count_and_a_new_layer_opens_it() {
+    use ssmap_core::Category;
+    let mut editor = Editor::new(Map::new(Canvas::new(
+        10,
+        10,
+        Scale::new(1.0, DistanceUnit::Miles),
+    )));
+    editor.new_layer_in(Category::Land).unwrap();
+    editor.new_layer_in(Category::Land).unwrap();
+    let mut harness = harness(editor);
+    harness.get_by_label("Collapse Land").click();
+    harness.run();
+    // Only the header and its count are left, and the Layers are not listed.
+    assert!(harness.query_by_label("Land 1").is_none());
+    harness.get_by_label("2");
+    harness.get_by_label("New Land Layer").click();
+    harness.run();
+    assert!(harness.query_by_label("Collapse Land").is_some(), "opened");
+    assert_eq!(harness.state().editor.map().children(None).len(), 3);
 }
