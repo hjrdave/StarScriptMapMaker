@@ -30,9 +30,6 @@ impl MapMakerApp {
         self.app.credits.show(&ctx, Some(&mut tab.editor));
         self.app.updates.show(&ctx);
         tab.label_styles.show(&ctx, &mut tab.editor);
-        self.win
-            .shell
-            .set_board_count(tab.editor.map().boards().len());
         egui::Panel::bottom("status")
             .exact_size(theme::metrics::STATUS_BAR)
             .show(ui, |ui| self.status_bar(ui));

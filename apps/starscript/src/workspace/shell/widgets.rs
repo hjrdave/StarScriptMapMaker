@@ -287,10 +287,7 @@ pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<
     let step = RAIL_SLOT_HEIGHT + theme::SPACING[1];
     let mut layers_y = rect.top() + metrics::PANEL_HEADER / 2.0 + RAIL_SLOT_HEIGHT / 2.0 - 12.0;
     let mut count = 0.0;
-    for section in SidebarSection::ALL
-        .into_iter()
-        .filter(|&s| shell.section_available(s))
-    {
+    for section in SidebarSection::ALL {
         let slot = egui::Rect::from_center_size(
             egui::pos2(rect.center().x, layers_y + count * step),
             RAIL_SLOT,

@@ -202,8 +202,6 @@ fn a_shortcut_opens_the_overlay_on_the_first_press_while_the_sidebar_is_collapse
     for section in SidebarSection::ALL {
         let mut shell = Shell::default();
         shell.set_window_width(1100.0);
-        // Art boards is offered once the Map has a board besides the Canvas.
-        shell.board_count = 2;
         shell.show_section(section);
         assert!(
             shell.layers_overlay() && shell.layers_collapsed(),

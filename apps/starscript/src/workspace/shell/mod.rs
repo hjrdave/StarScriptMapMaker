@@ -70,10 +70,6 @@ impl SidebarSection {
 pub struct Shell {
     /// The sidebar section the left bar shows.
     sidebar_section: SidebarSection,
-    /// How many boards the shown Map has, to offer the Art boards section only when there are
-    /// Art boards besides the Canvas. Set each frame by the window.
-    #[serde(skip, default = "one_board")]
-    board_count: usize,
     layers_width: f32,
     /// The width of the left bar while it shows the Map section, which has wide fields.
     #[serde(default = "map_width_default")]
@@ -96,10 +92,6 @@ pub struct Shell {
     layers_overlay: bool,
     #[serde(skip)]
     properties_overlay: bool,
-}
-
-fn one_board() -> usize {
-    1
 }
 
 fn map_width_default() -> f32 {
@@ -174,7 +166,6 @@ impl Default for Shell {
     fn default() -> Self {
         Self {
             sidebar_section: SidebarSection::default(),
-            board_count: one_board(),
             layers_width: metrics::LAYERS_PANEL_DEFAULT,
             map_width: metrics::MAP_PANEL_DEFAULT,
             properties_width: metrics::PROPERTIES_PANEL_DEFAULT,
@@ -270,26 +261,9 @@ impl Shell {
         self.sidebar_section
     }
 
-    /// Whether the sidebar offers `section` now: Art boards only once the Map has some.
-    pub fn section_available(&self, section: SidebarSection) -> bool {
-        section != SidebarSection::Boards || self.board_count > 1
-    }
-
-    /// Tells the sidebar how many boards the shown Map has. If the Art boards section was
-    /// showing and the Map has none now (deleted, undone, or another tab), it goes back to
-    /// Layers.
-    pub fn set_board_count(&mut self, count: usize) {
-        self.board_count = count;
-        if !self.section_available(self.sidebar_section) {
-            self.sidebar_section = SidebarSection::Layers;
-        }
-    }
-
-    /// Switches the sidebar to `section`, if it is available.
+    /// Switches the sidebar to `section`.
     pub fn set_sidebar_section(&mut self, section: SidebarSection) {
-        if self.section_available(section) {
-            self.sidebar_section = section;
-        }
+        self.sidebar_section = section;
     }
 
     /// Shows `section` in the sidebar, bringing the sidebar back first if it is collapsed or
