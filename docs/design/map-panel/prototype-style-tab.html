@@ -1,0 +1,175 @@
+<!doctype html>
+<!-- PROTOTYPE (throwaway): Map panel, Style tab (#565). Question: how should the Style tab be
+     organised? Three variants: A/B/C (bottom bar or ←/→, or ?variant=). The width slider shows how
+     each one behaves in a narrow panel. In-memory state only. Icons are the app's own SVGs. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Map Style Tab</title>
+<style>
+  :root{color-scheme:dark;--bg:#101216;--panel:#1d2026;--line:#2a2e36;--text:#c9c4b4;--dim:#8a867a;--hi:#f1ead2;--accent:#e8c15a;--sel:#3a3320;--field:#14171c;--btn:#262a32}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.3 Inter,system-ui,sans-serif;padding:24px 16px 90px}
+  .wrap{display:flex;gap:28px;justify-content:center;flex-wrap:wrap;align-items:flex-start}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;min-height:640px;overflow:hidden;user-select:none}
+  .pad{padding:0 16px}
+  .head{display:flex;align-items:center;gap:8px;padding:14px 16px 10px;font-size:17px;color:var(--hi);border-bottom:1px solid var(--line)}
+  .head svg,.ico svg{width:18px;height:18px}
+  .tabs{display:flex;border-bottom:1px solid var(--line);margin:0 16px}
+  .tabs div{flex:1;text-align:center;padding:10px 0;color:var(--dim);font-size:15px;border-bottom:2px solid transparent;margin-bottom:-1px;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .tabs .on{color:var(--hi);border-color:var(--accent)}
+  h2{font-size:17px;font-weight:500;color:var(--hi);margin:18px 16px 0;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  h3{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);font-weight:600;margin:16px 16px 8px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px;margin:12px 16px}
+  .sw{height:52px;border-radius:7px;border:1.5px solid #2c313b;padding:0 8px 6px;display:flex;align-items:flex-end;font-size:13px;cursor:pointer;color:#fff;text-shadow:0 1px 2px #0008}
+  .sw.light{color:#111;text-shadow:none}
+  .sw.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .rows{margin:0 16px;display:flex;flex-direction:column;gap:8px}
+  .row{display:grid;grid-template-columns:var(--lw,112px) minmax(0,1fr);align-items:center;gap:8px}
+  .row>label{color:var(--text);opacity:.85;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .stack .row{grid-template-columns:minmax(0,1fr);gap:4px}
+  .stack .row>label{font-size:12px;color:var(--dim)}
+  .field{height:32px;background:var(--field);border:1px solid var(--line);border-radius:6px;display:flex;align-items:center;padding:0 8px;gap:8px;min-width:0;font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--hi)}
+  .field input{all:unset;flex:1;min-width:0;width:100%}
+  .field .u{color:var(--dim)}
+  .field .chip{width:22px;height:18px;border-radius:4px;border:1px solid #fff3;flex:none;position:relative;overflow:hidden}
+  .field .chip input{position:absolute;inset:-4px;width:40px;height:30px;opacity:0;cursor:pointer}
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:8px;min-width:0}
+  .pair .field{min-width:0;gap:6px;padding:0 6px}
+  .field input[data-h]{font-size:12px;letter-spacing:-.02em}
+  .panel{padding-bottom:20px}
+  .dice{width:32px;height:32px;flex:none;border-radius:6px;background:var(--btn);border:1px solid var(--line);color:var(--text);cursor:pointer;display:grid;place-items:center}
+  .dice:hover{color:var(--hi)}
+  .seedrow{display:flex;gap:8px}
+  /* variant B */
+  .sec{margin:12px 16px 0;border:1px solid var(--line);border-radius:8px;background:#1a1d23}
+  .sec>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:10px 12px;color:var(--hi);font-size:15px}
+  .sec>summary::-webkit-details-marker{display:none}
+  .sec>summary .chev{width:16px;transition:transform .12s;color:var(--dim)}
+  .sec[open]>summary .chev{transform:rotate(90deg)}
+  .sec .sum{margin-left:auto;display:flex;gap:6px;align-items:center;color:var(--dim);font-size:12px;min-width:0}
+  .sec[open] .sum{display:none}
+  .sec .body{padding:2px 12px 14px}
+  .sec .rows,.sec .grid{margin-left:0;margin-right:0}
+  .dot{width:14px;height:14px;border-radius:50%;border:1px solid #fff3;flex:none}
+  /* variant C */
+  .preview{margin:14px 16px 0;height:64px;border-radius:8px;border:1px solid var(--line);position:relative;overflow:hidden}
+  .preview span{position:absolute;left:10px;bottom:6px;font-size:12px;color:#fff;text-shadow:0 1px 2px #0009}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 16px 0}
+  .tc{display:flex;align-items:center;gap:6px;padding:5px 10px 5px 6px;border-radius:999px;border:1px solid var(--line);background:var(--btn);cursor:pointer;font-size:13px}
+  .tc.on{border-color:var(--accent);background:var(--sel);color:var(--hi)}
+  .side{width:300px;font-size:13px;color:var(--dim)}
+  .side h3{margin:0 0 6px;color:var(--hi);text-transform:none;letter-spacing:0;font-size:15px}
+  .side ul{padding-left:18px;margin:6px 0}
+  .side label{display:block;margin:16px 0 4px;color:var(--hi)}
+  .side input[type=range]{width:100%}
+  .debug{margin-top:14px;font:11px/1.4 monospace;white-space:pre-wrap;background:#0b0c0f;border:1px solid var(--line);border-radius:6px;padding:8px;color:#9a9}
+  .switcher{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#f1ead2;color:#111;border-radius:999px;padding:6px 10px;display:flex;gap:12px;align-items:center;box-shadow:0 6px 20px #000c;z-index:20;font-weight:600;max-width:calc(100vw - 32px)}
+  .switcher button{background:#111;color:#f1ead2;border:0;border-radius:50%;width:28px;height:28px;cursor:pointer;flex:none}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel" id="panel" style="width:320px"></div>
+  <div class="side">
+    <h3>Map panel · Style tab</h3>
+    <div id="notes"></div>
+    <label for="w">Panel width: <b id="wv">320</b> px</label>
+    <input id="w" type="range" min="240" max="440" value="320">
+    <div class="debug" id="debug"></div>
+  </div>
+</div>
+<div class="switcher"><button id="prev" aria-label="Previous variant">←</button><span id="vlabel"></span><button id="next" aria-label="Next variant">→</button></div>
+
+<script>
+const SVG={
+ map:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 4 5.5 2.5l5 1.5 4-1.5v9.5l-4 1.5-5-1.5-4 1.5ZM5.5 2.5v9.5M10.5 4v9.5"/></svg>',
+ dice:'<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 2.5h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2ZM5.5 5.5h.01M10.5 5.5h.01M8 8h.01M5.5 10.5h.01M10.5 10.5h.01"/></svg>',
+ chev:'<svg class="chev" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4.5 10 8l-3.5 3.5"/></svg>'
+};
+const TEMPLATES=[
+ {n:'Ocean',c:'#3D6E8C',s:.30,light:false},{n:'Dark Ink',c:'#1B2030',s:.10,light:false},{n:'Flat Colour',c:'#6B9EC4',s:0,light:false},
+ {n:'Parchment',c:'#E8D9B0',s:.40,light:true},{n:'Tropical',c:'#1F9DB5',s:.20,light:false},{n:'Winter',c:'#AAC6DE',s:.15,light:true}];
+const S={template:'Ocean',water:'#3D6E8C',strength:.30,tscale:1.0,tlight:'#FFFFFF',tdark:'#000000',ramount:0,rscale:32,seed:0};
+const VARIANTS={A:'One label column, grouped',B:'Collapsible groups',C:'Preview strip, labels above'};
+let variant=(new URLSearchParams(location.search).get('variant')||'A').toUpperCase();
+if(!VARIANTS[variant])variant='A';
+let open={tpl:true,tex:true,rough:true};
+const log=[];
+const note=m=>{log.unshift(m);if(log.length>6)log.pop();};
+
+const num=(k,dec,unit)=>`<div class="field"><input aria-label="${k}" data-k="${k}" data-dec="${dec}" value="${(+S[k]).toFixed(dec)}" inputmode="decimal">${unit?`<span class="u">${unit}</span>`:''}</div>`;
+const col=k=>`<div class="field"><span class="chip" style="background:${S[k]}"><input type="color" aria-label="${k}" data-c="${k}" value="${S[k].toLowerCase()}"></span><input aria-label="${k} hex" data-h="${k}" value="${S[k].toUpperCase()}" maxlength="7"></div>`;
+const row=(l,f)=>`<div class="row"><label>${l}</label>${f}</div>`;
+const swatches=()=>`<div class="grid">${TEMPLATES.map(t=>`<div class="sw ${t.light?'light':''} ${S.template===t.n?'on':''}" role="button" tabindex="0" data-t="${t.n}" style="background:${t.c}">${t.n}</div>`).join('')}</div>`;
+const seed=()=>`<div class="seedrow"><div class="field" style="flex:1"><input aria-label="seed" data-k="seed" data-dec="0" value="${S.seed}"></div><button class="dice" id="dice" title="Re-roll seed" aria-label="Re-roll seed">${SVG.dice}</button></div>`;
+const head=()=>`<div class="head"><span class="ico">${SVG.map}</span>Map</div><div class="tabs"><div>Canvas</div><div class="on">Style</div><div>Shores</div></div>`;
+
+function viewA(){return head()+`
+ <h2>Background</h2>
+ <h3>Template</h3>${swatches()}
+ <h3>Water</h3><div class="rows">${row('Colour',col('water'))}</div>
+ <h3>Texture</h3><div class="rows">
+   ${row('Strength',num('strength',2))}${row('Scale',num('tscale',1))}
+   ${row('Light / dark',`<div class="pair">${col('tlight')}${col('tdark')}</div>`)}</div>
+ <h2>Roughness</h2><div class="rows" style="margin-top:12px">
+   ${row('Amount',num('ramount',1,'u'))}${row('Scale',num('rscale',1,'u'))}${row('Seed',seed())}</div>`;}
+
+function sec(id,title,summary,inner){return `<details class="sec" data-s="${id}" ${open[id]?'open':''}><summary>${SVG.chev}${title}<span class="sum">${summary}</span></summary><div class="body">${inner}</div></details>`;}
+function viewB(){const t=TEMPLATES.find(x=>x.n===S.template);return head()+`
+ ${sec('tpl','Background',`<span class="dot" style="background:${S.water}"></span>${S.template}`,
+   swatches()+`<div class="rows">${row('Water',col('water'))}</div>`)}
+ ${sec('tex','Texture',`${(+S.strength).toFixed(2)} · ${(+S.tscale).toFixed(1)}×`,
+   `<div class="rows">${row('Strength',num('strength',2))}${row('Scale',num('tscale',1))}${row('Light',col('tlight'))}${row('Dark',col('tdark'))}</div>`)}
+ ${sec('rough','Roughness',`${(+S.ramount).toFixed(1)} u`,
+   `<div class="rows">${row('Amount',num('ramount',1,'u'))}${row('Scale',num('rscale',1,'u'))}${row('Seed',seed())}</div>`)}`;}
+
+function viewC(){return head()+`
+ <div class="preview" style="background:${S.water}"><span>${S.template} · texture ${(+S.strength).toFixed(2)}</span>
+   <div style="position:absolute;inset:0;background:linear-gradient(120deg,${S.tlight} 0,transparent 50%,${S.tdark} 100%);opacity:${Math.min(1,S.strength*1.2)*.35}"></div></div>
+ <div class="chips">${TEMPLATES.map(t=>`<div class="tc ${S.template===t.n?'on':''}" role="button" tabindex="0" data-t="${t.n}"><span class="dot" style="background:${t.c}"></span>${t.n}</div>`).join('')}</div>
+ <h3>Colours</h3><div class="rows stack"><div class="pair">${row('Water',col('water'))}${row('&nbsp;',`<div></div>`)}</div>
+   <div class="pair">${row('Texture light',col('tlight'))}${row('Texture dark',col('tdark'))}</div></div>
+ <h3>Texture</h3><div class="rows stack"><div class="pair">${row('Strength',num('strength',2))}${row('Scale',num('tscale',1))}</div></div>
+ <h3>Roughness</h3><div class="rows stack"><div class="pair">${row('Amount',num('ramount',1,'u'))}${row('Scale',num('rscale',1,'u'))}</div>${row('Seed',seed())}</div>`;}
+
+const NOTES={
+ A:'Every label shares one column and every field starts at the same x. Background is split into Template, Water and Texture under quiet captions; the template name appears once, on the swatch. Light and dark sit side by side.',
+ B:'Same fields, folded into three groups. A closed group shows a one-line summary, so the whole tab fits without scrolling.',
+ C:'A live strip previews the water and texture. Templates become chips, and labels sit above fields, so it never has to squeeze a label column in a narrow panel.'};
+function render(){
+  const p=document.getElementById('panel');
+  const keep=document.activeElement&&(document.activeElement.dataset.k||document.activeElement.dataset.h);
+  p.innerHTML=({A:viewA,B:viewB,C:viewC})[variant]();
+  p.style.setProperty('--lw',(parseInt(p.style.width)<300?'92px':'112px'));
+  document.getElementById('vlabel').textContent=`${variant} (${VARIANTS[variant]})`;
+  document.getElementById('notes').innerHTML=`<p>${NOTES[variant]}</p><ul><li>Click a template to take its look.</li><li>Edit any field; Enter or click away applies it.</li><li>Drag the width slider to check a narrow panel.</li></ul>`;
+  document.getElementById('debug').textContent='state '+JSON.stringify(S)+'\n\nlast changes:\n'+log.join('\n');
+  if(keep){const e=p.querySelector(`[data-k="${keep}"],[data-h="${keep}"]`);}
+}
+const panel=document.getElementById('panel');
+panel.addEventListener('click',e=>{
+  const t=e.target.closest('[data-t]');
+  if(t){const tp=TEMPLATES.find(x=>x.n===t.dataset.t);Object.assign(S,{template:tp.n,water:tp.c,strength:tp.s});note('SetTemplate '+tp.n);render();return;}
+  if(e.target.closest('#dice')){S.seed=Math.floor(Math.random()*1e6);note('ReRoll seed='+S.seed);render();}
+});
+panel.addEventListener('keydown',e=>{const t=e.target.closest('[data-t]');if(t&&(e.key==='Enter'||e.key===' ')){e.preventDefault();t.click();}
+  if(e.target.matches('input[data-k],input[data-h]')&&e.key==='Enter')e.target.blur();});
+panel.addEventListener('change',e=>{
+  const i=e.target;
+  if(i.dataset.k){const v=parseFloat(i.value);if(!isNaN(v)){S[i.dataset.k]=v;note(`Set ${i.dataset.k}=${v}`);}render();}
+  else if(i.dataset.c){S[i.dataset.c]=i.value.toUpperCase();note(`Set ${i.dataset.c}=${S[i.dataset.c]}`);render();}
+  else if(i.dataset.h){let v=i.value.trim();if(!v.startsWith('#'))v='#'+v;if(/^#[0-9a-f]{6}$/i.test(v)){S[i.dataset.h]=v.toUpperCase();note(`Set ${i.dataset.h}=${v.toUpperCase()}`);}render();}
+});
+panel.addEventListener('toggle',e=>{const d=e.target.closest&&e.target.closest('[data-s]');if(d)open[d.dataset.s]=d.open;},true);
+document.getElementById('w').oninput=e=>{panel.style.width=e.target.value+'px';document.getElementById('wv').textContent=e.target.value;render();};
+function setVariant(v){variant=v;const u=new URL(location);u.searchParams.set('variant',v);try{history.replaceState(null,'',u)}catch(_){}render();}
+const keys=Object.keys(VARIANTS),step=d=>setVariant(keys[(keys.indexOf(variant)+d+keys.length)%keys.length]);
+prev.onclick=()=>step(-1);next.onclick=()=>step(1);
+document.addEventListener('keydown',e=>{if(/INPUT|TEXTAREA/.test(document.activeElement.tagName))return;if(e.key==='ArrowLeft')step(-1);if(e.key==='ArrowRight')step(1);});
+render();
+</script>
+</body>
+</html>
