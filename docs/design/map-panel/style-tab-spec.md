@@ -147,3 +147,44 @@ steps 1 to 3 need a machine with a display.
 - The Canvas and Shores tabs (they should adopt the same label column and rows; see #565).
 - The Properties panel's sections.
 - Light theme values: use the palette, and the light theme follows.
+
+## Shores tab (proposal, variant not yet chosen)
+
+Reference: `prototype-shores-tab.html` (`?variant=A` or `?variant=B`). Same tokens and the same label
+column as above. The code is `shores_tab` in `panels/properties/map.rs` and `shore_fields` in
+`panels/properties/object_style.rs`. **`shore_fields` is shared with the Landmass and Lake
+properties**, so everything below also changes those panels; check them.
+
+What is wrong now:
+
+- The heading says "Landmass shore" or "Lake shore" and the only way to switch is two bare icons at
+  its right, which do not say which is which.
+- Labels run long ("Line width", "Line colour", "Shade width", "Shade colour"), so the label column
+  widens on those rows and the colour chips start further right than the number fields.
+- The group captions ("Outline", "Ripples", "Inner shade") have no space above them, so the groups
+  run together.
+- Ripples is five rows (Count, Spacing, Line width, Line colour, Fade) and the tab is one long list.
+- A colour with transparency (Line colour) shows a checkerboard chip with no sign of its opacity.
+
+Changes in both variants:
+
+- Heading **"Shore"** (`divider_section`), then a full-width **Landmass | Lake** switch under it:
+  `prop_widgets::segmented`, 22 tall, with the tool icons (`LandBrush`, `LakeBrush`, 14 pt) before
+  the names. Replaces the icon-only `icon_switch` in the header. The two kinds keep their own values.
+- Group captions use `group_caption` (8 above, 4 below, caption 11, `text_tertiary`).
+- Labels shrink to what the caption already says: **Width**, **Colour**, **Count**, **Spacing**,
+  **Fade**. Accessible names stay "Outline width", "Outline colour", "Ripple count", "Ripple spacing",
+  "Ripple line width", "Ripple line colour", "Ripple fade", "Shade width", "Shade colour", through the
+  `shown_as` display label above.
+- Swatches are the existing 44 × 22 chip with the hex beside it. When the colour is translucent, show
+  its opacity after the hex in the same text ("#FFFFFF 60%").
+
+Variant A (rows, like the Style tab): the rows above in one label column, 11 rows. Consistent with
+the Style tab; longest.
+
+Variant B (paired fields): `prop_widgets::pair` with `named_above`, the field's name above it in
+caption 11. Outline: Width, Colour. Ripples: Count, Spacing; Width, Fade; Colour. Inner shade:
+Width, Colour. 6 rows; fits without scrolling. A colour that does not fit beside its partner at a
+narrow width drops to its own row.
+
+Decision needed: A or B.
