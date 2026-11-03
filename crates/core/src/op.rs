@@ -177,6 +177,8 @@ pub enum Property {
     /// Layers only. Ops don't check the target, so that inverses always apply; Commands
     /// keep it pointing at a Landmass.
     Clip(Option<Id>),
+    /// Layers only: whether it is attached to the Layer below.
+    Attached(bool),
     /// Layers only.
     DepthSort(bool),
     /// Layers and Objects: the Link set, or `None` for no link.
@@ -630,6 +632,7 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
         (Node::Object(_), Property::Visible(_)) => Err("visible"),
         (Node::Object(_), Property::Opacity(_)) => Err("opacity"),
         (Node::Object(_), Property::Clip(_)) => Err("clip"),
+        (Node::Object(_), Property::Attached(_)) => Err("attached"),
         (Node::Object(_), Property::DepthSort(_)) => Err("depth_sort"),
         (Node::Object(object), Property::Fill(_)) => object.kind.fill().map(|_| ()).ok_or("fill"),
     }
@@ -656,6 +659,9 @@ fn set_property(node: &mut Node, property: Property) -> Property {
         }
         (Node::Layer(layer), Property::Clip(clip)) => {
             Property::Clip(std::mem::replace(&mut layer.clip, clip))
+        }
+        (Node::Layer(layer), Property::Attached(on)) => {
+            Property::Attached(std::mem::replace(&mut layer.attached, on))
         }
         (Node::Layer(layer), Property::DepthSort(on)) => {
             Property::DepthSort(std::mem::replace(&mut layer.depth_sort, on))

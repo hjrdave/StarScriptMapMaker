@@ -697,6 +697,54 @@ impl Map {
         None
     }
 
+    /// The Layer just below `id` in its parent's Stacking order: the one `id` attaches to.
+    pub fn layer_below(&self, id: Id) -> Option<Id> {
+        let siblings = self.children(self.parent(id));
+        let at = siblings.iter().position(|&sibling| sibling == id)?;
+        siblings[..at]
+            .iter()
+            .rev()
+            .copied()
+            .find(|&sibling| matches!(self.node(sibling), Some(Node::Layer(_))))
+    }
+
+    /// The Landmasses `id` is clipped to: from the nearest Layer above it that is attached
+    /// (every Landmass in the Layer below it, at any depth) or has a Clip (that one Landmass).
+    /// A Layer's own setting replaces the settings of the Layers around it. Empty when none.
+    pub fn clip_targets(&self, id: Id) -> Vec<Id> {
+        for layer in std::iter::successors(self.parent(id), |&layer| self.parent(layer)) {
+            let Some(Node::Layer(node)) = self.node(layer) else {
+                continue;
+            };
+            if node.attached {
+                return self.landmasses_under(self.layer_below(layer));
+            }
+            if let Some(clip) = node.clip {
+                return vec![clip];
+            }
+        }
+        Vec::new()
+    }
+
+    /// Every Landmass inside `layer`, at any depth.
+    fn landmasses_under(&self, layer: Option<Id>) -> Vec<Id> {
+        let mut found = Vec::new();
+        let mut pending: Vec<Id> = layer.into_iter().collect();
+        while let Some(at) = pending.pop() {
+            let children = self.children(Some(at));
+            for &child in children {
+                match self.node(child) {
+                    Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Landmass(_)) => {
+                        found.push(child);
+                    }
+                    Some(Node::Layer(_)) => pending.push(child),
+                    _ => {}
+                }
+            }
+        }
+        found
+    }
+
     /// `id` is pinned to the Canvas: an Object that is itself, or a node inside a pinned Layer.
     pub fn is_pinned(&self, id: Id) -> bool {
         std::iter::successors(Some(id), |&n| self.parent(n)).any(|n| match self.node(n) {

@@ -35,6 +35,13 @@ impl LayerTree {
         );
         child.spacing_mut().item_spacing.x = 4.0;
         child.add_space(4.0 + INDENT * row.depth as f32);
+        // An attached Layer is indented, with a clip arrow before its icon: the only sign it is.
+        if state.attached {
+            child.add_space(INDENT);
+            let (arrow, _) =
+                child.allocate_exact_size(egui::Vec2::splat(icons::GRID), egui::Sense::hover());
+            icons::paint(&child, arrow, Icon::Clip, icons::GRID, palette.clip);
+        }
         let has_children = !map.children(Some(row.id)).is_empty();
         if layer.is_some() && has_children {
             let collapsed = self.collapsed.contains(&row.id);
@@ -106,6 +113,10 @@ impl LayerTree {
                     .color(color);
                 if state.italic() {
                     text = text.italics();
+                }
+                // The Layer below one that is attached to it is underlined.
+                if state.attached_to {
+                    text = text.underline();
                 }
                 child.add(egui::Label::new(text).selectable(false).truncate());
             }
@@ -539,25 +550,26 @@ fn row_context_menu(
             ui.close();
         }
         if let Some(layer) = layer {
-            let selected = selected_landmass(map, editor.selection());
+            let below = map.layer_below(row.id).is_some();
+            let (label, attached) = if layer.attached {
+                ("Release from Layer Below", false)
+            } else {
+                ("Attach to Layer Below", true)
+            };
+            // Releasing is always possible; attaching needs a Layer below.
             if ui
-                .add_enabled(
-                    selected.is_some(),
-                    egui::Button::new("Clip to selected Landmass"),
-                )
-                .on_disabled_hover_text("Select one Landmass first")
+                .add_enabled(layer.attached || below, egui::Button::new(label))
+                .on_disabled_hover_text("There is no Layer below this one")
                 .clicked()
             {
-                actions.push(Action::Run(Command::SetClip {
+                actions.push(Action::Run(Command::SetAttached {
                     id: row.id,
-                    target: selected,
+                    attached,
                 }));
                 ui.close();
             }
-            if ui
-                .add_enabled(layer.clip.is_some(), egui::Button::new("Clear Clip"))
-                .clicked()
-            {
+            // A Clip to one Landmass from an older Map can still be cleared.
+            if layer.clip.is_some() && ui.button("Clear Clip").clicked() {
                 actions.push(Action::Run(Command::SetClip {
                     id: row.id,
                     target: None,

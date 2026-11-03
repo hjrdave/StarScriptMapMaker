@@ -117,65 +117,6 @@ fn a_depth_sorted_layer_lists_its_stamps_in_draw_order_and_refuses_reordering() 
 }
 
 #[test]
-fn clips_are_set_and_cleared_from_the_selection_and_deleting_the_target_undoes() {
-    use crate::editor::Editor;
-    use ssmap_core::{MultiPolygon, Polygon};
-    let mut editor = Editor::new(Map::new(Canvas::new(
-        100,
-        100,
-        Scale::new(1.0, DistanceUnit::Miles),
-    )));
-    let layer = editor.new_layer().unwrap();
-    let land = Id::new();
-    assert!(
-        editor
-            .run(Command::CreateLandmass {
-                id: land,
-                parent: layer,
-                index: None,
-                geometry: MultiPolygon(vec![Polygon {
-                    exterior: vec![[0.0, 0.0], [50.0, 0.0], [50.0, 50.0], [0.0, 50.0]],
-                    holes: vec![],
-                }]),
-                fill: None,
-            })
-            .is_ok()
-    );
-    let art = editor.new_layer().unwrap();
-    assert_eq!(selected_landmass(editor.map(), &[layer]), None);
-    assert_eq!(selected_landmass(editor.map(), &[land, art]), None);
-    let target = selected_landmass(editor.map(), &[land]);
-    assert_eq!(target, Some(land));
-    assert_eq!(landmasses(editor.map()), vec![land]);
-    assert_eq!(landmass_name(editor.map(), land), "Landmass 1");
-
-    let clip = |editor: &Editor| match editor.map().node(art) {
-        Some(Node::Layer(layer)) => layer.clip,
-        _ => panic!("a Layer"),
-    };
-    assert!(editor.run(Command::SetClip { id: art, target }).is_ok());
-    assert_eq!(clip(&editor), Some(land));
-    assert!(
-        editor
-            .run(Command::SetClip {
-                id: art,
-                target: None
-            })
-            .is_ok()
-    );
-    assert_eq!(clip(&editor), None);
-    editor.undo();
-    assert_eq!(clip(&editor), Some(land));
-
-    editor.select(vec![land]);
-    editor.delete_selection();
-    assert_eq!(clip(&editor), None, "deleting the target clears the Clip");
-    editor.undo();
-    assert_eq!(clip(&editor), Some(land), "undo restores both");
-    assert!(editor.map().node(land).is_some());
-}
-
-#[test]
 fn every_tree_action_undoes_and_redoes_cleanly() {
     use crate::editor::Editor;
     let mut editor = Editor::new(Map::new(Canvas::new(
@@ -250,7 +191,7 @@ struct Fixture {
 
 fn harness(editor: Editor) -> Harness<'static, Fixture> {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(260.0, 400.0))
+        .with_size(egui::vec2(260.0, 700.0))
         .build_ui_state(
             |ui, fixture: &mut Fixture| {
                 theme::install(&ui.ctx().clone());
@@ -736,24 +677,22 @@ fn pointer(harness: &mut Harness<'static, Fixture>, pos: egui::Pos2, pressed: Op
 }
 
 #[test]
-fn the_layer_area_is_the_clipping_and_depth_sort_is_in_the_layers_menu() {
+fn depth_sort_is_in_the_layers_menu_and_nothing_sits_under_the_list() {
     let (mut editor, a, b) = editor_with_two_layers();
     editor.select(vec![a]);
     let mut harness = harness(editor);
-    for label in ["Clipping", "Opacity", "Clip to", "Use selection"] {
-        assert!(harness.query_by_label(label).is_some(), "{label}");
-    }
-    // The old sections and the Depth sort checkbox are gone from under the list.
-    for label in ["Appearance", "Ordering", "Depth sort"] {
+    // The settings row is the only place for Opacity; the old sections and the Clipping
+    // section are gone from under the list.
+    assert!(harness.query_by_label("Opacity").is_some());
+    for label in [
+        "Appearance",
+        "Ordering",
+        "Clipping",
+        "Clip to",
+        "Depth sort",
+    ] {
         assert!(harness.query_by_label(label).is_none(), "{label}");
     }
-    // No Landmass is selected, so there is nothing to clip to.
-    assert!(
-        harness
-            .get_by_label("Use selection")
-            .accesskit_node()
-            .is_disabled()
-    );
 
     // Depth sort is a checked item in the Layer's right-click menu.
     open_menu(&mut harness, a);
@@ -871,32 +810,6 @@ fn a_layers_pin_shows_on_the_row_and_what_is_inside_it_shows_a_dashed_pin() {
 }
 
 #[test]
-fn use_selection_clips_the_layer_to_the_selected_landmass() {
-    let (mut editor, a, _) = editor_with_two_layers();
-    let island = Id::new();
-    assert!(
-        editor
-            .run(Command::CreateLandmass {
-                id: island,
-                parent: a,
-                index: None,
-                geometry: ssmap_core::MultiPolygon(vec![ssmap_core::Polygon {
-                    exterior: vec![[0.0, 0.0], [40.0, 0.0], [40.0, 40.0], [0.0, 40.0]],
-                    holes: Vec::new(),
-                }]),
-                fill: None,
-            })
-            .is_ok()
-    );
-    // The Landmass is selected, so its Layer is the active one.
-    editor.select(vec![island]);
-    let mut harness = harness(editor);
-    harness.get_by_label("Use selection").click();
-    harness.run();
-    assert_eq!(layer_data(&harness.state().editor, a).clip, Some(island));
-}
-
-#[test]
 fn one_opacity_drag_in_the_layer_area_is_one_undo_step() {
     let (mut editor, a, _) = editor_with_two_layers();
     editor.select(vec![a]);
@@ -939,4 +852,43 @@ fn a_rename_request_expands_the_row_and_opens_its_rename_box() {
     assert!(!tree.collapsed.contains(&group));
     assert_eq!(tree.renaming.as_ref().map(|(id, _)| *id), Some(child));
     assert!(harness.state_mut().editor.take_rename_request().is_none());
+}
+
+#[test]
+fn attach_to_layer_below_is_in_the_menu_and_the_rows_show_the_pair() {
+    // The lowest Layer has nothing below it, so it cannot attach.
+    let (editor, a, _) = editor_with_two_layers();
+    let mut lowest = harness(editor);
+    open_menu(&mut lowest, a);
+    assert!(
+        lowest
+            .get_by_label("Attach to Layer Below")
+            .accesskit_node()
+            .is_disabled()
+    );
+
+    // `a` is below `b`, so b can attach to it.
+    let (editor, a, b) = editor_with_two_layers();
+    let mut harness = harness(editor);
+    open_menu(&mut harness, b);
+    harness.get_by_label("Attach to Layer Below").click();
+    harness.run();
+    let editor = &harness.state().editor;
+    assert!(layer_data(editor, b).attached);
+    assert_eq!(editor.undo_label(), Some("Attach to Layer Below"));
+    // The attached row is indented with a clip arrow, and the Layer below it is underlined;
+    // these are the only signs.
+    let attached = RowState::of(editor.map(), b);
+    let below = RowState::of(editor.map(), a);
+    assert!(attached.attached && !attached.attached_to);
+    assert!(below.attached_to && !below.attached);
+
+    // The menu now offers Release, and releasing is one Undo step too.
+    open_menu(&mut harness, b);
+    harness.get_by_label("Release from Layer Below").click();
+    harness.run();
+    let editor = &harness.state().editor;
+    assert!(!layer_data(editor, b).attached);
+    assert_eq!(editor.undo_label(), Some("Release from Layer Below"));
+    assert!(!RowState::of(editor.map(), a).attached_to);
 }
