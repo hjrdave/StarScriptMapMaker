@@ -176,9 +176,8 @@ What is wrong now:
 
 Changes in both variants:
 
-- Heading **"Shore"** (`divider_section`), then a full-width **Landmass | Lake** switch under it:
-  `prop_widgets::segmented`, 22 tall, with the tool icons (`LandBrush`, `LakeBrush`, 14 pt) before
-  the names. Replaces the icon-only `icon_switch` in the header. The two kinds keep their own values.
+- No "Shore" heading row (the tab says it). The Landmass | Lake mode buttons sit directly under the
+  tab bar; see "Chosen: C" below. The two kinds keep their own values.
 - Group captions use `group_caption` (8 above, 4 below, caption 11, `text_tertiary`).
 - Labels shrink to what the caption already says: **Width**, **Colour**, **Count**, **Spacing**,
   **Fade**. Accessible names stay "Outline width", "Outline colour", "Ripple count", "Ripple spacing",
@@ -204,90 +203,11 @@ hide a hex. It uses the same `.prefix(...)` addition to `ScrubSpec` as the Style
 
 **Chosen: C**, with the Landmass | Lake switch drawn as **mode buttons**, as the tool panels do
 (`prop_widgets::mode_buttons`: 40 × 32 icon buttons, 4 apart, the picked one with the gold fill and
-ring), not as the full-width labelled switch described above. The heading row also carries a gold
-chip at the right naming the picked kind ("Landmass" or "Lake"), like the mode chip ("Paint") in a
-tool's header. `LandBrush` and `LakeBrush` icons, 18 pt, names as tooltips and accessible names. The
-switch sits 8 under the heading, and the "Outline" caption follows it. `icon_switch` goes away.
+ring), not as the full-width labelled switch described above. `LandBrush` and `LakeBrush` icons,
+18 pt, names as tooltips and accessible names.
 
-## Canvas tab
-
-Reference: `prototype-canvas-tab.html`. Same tokens, group captions and 80 pt label column as the
-Style tab. The code is `canvas_fields` and `anchor_grid` in `panels/properties/map.rs`, and the
-Canvas section in `map_fields`. `canvas_fields` is also used for Art boards (without the Scale
-group), so check that panel.
-
-### Why it is cut off now
-
-After the W | H row, `canvas_fields` calls `ui.columns(2, ...)` and puts **Scale** in the left
-column and **Anchor** in the right. Each is the 64 pt `row` helper: a 64 pt label plus its content.
-At 320 each column is about 146, so:
-
-- the Scale text ("0.25 mi per unit", about 80) needs 64 + 80 and runs into the Anchor label;
-- the Anchor grid needs 64 + 3 × 18 + 2 × 2, plus the item spacing, and the third column is cut off.
-
-At narrower widths it only gets worse. Two things sit side by side that cannot both shrink.
-
-### Layout
-
-Heading "Canvas" (`divider_section`), then:
-
-1. **Caption "Size"**, then one row: `[W field][24 chain][H field]`. This is the existing row, which
-   already works: 22 tall, `item_spacing.x = 2`, each field half of the room left after the 24 pt
-   chain, the "W" and "H" shown as in-box prefixes. Keep it. The chain is `Icon::Link` (gold) /
-   `Icon::Unlink`.
-2. **Caption "Scale"**, then a row: label **Distance** (80 pt label column), the value
-   ("0.25 mi per unit") in `text_primary` 12, which wraps if it must. Left out for an Art board,
-   which has no Scale.
-3. **Caption "Resize from"**, then a row: label **Anchor** (80 pt column), and in the control column
-   the 3 × 3 grid, then a caption line under it that names the point that stays put ("Top left stays
-   put when the size changes", `text_tertiary` 11, wrapping, 4 above).
-
-Nothing is side by side except W | H and the chain, which already shrink. The Scale and Anchor rows
-use the same label column as the rest of the panel, so they line up with the other tabs.
-
-### Anchor grid
-
-- Buttons **22 × 22** (they are 18 × 18 now), 2 pt gap, so the grid is 70 × 70. Radius
-  `RADIUS_FIELD`.
-- Off: `bg_raised` fill, `border_subtle`. On: `gold_subtle` fill, `gold_ring` outline, and a gold dot
-  (the existing "●"). Hover: `hover_fill`.
-- Each button keeps its name from `anchor_name` for the tooltip and the accessible name, and is a
-  `RadioButton` in a group named "Anchor".
-- The grid is fixed-size, so the control column must be at least 70 wide. The label column is 80 and
-  the gutter 8, so that holds down to a panel width of about 180.
-
-### Also
-
-- The W and H labels in the fields stay. Their accessible names stay "Canvas width" and "Canvas
-  height" ("Board width" and "Board height" for an Art board).
-- No Command changes: resizing still goes through `resize(...)` and `self.live.apply(...)` as one
-  gesture, with the anchor held for the whole drag.
-
-## Tool panel: the mode control
-
-Reference: `prototype-tool-modes.html` (the "After" panel, with "Now" beside it). The code is
-`prop_widgets::mode_buttons`, called from `chrome/tool_section.rs` (about line 216) for the Land
-Brush (Paint, Paint Lasso, Erase), the Brush, and the other tools with modes.
-
-Now: three icon-only buttons, 40 × 32, with a tooltip each. They are the only control in the panels
-that shows its options as unlabelled icons, and they do not look like the Landmass | Lake switch on
-the Shores tab.
-
-After: the same labelled switch as the Shores tab (`prop_widgets::segmented`, extended with an icon
-before each name):
-
-- Full width, one segment per mode, equal widths, **22 tall** (`metrics::FIELD[0]`), no gap between
-  segments, `RADIUS_FIELD` on the outer corners only, 1 px `border_subtle` between segments.
-- Each segment is the 14 pt icon, 6 gap, then the name at `BODY` 12. Content centred. A segment that
-  is too narrow for icon and name (below about 70 each) drops the name and keeps the tooltip.
-- Off: `bg_field` fill, `text_secondary`. Hover: `hover_fill`, `text_primary`. On: `bg_raised` fill,
-  `text_primary`, a 1 px `gold` ring.
-- The **erasing** mode, when on, is ringed and tinted in `palette.danger` (text and icon too), as
-  `mode_buttons` does today. Its `danger` flag moves into the new option type.
-- Each segment is a `RadioButton` named for the mode; the switch is a group named "Mode".
-- Below it: the hint ("Hold Option to get the other mode."), `CAPTION` 11, `text_tertiary`, 8 above.
-  Then the tool's sections as before.
-- The mode chip at the right of the header ("Paint", "Erase") is unchanged.
-
-One widget now serves both places: the Shore switch is this control with two segments, so
-`icon_switch` goes away once it is replaced.
+**No heading row.** The tab already says "Shores", so the "Shore" heading and its chip are dropped:
+the `divider_section` in `shores_tab` goes, and the mode buttons sit directly under the tab bar,
+8 above and 8 below (the group caption "Outline" follows). The picked button's gold ring is the only
+sign of which kind is showing. `icon_switch` goes away, and the shore title strings ("Landmass shore",
+"Lake shore") are no longer drawn; keep them as the `push_id` and the Command label.

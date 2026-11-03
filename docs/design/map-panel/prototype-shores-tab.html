@@ -97,7 +97,7 @@ const numP=(k,dec,unit,label)=>`<div class="field pf"><span class="pre">${label}
 const row=(l,f)=>`<div class="row"><label title="${l}">${l}</label>${f}</div>`;
 const above=(l,f)=>`<div class="above"><label>${l}</label>${f}</div>`;
 const seg=()=>`<div class="seg" role="radiogroup">${['Landmass','Lake'].map(n=>`<button role="radio" aria-checked="${which===n}" class="${which===n?'on':''}" data-w="${n}">${SVG[n==='Landmass'?'land':'lake']}${n}</button>`).join('')}</div>`;
-const headC=()=>`<div class="head">${SVG.map}Map</div><div class="tabs"><div>Canvas</div><div>Style</div><div class="on">Shores</div></div><h2>Shore<span class="chipm">${which}</span></h2><div class="modes" role="radiogroup" aria-label="Shore">${['Landmass','Lake'].map(n=>`<button role="radio" aria-checked="${which===n}" class="${which===n?'on':''}" data-w="${n}" title="${n}" aria-label="${n}">${SVG[n==='Landmass'?'land':'lake']}</button>`).join('')}</div>`;
+const headC=()=>`<div class="head">${SVG.map}Map</div><div class="tabs"><div>Canvas</div><div>Style</div><div class="on">Shores</div></div><div class="modes" role="radiogroup" aria-label="Shore">${['Landmass','Lake'].map(n=>`<button role="radio" aria-checked="${which===n}" class="${which===n?'on':''}" data-w="${n}" title="${n}" aria-label="${n}">${SVG[n==='Landmass'?'land':'lake']}</button>`).join('')}</div>`;
 const head=()=>`<div class="head">${SVG.map}Map</div><div class="tabs"><div>Canvas</div><div>Style</div><div class="on">Shores</div></div><h2>Shore</h2><div style="height:8px"></div>${seg()}`;
 function viewA(){return head()+`
  <h3>Outline</h3><div class="rows">${row('Width',num('ow',1,1))}${row('Colour',col('oc','oa'))}</div>
@@ -115,7 +115,7 @@ function viewC(){return headC()+`
  <h3>Inner shade</h3><div class="rows"><div class="pair">${numP('sw',1,1,'Width')}<div></div></div>${row('Colour',col('scol','sa'))}</div>`;}
 const NOTES={
  A:'Same rows as the Style tab: one 80 pt label column, fields that fill the rest. The group captions carry the context, so labels shrink to Width, Colour, Count, Spacing and Fade. Landmass and Lake are a labelled switch under the heading.',
- C:'Landmass and Lake are icon mode buttons under the heading, as in the tool panels, and the header chip names the one picked. The Style tab\'s rule: every number is a field with its name inside the box, two to a row (a lone one takes half); every colour is a label row, so a narrow panel never has to hide a hex. Ripples is three rows plus the colour.',
+ C:'Landmass and Lake are icon mode buttons right under the tabs, as in the tool panels, with no heading row because the tab already says Shores. The Style tab\'s rule: every number is a field with its name inside the box, two to a row (a lone one takes half); every colour is a label row, so a narrow panel never has to hide a hex. Ripples is three rows plus the colour.',
  B:'Fields in pairs with the name above, so Ripples takes three rows instead of five and the tab fits without scrolling. Same captions and switch.'};
 function render(){
   document.getElementById('panel').innerHTML=({A:viewA,B:viewB,C:viewC})[variant]();
