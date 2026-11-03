@@ -132,37 +132,112 @@ impl LayerTree {
                     .collect()
             });
         if hide_clicked {
-            // Off or mixed turns Hide on for all; on turns it off.
-            let visible = hidden == ToggleState::On;
-            run_all(
-                editor,
-                if visible { "Show" } else { "Hide" },
-                &layers,
-                |id| Command::SetVisible { id, visible },
-            );
+            apply_toggle(editor, &ids, Toggle::Hide);
         }
         if lock_clicked {
-            let lock = locked != ToggleState::On;
-            run_all(
-                editor,
-                if lock { "Lock" } else { "Unlock" },
-                &writable,
-                |id| Command::SetLocked { id, locked: lock },
-            );
+            apply_toggle(editor, &ids, Toggle::Lock);
         }
         if pin_clicked {
-            let pin = pinned != ToggleState::On;
-            let label = if pin {
-                "Pin to Canvas"
-            } else {
-                "Unpin from Canvas"
-            };
-            run_all(editor, label, &writable, |id| Command::SetMoveLocked {
-                id,
-                locked: pin,
-            });
+            apply_toggle(editor, &ids, Toggle::Pin);
         }
     }
+}
+
+/// A flag the settings row and the right-click menu flip on several rows at once.
+#[derive(Clone, Copy)]
+pub(super) enum Toggle {
+    Hide,
+    Lock,
+    Pin,
+}
+
+/// Which of some rows a [`Toggle`] reaches, and whether they all have it on already.
+pub(super) struct ToggleTargets {
+    /// The rows it changes: Hide takes Layers only; Lock and Pin skip a node locked from above.
+    pub targets: Vec<Id>,
+    /// Every target has it on (and there is at least one): the action turns it off.
+    pub on: bool,
+    /// Pin cannot change while any target is locked, as in the settings row.
+    pub enabled: bool,
+}
+
+impl Toggle {
+    /// The Undo label: "Hide", or "Show" when `on`; and so on.
+    pub(super) fn verb(self, on: bool) -> &'static str {
+        match (self, on) {
+            (Self::Hide, false) => "Hide",
+            (Self::Hide, true) => "Show",
+            (Self::Lock, false) => "Lock",
+            (Self::Lock, true) => "Unlock",
+            (Self::Pin, false) => "Pin to Canvas",
+            (Self::Pin, true) => "Unpin from Canvas",
+        }
+    }
+
+    /// A menu label: the verb, naming the count when there are several ("Hide 6 items",
+    /// "Pin 6 items to Canvas").
+    pub(super) fn menu_label(self, state: &ToggleTargets) -> String {
+        let n = state.targets.len();
+        if n < 2 {
+            return self.verb(state.on).to_owned();
+        }
+        match (self, state.on) {
+            (Self::Hide, false) => format!("Hide {n} items"),
+            (Self::Hide, true) => format!("Show {n} items"),
+            (Self::Lock, false) => format!("Lock {n} items"),
+            (Self::Lock, true) => format!("Unlock {n} items"),
+            (Self::Pin, false) => format!("Pin {n} items to Canvas"),
+            (Self::Pin, true) => format!("Unpin {n} items from Canvas"),
+        }
+    }
+}
+
+/// What `toggle` would do to `ids`.
+pub(super) fn toggle_state(map: &ssmap_core::Map, ids: &[Id], toggle: Toggle) -> ToggleTargets {
+    let targets: Vec<Id> = match toggle {
+        Toggle::Hide => ids
+            .iter()
+            .copied()
+            .filter(|&id| map.node(id).is_some_and(Node::is_layer))
+            .collect(),
+        Toggle::Lock | Toggle::Pin => ids
+            .iter()
+            .copied()
+            .filter(|&id| map.locked_ancestor(id).is_none())
+            .collect(),
+    };
+    let has = |id: Id| match toggle {
+        Toggle::Hide => !visible(map, id),
+        Toggle::Lock => node_locked(map, id),
+        Toggle::Pin => pin_on(map, id),
+    };
+    let on = !targets.is_empty() && targets.iter().all(|&id| has(id));
+    let enabled = !targets.is_empty()
+        && (!matches!(toggle, Toggle::Pin) || !targets.iter().any(|&id| node_locked(map, id)));
+    ToggleTargets {
+        targets,
+        on,
+        enabled,
+    }
+}
+
+/// Flips `toggle` on `ids` as one Undo step: off if they all have it on, else on.
+pub(super) fn apply_toggle(editor: &mut Editor, ids: &[Id], toggle: Toggle) {
+    let state = toggle_state(editor.map(), ids, toggle);
+    if !state.enabled {
+        return;
+    }
+    let on = !state.on;
+    run_all(
+        editor,
+        toggle.verb(state.on),
+        &state.targets,
+        |id| match toggle {
+            Toggle::Hide => Command::SetVisible { id, visible: !on },
+            Toggle::Lock => Command::SetLocked { id, locked: on },
+            Toggle::Pin => Command::SetMoveLocked { id, locked: on },
+        },
+    );
 }
 
 /// One of Hide, Lock or Pin. `icons` and `names` are [off, on]; Mixed has the on look and is

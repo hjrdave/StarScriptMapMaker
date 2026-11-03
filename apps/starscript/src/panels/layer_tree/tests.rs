@@ -655,6 +655,75 @@ fn the_menu_cuts_groups_and_deletes_the_selection() {
     assert!(!harness.state().editor.map().contains(inner));
 }
 
+#[test]
+fn the_menu_hides_locks_and_pins_the_whole_selection_in_one_undo_step() {
+    let (mut editor, a, b) = editor_with_two_layers();
+    editor.select(vec![a, b]);
+    let mut harness = harness(editor);
+    open_menu(&mut harness, a);
+    harness.get_by_label("Hide 2 items").click();
+    harness.run();
+    let editor = &harness.state().editor;
+    assert!(!layer_data(editor, a).visible && !layer_data(editor, b).visible);
+    assert_eq!(editor.undo_label(), Some("Hide"));
+
+    open_menu(&mut harness, a);
+    harness.get_by_label("Lock 2 items").click();
+    harness.run();
+    let editor = &harness.state().editor;
+    assert!(layer_data(editor, a).locked && layer_data(editor, b).locked);
+    assert_eq!(editor.undo_label(), Some("Lock"));
+
+    // Both locked now: the next menu offers Unlock, and one Undo undoes both.
+    open_menu(&mut harness, b);
+    harness.get_by_label("Unlock 2 items").click();
+    harness.run();
+    let editor = &harness.state().editor;
+    assert!(!layer_data(editor, a).locked && !layer_data(editor, b).locked);
+    harness.state_mut().editor.undo();
+    harness.run();
+    let editor = &harness.state().editor;
+    assert!(layer_data(editor, a).locked && layer_data(editor, b).locked);
+}
+
+#[test]
+fn the_menu_on_a_mixed_selection_turns_the_flag_on_for_all() {
+    let (mut editor, a, b) = editor_with_two_layers();
+    editor
+        .run(Command::SetMoveLocked {
+            id: a,
+            locked: true,
+        })
+        .unwrap();
+    editor.select(vec![a, b]);
+    let mut harness = harness(editor);
+    open_menu(&mut harness, b);
+    harness.get_by_label("Pin 2 items to Canvas").click();
+    harness.run();
+    let editor = &harness.state().editor;
+    assert!(layer_data(editor, a).pinned && layer_data(editor, b).pinned);
+    assert_eq!(editor.undo_label(), Some("Pin to Canvas"));
+}
+
+#[test]
+fn the_menu_on_an_unselected_row_acts_on_that_row_only() {
+    let (mut editor, a, b) = editor_with_two_layers();
+    editor.select(vec![a]);
+    let mut harness = harness(editor);
+    open_menu(&mut harness, b);
+    // The menu item comes last, after the settings row's and the rows' own eyes.
+    harness
+        .get_all_by_label("Hide")
+        .last()
+        .expect("the menu item")
+        .click();
+    harness.run();
+    let editor = &harness.state().editor;
+    assert!(layer_data(editor, a).visible);
+    assert!(!layer_data(editor, b).visible);
+    assert_eq!(editor.selection(), &[b]);
+}
+
 fn layer_data(editor: &Editor, id: Id) -> Layer {
     let Some(Node::Layer(layer)) = editor.map().node(id) else {
         panic!("a Layer")

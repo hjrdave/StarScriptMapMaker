@@ -1,5 +1,6 @@
 //! Drawing one row of the tree: its trailing indicators, name, context menu and drop target.
 
+use super::settings_row::{Toggle, toggle_state};
 use super::*;
 
 impl LayerTree {
@@ -343,24 +344,21 @@ fn pin_indicator(trailing: &mut egui::Ui, paint: &RowPaint<'_>) -> bool {
 }
 
 /// Pin to Canvas for any row, and Depth sort, checked while on, for a Layer.
-fn pin_and_depth_sort_items(ui: &mut egui::Ui, paint: &RowPaint<'_>, actions: &mut Vec<Action>) {
-    let RowPaint { row, state, .. } = *paint;
+fn pin_and_depth_sort_items(
+    ui: &mut egui::Ui,
+    editor: &Editor,
+    paint: &RowPaint<'_>,
+    actions: &mut Vec<Action>,
+) {
+    let RowPaint { row, .. } = *paint;
     let layer = paint.layer();
-    let pin = if state.pinned {
-        "Unpin from Canvas"
-    } else {
-        "Pin to Canvas"
-    };
-    let locked = state.locked || state.locked_by_parent;
+    let pin = toggle_state(editor.map(), &menu_ids(editor, paint), Toggle::Pin);
     if ui
-        .add_enabled(!locked, egui::Button::new(pin))
+        .add_enabled(pin.enabled, egui::Button::new(Toggle::Pin.menu_label(&pin)))
         .on_disabled_hover_text("Unlock it first to change the pin")
         .clicked()
     {
-        actions.push(Action::Run(Command::SetMoveLocked {
-            id: row.id,
-            locked: !state.pinned,
-        }));
+        actions.push(Action::Flip(row.id, Toggle::Pin));
         ui.close();
     }
     if let Some(layer) = layer {
@@ -376,6 +374,16 @@ fn pin_and_depth_sort_items(ui: &mut egui::Ui, paint: &RowPaint<'_>, actions: &m
     }
 }
 
+/// What the menu's Hide, Lock and Pin reach: the selection if the row is part of it, else
+/// just the row.
+fn menu_ids(editor: &Editor, paint: &RowPaint<'_>) -> Vec<Id> {
+    if paint.selected {
+        editor.selection().to_vec()
+    } else {
+        vec![paint.row.id]
+    }
+}
+
 /// The right-click menu of a row.
 fn row_context_menu(
     response: &egui::Response,
@@ -383,12 +391,7 @@ fn row_context_menu(
     paint: &RowPaint<'_>,
     actions: &mut Vec<Action>,
 ) {
-    let RowPaint {
-        row,
-        state,
-        selected,
-        ..
-    } = *paint;
+    let RowPaint { row, selected, .. } = *paint;
     let layer = paint.layer();
     let map = editor.map();
     response.context_menu(|ui| {
@@ -457,26 +460,17 @@ fn row_context_menu(
             actions.push(Action::Paste);
             ui.close();
         }
-        if !state.locked_by_parent {
-            let lock = if state.locked { "Unlock" } else { "Lock" };
-            if ui.button(lock).clicked() {
-                actions.push(Action::Run(Command::SetLocked {
-                    id: row.id,
-                    locked: !state.locked,
-                }));
-                ui.close();
-            }
+        let ids = menu_ids(editor, paint);
+        let lock = toggle_state(map, &ids, Toggle::Lock);
+        if !lock.targets.is_empty() && ui.button(Toggle::Lock.menu_label(&lock)).clicked() {
+            actions.push(Action::Flip(row.id, Toggle::Lock));
+            ui.close();
         }
-        pin_and_depth_sort_items(ui, paint, actions);
-        if let Some(layer) = layer {
-            let hide = if layer.visible { "Hide" } else { "Show" };
-            if ui.button(hide).clicked() {
-                actions.push(Action::Run(Command::SetVisible {
-                    id: row.id,
-                    visible: !layer.visible,
-                }));
-                ui.close();
-            }
+        pin_and_depth_sort_items(ui, editor, paint, actions);
+        let hide = toggle_state(map, &ids, Toggle::Hide);
+        if !hide.targets.is_empty() && ui.button(Toggle::Hide.menu_label(&hide)).clicked() {
+            actions.push(Action::Flip(row.id, Toggle::Hide));
+            ui.close();
         }
         if ui.button("Delete").clicked() {
             actions.push(Action::Delete(row.id));
