@@ -89,9 +89,6 @@ impl MapMakerApp {
                     .resizable(false)
                     .exact_size(width)
                     .show(ui, |ui| tab.properties.show(ui, &mut tab.editor));
-                if panel.inner {
-                    self.win.shell.toggle_properties();
-                }
                 if tab.properties.take_manage_label_styles() {
                     tab.label_styles.open = true;
                 }
@@ -266,10 +263,7 @@ impl MapMakerApp {
                     overlay_frame.show(ui, |ui| {
                         ui.set_width(width);
                         ui.set_height(height);
-                        if tab.properties.show(ui, &mut tab.editor) {
-                            // Collapsing the floating inspector just closes it.
-                            self.win.shell.close_overlays();
-                        }
+                        tab.properties.show(ui, &mut tab.editor);
                     });
                 });
             if tab.properties.take_manage_label_styles() {
