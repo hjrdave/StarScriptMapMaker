@@ -1,6 +1,7 @@
 <!doctype html>
-<!-- PROTOTYPE (throwaway): Map panel, Shores tab (#565). Two variants (bottom bar, ←/→, or ?variant=A|B).
+<!-- PROTOTYPE (throwaway): Map panel, Shores tab (#565). Three variants (bottom bar, ←/→, or ?variant=A|B|C).
      A = same label-column rows as the Style tab. B = paired fields with the name above each.
+     C = A with the Style tab's inline pairs: numbers are in-box-named fields on a two-column grid, colours are label rows.
      Drawn at the app's real sizes (theme.rs): 1 egui point = 1 CSS px. In-memory state only. -->
 <html lang="en">
 <head>
@@ -43,6 +44,8 @@
   .cs .chip i{position:absolute;inset:0}
   .cs .chip input{position:absolute;inset:-4px;width:60px;height:34px;opacity:0;cursor:pointer}
   .cs .hex{font-size:11px;color:var(--text);text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:clip;min-width:0}
+  .field.pf .pre{color:var(--dim);font-family:Inter,system-ui,sans-serif;font-size:12px;flex:none;white-space:nowrap}
+  .field.pf input{text-align:right}
   .side{width:300px;font-size:13px;color:var(--dim)}
   .side h3{margin:0 0 6px;color:var(--hi);font-size:15px}
   .side ul{padding-left:18px;margin:6px 0}
@@ -76,13 +79,14 @@ const S={
  Landmass:{ow:1.5,oc:'#5A4628',oa:1,rc:3,rs:12,rw:1.5,rcol:'#FFFFFF',ra:.6,fade:.60,sw:18,scol:'#8A6A38',sa:1},
  Lake:{ow:1.0,oc:'#2C4A66',oa:1,rc:4,rs:8,rw:1.0,rcol:'#FFFFFF',ra:.5,fade:.45,sw:10,scol:'#3D6E8C',sa:1}};
 let which='Landmass';
-const VARIANTS={A:'Rows, as the Style tab',B:'Paired fields, names above'};
-let variant=(new URLSearchParams(location.search).get('variant')||'A').toUpperCase();if(!VARIANTS[variant])variant='A';
+const VARIANTS={A:'Rows, as the Style tab',B:'Paired fields, names above',C:'Inline pairs, as the Style tab'};
+let variant=(new URLSearchParams(location.search).get('variant')||'C').toUpperCase();if(!VARIANTS[variant])variant='A';
 const log=[];const note=m=>{log.unshift(m);if(log.length>6)log.pop();};
 const cur=()=>S[which];
 const rgba=(h,a)=>{const n=parseInt(h.slice(1),16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`};
 const num=(k,dec,unit)=>`<div class="field"><input aria-label="${k}" data-k="${k}" data-dec="${dec}" value="${(+cur()[k]).toFixed(dec)}" inputmode="decimal">${unit?`<span class="u">u</span>`:''}</div>`;
-const col=(k,a)=>{const c=cur();return `<div class="cs"><span class="chip"><i style="background:${rgba(c[k],c[a])}"></i><input type="color" aria-label="${k}" data-c="${k}" value="${c[k].toLowerCase()}"></span><span class="hex">${c[k]}</span></div>`};
+const col=(k,a)=>{const c=cur();return `<div class="cs"><span class="chip"><i style="background:${rgba(c[k],c[a])}"></i><input type="color" aria-label="${k}" data-c="${k}" value="${c[k].toLowerCase()}"></span><span class="hex">${c[k]}${c[a]<1?' '+Math.round(c[a]*100)+'%':''}</span></div>`};
+const numP=(k,dec,unit,label)=>`<div class="field pf"><span class="pre">${label}</span><input aria-label="${k}" data-k="${k}" data-dec="${dec}" value="${(+cur()[k]).toFixed(dec)}" inputmode="decimal">${unit?`<span class="u">u</span>`:''}</div>`;
 const row=(l,f)=>`<div class="row"><label title="${l}">${l}</label>${f}</div>`;
 const above=(l,f)=>`<div class="above"><label>${l}</label>${f}</div>`;
 const seg=()=>`<div class="seg" role="radiogroup">${['Landmass','Lake'].map(n=>`<button role="radio" aria-checked="${which===n}" class="${which===n?'on':''}" data-w="${n}">${SVG[n==='Landmass'?'land':'lake']}${n}</button>`).join('')}</div>`;
@@ -96,11 +100,17 @@ function viewB(){return head()+`
  <h3>Ripples</h3><div class="rows"><div class="pair">${above('Count',num('rc',0))}${above('Spacing',num('rs',1,1))}</div>
    <div class="pair">${above('Width',num('rw',1,1))}${above('Fade',num('fade',2))}</div>${above('Colour',col('rcol','ra'))}</div>
  <h3>Inner shade</h3><div class="rows"><div class="pair">${above('Width',num('sw',1,1))}${above('Colour',col('scol','sa'))}</div></div>`;}
+function viewC(){return head()+`
+ <h3>Outline</h3><div class="rows"><div class="pair">${numP('ow',1,1,'Width')}<div></div></div>${row('Colour',col('oc','oa'))}</div>
+ <h3>Ripples</h3><div class="rows"><div class="pair">${numP('rc',0,0,'Count')}${numP('rs',1,1,'Spacing')}</div>
+   <div class="pair">${numP('rw',1,1,'Width')}${numP('fade',2,0,'Fade')}</div>${row('Colour',col('rcol','ra'))}</div>
+ <h3>Inner shade</h3><div class="rows"><div class="pair">${numP('sw',1,1,'Width')}<div></div></div>${row('Colour',col('scol','sa'))}</div>`;}
 const NOTES={
  A:'Same rows as the Style tab: one 80 pt label column, fields that fill the rest. The group captions carry the context, so labels shrink to Width, Colour, Count, Spacing and Fade. Landmass and Lake are a labelled switch under the heading.',
+ C:'The Style tab\'s rule: every number is a field with its name inside the box, two to a row (a lone one takes half); every colour is a label row, so a narrow panel never has to hide a hex. Ripples is three rows plus the colour.',
  B:'Fields in pairs with the name above, so Ripples takes three rows instead of five and the tab fits without scrolling. Same captions and switch.'};
 function render(){
-  document.getElementById('panel').innerHTML=({A:viewA,B:viewB})[variant]();
+  document.getElementById('panel').innerHTML=({A:viewA,B:viewB,C:viewC})[variant]();
   document.getElementById('vlabel').textContent=`${variant} (${VARIANTS[variant]})`;
   document.getElementById('notes').innerHTML=`<p>${NOTES[variant]}</p><ul><li>Switch between Landmass and Lake: they keep their own values.</li><li>Edit any field (Enter applies it) or click a colour chip.</li><li>Drag the width slider to check a narrow panel.</li></ul>`;
   document.getElementById('debug').textContent=which+' '+JSON.stringify(cur())+'\n\nlast changes:\n'+log.join('\n');

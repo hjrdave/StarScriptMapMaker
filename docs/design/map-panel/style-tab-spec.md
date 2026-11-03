@@ -195,7 +195,14 @@ caption 11. Outline: Width, Colour. Ripples: Count, Spacing; Width, Fade; Colour
 Width, Colour. 6 rows; fits without scrolling. A colour that does not fit beside its partner at a
 narrow width drops to its own row.
 
-Decision needed: A or B.
+Variant C (inline pairs, the Style tab's rule): every number is a field with its name inside the
+box, two to a row, and a lone number takes half a row; every colour is a label row with the 80 pt
+column. Outline: Width (half), Colour. Ripples: Count | Spacing, Width | Fade, Colour. Inner shade:
+Width (half), Colour. That is 7 rows against A's 11, and it follows the Style tab exactly (Strength |
+Scale, Amount | Scale, Seed at half width, colours as label rows), so a narrow panel never has to
+hide a hex. It uses the same `.prefix(...)` addition to `ScrubSpec` as the Style tab.
+
+Decision needed: A, B or C. C is the one that matches the rest of the panel.
 
 ## Canvas tab
 
