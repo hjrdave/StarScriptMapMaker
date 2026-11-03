@@ -1,0 +1,251 @@
+<!doctype html>
+<!-- PROTOTYPE (throwaway): flat Layers panel. Question: how should a flat list with
+     Photoshop-style groups show state icons that are only toggled from the top bar / context menu?
+     Three variants, switch with the bottom bar or ←/→ (also ?variant=A|B|C). In-memory state only. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flat Layers panel prototype</title>
+<style>
+  :root{--bg:#1b1e24;--panel:#1d2026;--line:#2a2e36;--text:#c9c4b4;--dim:#7d7a70;--hi:#f1ead2;--accent:#e8c15a;--sel:#3a3320;--selb:#8a7230;--btn:#262a32}
+  *{box-sizing:border-box}
+  body{margin:0;background:#101216;color:var(--text);font:14px/1.3 Inter,system-ui,sans-serif;display:flex;justify-content:center;padding:24px 0 90px}
+  .wrap{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
+  .panel{width:300px;min-height:520px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 14px;user-select:none}
+  .head{display:flex;justify-content:space-between;align-items:center;font-size:19px;color:var(--hi);padding-bottom:10px;border-bottom:1px solid var(--line)}
+  .head button{background:none;border:0;color:var(--hi);font-size:22px;cursor:pointer}
+  .props{display:flex;gap:6px;padding:10px 0;border-bottom:1px solid var(--line);align-items:center;flex-wrap:wrap}
+  .props .op{width:84px;height:34px;background:#171a1f;border:1px solid var(--line);border-radius:6px;color:var(--dim);padding:0 8px;display:flex;align-items:center;justify-content:space-between;font-family:monospace}
+  .props .op.off{opacity:.4}
+  .tb{width:36px;height:34px;border-radius:6px;background:var(--btn);border:1px solid var(--line);color:var(--text);cursor:pointer;font-size:15px}
+  .tb.on{background:var(--sel);border-color:var(--accent);color:var(--accent)}
+  .tb:disabled{opacity:.35;cursor:default}
+  .tb.mixed{border-style:dashed}
+  .rows{padding-top:6px}
+  .row{display:flex;align-items:center;height:34px;border-radius:4px;border:1px solid transparent;padding-right:6px;cursor:default;position:relative}
+  .row.sel{background:var(--sel);border-color:var(--selb);color:var(--hi)}
+  .row.drag{opacity:.4}
+  .row.dropline::before{content:"";position:absolute;left:0;right:0;top:-2px;height:2px;background:var(--accent)}
+  .row .chev{width:18px;text-align:center;color:var(--dim);cursor:pointer}
+  .row .ico{width:22px;text-align:center;margin-right:6px;font-size:15px;color:var(--text)}
+  .row.sel .ico{color:var(--accent)}
+  .row .name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .name input{background:#111;border:1px solid var(--accent);color:var(--hi);width:100%;font:inherit}
+  .row .st{display:flex;gap:6px;color:var(--dim);font-size:13px}
+  .row .st span{min-width:14px;text-align:center}
+  .row.hidden .name,.row.hidden .ico{opacity:.4}
+  /* variant B: state shown as tint/dimming and a left stripe instead of glyphs */
+  .row .stripe{position:absolute;left:-1px;top:4px;bottom:4px;width:3px;border-radius:2px}
+  .badge{font-size:10px;padding:1px 5px;border-radius:8px;background:#2c3038;color:var(--dim);margin-left:4px}
+  /* variant C: slim gutter column on the right with fixed slots */
+  .gutter{display:grid;grid-template-columns:repeat(3,16px);gap:2px;color:var(--dim);font-size:13px;text-align:center}
+  .gutter span{opacity:0}
+  .gutter span.on{opacity:1;color:var(--accent)}
+  .menu{position:fixed;background:#23272f;border:1px solid #3a3f49;border-radius:6px;padding:4px;min-width:200px;box-shadow:0 8px 24px #000a;z-index:10}
+  .menu div{padding:6px 10px;border-radius:4px;display:flex;justify-content:space-between;gap:20px;cursor:pointer}
+  .menu div:hover{background:#343944}
+  .menu hr{border:0;border-top:1px solid #3a3f49;margin:4px 0}
+  .menu .k{color:var(--dim)}
+  .notes{width:280px;font-size:13px;color:var(--dim)}
+  .notes h3{color:var(--hi);margin:0 0 6px}
+  .notes ul{padding-left:18px;margin:6px 0}
+  .debug{margin-top:10px;font:11px/1.4 monospace;white-space:pre;background:#111;border:1px solid var(--line);border-radius:6px;padding:8px;max-height:260px;overflow:auto;color:#9a9;width:280px}
+  .switcher{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#f1ead2;color:#111;border-radius:999px;padding:6px 10px;display:flex;gap:12px;align-items:center;box-shadow:0 6px 20px #000c;z-index:20;font-weight:600}
+  .switcher button{background:#111;color:#f1ead2;border:0;border-radius:50%;width:28px;height:28px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel" id="panel"></div>
+  <div>
+    <div class="notes" id="notes"></div>
+    <div class="debug" id="debug"></div>
+  </div>
+</div>
+<div class="switcher"><button id="prev">←</button><span id="vlabel"></span><button id="next">→</button></div>
+<div class="menu" id="menu" style="display:none"></div>
+
+<script>
+// ---------- model (flat list; only a Group has children) ----------
+const KIND = {layer:'▤', group:'▣', landmass:'⛰', stamp:'✦', label:'T', lake:'◌', river:'≈'};
+let nextId = 20;
+let nodes = [
+  {id:1,kind:'label',name:'Region names',parent:null},
+  {id:2,kind:'stamp',name:'Mountains',parent:null, depthSort:true},
+  {id:3,kind:'group',name:'Kingdom of Vael',parent:null,open:true},
+  {id:4,kind:'landmass',name:'Landmass 001',parent:3,pinned:true},
+  {id:5,kind:'lake',name:'Lake Orrin',parent:3,pinned:true},
+  {id:6,kind:'river',name:'Silver River',parent:null,pinned:true},
+  {id:7,kind:'layer',name:'Backdrop',parent:null,locked:true},
+];
+let sel = new Set([4]);
+let variant = (new URLSearchParams(location.search).get('variant')||'A').toUpperCase();
+const VARIANTS = {A:'Glyphs on toggled only',B:'Tint + stripe, no glyphs',C:'Fixed gutter slots'};
+let log = [];
+
+const byId = id => nodes.find(n=>n.id===id);
+const kids = id => nodes.filter(n=>n.parent===id);
+const isGroup = n => n.kind==='group';
+// inherited state
+function anc(n,f){let p=n.parent!=null?byId(n.parent):null;while(p){if(p[f])return p;p=p.parent!=null?byId(p.parent):null}return null}
+const st = n => ({
+  visible: n.visible!==false, locked: !!n.locked, pinned: !!n.pinned,
+  lockedBy: !n.locked && anc(n,'locked'), pinnedBy: !n.pinned && anc(n,'pinned'),
+  hiddenBy: n.visible!==false && (()=>{let p=n.parent!=null?byId(n.parent):null;while(p){if(p.visible===false)return p;p=p.parent!=null?byId(p.parent):null}})()
+});
+
+function visibleRows(){
+  const out=[];
+  (function walk(parent,depth){
+    for(const n of nodes.filter(x=>x.parent===parent)){
+      out.push({n,depth});
+      if(isGroup(n)&&n.open) walk(n.id,depth+1);
+    }
+  })(null,0);
+  return out;
+}
+
+// ---------- actions (stand-ins for Commands) ----------
+function setProp(ids,prop,val){ ids.forEach(id=>{const n=byId(id); if(prop==='visible') n.visible=val; else n[prop]=val;}); log.unshift(`SetProperty ${prop}=${val} on [${ids.map(i=>byId(i).name).join(', ')}]`); render(); }
+function toggle(prop){
+  const ids=[...sel]; if(!ids.length) return;
+  const all=ids.every(id=>{const s=st(byId(id));return s[prop]});
+  setProp(ids,prop,!all);
+}
+function group(){
+  const ids=[...sel]; if(!ids.length) return;
+  const first=byId(ids[0]);
+  const g={id:nextId++,kind:'group',name:'Group '+(nextId-20),parent:first.parent,open:true};
+  nodes.splice(nodes.indexOf(first),0,g);
+  ids.forEach(id=>byId(id).parent=g.id);
+  sel=new Set([g.id]); log.unshift(`Group [${ids.length} items]`); render();
+}
+function ungroup(){
+  [...sel].map(byId).filter(isGroup).forEach(g=>{kids(g.id).forEach(k=>k.parent=g.parent); nodes.splice(nodes.indexOf(g),1); sel.delete(g.id);});
+  log.unshift('Ungroup'); render();
+}
+function del(){ [...sel].forEach(id=>{ kids(id).forEach(k=>k.parent=byId(id).parent); nodes=nodes.filter(n=>n.id!==id)}); sel.clear(); log.unshift('Delete'); render(); }
+function rename(id){ const n=byId(id); n.renaming=true; render(); const i=document.querySelector('.name input'); i&&(i.focus(),i.select()); }
+
+// ---------- rendering ----------
+function stateGlyphs(n){
+  const s=st(n), g=[];
+  if(!s.visible) g.push(['👁̸','Hidden','h']);
+  else if(s.hiddenBy) g.push(['👁̸','Hidden by '+s.hiddenBy.name,'hd']);
+  if(s.locked) g.push(['🔒','Locked','l']); else if(s.lockedBy) g.push(['🔒','Locked by '+s.lockedBy.name,'ld']);
+  if(s.pinned) g.push(['📌','Pinned to Canvas','p']); else if(s.pinnedBy) g.push(['📌','Pinned by '+s.pinnedBy.name,'pd']);
+  if(n.depthSort) g.push(['⇅','Depth sort','d']);
+  return g;
+}
+function rowHTML({n,depth}){
+  const s=st(n), cls=['row']; if(sel.has(n.id))cls.push('sel'); if(!s.visible||s.hiddenBy)cls.push('hidden');
+  const pad=`padding-left:${6+depth*16}px`;
+  const chev=isGroup(n)?`<span class="chev" data-chev="${n.id}">${n.open?'⌄':'›'}</span>`:`<span class="chev"></span>`;
+  const name=n.renaming?`<input value="${n.name}" data-rn="${n.id}">`:n.name;
+  let right='', extra='';
+  if(variant==='A'){
+    right=`<span class="st">${stateGlyphs(n).map(([c,t,k])=>`<span title="${t}" style="${k.endsWith('d')?'opacity:.45':''}">${c}</span>`).join('')}</span>`;
+  } else if(variant==='B'){
+    const g=stateGlyphs(n);
+    const col=s.locked?'#6aa0e8':s.pinned?'#e8c15a':(s.lockedBy||s.pinnedBy)?'#555':'transparent';
+    extra=`<span class="stripe" style="background:${col}"></span>`;
+    right=g.length?`<span class="badge">${g.map(x=>x[2][0].toUpperCase()).join(' ')}</span>`:'';
+  } else {
+    const s2=st(n);
+    right=`<span class="gutter">
+      <span class="${s2.pinned||s2.pinnedBy?'on':''}" title="Pinned">📌</span>
+      <span class="${s2.locked||s2.lockedBy?'on':''}" title="Locked">🔒</span>
+      <span class="${!s2.visible||s2.hiddenBy?'on':''}" title="Hidden">👁̸</span></span>`;
+  }
+  return `<div class="${cls.join(' ')}" style="${pad}" draggable="true" data-id="${n.id}">${extra}${chev}<span class="ico">${KIND[n.kind]}</span><span class="name">${name}</span>${right}</div>`;
+}
+function topBar(){
+  const ids=[...sel], has=ids.length>0;
+  const mk=(prop,icon,label)=>{
+    const vals=ids.map(id=>st(byId(id))[prop]);
+    const all=has&&vals.every(Boolean), some=vals.some(Boolean);
+    return `<button class="tb ${all?'on':''} ${some&&!all?'mixed on':''}" data-tb="${prop}" ${has?'':'disabled'} title="${label}">${icon}</button>`;
+  };
+  const opv=has? (ids.length===1?(byId(ids[0]).opacity??100):'—'):'—';
+  return `<div class="props"><div class="op ${has?'':'off'}">O <span>${opv}</span> <span>%</span></div>
+    ${mk('visible','👁','Visible')}${mk('locked','🔒','Lock')}${mk('pinned','📌','Pin to Canvas')}</div>`;
+}
+function render(){
+  document.getElementById('panel').innerHTML=
+    `<div class="head">Layers <button id="add" title="New layer">+</button></div>${topBar()}<div class="rows">${visibleRows().map(rowHTML).join('')}</div>`;
+  document.getElementById('vlabel').textContent=`${variant} (${VARIANTS[variant]})`;
+  document.getElementById('notes').innerHTML=`<h3>Flat Layers panel</h3>
+    <ul><li>No Layer categories. Every row is a Layer or Object; kind icon kept.</li>
+    <li>Only a <b>Group</b> has a chevron and children (select rows, ⌘/Ctrl+G).</li>
+    <li>State is toggled <b>only</b> from the top bar or right-click menu. Rows are not clickable for state.</li>
+    <li>Icons appear only when on. Dim = inherited from a Group.</li>
+    <li>Click, ⇧/⌘-click to select; double-click renames; drag to reorder.</li></ul>
+    <b style="color:var(--hi)">${VARIANTS[variant]}</b>`;
+  document.getElementById('debug').textContent=
+    'selection: '+[...sel].map(i=>byId(i).name).join(', ')+'\n\nlast Commands:\n'+log.slice(0,8).join('\n');
+}
+
+// ---------- interaction ----------
+const panel=document.getElementById('panel'), menu=document.getElementById('menu');
+panel.addEventListener('click',e=>{
+  menu.style.display='none';
+  const tb=e.target.closest('[data-tb]'); if(tb) return toggle(tb.dataset.tb);
+  if(e.target.id==='add'){const n={id:nextId++,kind:'layer',name:'Layer '+(nextId-20),parent:null};nodes.unshift(n);sel=new Set([n.id]);log.unshift('AddLayer');return render();}
+  const ch=e.target.closest('[data-chev]'); if(ch){const g=byId(+ch.dataset.chev);g.open=!g.open;return render();}
+  const row=e.target.closest('.row'); if(!row) return;
+  const id=+row.dataset.id;
+  if(e.shiftKey||e.metaKey||e.ctrlKey){sel.has(id)?sel.delete(id):sel.add(id);} else sel=new Set([id]);
+  render();
+});
+panel.addEventListener('dblclick',e=>{const row=e.target.closest('.row'); if(row) rename(+row.dataset.id);});
+panel.addEventListener('keydown',e=>{ if(e.target.dataset.rn&&e.key==='Enter'){const n=byId(+e.target.dataset.rn);n.name=e.target.value||n.name;n.renaming=false;log.unshift('Rename');render();}});
+panel.addEventListener('focusout',e=>{ if(e.target.dataset&&e.target.dataset.rn){const n=byId(+e.target.dataset.rn);if(n.renaming){n.renaming=false;render();}}});
+panel.addEventListener('contextmenu',e=>{
+  const row=e.target.closest('.row'); if(!row) return; e.preventDefault();
+  const id=+row.dataset.id; if(!sel.has(id)) sel=new Set([id]); render();
+  const ids=[...sel], any=p=>ids.some(i=>st(byId(i))[p]);
+  const item=(label,fn,key='')=>{const d=document.createElement('div');d.innerHTML=`<span>${label}</span><span class="k">${key}</span>`;d.onclick=()=>{menu.style.display='none';fn();};return d;};
+  menu.innerHTML='';
+  menu.append(
+    item(any('visible')&&ids.every(i=>st(byId(i)).visible)?'Hide':'Show',()=>toggle('visible')),
+    item(ids.every(i=>st(byId(i)).locked)?'Unlock':'Lock',()=>toggle('locked')),
+    item(ids.every(i=>st(byId(i)).pinned)?'Unpin from Canvas':'Pin to Canvas',()=>toggle('pinned')),
+    document.createElement('hr'),
+    item('Rename',()=>rename(ids[0]),'F2'),
+    item('Group',group,'⌘G'),
+    item('Ungroup',ungroup,'⇧⌘G'),
+    document.createElement('hr'),
+    item('Delete',del,'⌫'));
+  menu.style.left=e.clientX+'px'; menu.style.top=e.clientY+'px'; menu.style.display='block';
+});
+document.addEventListener('click',e=>{ if(!e.target.closest('.menu')) menu.style.display='none'; });
+// drag reorder (flat order; drop on a Group row moves into it)
+let dragId=null;
+panel.addEventListener('dragstart',e=>{const r=e.target.closest('.row'); if(r){dragId=+r.dataset.id;}});
+panel.addEventListener('dragover',e=>{e.preventDefault();});
+panel.addEventListener('drop',e=>{
+  const r=e.target.closest('.row'); if(!r||dragId==null) return; const t=byId(+r.dataset.id), d=byId(dragId);
+  if(t===d||anc(t,'__x')) return;
+  // don't drop a Group into itself
+  for(let p=t;p;p=p.parent!=null?byId(p.parent):null) if(p===d) return;
+  nodes.splice(nodes.indexOf(d),1);
+  if(isGroup(t)&&e.offsetY>8&&e.offsetY<26){d.parent=t.id;t.open=true;nodes.push(d);}
+  else{d.parent=t.parent;nodes.splice(nodes.indexOf(t),0,d);}
+  log.unshift('Move '+d.name); dragId=null; render();
+});
+// variant switcher
+function setVariant(v){variant=v;const u=new URL(location);u.searchParams.set('variant',v);history.replaceState(null,'',u);render();}
+const keys=Object.keys(VARIANTS);
+const step=d=>setVariant(keys[(keys.indexOf(variant)+d+keys.length)%keys.length]);
+prev.onclick=()=>step(-1); next.onclick=()=>step(1);
+document.addEventListener('keydown',e=>{
+  if(/INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  if(e.key==='ArrowLeft')step(-1); if(e.key==='ArrowRight')step(1);
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='g'){e.preventDefault();e.shiftKey?ungroup():group();}
+});
+if(!VARIANTS[variant]) variant='A';
+render();
+</script>
+</body>
+</html>
