@@ -141,7 +141,7 @@ const col=k=>`<div class="field cs"><span class="chip" style="background:${S[k]}
 const row=(l,f)=>`<div class="row"><label>${l}</label>${f}</div>`;
 const swatches=()=>`<div class="grid">${TEMPLATES.map(t=>`<div class="sw ${t.light?'light':''} ${S.template===t.n?'on':''}" role="button" tabindex="0" data-t="${t.n}" style="background:${t.c}">${t.n}</div>`).join('')}</div>`;
 const seed=()=>`<div class="seedrow"><div class="field" style="flex:1"><input aria-label="seed" data-k="seed" data-dec="0" value="${S.seed}"></div><button class="dice" id="dice" title="Re-roll seed" aria-label="Re-roll seed">${SVG.dice}</button></div>`;
-const seedP=()=>`<div class="seedrow"><div class="field pf" style="flex:1"><span class="pre">Seed</span><input aria-label="seed" data-k="seed" data-dec="0" value="${S.seed}"></div><button class="dice" id="dice" title="Re-roll seed" aria-label="Re-roll seed">${SVG.dice}</button></div>`;
+const seedP=()=>`<div class="pair"><div class="field pf"><span class="pre">Seed</span><input aria-label="seed" data-k="seed" data-dec="0" value="${S.seed}"></div><div><button class="dice" id="dice" title="Re-roll seed" aria-label="Re-roll seed">${SVG.dice}</button></div></div>`;
 const head=()=>`<div class="head"><span class="ico">${SVG.map}</span>Map</div><div class="tabs"><div>Canvas</div><div class="on">Style</div><div>Shores</div></div>`;
 
 function viewA(){return head()+`

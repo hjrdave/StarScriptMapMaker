@@ -104,16 +104,18 @@ Every row is `[80 label column][8 gap][control that fills the rest]`, `metrics::
   needs one addition to `ScrubSpec`: `.prefix("Strength")`, drawn inside the box (the existing
   `Handle` is a 22 pt icon-sized slot and is too small for a word). The box still scrubs and types as
   before; the prefix is painted, so the field keeps its accessible name. Seed is the same kind of
-  field (prefix "Seed") with the dice button after it, so the whole Roughness group has no label
-  column.
+  field (prefix "Seed"), **half the row wide like Amount**, with the 24 × 22 dice button in the
+  other half, left-aligned against the field with an 8 gap. So Roughness is two rows on the same
+  two-column grid: Amount | Scale, then Seed | dice, and has no label column.
 - **Number fields** (`scrub_field`): fill the width to the right of the label column, so every
   right edge lines up with the panel's content edge. The `u` unit sits inside the box at the right.
 - **Colour swatch**: a 44 × 22 chip (1 px `border_subtle`, radius 3) followed by the hex in
   caption 11, `text_secondary`. No box around the hex; this is the existing `swatch` widget.
 - **Light and Dark**: two separate rows, each a label and one swatch. They are not paired, so a
   narrow panel never has to hide a hex value.
-- **Seed**: a number field that fills the row minus the button, then a 24 × 22 dice button
-  (`Icon::ReRoll`, 16 pt, radius 6) after an 8 gap. The dice is an icon button, not a field.
+- **Seed**: a number field half the row wide (the left column of `pair`, as Amount), then a 24 × 22
+  dice button (`Icon::ReRoll`, 16 pt, radius 6) at the start of the right column. The dice is an icon
+  button, not a field.
 
 ## Behaviour that changes
 
