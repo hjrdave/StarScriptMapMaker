@@ -55,8 +55,8 @@ left or right margin.
    `border_subtle` line, 6 below.
    - **Caption "Template"**, then the template cards.
    - **Caption "Water"**, then one row: label **Colour**, a swatch.
-   - **Caption "Texture"**, then **Strength | Scale** inline on one row, then **Light / dark** (two
-     swatches side by side).
+   - **Caption "Texture"**, then **Strength | Scale** inline on one row, then **Light** and **Dark** as
+     two separate rows (one swatch each).
 4. **Section "Roughness".** The same `divider_section`, with 14 above it (the 6 the section adds
    plus 8 of its own) so the two sections read as separate. Rows: **Amount | Scale** inline, then
    **Seed** with the dice button.
@@ -78,7 +78,7 @@ further right than the rows around it. That is the ragged left edge in the scree
 
 - Make the label column a fixed width: `LABEL_COLUMN = 80.0`. `label_width` returns it.
 - A label that does not fit is cut with an ellipsis and its full text shows as a tooltip.
-- Rename the visible labels so none is cut: **Colour**, **Light / dark**; the numeric fields carry
+- Rename the visible labels so none is cut: **Colour**, **Light**, **Dark**; the numeric fields carry
   **Strength**, **Scale**, **Amount**, **Scale** and **Seed** as in-box prefixes. The group caption supplies the context ("Water", "Texture").
 - The accessible names stay "Water colour", "Texture strength", "Texture scale", "Texture light" and
   "Texture dark", so assistive tools and the existing tests still find them. Add a `display`
@@ -110,10 +110,8 @@ Every row is `[80 label column][8 gap][control that fills the rest]`, `metrics::
   right edge lines up with the panel's content edge. The `u` unit sits inside the box at the right.
 - **Colour swatch**: a 44 × 22 chip (1 px `border_subtle`, radius 3) followed by the hex in
   caption 11, `text_secondary`. No box around the hex; this is the existing `swatch` widget.
-- **Light / dark**: one label, then two swatches in `ui.columns(2)` (`prop_widgets::pair`). Each half
-  is chip plus hex. When a half is narrower than chip + 6 + hex (about 100), hide the hex text and
-  keep it in the tooltip; at that width the row never overflows. (The label column is used by the
-  colour rows only; the numeric rows above carry their names inside the boxes.)
+- **Light and Dark**: two separate rows, each a label and one swatch. They are not paired, so a
+  narrow panel never has to hide a hex value.
 - **Seed**: a number field that fills the row minus the button, then a 24 × 22 dice button
   (`Icon::ReRoll`, 16 pt, radius 6) after an 8 gap. The dice is an icon button, not a field.
 
@@ -133,7 +131,6 @@ width it can take, nothing in this tab may be cut off:
 
 - Label column stays 80; fields shrink (a number field does not go under 60).
 - Template cards wrap.
-- Light / dark hides its hex text, as above.
 - Nothing is wider than `ui.available_width()`; use `set_max_width` the way `field_row` does.
 
 ## Checking the build against the prototype

@@ -150,7 +150,7 @@ function viewA(){return head()+`
  <h3>Water</h3><div class="rows">${row('Colour',col('water'))}</div>
  <h3>Texture</h3><div class="rows">
    <div class="pair">${numP('strength',2,'','Strength')}${numP('tscale',1,'','Scale')}</div>
-   ${row('Light / dark',`<div class="pair">${col('tlight')}${col('tdark')}</div>`)}</div>
+   ${row('Light',col('tlight'))}${row('Dark',col('tdark'))}</div>
  <h2>Roughness</h2><div class="rows" style="margin-top:12px">
    <div class="pair">${numP('ramount',1,'u','Amount')}${numP('rscale',1,'u','Scale')}</div>
    ${seedP()}</div>`;}
@@ -174,7 +174,7 @@ function viewC(){return head()+`
  <h3>Roughness</h3><div class="rows stack"><div class="pair">${row('Amount',num('ramount',1,'u'))}${row('Scale',num('rscale',1,'u'))}</div>${row('Seed',seed())}</div>`;}
 
 const NOTES={
- A:'Strength / Scale and Amount / Scale sit inline, each with its name inside the field. Every other label shares one column and every field starts at the same x. Background is split into Template, Water and Texture under quiet captions; the template name appears once, on the swatch. Light and dark sit side by side.',
+ A:'Strength / Scale and Amount / Scale sit inline, each with its name inside the field. Every other label shares one column and every field starts at the same x. Background is split into Template, Water and Texture under quiet captions; the template name appears once, on the swatch. Light and Dark are separate rows.',
  B:'Same fields, folded into three groups. A closed group shows a one-line summary, so the whole tab fits without scrolling.',
  C:'A live strip previews the water and texture. Templates become chips, and labels sit above fields, so it never has to squeeze a label column in a narrow panel.'};
 function render(){
