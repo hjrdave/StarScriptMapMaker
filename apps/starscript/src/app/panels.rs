@@ -228,7 +228,8 @@ fn sidebar_section(ui: &mut egui::Ui, section: shell::SidebarSection, tab: &mut 
             let back = format!("Step Back{}", hint(crate::menu::Command::Undo));
             let forward = format!("Step Forward{}", hint(crate::menu::Command::Redo));
             let (can_back, can_forward) = (tab.editor.can_undo(), tab.editor.can_redo());
-            shell::panel_header(ui, "History", |ui| {
+            let tint = crate::theme::palette(ui.ctx()).text_primary;
+            shell::icon_header(ui, icons::Icon::History, tint, "History", |ui| {
                 // Right to left: Step Forward is added first so Step Back sits left of it.
                 ui.add_enabled_ui(can_forward, |ui| {
                     if icons::icon_button_flipped(ui, icons::Icon::Undo, &forward, true).clicked() {
