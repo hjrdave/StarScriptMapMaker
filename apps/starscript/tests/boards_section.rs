@@ -229,8 +229,9 @@ fn move_up_and_move_down_reorder_the_boards() {
     harness.get_by_label("Move down").click();
     harness.run();
     assert_eq!(board_ids(&harness), [canvas, one, two]);
-    // The first row can't move up.
-    harness.get_by_label("Canvas").click();
+    // The first row can't move up. "Canvas" also labels the disabled Name
+    // field; the list row comes first.
+    harness.get_all_by_label("Canvas").next().unwrap().click();
     harness.run();
     assert!(
         harness
