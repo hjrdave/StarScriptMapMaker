@@ -25,7 +25,7 @@ impl Editor {
             None => (None, None),
         };
         let id = Id::new();
-        let name = format!("{kind} {}", self.layer_count() + 1);
+        let name = self.map.next_name(kind);
         let command = Command::CreateLayer {
             id,
             parent,
@@ -43,7 +43,7 @@ impl Editor {
             return None;
         }
         let id = Id::new();
-        let name = format!("Group {}", self.layer_count() + 1);
+        let name = self.map.next_name("Group");
         self.run_selecting(Command::CreateGroup { id, ids, name }, vec![id])
             .is_ok()
             .then_some(id)

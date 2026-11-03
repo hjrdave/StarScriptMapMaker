@@ -69,10 +69,27 @@ pub(super) fn create_object(
         index: index.unwrap_or(map.children(Some(parent)).len()),
         subtree: Subtree {
             id,
-            node: Node::Object(Object::new(kind)),
+            node: Node::Object({
+                let mut object = Object::new(kind);
+                object.name = default_name(map, &object.kind);
+                object
+            }),
             children: Vec::new(),
         },
     }])
+}
+
+/// The name a new Object gets: its kind and the next free number, "Landmass 001". A Label goes
+/// by its text, so it gets none.
+pub(super) fn default_name(map: &Map, kind: &ObjectKind) -> Option<String> {
+    let prefix = match kind {
+        ObjectKind::Landmass(_) => "Landmass",
+        ObjectKind::Lake(_) => "Lake",
+        ObjectKind::River(_) => "River",
+        ObjectKind::Stamp(_) => "Stamp",
+        ObjectKind::Label(_) => return None,
+    };
+    Some(map.next_name(prefix))
 }
 
 pub(super) fn transform(

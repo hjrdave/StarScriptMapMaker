@@ -144,6 +144,7 @@ input_file: crates/core/tests/scripts/stamps.json
                     "tint": "#40302080"
                   },
                   "locked": false,
+                  "name": "Stamp 001",
                   "type": "object"
                 }
               ],
@@ -429,6 +430,7 @@ input_file: crates/core/tests/scripts/stamps.json
                     "tint": null
                   },
                   "locked": false,
+                  "name": "Stamp 001",
                   "type": "object"
                 }
               ],
@@ -559,6 +561,7 @@ input_file: crates/core/tests/scripts/stamps.json
               "tint": "#40302080"
             },
             "locked": false,
+            "name": "Stamp 001",
             "type": "object"
           }
         ],

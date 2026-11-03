@@ -125,7 +125,7 @@ fn pasted_layers_go_above_the_selected_layer_and_keep_their_structure() {
     assert_eq!(editor.map.children(None), &[first, pasted[0], second]);
     assert_eq!(editor.map.children(Some(pasted[0])).len(), 1);
     assert_ne!(editor.map.children(Some(pasted[0])), &[stamp]);
-    assert_eq!(node_name(&editor.map, pasted[0]), "Layer 1 copy");
+    assert_eq!(node_name(&editor.map, pasted[0]), "Layer 001 copy");
     // With nothing selected a paste lands on top.
     editor.deselect();
     let top = editor.paste([0.0, 0.0]).unwrap();
@@ -375,7 +375,7 @@ fn refusals_show_a_message_and_change_nothing() {
     assert_eq!(editor.map.view(), before);
     let notice = editor.notice().expect("a visible message");
     assert!(notice.is_error());
-    assert_eq!(notice.text, "“Layer 1” is locked");
+    assert_eq!(notice.text, "“Layer 001” is locked");
 }
 
 #[test]
@@ -1128,4 +1128,22 @@ fn the_land_brush_mode_is_one_of_three_and_b_returns_to_the_stroke_mode() {
     editor.set_land_mode(LandMode::Paint);
     editor.use_stroke_mode();
     assert_eq!(editor.land_mode(), LandMode::Paint);
+}
+
+#[test]
+fn new_layers_groups_and_stamps_get_numbered_names() {
+    let mut editor = editor_with_assets();
+    let first = editor.new_layer().unwrap();
+    let second = editor.new_layer().unwrap();
+    assert_eq!(node_name(&editor.map, first), "Layer 001");
+    assert_eq!(node_name(&editor.map, second), "Layer 002");
+    let group = editor.new_group().unwrap();
+    assert_eq!(node_name(&editor.map, group), "Group 001");
+    // A Stamp placed in the active Layer is "Stamp 001", the next "Stamp 002".
+    editor.selected_asset = Some(asset("test-pack/mountain-1"));
+    editor.select(vec![first]);
+    let a = editor.place_stamp([1.0, 1.0]).unwrap();
+    let b = editor.place_stamp([2.0, 2.0]).unwrap();
+    assert_eq!(node_name(&editor.map, a), "Stamp 001");
+    assert_eq!(node_name(&editor.map, b), "Stamp 002");
 }

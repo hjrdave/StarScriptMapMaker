@@ -84,7 +84,7 @@ fn a_locked_object_is_rejected() {
         map.execute(&rename(stamp, "Castle")),
         Err(CommandError::Locked(id)) if id == stamp
     ));
-    assert_eq!(object_name(&map, stamp), None);
+    assert_eq!(object_name(&map, stamp).as_deref(), Some("Stamp 001"));
 }
 
 #[test]
@@ -102,7 +102,7 @@ fn undo_restores_the_old_name() {
     history.undo(&mut map).unwrap();
     assert_eq!(object_name(&map, stamp).as_deref(), Some("Castle"));
     history.undo(&mut map).unwrap();
-    assert_eq!(object_name(&map, stamp), None);
+    assert_eq!(object_name(&map, stamp).as_deref(), Some("Stamp 001"));
     history.redo(&mut map).unwrap();
     assert_eq!(object_name(&map, stamp).as_deref(), Some("Castle"));
 }
