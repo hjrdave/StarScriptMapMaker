@@ -1,6 +1,6 @@
 # Layers belong to one of four fixed categories
 
-Status: proposed (amends ADR 0002 and ADR 0005; builds on ADR 0004)
+Status: superseded by ADR 0014 (flat Layers, no categories). No code from this record was merged.
 
 Today a Layer holds any Objects and Layers, and `Map::accepts_children` only checks that the target is an unlocked Layer. Issue #522 asks that an Object can only go into a Layer of its own kind, and #531 groups the Layers panel under categories that have their own Hide, Lock, Pin and Opacity. Both need the same model, so this record decides it once. It changes the file format, so it needs a migration; no code changes until this is accepted.
 
