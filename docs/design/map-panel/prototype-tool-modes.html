@@ -1,0 +1,113 @@
+<!doctype html>
+<!-- PROTOTYPE (throwaway): Tool panel modes (#565). Before and after for the mode control. In-memory state only.
+     Drawn at the app's real sizes (theme.rs): 1 egui point = 1 CSS px. In-memory state only. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tool Modes</title>
+<style>
+  /* App tokens (apps/starscript/src/chrome/theme.rs), dark palette. Body 12, caption 11, heading 13,
+     title 15; field 22; label column 80; gutter 8; radius field 4, button 6, chip 3; item spacing 8 x 6. */
+  :root{color-scheme:dark;--bg:#14161A;--panel:#1B1E23;--raised:#262A31;--line:#272B32;--strong:#3B414B;--text:#B4AE9F;--hi:#ECE6D8;--dim:#9D9788;--gold:#D4A84A;--goldtext:#F0CF7A;--sel:#3A311C;--field:#111317}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:12px/1.3 Inter,system-ui,sans-serif;padding:24px 16px 90px}
+  .wrap{display:flex;gap:28px;justify-content:center;flex-wrap:wrap;align-items:flex-start}
+  .panel{background:var(--panel);border:1px solid var(--line);min-height:600px;padding-bottom:12px;overflow:hidden;user-select:none}
+  .head{height:34px;display:flex;align-items:center;gap:6px;padding:0 8px;font-size:15px;color:var(--hi);border-bottom:1px solid var(--line)}
+  .head svg{width:16px;height:16px}
+  .tabs{height:30px;display:flex;border-bottom:1px solid var(--line)}
+  .tabs div{flex:1;text-align:center;line-height:29px;font-size:13px;color:var(--dim);border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tabs .on{color:var(--hi);border-color:var(--gold)}
+  h2{font-size:13px;font-weight:700;color:var(--hi);margin:6px 8px 0;line-height:16px}
+  h2::after{content:"";display:block;height:1px;background:var(--line);margin:6px 0 0}
+  h3{font-size:11px;font-weight:400;color:var(--dim);margin:8px 8px 4px}
+  .seg{display:flex;margin:0 8px 2px}
+  .seg button{flex:1;height:22px;border:1px solid var(--line);background:var(--field);color:var(--text);font:12px inherit;font-family:inherit;border-radius:0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;min-width:0}
+  .seg button:first-child{border-radius:4px 0 0 4px}.seg button:last-child{border-radius:0 4px 4px 0;border-left:0}
+  .seg button.on{background:var(--raised);color:var(--hi);border-color:var(--gold)}
+  .seg button.on:last-child{border-left:1px solid var(--gold)}
+  .seg svg{width:14px;height:14px;flex:none}
+  .rows{margin:0 8px;display:flex;flex-direction:column;gap:6px}
+  .row{display:grid;grid-template-columns:80px minmax(0,1fr);gap:8px;align-items:center}
+  .row>label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .above{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .above>label{font-size:11px;color:var(--dim);line-height:15px}
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:8px;min-width:0}
+  .field{height:22px;background:var(--field);border:1px solid var(--line);border-radius:4px;display:flex;align-items:center;padding:0 6px;gap:6px;min-width:0;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--hi)}
+  .field input{all:unset;flex:1;min-width:0;width:100%}
+  .field .u{color:var(--dim)}
+  .cs{display:flex;align-items:center;gap:6px;height:22px;min-width:0}
+  .cs .chip{width:44px;height:22px;border-radius:3px;border:1px solid var(--line);flex:none;position:relative;overflow:hidden;background-image:linear-gradient(45deg,#777 25%,transparent 25%,transparent 75%,#777 75%),linear-gradient(45deg,#777 25%,#ddd 25%,#ddd 75%,#777 75%);background-size:8px 8px;background-position:0 0,4px 4px}
+  .cs .chip i{position:absolute;inset:0}
+  .cs .chip input{position:absolute;inset:-4px;width:60px;height:34px;opacity:0;cursor:pointer}
+  .cs .hex{font-size:11px;color:var(--text);text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:clip;min-width:0}
+  .field.pf .pre{color:var(--dim);font-family:Inter,system-ui,sans-serif;font-size:12px;flex:none;white-space:nowrap}
+  .field.pf input{text-align:right}
+  .side{width:300px;font-size:13px;color:var(--dim)}
+  .side h3{margin:0 0 6px;color:var(--hi);font-size:15px}
+  .side ul{padding-left:18px;margin:6px 0}
+  .side label{display:block;margin:16px 0 4px;color:var(--hi)}
+  .side input[type=range]{width:100%}
+  .debug{margin-top:14px;font:11px/1.4 monospace;white-space:pre-wrap;word-break:break-all;background:#0b0c0f;border:1px solid var(--line);border-radius:6px;padding:8px;color:#9a9}
+  .switcher{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#f1ead2;color:#111;border-radius:999px;padding:6px 10px;display:flex;gap:12px;align-items:center;box-shadow:0 6px 20px #000c;z-index:20;font-weight:600;max-width:calc(100vw - 32px)}
+  .switcher button{background:#111;color:#f1ead2;border:0;border-radius:50%;width:28px;height:28px;cursor:pointer;flex:none}
+  :focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+
+  .chipm{margin-left:auto;font-size:11px;padding:2px 8px;border-radius:3px;background:var(--sel);color:var(--goldtext)}
+  .chipm.danger{background:#3a2622;color:#F2A093}
+  .seg button.on.danger{border-color:#F2A093;color:#F2A093;background:#2d2422}
+  .seg button.on.danger svg{color:#F2A093}
+  .old{display:flex;gap:4px;margin:8px 8px 0}
+  .old button{width:40px;height:32px;border-radius:4px;border:1px solid var(--line);background:var(--raised);color:var(--text);cursor:pointer;display:grid;place-items:center;padding:0}
+  .old button svg{width:18px;height:18px}
+  .old button.on{background:#3a311cb0;border-color:var(--gold);color:var(--gold)}
+  .old button.on.danger{border-color:#F2A093;color:#F2A093;background:#2d2422}
+  .hint{font-size:11px;color:var(--dim);margin:8px 8px 0}
+  .tools{display:flex;gap:6px;margin:0 0 12px}
+  .tools button{background:var(--raised);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:3px 10px;cursor:pointer;font:inherit}
+  .tools button.on{border-color:var(--gold);color:var(--hi)}
+  .slider{display:grid;grid-template-columns:80px minmax(0,1fr) 76px;gap:8px;align-items:center}
+  .slider .track{height:4px;border-radius:2px;background:#2a2e36;position:relative}
+  .slider .track i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--gold)}
+  .slider .track b{position:absolute;top:-5px;width:14px;height:14px;border-radius:50%;background:#ECE6D8;margin-left:-7px}
+  .num{height:22px;background:var(--field);border:1px solid var(--line);border-radius:4px;display:flex;align-items:center;justify-content:flex-end;padding:0 6px;font:11px ui-monospace,Menlo,monospace;color:var(--hi)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="after"><div class="side" style="width:auto;margin-bottom:8px"><h3>After</h3></div><div class="panel" id="panel" style="width:320px"></div></div>
+  <div id="before"><div class="side" style="width:auto;margin-bottom:8px"><h3>Now</h3></div><div class="panel" id="old" style="width:320px"></div></div>
+  <div class="side">
+    <h3>Tool panel · mode control</h3>
+    <div class="tools" id="tools"></div>
+    <p>The modes become a full-width labelled switch, the same control as Landmass | Lake on the Shores tab: 22 tall, the icon beside the name, the picked mode ringed in gold. Erase is ringed in the danger colour. The hint stays under it.</p>
+    <ul><li>Pick a tool, then click a mode. The chip in the header follows.</li><li>Hold Option (Alt) to flip to the other mode, as in the app.</li></ul>
+    <div class="debug" id="debug"></div>
+  </div>
+</div>
+<script>
+const SVG={"land-brush": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 11.2 6.2 3.2 8.4 9.2\"/><path d=\"M8 7.8 9.6 6.4 12.6 11\"/><rect x=\"2\" y=\"12.3\" width=\"12\" height=\"2\" rx=\"1\" fill=\"currentColor\" stroke=\"none\"/></svg>", "paint": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M13.5 2.5 8 8M6.2 8.8c-1.6 0-2.7 1.1-2.7 2.5 0 .9-.5 1.5-1 1.9 2.8.5 5.7-.3 5.7-2.9M8 8l1.2 1.2\"/></svg>", "lasso": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8.5 2.7c3.3 0 6 1.7 6 3.8s-2.7 3.8-6 3.8-6-1.7-6-3.8 2.7-3.8 6-3.8ZM5 9.6c-.8 1.4-.4 3 1 3.4 1 .3 1.2 1.2.4 2\"/></svg>", "eraser": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M9.5 3 14 7.5 8.5 13H5.8L2.5 9.7a1 1 0 0 1 0-1.4L8.1 3a1 1 0 0 1 1.4 0ZM5.5 6.5l4 4M7 13h7\"/></svg>", "stamp": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M6.5 8.5 7 4.5a1 1 0 0 1 2 0l.5 4M4.5 8.5h7a1 1 0 0 1 1 1V11h-9V9.5a1 1 0 0 1 1-1ZM2.5 13.5h11\"/></svg>", "stamp-eraser": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M6 13.5h8M2.8 9.7l5.8-5.8a1.4 1.4 0 0 1 2 0l2 2a1.4 1.4 0 0 1 0 2l-5.4 5.4H5l-2.2-2.2a1 1 0 0 1 0-1.4ZM5.6 6.9l4 4\"/></svg>"};
+const TOOLS={
+ 'Land Brush':{icon:'land-brush',modes:[['Paint','paint',0],['Lasso','lasso',0],['Erase','eraser',1]],size:48,max:200},
+ 'Stamp':{icon:'stamp',modes:[['Stamp','stamp',0],['Erase','stamp-eraser',1]],size:24,max:100}};
+let tool='Land Brush',mode=0,alt=false;
+const log=[];
+const eff=()=>{const m=TOOLS[tool].modes;if(!alt)return mode;return m.length===2?1-mode:(m[mode][2]?0:m.length-1)};
+function render(){
+  const T=TOOLS[tool],m=T.modes,e=eff(),cur=m[e];
+  const header=`<div class="head">${SVG[T.icon]}${tool}<span class="chipm ${cur[2]?'danger':''}">${cur[0]==='Erase'?'Erase':cur[0]}</span></div>`;
+  const size=`<h2>Brush</h2><div class="rows" style="margin-top:8px"><div class="slider"><label>Size</label><div class="track"><i style="width:${T.size/T.max*100}%"></i><b style="left:${T.size/T.max*100}%"></b></div><div class="num">${T.size}</div></div></div>`;
+  document.getElementById('panel').innerHTML=header+`<div style="height:8px"></div><div class="seg" role="radiogroup" aria-label="Mode">${m.map((x,i)=>`<button role="radio" aria-checked="${i===e}" class="${i===e?'on':''} ${x[2]?'danger':''}" data-m="${i}">${SVG[x[1]]}${x[0]}</button>`).join('')}</div><div class="hint">Hold Option to get the other mode.</div>`+size;
+  document.getElementById('old').innerHTML=header+`<div class="old">${m.map((x,i)=>`<button title="${x[0]}" class="${i===e?'on':''} ${x[2]?'danger':''}" data-m="${i}">${SVG[x[1]]}</button>`).join('')}</div><div class="hint" style="margin-top:12px">Hold Option to get the other mode.</div>`+size;
+  document.getElementById('tools').innerHTML=Object.keys(TOOLS).map(t=>`<button class="${t===tool?'on':''}" data-t="${t}">${t}</button>`).join('');
+  document.getElementById('debug').textContent=`tool ${tool}\nmode ${cur[0]}${alt?' (Option held)':''}\n\n`+log.join('\n');
+}
+document.addEventListener('click',e=>{const t=e.target.closest('[data-t]');if(t){tool=t.dataset.t;mode=0;log.unshift('Tool '+tool);if(log.length>6)log.pop();render();return;}
+  const b=e.target.closest('[data-m]');if(b){mode=+b.dataset.m;log.unshift('Mode '+TOOLS[tool].modes[mode][0]);if(log.length>6)log.pop();render();}});
+document.addEventListener('keydown',e=>{if(e.key==='Alt'&&!alt){alt=true;render();}});
+document.addEventListener('keyup',e=>{if(e.key==='Alt'&&alt){alt=false;render();}});
+render();
+</script>
+</body>
+</html>

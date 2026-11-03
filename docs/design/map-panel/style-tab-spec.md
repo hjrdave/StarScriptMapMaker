@@ -202,7 +202,7 @@ Width (half), Colour. That is 7 rows against A's 11, and it follows the Style ta
 Scale, Amount | Scale, Seed at half width, colours as label rows), so a narrow panel never has to
 hide a hex. It uses the same `.prefix(...)` addition to `ScrubSpec` as the Style tab.
 
-Decision needed: A, B or C. C is the one that matches the rest of the panel.
+**Chosen: C.**
 
 ## Canvas tab
 
@@ -257,3 +257,32 @@ use the same label column as the rest of the panel, so they line up with the oth
   height" ("Board width" and "Board height" for an Art board).
 - No Command changes: resizing still goes through `resize(...)` and `self.live.apply(...)` as one
   gesture, with the anchor held for the whole drag.
+
+## Tool panel: the mode control
+
+Reference: `prototype-tool-modes.html` (the "After" panel, with "Now" beside it). The code is
+`prop_widgets::mode_buttons`, called from `chrome/tool_section.rs` (about line 216) for the Land
+Brush (Paint, Paint Lasso, Erase), the Brush, and the other tools with modes.
+
+Now: three icon-only buttons, 40 × 32, with a tooltip each. They are the only control in the panels
+that shows its options as unlabelled icons, and they do not look like the Landmass | Lake switch on
+the Shores tab.
+
+After: the same labelled switch as the Shores tab (`prop_widgets::segmented`, extended with an icon
+before each name):
+
+- Full width, one segment per mode, equal widths, **22 tall** (`metrics::FIELD[0]`), no gap between
+  segments, `RADIUS_FIELD` on the outer corners only, 1 px `border_subtle` between segments.
+- Each segment is the 14 pt icon, 6 gap, then the name at `BODY` 12. Content centred. A segment that
+  is too narrow for icon and name (below about 70 each) drops the name and keeps the tooltip.
+- Off: `bg_field` fill, `text_secondary`. Hover: `hover_fill`, `text_primary`. On: `bg_raised` fill,
+  `text_primary`, a 1 px `gold` ring.
+- The **erasing** mode, when on, is ringed and tinted in `palette.danger` (text and icon too), as
+  `mode_buttons` does today. Its `danger` flag moves into the new option type.
+- Each segment is a `RadioButton` named for the mode; the switch is a group named "Mode".
+- Below it: the hint ("Hold Option to get the other mode."), `CAPTION` 11, `text_tertiary`, 8 above.
+  Then the tool's sections as before.
+- The mode chip at the right of the header ("Paint", "Erase") is unchanged.
+
+One widget now serves both places: the Shore switch is this control with two segments, so
+`icon_switch` goes away once it is replaced.
