@@ -159,9 +159,8 @@ impl LayerTree {
             rect,
             state,
             selected,
-            hovering,
         };
-        let trailing_left = trailing_indicators(ui, editor, &paint, actions);
+        let trailing_left = trailing_indicators(ui, editor, &paint);
         self.row_label(ui, editor, &paint, trailing_left, actions);
 
         if response.clicked() {
@@ -207,7 +206,6 @@ struct RowPaint<'a> {
     rect: egui::Rect,
     state: RowState,
     selected: bool,
-    hovering: bool,
 }
 
 impl RowPaint<'_> {
@@ -222,18 +220,9 @@ impl RowPaint<'_> {
 
 /// Lays out the lock, pin, Link, eye, active Layer, opacity, Depth sort and Clip indicators at the
 /// right of a row, right to left, and returns the x where they start.
-fn trailing_indicators(
-    ui: &mut egui::Ui,
-    editor: &Editor,
-    paint: &RowPaint<'_>,
-    actions: &mut Vec<Action>,
-) -> f32 {
+fn trailing_indicators(ui: &mut egui::Ui, editor: &Editor, paint: &RowPaint<'_>) -> f32 {
     let RowPaint {
-        row,
-        rect,
-        state,
-        hovering,
-        ..
+        row, rect, state, ..
     } = *paint;
     let layer = paint.layer();
     let map = editor.map();
@@ -246,46 +235,26 @@ fn trailing_indicators(
     );
     trailing.spacing_mut().item_spacing.x = 2.0;
     let mut trailing_left = rect.right();
-    // Lock: always when locked, otherwise on hover.
+    // Indicators only: drawn while the state is on, never clickable. The settings row and the
+    // right-click menu change them.
     if state.locked_by_parent {
-        // Shown so the inherited lock is visible, but it can't be toggled on the child.
-        let (r, lock) =
-            trailing.allocate_exact_size(egui::Vec2::splat(ROW_BUTTON), egui::Sense::click());
-        let label = "Locked by parent Layer";
-        lock.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, false, label));
-        icons::paint(
-            &trailing,
-            r,
-            Icon::LockDashed,
-            ROW_GLYPH,
-            palette.text_tertiary,
-        );
-        lock.on_hover_text(label);
-        trailing_left = trailing.min_rect().left();
-    } else if state.locked || hovering {
-        let (icon, label, tint) = if state.locked {
-            (Icon::LockFilled, "Unlock", palette.text_primary)
-        } else {
-            (Icon::Lock, "Lock", palette.text_tertiary)
-        };
-        if icons::icon_button_with(
+        indicator(
             &mut trailing,
-            icon,
-            label,
-            ROW_BUTTON,
-            ROW_GLYPH,
-            Some(tint),
-        )
-        .clicked()
-        {
-            actions.push(Action::Run(Command::SetLocked {
-                id: row.id,
-                locked: !state.locked,
-            }));
-        }
+            Icon::LockDashed,
+            palette.text_tertiary,
+            "Locked by parent Layer",
+        );
+        trailing_left = trailing.min_rect().left();
+    } else if state.locked {
+        indicator(
+            &mut trailing,
+            Icon::LockFilled,
+            palette.text_primary,
+            "Locked",
+        );
         trailing_left = trailing.min_rect().left();
     }
-    if pin_button(&mut trailing, paint, actions) {
+    if pin_indicator(&mut trailing, paint) {
         trailing_left = trailing.min_rect().left();
     }
     if map.is_linked(row.id) {
@@ -293,28 +262,8 @@ fn trailing_indicators(
         trailing_left = trailing.min_rect().left();
     }
     if let Some(layer) = layer {
-        // Eye: always when hidden, otherwise on hover.
-        if state.hidden || hovering {
-            let (icon, label, tint) = if layer.visible {
-                (Icon::Visible, "Hide", palette.text_tertiary)
-            } else {
-                (Icon::Hidden, "Show", palette.text_primary)
-            };
-            if icons::icon_button_with(
-                &mut trailing,
-                icon,
-                label,
-                ROW_BUTTON,
-                ROW_GLYPH,
-                Some(tint),
-            )
-            .clicked()
-            {
-                actions.push(Action::Run(Command::SetVisible {
-                    id: row.id,
-                    visible: !layer.visible,
-                }));
-            }
+        if state.hidden {
+            indicator(&mut trailing, Icon::Hidden, palette.text_primary, "Hidden");
             trailing_left = trailing.min_rect().left();
         }
         if editor.active_layer() == Some(row.id) {
@@ -364,49 +313,33 @@ fn trailing_indicators(
     trailing_left
 }
 
-/// The Pin to Canvas button of a row, left of the lock: always when pinned, otherwise on hover.
-/// A pin that comes only from a Layer above shows dashed and cannot be changed here. A lock
-/// already stops movement, so a locked row shows no pin. Returns whether it was drawn.
-fn pin_button(trailing: &mut egui::Ui, paint: &RowPaint<'_>, actions: &mut Vec<Action>) -> bool {
-    let RowPaint {
-        row,
-        state,
-        hovering,
-        ..
-    } = *paint;
+/// The Pin to Canvas indicator of a row, left of the lock, drawn only while pinned. A pin that
+/// comes only from a Layer above shows dashed. A lock already stops movement, so a locked row
+/// shows no pin. Returns whether it was drawn.
+fn pin_indicator(trailing: &mut egui::Ui, paint: &RowPaint<'_>) -> bool {
+    let state = paint.state;
     let palette = theme::palette(trailing.ctx());
     if state.locked || state.locked_by_parent {
         return false;
     }
     if state.pinned_by_parent {
-        let (rect, response) =
-            trailing.allocate_exact_size(egui::Vec2::splat(ROW_BUTTON), egui::Sense::click());
-        let label = "Pinned by parent Layer";
-        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, false, label));
-        icons::paint(
+        indicator(
             trailing,
-            rect,
             Icon::PinDashed,
-            ROW_GLYPH,
             palette.text_tertiary,
+            "Pinned by parent Layer",
         );
-        response.on_hover_text(label);
         return true;
     }
-    if !(state.pinned || hovering) {
+    if !state.pinned {
         return false;
     }
-    let (icon, label, tint) = if state.pinned {
-        (Icon::PinFilled, "Unpin from Canvas", palette.text_primary)
-    } else {
-        (Icon::Pin, "Pin to Canvas", palette.text_tertiary)
-    };
-    if icons::icon_button_with(trailing, icon, label, ROW_BUTTON, ROW_GLYPH, Some(tint)).clicked() {
-        actions.push(Action::Run(Command::SetMoveLocked {
-            id: row.id,
-            locked: !state.pinned,
-        }));
-    }
+    indicator(
+        trailing,
+        Icon::PinFilled,
+        palette.text_primary,
+        "Pinned to Canvas",
+    );
     true
 }
 

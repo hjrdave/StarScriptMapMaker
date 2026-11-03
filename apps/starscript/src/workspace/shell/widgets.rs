@@ -223,34 +223,63 @@ pub fn divider(ui: &mut egui::Ui, shell: &mut Shell, side: Side, panel: egui::Re
         .vline(x, panel.y_range(), egui::Stroke::new(1.0, color));
 }
 
-/// The Properties collapse control: a double chevron that points right while the panel is
-/// expanded and left once `collapsed`. Its place is the bottom of the panel in both states.
-pub fn properties_collapse_button(ui: &mut egui::Ui, collapsed: bool) -> egui::Response {
-    let label = if collapsed {
-        "Expand Properties (⌘⌥2)"
-    } else {
-        "Collapse Properties (⌘⌥2)"
-    };
-    icons::icon_button_flipped(ui, Icon::CollapseDouble, label, !collapsed)
+/// The size a rail icon is drawn at; it has its own crisp atlas.
+const RAIL_ICON: f32 = icons::RAIL_GRID;
+/// Height of the tile around a rail icon and its caption.
+const RAIL_SLOT_HEIGHT: f32 = RAIL_ICON + 26.0;
+/// The tile: the rail less a margin each side, wide enough for the longest caption.
+const RAIL_SLOT: egui::Vec2 = egui::vec2(metrics::LAYERS_PANEL_RAIL - 8.0, RAIL_SLOT_HEIGHT);
+
+/// A rail slot's icon, near the top of the tile, and its caption centred under it, both in `tint`.
+fn paint_rail_content(
+    ui: &egui::Ui,
+    slot: egui::Rect,
+    icon: Icon,
+    caption: &str,
+    tint: egui::Color32,
+) {
+    let icon_area = egui::Rect::from_center_size(
+        egui::pos2(slot.center().x, slot.top() + 6.0 + RAIL_ICON / 2.0),
+        egui::Vec2::splat(RAIL_ICON),
+    );
+    icons::paint(ui, icon_area, icon, RAIL_ICON, tint);
+    ui.painter().text(
+        egui::pos2(slot.center().x, slot.bottom() - 5.0),
+        egui::Align2::CENTER_BOTTOM,
+        caption,
+        egui::FontId::proportional(theme::CAPTION),
+        tint,
+    );
 }
 
-/// The 40 pt rail of the left sidebar, always on screen: the section icons, with the open
-/// section's in the primary colour. Returns the section whose icon was clicked.
+/// The rounded tile behind a rail icon: filled for the open section, lighter on hover.
+fn paint_rail_tile(ui: &egui::Ui, slot: egui::Rect, open: bool, hovered: bool) {
+    let palette = theme::palette(ui.ctx());
+    let fill = if open {
+        palette.hover_fill
+    } else if hovered {
+        palette.bg_raised
+    } else {
+        return;
+    };
+    ui.painter()
+        .rect_filled(slot, egui::CornerRadius::same(theme::RADIUS_BUTTON), fill);
+}
+
+/// The rail of the left sidebar, always on screen: the section icons, with the open section's
+/// in the primary colour on a filled tile. Returns the section whose icon was clicked.
 pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<SidebarSection> {
     let current = shell.sidebar_section();
     let palette = theme::palette(ui.ctx());
     let rect = ui.max_rect();
     let mut clicked = None;
-    let step = icons::GRID + 8.0 + theme::SPACING[1];
-    let mut layers_y = rect.top() + metrics::PANEL_HEADER / 2.0;
+    let step = RAIL_SLOT_HEIGHT + theme::SPACING[1];
+    let mut layers_y = rect.top() + metrics::PANEL_HEADER / 2.0 + RAIL_SLOT_HEIGHT / 2.0 - 12.0;
     let mut count = 0.0;
-    for section in SidebarSection::ALL
-        .into_iter()
-        .filter(|&s| shell.section_available(s))
-    {
+    for section in SidebarSection::ALL {
         let slot = egui::Rect::from_center_size(
             egui::pos2(rect.center().x, layers_y + count * step),
-            egui::Vec2::splat(icons::GRID + 8.0),
+            RAIL_SLOT,
         );
         let response = ui.interact(
             slot,
@@ -260,12 +289,14 @@ pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<
         response.widget_info(|| {
             egui::WidgetInfo::labeled(egui::WidgetType::Button, true, section.label())
         });
-        let tint = if (section == current && shell.panel_open()) || response.hovered() {
+        let open = section == current && shell.panel_open();
+        paint_rail_tile(ui, slot, open, response.hovered());
+        let tint = if open || response.hovered() {
             palette.text_primary
         } else {
             palette.text_secondary
         };
-        icons::paint(ui, slot, section.icon(), icons::GRID, tint);
+        paint_rail_content(ui, slot, section.icon(), section.title(), tint);
         if response
             .on_hover_text(section.label())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -287,7 +318,7 @@ pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<
         // and sits in a column as wide as one line of text.
         let origin = egui::pos2(
             rect.center().x + galley.size().y / 2.0,
-            layers_y + icons::GRID + theme::SPACING[3],
+            layers_y + RAIL_SLOT_HEIGHT / 2.0 + theme::SPACING[3],
         );
         let shape = egui::epaint::TextShape::new(origin, galley, palette.text_secondary)
             .with_angle(std::f32::consts::FRAC_PI_2);
@@ -296,45 +327,28 @@ pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<
     clicked
 }
 
-/// The 40 pt icon strip Properties collapses to, or narrows to at the smallest window: the
-/// Properties icon with the expand control pinned to the bottom, as on the Layers rail.
-/// Returns true when either is clicked.
+/// The icon strip Properties narrows to at the smallest window: the Properties icon, which
+/// opens the floating inspector. Returns true when it is clicked.
 pub fn properties_rail(ui: &mut egui::Ui) -> bool {
     let palette = theme::palette(ui.ctx());
     let rect = ui.max_rect();
     let mut clicked = false;
     let slot = egui::Rect::from_center_size(
         egui::pos2(rect.center().x, rect.top() + metrics::PANEL_HEADER / 2.0),
-        egui::Vec2::splat(icons::GRID + 8.0),
+        RAIL_SLOT,
     );
     let response = ui.interact(slot, ui.id().with("properties rail"), egui::Sense::click());
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Open Properties (⌘⌥2)")
     });
+    paint_rail_tile(ui, slot, false, response.hovered());
     let tint = if response.hovered() {
         palette.text_primary
     } else {
         palette.text_secondary
     };
-    icons::paint(ui, slot, Icon::Shape, icons::GRID, tint);
+    paint_rail_content(ui, slot, Icon::Shape, "Properties", tint);
     if response
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
-    {
-        clicked = true;
-    }
-    let bar = egui::Rect::from_min_max(
-        egui::pos2(
-            rect.left(),
-            rect.bottom() - crate::layer_tree::FOOTER_HEIGHT,
-        ),
-        rect.right_bottom(),
-    );
-    let mut bottom =
-        ui.new_child(egui::UiBuilder::new().max_rect(bar).layout(
-            egui::Layout::top_down(egui::Align::Center).with_main_align(egui::Align::Center),
-        ));
-    if properties_collapse_button(&mut bottom, true)
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
     {

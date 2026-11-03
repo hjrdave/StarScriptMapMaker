@@ -6,7 +6,7 @@ use ssmap_core::{Command, Id, Node};
 
 use super::*;
 use crate::icons::Icon;
-use crate::prop_widgets::{self, Handle, ScrubSpec};
+use crate::prop_widgets::{self, Handle, ScrubSpec, ToggleState};
 
 /// What the row acts on: the selection, else the active Layer.
 fn targets(editor: &Editor) -> Vec<Id> {
@@ -52,9 +52,18 @@ impl LayerTree {
                 _ => None,
             })
             .collect();
-        let hidden = !layers.is_empty() && layers.iter().all(|&id| !visible(map, id));
-        let locked = !writable.is_empty() && writable.iter().all(|&id| node_locked(map, id));
-        let pinned = !writable.is_empty() && writable.iter().all(|&id| pin_on(map, id));
+        let hidden = ToggleState::of(
+            layers.iter().filter(|&&id| !visible(map, id)).count(),
+            layers.len(),
+        );
+        let locked = ToggleState::of(
+            writable.iter().filter(|&&id| node_locked(map, id)).count(),
+            writable.len(),
+        );
+        let pinned = ToggleState::of(
+            writable.iter().filter(|&&id| pin_on(map, id)).count(),
+            writable.len(),
+        );
         let any_locked = writable.iter().any(|&id| node_locked(map, id));
 
         let mut percent = opacities.first().map_or(100.0, |&o| f64::from(o) * 100.0);
@@ -79,33 +88,32 @@ impl LayerTree {
                             .mixed(mixed),
                     );
                 });
-                hide_clicked = prop_widgets::icon_toggle(
-                    ui,
-                    if hidden { Icon::Hidden } else { Icon::Visible },
-                    if hidden { "Show" } else { "Hide" },
-                    hidden,
-                );
+                // Mixed looks on but a click turns the state on for all, so it keeps the "on" name.
+                hide_clicked =
+                    state_button(ui, hidden, [Icon::Visible, Icon::Hidden], ["Hide", "Show"]);
             });
             ui.add_enabled_ui(!writable.is_empty(), |ui| {
-                lock_clicked = prop_widgets::icon_toggle(
+                lock_clicked = state_button(
                     ui,
-                    if locked { Icon::LockFilled } else { Icon::Lock },
-                    if locked { "Unlock" } else { "Lock" },
                     locked,
+                    [Icon::Lock, Icon::LockFilled],
+                    ["Lock", "Unlock"],
                 );
             });
             ui.add_enabled_ui(!writable.is_empty() && !any_locked, |ui| {
-                pin_clicked = prop_widgets::icon_toggle(
+                pin_clicked = state_button(
                     ui,
-                    if pinned { Icon::PinFilled } else { Icon::Pin },
-                    if pinned {
-                        "Unpin from Canvas"
-                    } else {
-                        "Pin to Canvas"
-                    },
                     pinned,
+                    [Icon::Pin, Icon::PinFilled],
+                    ["Pin to Canvas", "Unpin from Canvas"],
                 );
             });
+            if ids.len() > 1 {
+                ui.label(
+                    egui::RichText::new(format!("{} selected", ids.len()))
+                        .color(palette.text_secondary),
+                );
+            }
         });
         ui.add_space(theme::SPACING[2]);
         ui.painter().hline(
@@ -144,7 +152,7 @@ pub(super) enum Toggle {
 }
 
 /// Which of some rows a [`Toggle`] reaches, and whether they all have it on already.
-pub(super) struct ToggleState {
+pub(super) struct ToggleTargets {
     /// The rows it changes: Hide takes Layers only; Lock and Pin skip a node locked from above.
     pub targets: Vec<Id>,
     /// Every target has it on (and there is at least one): the action turns it off.
@@ -168,7 +176,7 @@ impl Toggle {
 
     /// A menu label: the verb, naming the count when there are several ("Hide 6 items",
     /// "Pin 6 items to Canvas").
-    pub(super) fn menu_label(self, state: &ToggleState) -> String {
+    pub(super) fn menu_label(self, state: &ToggleTargets) -> String {
         let n = state.targets.len();
         if n < 2 {
             return self.verb(state.on).to_owned();
@@ -185,7 +193,7 @@ impl Toggle {
 }
 
 /// What `toggle` would do to `ids`.
-pub(super) fn toggle_state(map: &ssmap_core::Map, ids: &[Id], toggle: Toggle) -> ToggleState {
+pub(super) fn toggle_state(map: &ssmap_core::Map, ids: &[Id], toggle: Toggle) -> ToggleTargets {
     let targets: Vec<Id> = match toggle {
         Toggle::Hide => ids
             .iter()
@@ -206,7 +214,7 @@ pub(super) fn toggle_state(map: &ssmap_core::Map, ids: &[Id], toggle: Toggle) ->
     let on = !targets.is_empty() && targets.iter().all(|&id| has(id));
     let enabled = !targets.is_empty()
         && (!matches!(toggle, Toggle::Pin) || !targets.iter().any(|&id| node_locked(map, id)));
-    ToggleState {
+    ToggleTargets {
         targets,
         on,
         enabled,
@@ -230,6 +238,22 @@ pub(super) fn apply_toggle(editor: &mut Editor, ids: &[Id], toggle: Toggle) {
             Toggle::Pin => Command::SetMoveLocked { id, locked: on },
         },
     );
+}
+
+/// One of Hide, Lock or Pin. `icons` and `names` are [off, on]; Mixed has the on look and is
+/// named for the click that turns the state on for all.
+fn state_button(ui: &mut egui::Ui, state: ToggleState, icons: [Icon; 2], names: [&str; 2]) -> bool {
+    let icon = if state == ToggleState::Off {
+        icons[0]
+    } else {
+        icons[1]
+    };
+    let name = if state == ToggleState::On {
+        names[1]
+    } else {
+        names[0]
+    };
+    prop_widgets::icon_tristate(ui, icon, name, state)
 }
 
 /// Whether the Layer itself is shown (its own eye, not one above it).

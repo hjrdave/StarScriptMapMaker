@@ -37,6 +37,10 @@ pub struct Palette {
     pub gold_subtle: Color32,
     pub gold_ring: Color32,
     pub select: Color32,
+    /// Selection box when everything selected is Pinned to the Canvas. Not in `tokens.json`.
+    pub pinned: Color32,
+    /// Selection box when everything selected is Locked. Not in `tokens.json`.
+    pub locked: Color32,
     pub clip: Color32,
     pub warn: Color32,
     pub danger: Color32,
@@ -77,6 +81,8 @@ impl Palette {
         gold_subtle: hex(0x3A311C),
         gold_ring: hex(0x8A6C2C),
         select: hex(0x4FA3E0),
+        pinned: hex(0xB494F0),
+        locked: hex(0xA3A3A3),
         clip: hex(0x7FB6E6),
         warn: hex(0xF2B65A),
         danger: hex(0xF2A093),
@@ -113,6 +119,8 @@ impl Palette {
         tab_hover: hex(0xEBE4D2),
         tab_divider: hex(0xD9CEB6),
         gold_ring: hex(0x8A6414),
+        pinned: hex(0x6B4FC0),
+        locked: hex(0x6B6B6B),
         hover_fill: hex(0xEDE5D0),
         hover_stroke: hex(0xA89B80),
         thumb_bg: hex(0xFFFFFF),
@@ -128,6 +136,7 @@ impl Palette {
 /// - `tab_hover`: halfway between `bg_chrome` and `bg_panel`.
 /// - `tab_divider`: `border_subtle`.
 /// - `gold_ring`: `gold` (kept at 4.5:1 or better on the light panels).
+/// - `pinned`, `locked`: selection box colours, darkened from the dark values for a light ground.
 /// - `hover_fill`: a step darker than `bg_raised`; `hover_stroke`: a step darker than
 ///   `border_strong`.
 pub const LIGHT_DERIVED: &[&str] = &[
@@ -136,6 +145,8 @@ pub const LIGHT_DERIVED: &[&str] = &[
     "tab_hover",
     "tab_divider",
     "gold_ring",
+    "pinned",
+    "locked",
     "hover_fill",
     "hover_stroke",
 ];
@@ -227,7 +238,7 @@ pub mod metrics {
     pub const LAYERS_PANEL_DEFAULT: f32 = 232.0;
     pub const LAYERS_PANEL_MIN: f32 = 200.0;
     pub const LAYERS_PANEL_MAX: f32 = 360.0;
-    pub const LAYERS_PANEL_RAIL: f32 = 40.0;
+    pub const LAYERS_PANEL_RAIL: f32 = 64.0;
     /// The left bar while it shows the Map section, whose fields and look buttons need room.
     pub const MAP_PANEL_DEFAULT: f32 = 320.0;
     pub const MAP_PANEL_MAX: f32 = 480.0;
@@ -448,7 +459,7 @@ mod tests {
         assert_eq!(l.tab_hover, mid(l.bg_chrome, l.bg_panel));
         // Warmer than the panel: less blue.
         assert!(l.bg_tool_section.b() < l.bg_panel.b());
-        assert_eq!(LIGHT_DERIVED.len(), 7);
+        assert_eq!(LIGHT_DERIVED.len(), 9);
     }
 
     fn luminance(c: Color32) -> f64 {

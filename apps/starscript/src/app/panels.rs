@@ -208,14 +208,16 @@ fn sidebar_section(ui: &mut egui::Ui, section: shell::SidebarSection, tab: &mut 
             tab.properties.map_panel(ui, &mut tab.editor);
         }
         shell::SidebarSection::Boards => {
-            shell::panel_header(ui, "Art boards", |ui| {
+            let tint = crate::theme::palette(ui.ctx()).text_primary;
+            shell::icon_header(ui, icons::Icon::ExportRegion, tint, "Art boards", |ui| {
                 if icons::icon_button(ui, icons::Icon::Add, "New Art Board").clicked()
                     && let Some(board) = tab.editor.new_art_board()
                 {
                     tab.board_list.jump_to(board);
                 }
             });
-            tab.board_list.show(ui, &mut tab.editor);
+            tab.properties
+                .boards_panel(ui, &mut tab.editor, &mut tab.board_list);
         }
         shell::SidebarSection::History => {
             // Step Back and Step Forward are Undo and Redo, so they carry their shortcuts.
@@ -228,7 +230,8 @@ fn sidebar_section(ui: &mut egui::Ui, section: shell::SidebarSection, tab: &mut 
             let back = format!("Step Back{}", hint(crate::menu::Command::Undo));
             let forward = format!("Step Forward{}", hint(crate::menu::Command::Redo));
             let (can_back, can_forward) = (tab.editor.can_undo(), tab.editor.can_redo());
-            shell::panel_header(ui, "History", |ui| {
+            let tint = crate::theme::palette(ui.ctx()).text_primary;
+            shell::icon_header(ui, icons::Icon::History, tint, "History", |ui| {
                 // Right to left: Step Forward is added first so Step Back sits left of it.
                 ui.add_enabled_ui(can_forward, |ui| {
                     if icons::icon_button_flipped(ui, icons::Icon::Undo, &forward, true).clicked() {
@@ -247,7 +250,8 @@ fn sidebar_section(ui: &mut egui::Ui, section: shell::SidebarSection, tab: &mut 
             }
         }
         shell::SidebarSection::Layers => {
-            shell::panel_header(ui, "Layers", |ui| {
+            let tint = crate::theme::palette(ui.ctx()).text_primary;
+            shell::icon_header(ui, icons::Icon::LayerGroup, tint, "Layers", |ui| {
                 if icons::icon_button(ui, icons::Icon::Add, "New Layer (⇧⌘N)").clicked() {
                     tab.editor.new_layer();
                 }

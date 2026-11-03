@@ -1,16 +1,19 @@
-//! The properties of the selected board, the Canvas or an Art board: its name, size, place
-//! and background, and making it the Canvas, duplicating or deleting it.
+//! The Art boards panel's settings for the selected row, the Canvas or an Art board: its name,
+//! size, place and background, and making it the Canvas, duplicating, deleting or moving it.
+//! Also the Objects' Board row.
 
 use eframe::egui;
-use ssmap_core::{Command, Id, Map, Membership, Node};
+use ssmap_core::{Command, DistanceUnit, Id, Map, Membership, Node};
 
 use super::{
-    PropertiesPanel, heading,
-    map::{merge_edits, resize},
+    PropertiesPanel,
+    map::{background_command, merge_edits, resize},
     row,
 };
+use crate::board_list::BoardList;
 use crate::editor::Editor;
-use crate::prop_widgets::{self, Handle, Provenance, ScrubSpec, SectionHeader};
+use crate::prop_widgets::{self, Edit, Handle, Provenance, ScrubSpec};
+use crate::theme;
 
 /// What a board's buttons ask the window for, which owns the dialogs.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -27,8 +30,32 @@ impl PropertiesPanel {
         std::mem::take(&mut self.board_requests)
     }
 
-    /// The selected board's settings. Every edit is one Undo step and none moves an Object.
-    pub(super) fn board_properties(&mut self, ui: &mut egui::Ui, editor: &mut Editor, id: Id) {
+    /// The Art boards section: the list of boards, then the settings of the selected row (the
+    /// Canvas when no board is selected). Every edit is one Undo step and none moves an Object.
+    pub(crate) fn boards_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        list: &mut BoardList,
+    ) {
+        // A change ends when the pointer is released, or when Escape cancelled it.
+        self.live.apply(editor, Edit::default(), "", || {
+            unreachable!("nothing changed")
+        });
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                list.show(ui, editor);
+                let id = editor
+                    .selected_board()
+                    .unwrap_or_else(|| editor.map().primary_board());
+                ui.add_space(theme::SPACING[2]);
+                self.board_settings(ui, editor, id);
+            });
+    }
+
+    /// The settings of the board `id`, under the list.
+    pub(super) fn board_settings(&mut self, ui: &mut egui::Ui, editor: &mut Editor, id: Id) {
         let Some(canvas) = editor.map().board(id).map(|board| board.canvas.clone()) else {
             return;
         };
@@ -36,20 +63,16 @@ impl PropertiesPanel {
             return;
         };
         let primary = id == editor.map().primary_board();
-        heading(ui, &label);
-        if !primary {
-            self.board_name(ui, editor, id, &label);
-        }
-        let header = |kind, title| SectionHeader {
-            kind,
-            title,
-            badge: None,
-            action: None,
-        };
-        prop_widgets::section(ui, header("board-size", "Size"), |ui| {
-            self.canvas_fields(ui, editor, id, &canvas, None);
+        self.board_name(ui, editor, id, &label, primary);
+        let scale = primary.then(|| {
+            let unit = match canvas.scale.unit {
+                DistanceUnit::Miles => "mi",
+                DistanceUnit::Kilometres => "km",
+            };
+            format!("{} {unit} per unit", canvas.scale.distance_per_unit)
         });
-        prop_widgets::section(ui, header("board-position", "Position"), |ui| {
+        self.canvas_fields(ui, editor, id, &canvas, scale.as_deref());
+        prop_widgets::field_row(ui, "Position", Provenance::Plain, |ui| {
             let spec = |name, handle| {
                 ScrubSpec::new(name)
                     .handle(Handle::Text(handle))
@@ -67,21 +90,61 @@ impl PropertiesPanel {
             self.live
                 .apply(editor, merge_edits(x_edit, y_edit), name, || command);
         });
-        prop_widgets::section(ui, header("board-background", "Background"), |ui| {
-            self.background_fields(ui, editor, id, &canvas);
+        self.board_colour(ui, editor, id, &canvas);
+        self.board_actions(ui, editor, id, primary);
+    }
+
+    /// The Background colour row: the water colour, changed live as one Undo step.
+    fn board_colour(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        id: Id,
+        canvas: &ssmap_core::Canvas,
+    ) {
+        let mut colour = Some(canvas.background.water);
+        let response =
+            prop_widgets::swatch(ui, "Background", &mut colour, false, Provenance::Plain);
+        let mut next = canvas.background.clone();
+        next.water = colour.unwrap_or(next.water);
+        let command = background_command(editor, id, next);
+        self.live
+            .apply(editor, response.edit, "Change Background", || command);
+    }
+
+    /// Duplicate, Set as Canvas and Delete (the last two not on the Canvas), then Move up and
+    /// Move down among the boards, which draw in the order of the list.
+    fn board_actions(&mut self, ui: &mut egui::Ui, editor: &mut Editor, id: Id, primary: bool) {
+        let index = editor
+            .map()
+            .boards()
+            .iter()
+            .position(|board| board.id == id);
+        let last = editor.map().boards().len().saturating_sub(1);
+        ui.add_space(theme::SPACING[2]);
+        ui.horizontal_wrapped(|ui| {
+            if ui.button("Duplicate").clicked() {
+                self.board_requests.push(BoardRequest::Duplicate(id));
+            }
+            if !primary && ui.button("Set as Canvas").clicked() {
+                editor.make_canvas(id);
+            }
+            if !primary && ui.button("Delete").clicked() {
+                self.board_requests.push(BoardRequest::Delete(id));
+            }
         });
-        prop_widgets::section(ui, header("board-actions", "Actions"), |ui| {
-            ui.horizontal_wrapped(|ui| {
-                if !primary && ui.button("Set as Canvas").clicked() {
-                    editor.make_canvas(id);
-                }
-                if ui.button("Duplicate").clicked() {
-                    self.board_requests.push(BoardRequest::Duplicate(id));
-                }
-                if !primary && ui.button("Delete").clicked() {
-                    self.board_requests.push(BoardRequest::Delete(id));
-                }
-            });
+        ui.horizontal_wrapped(|ui| {
+            let up = ui.add_enabled(index.is_some_and(|i| i > 0), egui::Button::new("Move up"));
+            if up.clicked() {
+                editor.move_board(id, -1);
+            }
+            let can_down = index.is_some_and(|i| i < last);
+            if ui
+                .add_enabled(can_down, egui::Button::new("Move down"))
+                .clicked()
+            {
+                editor.move_board(id, 1);
+            }
         });
     }
 
@@ -135,21 +198,33 @@ impl PropertiesPanel {
     }
 
     /// The board's name; empty goes back to the default "Art board N". Committed when the
-    /// field loses focus.
-    fn board_name(&mut self, ui: &mut egui::Ui, editor: &mut Editor, id: Id, shown: &str) {
+    /// field loses focus. The Canvas's name is shown but can't be edited.
+    fn board_name(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        id: Id,
+        shown: &str,
+        primary: bool,
+    ) {
         let current = editor
             .map()
             .board(id)
             .and_then(|board| board.name.clone())
             .unwrap_or_default();
-        let mut text = match &self.text_edit {
-            Some((editing, text)) if *editing == id => text.clone(),
-            _ => current.clone(),
+        let mut text = if primary {
+            shown.to_owned()
+        } else {
+            match &self.text_edit {
+                Some((editing, text)) if *editing == id => text.clone(),
+                _ => current.clone(),
+            }
         };
         let mut field = None;
         prop_widgets::field_row(ui, "Name", Provenance::Plain, |ui| {
             field = Some(
-                ui.add(
+                ui.add_enabled(
+                    !primary,
                     egui::TextEdit::singleline(&mut text)
                         .hint_text(shown)
                         .desired_width(f32::INFINITY),
@@ -160,8 +235,11 @@ impl PropertiesPanel {
             return;
         };
         field.widget_info(|| {
-            egui::WidgetInfo::text_edit(true, "Board name", text.clone(), text.clone())
+            egui::WidgetInfo::text_edit(!primary, "Board name", text.clone(), text.clone())
         });
+        if primary {
+            return;
+        }
         if field.changed() {
             self.text_edit = Some((id, text.clone()));
         }

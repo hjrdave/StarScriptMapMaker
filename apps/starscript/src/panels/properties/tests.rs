@@ -63,6 +63,24 @@ fn map_harness(fixture: Fixture) -> Harness<'static, Fixture> {
     harness
 }
 
+/// The Art boards section, which holds the Canvas and the Art boards.
+fn boards_harness(fixture: Fixture) -> Harness<'static, Fixture> {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(320.0, 900.0))
+        .build_ui_state(
+            |ui, fixture: &mut Fixture| {
+                theme::install(&ui.ctx().clone());
+                let mut list = crate::board_list::BoardList::default();
+                fixture
+                    .panel
+                    .boards_panel(ui, &mut fixture.editor, &mut list);
+            },
+            fixture,
+        );
+    harness.run();
+    harness
+}
+
 fn harness(fixture: Fixture) -> Harness<'static, Fixture> {
     let mut harness = Harness::builder()
         .with_size(egui::vec2(320.0, 900.0))
@@ -195,7 +213,8 @@ fn a_multi_selection_is_summarised_and_can_be_combined() {
     );
     fixture.editor.select(vec![island, other]);
     let mut harness = harness(fixture);
-    assert!(harness.query_by_label("2 Landmasses").is_some());
+    // In the title and in the breadcrumb row.
+    assert!(harness.query_all_by_label("2 Landmasses").next().is_some());
     assert!(!harness.get_by_label("Union").accesskit_node().is_disabled());
 
     harness.get_by_label("Union").click();
@@ -651,7 +670,7 @@ fn resizing_from_each_anchor_keeps_that_point_fixed_and_moves_no_object() {
         for x in 0..3u8 {
             let (fixture, _, island) = fixture();
             let before = geometry_of(&fixture, island);
-            let mut harness = map_harness(fixture);
+            let mut harness = boards_harness(fixture);
             click(&mut harness, &anchor_name(x, y));
             // The width box is the first showing 100, the height box the second.
             type_into_nth(&mut harness, "100", 0, "90");
@@ -670,7 +689,7 @@ fn resizing_from_each_anchor_keeps_that_point_fixed_and_moves_no_object() {
 fn shrinking_past_objects_and_growing_back_then_undo_and_redo_touch_no_object() {
     let (fixture, _, island) = fixture();
     let before = geometry_of(&fixture, island);
-    let mut harness = map_harness(fixture);
+    let mut harness = boards_harness(fixture);
     // Anchor bottom-right: shrinking pulls the left edge past the Landmass at 0..40.
     click(&mut harness, &anchor_name(2, 2));
     type_into_nth(&mut harness, "100", 0, "30");
@@ -702,7 +721,7 @@ fn shrinking_past_objects_and_growing_back_then_undo_and_redo_touch_no_object() 
 fn scrubbing_the_canvas_width_is_one_undo_step_that_holds_the_anchor() {
     let (fixture, _, island) = fixture();
     let before = geometry_of(&fixture, island);
-    let mut harness = map_harness(fixture);
+    let mut harness = boards_harness(fixture);
     click(&mut harness, &anchor_name(2, 1));
     let steps = harness.state().editor.history_steps().0.len();
     let start = harness
@@ -979,7 +998,7 @@ fn several_stamps_share_one_section_with_mixed_fields_and_one_undo_step() {
     let b = add_stamp(&mut fixture, layer, 30.0);
     fixture.editor.select(vec![a, b]);
     let mut harness = harness(fixture);
-    assert!(harness.query_by_label("2 Stamps").is_some());
+    assert!(harness.query_all_by_label("2 Stamps").next().is_some());
     assert!(harness.query_by_label("Lock Stamps").is_some());
     // No Asset card for several Stamps.
     assert!(harness.query_by_label("Replace Asset").is_none());
@@ -1111,23 +1130,77 @@ fn board_size(harness: &Harness<'static, Fixture>) -> (u32, u32) {
 }
 
 #[test]
-fn the_map_panel_has_three_tabs_and_starts_on_canvas() {
+fn the_map_panel_has_style_and_shores_tabs_and_no_canvas_tab() {
     let mut harness = map_harness(ocean_fixture());
-    // "Canvas" is also the name of the first section, so look for the tab buttons.
-    for tab in ["Canvas", "Style", "Shores"] {
+    for tab in ["Style", "Shores"] {
         harness.get_by_role_and_label(egui::accesskit::Role::Button, tab);
     }
-    harness.get_by_label("Canvas width");
-    assert!(harness.query_by_label("Parchment look").is_none());
-    assert!(harness.query_by_label("Landmass shore").is_none());
-
-    click(&mut harness, "Style");
+    assert!(
+        harness
+            .query_by_role_and_label(egui::accesskit::Role::Button, "Canvas")
+            .is_none()
+    );
+    // It starts on Style; the Canvas is in the Art boards section.
     harness.get_by_label("Parchment look");
     assert!(harness.query_by_label("Canvas width").is_none());
+    assert!(harness.query_by_label("Landmass shore").is_none());
 
     click(&mut harness, "Shores");
     harness.get_by_label("Landmass shore");
     assert!(harness.query_by_label("Parchment look").is_none());
+}
+
+#[test]
+fn the_boards_settings_cover_the_canvas_and_an_art_board() {
+    let (fixture, _, _) = fixture();
+    let canvas = fixture.editor.map().primary_board();
+    let harness = boards_harness(fixture);
+    for label in [
+        "Name",
+        "Size",
+        "Scale",
+        "Resize from",
+        "Position",
+        "Background",
+    ] {
+        assert!(
+            harness.query_all_by_label(label).next().is_some(),
+            "{label}"
+        );
+    }
+    // The Canvas has no Set as Canvas or Delete, and its name is read-only.
+    assert!(harness.query_by_label("Set as Canvas").is_none());
+    assert!(harness.query_by_label("Delete").is_none());
+    harness.get_by_label("Duplicate");
+
+    let mut fixture = harness.into_state();
+    let board = fixture.editor.new_art_board().unwrap();
+    fixture.editor.select_board(Some(board));
+    let mut harness = boards_harness(fixture);
+    assert!(harness.query_by_label("Scale").is_none());
+    harness.get_by_label("Set as Canvas");
+    harness.get_by_label("Delete").click();
+    harness.run();
+    harness.get_by_label("Duplicate").click();
+    harness.run();
+    let requests = harness.state_mut().panel.take_board_requests();
+    assert_eq!(
+        requests,
+        [BoardRequest::Delete(board), BoardRequest::Duplicate(board)]
+    );
+    assert_ne!(board, canvas);
+}
+
+#[test]
+fn the_background_colour_row_is_in_the_boards_panel_and_a_board_has_no_properties_section() {
+    let (mut fixture, _, _) = fixture();
+    let board = fixture.editor.new_art_board().unwrap();
+    fixture.editor.select_board(Some(board));
+    let harness = harness(fixture);
+    // Properties no longer shows the selected board's settings.
+    for label in ["Size", "Position", "Background", "Set as Canvas"] {
+        assert!(harness.query_by_label(label).is_none(), "{label}");
+    }
 }
 
 #[test]
@@ -1170,7 +1243,7 @@ fn the_chain_is_off_at_first_and_keeps_the_aspect_ratio_once_on() {
             height: 100,
         })
         .unwrap();
-    let mut harness = map_harness(fixture);
+    let mut harness = boards_harness(fixture);
     assert!(harness.query_by_label("Unlink width and height").is_none());
 
     // Off: the two fields are independent.
@@ -1259,4 +1332,38 @@ fn the_label_panel_groups_its_fields_into_divider_sections() {
         ssmap_core::Align::Right
     );
     assert_eq!(harness.state().editor.undo_label(), Some("Edit Label"));
+}
+
+#[test]
+fn properties_follow_the_select_tool_and_its_selection() {
+    let (mut fixture, layer, island) = fixture();
+    fixture.editor.active_tool = ToolId::Select;
+    fixture.editor.select(vec![island]);
+    let name = crate::layer_tree::node_name(fixture.editor.map(), island);
+    let layer_name = crate::layer_tree::node_name(fixture.editor.map(), layer);
+    let mut harness = harness(fixture);
+    assert!(harness.query_all_by_label(&name).next().is_some());
+    harness.get_by_label("Roughness");
+
+    // Picking the Layer in the Layers panel changes the title.
+    harness.state_mut().editor.select(vec![layer]);
+    harness.run();
+    assert!(harness.query_all_by_label(&layer_name).next().is_some());
+    harness.state_mut().editor.select(vec![island]);
+    harness.run();
+
+    // Other tools hide the selection's properties and title, and keep the selection.
+    for tool in [ToolId::LandBrush, ToolId::Stamp, ToolId::Pan, ToolId::Label] {
+        harness.state_mut().editor.active_tool = tool;
+        harness.run();
+        assert!(harness.query_by_label(&name).is_none(), "{tool:?}");
+        assert!(harness.query_by_label("Roughness").is_none(), "{tool:?}");
+        assert_eq!(harness.state().editor.selection(), [island], "{tool:?}");
+    }
+
+    // Back to Select: the same selection and properties.
+    harness.state_mut().editor.active_tool = ToolId::Select;
+    harness.run();
+    assert!(harness.query_all_by_label(&name).next().is_some());
+    harness.get_by_label("Roughness");
 }

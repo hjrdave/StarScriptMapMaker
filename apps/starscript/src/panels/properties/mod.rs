@@ -109,12 +109,22 @@ impl PropertiesPanel {
     }
 
     /// The panel's header: the active tool's icon and name with its mode chip, while the tool
-    /// has settings or nothing is selected; otherwise "Properties" over the selection.
+    /// has settings, is not Select or nothing is selected; with Select and a selection, the
+    /// selected Node's name (or the summary of several) beside the Properties icon.
     fn header(&self, ui: &mut egui::Ui, editor: &Editor) {
         let tool = editor.active_tool;
         let nothing = editor.selection().is_empty() && editor.selected_board().is_none();
-        if !(crate::tool_section::has_settings(tool) || nothing) {
-            crate::shell::panel_header(ui, "Properties", |_| {});
+        if !(crate::tool_section::has_settings(tool)
+            || nothing
+            || tool != crate::tools::ToolId::Select)
+        {
+            let title = match editor.selection() {
+                [] => "Properties".to_owned(),
+                [id] => node_name(editor.map(), *id),
+                many => selection_summary(editor.map(), many),
+            };
+            let tint = theme::palette(ui.ctx()).text_primary;
+            crate::shell::icon_header(ui, Icon::Shape, tint, &title, |_| {});
             return;
         }
         let alt = ui.input(|i| i.modifiers.alt);
@@ -139,23 +149,14 @@ impl PropertiesPanel {
         );
     }
 
-    /// Returns true when the collapse control at the bottom was clicked.
-    pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) -> bool {
+    pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         // A change ends when the pointer is released, or when Escape cancelled it.
         self.live.apply(editor, Edit::default(), "", || {
             unreachable!("nothing changed")
         });
         self.header(ui, editor);
-        let footer = crate::layer_tree::FOOTER_HEIGHT;
-        // The control is pinned to the panel's bottom edge, where the collapsed strip has it too.
-        let panel = ui.max_rect();
-        let rect = egui::Rect::from_min_max(
-            egui::pos2(panel.left(), panel.bottom() - footer),
-            panel.right_bottom(),
-        );
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
-            .max_height((rect.top() - ui.cursor().top()).max(0.0))
             .show(ui, |ui| {
                 // A tool with settings shows only those (the Stamp's with its Asset card), so
                 // the selection's properties don't sit above them. Select, Pan, Label
@@ -168,22 +169,12 @@ impl PropertiesPanel {
                         ui.add_space(theme::SPACING[2]);
                     }
                     crate::tool_section::tool_sections(ui, editor);
-                } else {
+                } else if tool == crate::tools::ToolId::Select || editor.selection().is_empty() {
+                    // Other tools hide a selection but keep it for the way back; with none,
+                    // the hint or a selected board still shows.
                     self.selection(ui, editor);
                 }
             });
-        ui.painter().hline(
-            rect.x_range(),
-            rect.top(),
-            egui::Stroke::new(1.0, theme::palette(ui.ctx()).border_subtle),
-        );
-        let mut bar = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(rect)
-                .layout(egui::Layout::left_to_right(egui::Align::Center)),
-        );
-        bar.add_space(theme::SPACING[2]);
-        crate::shell::properties_collapse_button(&mut bar, false).clicked()
     }
 
     fn selection(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
@@ -193,14 +184,11 @@ impl PropertiesPanel {
             return;
         }
         match editor.selection() {
-            [] if let Some(board) = editor.selected_board() => {
-                self.board_properties(ui, editor, board);
-            }
             [] => {
                 if !crate::tool_section::has_settings(editor.active_tool) {
                     caption(
                         ui,
-                        "Nothing selected. The Map's own settings are in the Map section of the left bar.",
+                        "Nothing selected. The Map's own settings are in the Map section of the left bar, and the Canvas and Art boards in the Art boards section.",
                     );
                 }
             }

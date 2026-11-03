@@ -70,10 +70,6 @@ impl SidebarSection {
 pub struct Shell {
     /// The sidebar section the left bar shows.
     sidebar_section: SidebarSection,
-    /// How many boards the shown Map has, to offer the Art boards section only when there are
-    /// Art boards besides the Canvas. Set each frame by the window.
-    #[serde(skip, default = "one_board")]
-    board_count: usize,
     layers_width: f32,
     /// The width of the left bar while it shows the Map section, which has wide fields.
     #[serde(default = "map_width_default")]
@@ -81,9 +77,6 @@ pub struct Shell {
     properties_width: f32,
     /// The user collapsed Layers to its rail.
     layers_collapsed: bool,
-    /// The user collapsed Properties to its icon strip.
-    #[serde(alias = "properties_hidden")]
-    properties_collapsed: bool,
     /// ⇥ hid both panels. Kept apart from the two flags above so that showing them again
     /// restores exactly what the user had collapsed.
     panels_hidden: bool,
@@ -96,10 +89,6 @@ pub struct Shell {
     layers_overlay: bool,
     #[serde(skip)]
     properties_overlay: bool,
-}
-
-fn one_board() -> usize {
-    1
 }
 
 fn map_width_default() -> f32 {
@@ -129,7 +118,7 @@ const MAP_NARROW: f32 = 264.0;
 pub enum PanelMode {
     /// A column of this width.
     Full(f32),
-    /// The 40 pt rail.
+    /// The icon rail.
     Rail,
     /// Not shown at all.
     Hidden,
@@ -174,12 +163,10 @@ impl Default for Shell {
     fn default() -> Self {
         Self {
             sidebar_section: SidebarSection::default(),
-            board_count: one_board(),
             layers_width: metrics::LAYERS_PANEL_DEFAULT,
             map_width: metrics::MAP_PANEL_DEFAULT,
             properties_width: metrics::PROPERTIES_PANEL_DEFAULT,
             layers_collapsed: true,
-            properties_collapsed: false,
             panels_hidden: false,
             window_width: FULL_WIDTH,
             layers_overlay: false,
@@ -270,26 +257,9 @@ impl Shell {
         self.sidebar_section
     }
 
-    /// Whether the sidebar offers `section` now: Art boards only once the Map has some.
-    pub fn section_available(&self, section: SidebarSection) -> bool {
-        section != SidebarSection::Boards || self.board_count > 1
-    }
-
-    /// Tells the sidebar how many boards the shown Map has. If the Art boards section was
-    /// showing and the Map has none now (deleted, undone, or another tab), it goes back to
-    /// Layers.
-    pub fn set_board_count(&mut self, count: usize) {
-        self.board_count = count;
-        if !self.section_available(self.sidebar_section) {
-            self.sidebar_section = SidebarSection::Layers;
-        }
-    }
-
-    /// Switches the sidebar to `section`, if it is available.
+    /// Switches the sidebar to `section`.
     pub fn set_sidebar_section(&mut self, section: SidebarSection) {
-        if self.section_available(section) {
-            self.sidebar_section = section;
-        }
+        self.sidebar_section = section;
     }
 
     /// Shows `section` in the sidebar, bringing the sidebar back first if it is collapsed or
@@ -321,11 +291,6 @@ impl Shell {
         !self.panels_hidden
     }
 
-    /// Whether Properties is collapsed to its icon strip.
-    pub fn properties_collapsed(&self) -> bool {
-        self.properties_collapsed
-    }
-
     pub fn panels_hidden(&self) -> bool {
         self.panels_hidden
     }
@@ -350,11 +315,8 @@ impl Shell {
     pub fn toggle_properties(&mut self) {
         if self.panels_hidden {
             self.panels_hidden = false;
-            self.properties_collapsed = false;
         } else if self.auto_rail(Side::Right) {
             self.set_properties_overlay(!self.properties_overlay);
-        } else {
-            self.properties_collapsed = !self.properties_collapsed;
         }
     }
 
@@ -381,7 +343,7 @@ impl Shell {
             } else {
                 PanelMode::Full(self.width(Side::Left))
             };
-            let properties = if self.properties_collapsed || window_width < MINIMUM_WIDTH {
+            let properties = if window_width < MINIMUM_WIDTH {
                 PanelMode::Rail
             } else {
                 PanelMode::Full(self.properties_width)
@@ -454,16 +416,10 @@ impl Shell {
         }
     }
 
-    /// The Properties strip was clicked. If the user collapsed Properties and the window has
-    /// room, that expands it; otherwise the window is too narrow and it opens over the Canvas.
+    /// The Properties strip was clicked: the window is too narrow for the panel, so it opens
+    /// over the Canvas, or closes again.
     pub fn click_properties_rail(&mut self) {
-        let mut expanded = self.clone();
-        expanded.properties_collapsed = false;
-        if expanded.layout(self.window_width).properties == PanelMode::Rail {
-            self.set_properties_overlay(!self.properties_overlay);
-        } else {
-            self.properties_collapsed = false;
-        }
+        self.set_properties_overlay(!self.properties_overlay);
     }
 
     pub fn close_overlays(&mut self) {
@@ -484,10 +440,7 @@ impl Shell {
                 expanded.layers_collapsed = false;
                 expanded.current_layout().layers == PanelMode::Rail
             }
-            Side::Right => {
-                expanded.properties_collapsed = false;
-                expanded.current_layout().properties == PanelMode::Rail
-            }
+            Side::Right => expanded.current_layout().properties == PanelMode::Rail,
         }
     }
 }
@@ -500,6 +453,5 @@ mod widgets;
 
 pub use status::{cursor_text, selection_path, selection_summary};
 pub use widgets::{
-    divider, history_list, icon_header, layers_rail, mode_chip, panel_header,
-    properties_collapse_button, properties_rail,
+    divider, history_list, icon_header, layers_rail, mode_chip, panel_header, properties_rail,
 };

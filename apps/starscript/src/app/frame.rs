@@ -30,9 +30,6 @@ impl MapMakerApp {
         self.app.credits.show(&ctx, Some(&mut tab.editor));
         self.app.updates.show(&ctx);
         tab.label_styles.show(&ctx, &mut tab.editor);
-        self.win
-            .shell
-            .set_board_count(tab.editor.map().boards().len());
         egui::Panel::bottom("status")
             .exact_size(theme::metrics::STATUS_BAR)
             .show(ui, |ui| self.status_bar(ui));
@@ -89,9 +86,6 @@ impl MapMakerApp {
                     .resizable(false)
                     .exact_size(width)
                     .show(ui, |ui| tab.properties.show(ui, &mut tab.editor));
-                if panel.inner {
-                    self.win.shell.toggle_properties();
-                }
                 if tab.properties.take_manage_label_styles() {
                     tab.label_styles.open = true;
                 }
@@ -266,10 +260,7 @@ impl MapMakerApp {
                     overlay_frame.show(ui, |ui| {
                         ui.set_width(width);
                         ui.set_height(height);
-                        if tab.properties.show(ui, &mut tab.editor) {
-                            // Collapsing the floating inspector just closes it.
-                            self.win.shell.close_overlays();
-                        }
+                        tab.properties.show(ui, &mut tab.editor);
                     });
                 });
             if tab.properties.take_manage_label_styles() {
