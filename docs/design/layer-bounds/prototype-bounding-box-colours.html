@@ -1,11 +1,8 @@
 <!doctype html>
 <!-- PROTOTYPE (throwaway): the selection box's colour for a Layer or Object in three modes.
-       Neither   the selection can be moved and transformed (blue today, `palette.select`).
-       Pinned    pinned to the Canvas: refuses to move or transform, still editable (CONTEXT.md, Pin).
-       Locked    locked: refuses edits.
-     Four colour schemes, one per row. Only the colour changes: stroke 1.5, white square handles with a
-     coloured edge, as `handles::paint` draws them. Use the switches to check each scheme on each ground, in
-     each app theme, and under colour-vision simulation. In-memory only. -->
+       Neither   blue, as today (`palette.select`).   Locked   grey.   Pinned   six candidates, one per row.
+     Only the colour changes: stroke 1.5, white square handles with a coloured edge, as `handles::paint` draws them.
+     Use the switches to check each on each ground, in each app theme, and under colour-vision simulation. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -49,29 +46,29 @@
 </defs></svg>
 <div class="wrap">
   <h1>Bounding box colours for Neither, Pinned and Locked</h1>
-  <p class="lede">The selected Layer's box tells you what the Layer lets you do. Four colour schemes, one per row. Only the colour changes; the stroke and the handles are the same in every cell.</p>
+  <p class="lede">The selected Layer's box tells you what the Layer lets you do. Neither stays blue and Locked is grey. Each row tries a different colour for Pinned. Only the colour changes; the stroke and the handles are the same in every cell.</p>
   <div class="bar" role="toolbar" aria-label="Preview settings">
     <div class="g" data-g="ground"><span>Map ground</span><button data-v="ocean" class="on">Ocean</button><button data-v="land">Land</button><button data-v="paper">Paper</button></div>
     <div class="g" data-g="theme"><span>App theme</span><button data-v="dark" class="on">Dark</button><button data-v="light">Light</button></div>
     <div class="g" data-g="cvd"><span>Colour vision</span><button data-v="none" class="on">Normal</button><button data-v="p">Protan</button><button data-v="d">Deutan</button><button data-v="t">Tritan</button></div>
   </div>
-  <div class="head"><div>Scheme</div><div>Neither</div><div>Pinned</div><div>Locked</div></div>
+  <div class="head"><div>Pinned colour</div><div>Neither</div><div>Pinned</div><div>Locked</div></div>
   <div id="grid"></div>
 </div>
 <script>
 /* colours per scheme and theme: [neither, pinned, locked]. Dark values are the dark palette's accents
    (apps/starscript/src/chrome/theme.rs: select, warn, danger, gold); the light ones are darkened to hold
    up on a light ground. New colours are marked in the description. */
-const OPTS=[
- {id:'A',name:'A · Signal',d:'Blue as now, amber for Pinned, red for Locked. Uses the palette\'s existing select, warn and danger, so no new colours.',
-  dark:['#4FA3E0','#F2B65A','#F2A093'],light:['#1F6FB5','#B8741A','#A63A2A']},
- {id:'B',name:'B · Cool to warm',d:'Blue, then violet, then pink. Steps further from the default the more the Layer refuses. Violet and pink are new.',
-  dark:['#4FA3E0','#B494F0','#F06BA8'],light:['#1F6FB5','#6B4FC0','#C0306F']},
- {id:'C',name:'C · Gold and slate',d:'Blue as now, the app\'s gold for Pinned, and a muted slate for Locked so a locked Layer reads as inert. Slate is new.',
-  dark:['#4FA3E0','#D4A84A','#9AA6B8'],light:['#1F6FB5','#8A6414','#5C6675']},
- {id:'D',name:'D · Teal and orange',d:'Blue, a teal and an orange that stay apart under all three colour-vision simulations. Teal and orange are new.',
-  dark:['#4FA3E0','#3CC8B4','#F0884A'],light:['#1F6FB5','#0E8F7E','#C2561A']}
+const NEI={dark:'#4FA3E0',light:'#1F6FB5'},LOC={dark:'#A3A3A3',light:'#6B6B6B'};
+const PIN=[
+ {id:'1',name:'Amber',d:'The palette\'s existing warn colour, so nothing new.',dark:'#F2B65A',light:'#B8741A'},
+ {id:'2',name:'Orange',d:'Warmer and redder than amber. New to the palette.',dark:'#F0884A',light:'#C2561A'},
+ {id:'3',name:'Violet',d:'Far from blue in hue. Check it under the Tritan simulation. New to the palette.',dark:'#B494F0',light:'#6B4FC0'},
+ {id:'4',name:'Pink',d:'A colour that no Land or water uses. New to the palette.',dark:'#F06BA8',light:'#C0306F'},
+ {id:'5',name:'Teal',d:'A cool colour, close in family to the blue. New to the palette.',dark:'#3CC8B4',light:'#0E8F7E'},
+ {id:'6',name:'Green',d:'The palette\'s existing ok colour. Can read as "safe" and sits near the green of Stamps.',dark:'#8FD49A',light:'#2E7D3E'}
 ];
+const OPTS=PIN.map(p=>({id:p.id,name:'Pinned · '+p.name,d:p.d,dark:[NEI.dark,p.dark,LOC.dark],light:[NEI.light,p.light,LOC.light]}));
 const GROUND={ocean:{bg:['#2B6A93','#357CA3'],land:'#D8C49A',lbl:'#2B2118'},land:{bg:['#D8C49A','#CDB98C'],land:'#C9B07A',lbl:'#2B2118'},paper:{bg:['#EDE6D2','#E6DEC6'],land:'#D9CDAE',lbl:'#4A3F2A'}};
 const S={ground:'ocean',theme:'dark',cvd:'none'};
 const lum=h=>{const c=[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)/255).map(v=>v<=.03928?v/12.92:((v+.055)/1.055)**2.4);return .2126*c[0]+.7152*c[1]+.0722*c[2];};
