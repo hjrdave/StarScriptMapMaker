@@ -93,6 +93,16 @@ pub(crate) struct Knobs {
     pub(crate) rotate: bool,
     /// The arch knob below the box, holding the arch (-1 to 1) it shows.
     pub(crate) arch: Option<f64>,
+    /// No resize handles: the box is a plain outline that cannot be grabbed except by a knob.
+    pub(crate) plain: bool,
+}
+
+/// Width of the dark casing under the selection box, in points.
+const CASING_WIDTH: f32 = 3.5;
+
+/// The dark casing under the box: black at 55% opacity, so the box shows on any ground.
+fn casing() -> egui::Color32 {
+    egui::Color32::from_black_alpha(140)
 }
 
 /// Half the size of a handle square, in points.
@@ -324,6 +334,9 @@ pub(crate) fn hit(
     if knobs.arch.is_some() && near(arch_knob(bounds, view, origin, ppp)) {
         return Some(Grip::Arch);
     }
+    if knobs.plain {
+        return None;
+    }
     // On a box too small to grab inside between its handles, inside means move.
     let rect = egui::Rect::from_two_pos(
         to_screen(view, origin, ppp, bounds.min),
@@ -399,6 +412,12 @@ pub(crate) fn paint(
     painter.rect_stroke(
         rect,
         0.0,
+        egui::Stroke::new(CASING_WIDTH, casing()),
+        egui::StrokeKind::Outside,
+    );
+    painter.rect_stroke(
+        rect,
+        0.0,
         egui::Stroke::new(1.5, accent),
         egui::StrokeKind::Outside,
     );
@@ -434,6 +453,9 @@ pub(crate) fn paint(
             egui::Stroke::new(1.0, accent),
         );
     }
+    if knobs.plain {
+        return;
+    }
     for handle in Handle::ALL {
         let centre = to_screen(view, origin, ppp, bounds.point(handle.anchor()));
         let square = egui::Rect::from_center_size(centre, egui::Vec2::splat(2.0 * HANDLE_RADIUS));
@@ -453,7 +475,11 @@ mod tests {
 
     impl Knobs {
         fn rotate(rotate: bool) -> Self {
-            Self { rotate, arch: None }
+            Self {
+                rotate,
+                arch: None,
+                plain: false,
+            }
         }
     }
 
@@ -477,6 +503,39 @@ mod tests {
         let flipped = BOX.resized(Handle::Left, [150.0, 0.0]);
         assert_eq!(flipped.min, [110.0, 20.0]);
         assert_eq!(flipped.max, [160.0, 70.0]);
+    }
+
+    #[test]
+    fn a_plain_box_has_no_handles_to_hit() {
+        let view = View {
+            origin: [0.0, 0.0],
+            zoom: 2.0,
+            size: [400, 300],
+        };
+        let origin = egui::pos2(100.0, 50.0);
+        let corner = to_screen(&view, origin, 1.0, BOX.max);
+        let plain = Knobs {
+            plain: true,
+            ..Knobs::default()
+        };
+        assert_eq!(
+            hit(&BOX, &view, origin, 1.0, corner, Knobs::default()),
+            Some(Grip::Resize(Handle::BottomRight))
+        );
+        assert_eq!(hit(&BOX, &view, origin, 1.0, corner, plain), None);
+        let arch = Knobs {
+            arch: Some(0.0),
+            ..plain
+        };
+        let at = arch_knob(&BOX, &view, origin, 1.0);
+        assert_eq!(hit(&BOX, &view, origin, 1.0, at, arch), Some(Grip::Arch));
+    }
+
+    #[test]
+    fn the_casing_is_black_at_55_percent() {
+        let c = casing();
+        assert_eq!((c.r(), c.g(), c.b()), (0, 0, 0));
+        assert!((f32::from(c.a()) / 255.0 - 0.55).abs() < 0.01);
     }
 
     #[test]
@@ -539,6 +598,7 @@ mod tests {
         let archable = Knobs {
             rotate: true,
             arch: Some(0.0),
+            plain: false,
         };
         assert_eq!(
             hit(&BOX, &view, origin, 1.0, at, archable),
