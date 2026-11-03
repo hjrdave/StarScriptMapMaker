@@ -85,6 +85,7 @@ let sel = new Set([4]);
 let variant = (new URLSearchParams(location.search).get('variant')||'A').toUpperCase();
 const VARIANTS = {A:'Glyphs on toggled only',B:'Tint + stripe, no glyphs',C:'Fixed gutter slots'};
 let log = [];
+let anchor = 4;
 
 const byId = id => nodes.find(n=>n.id===id);
 const kids = id => nodes.filter(n=>n.parent===id);
@@ -171,7 +172,7 @@ function topBar(){
   };
   const opv=has? (ids.length===1?(byId(ids[0]).opacity??100):'—'):'—';
   return `<div class="props"><div class="op ${has?'':'off'}">O <span>${opv}</span> <span>%</span></div>
-    ${mk('visible',SVG['visible'],'Visible')}${mk('locked',SVG['lock'],'Lock')}${mk('pinned',SVG['pin'],'Pin to Canvas')}</div>`;
+    ${mk('visible',SVG['visible'],'Visible')}${mk('locked',SVG['lock'],'Lock')}${mk('pinned',SVG['pin'],'Pin to Canvas')}${ids.length>1?`<span class="badge" style="margin-left:6px">${ids.length} selected</span>`:''}</div>`;
 }
 function render(){
   document.getElementById('panel').innerHTML=
@@ -182,7 +183,7 @@ function render(){
     <li>Only a <b>Group</b> has a chevron and children (select rows, ⌘/Ctrl+G).</li>
     <li>State is toggled <b>only</b> from the top bar or right-click menu. Rows are not clickable for state.</li>
     <li>Icons appear only when on. Dim = inherited from a Group.</li>
-    <li>Click, ⇧/⌘-click to select; double-click renames; drag to reorder.</li></ul>
+    <li><b>Multi-select:</b> ⇧-click for a range, ⌘/Ctrl-click to add or remove. Then use the top bar or right-click to Hide, Lock or Pin all of them at once.</li><li>Double-click renames; drag to reorder.</li></ul>
     <b style="color:var(--hi)">${VARIANTS[variant]}</b>`;
   document.getElementById('debug').textContent=
     'selection: '+[...sel].map(i=>byId(i).name).join(', ')+'\n\nlast Commands:\n'+log.slice(0,8).join('\n');
@@ -197,7 +198,12 @@ panel.addEventListener('click',e=>{
   const ch=e.target.closest('[data-chev]'); if(ch){const g=byId(+ch.dataset.chev);g.open=!g.open;return render();}
   const row=e.target.closest('.row'); if(!row) return;
   const id=+row.dataset.id;
-  if(e.shiftKey||e.metaKey||e.ctrlKey){sel.has(id)?sel.delete(id):sel.add(id);} else sel=new Set([id]);
+  const order=visibleRows().map(r=>r.n.id);
+  if(e.shiftKey&&anchor!=null&&order.includes(anchor)){
+    const a=order.indexOf(anchor), b=order.indexOf(id);
+    sel=new Set(order.slice(Math.min(a,b),Math.max(a,b)+1));
+  } else if(e.metaKey||e.ctrlKey){sel.has(id)?sel.delete(id):sel.add(id);anchor=id;}
+  else {sel=new Set([id]);anchor=id;}
   render();
 });
 panel.addEventListener('dblclick',e=>{const row=e.target.closest('.row'); if(row) rename(+row.dataset.id);});
@@ -207,12 +213,13 @@ panel.addEventListener('contextmenu',e=>{
   const row=e.target.closest('.row'); if(!row) return; e.preventDefault();
   const id=+row.dataset.id; if(!sel.has(id)) sel=new Set([id]); render();
   const ids=[...sel], any=p=>ids.some(i=>st(byId(i))[p]);
+  const all=p=>ids.every(i=>st(byId(i))[p]), suffix=ids.length>1?` ${ids.length} items`:'';
   const item=(label,fn,key='')=>{const d=document.createElement('div');d.innerHTML=`<span>${label}</span><span class="k">${key}</span>`;d.onclick=()=>{menu.style.display='none';fn();};return d;};
   menu.innerHTML='';
   menu.append(
-    item(any('visible')&&ids.every(i=>st(byId(i)).visible)?'Hide':'Show',()=>toggle('visible')),
-    item(ids.every(i=>st(byId(i)).locked)?'Unlock':'Lock',()=>toggle('locked')),
-    item(ids.every(i=>st(byId(i)).pinned)?'Unpin from Canvas':'Pin to Canvas',()=>toggle('pinned')),
+    item((all('visible')?'Hide':'Show')+suffix,()=>toggle('visible')),
+    item((all('locked')?'Unlock':'Lock')+suffix,()=>toggle('locked')),
+    item(all('pinned')?`Unpin${suffix} from Canvas`:`Pin${suffix} to Canvas`,()=>toggle('pinned')),
     document.createElement('hr'),
     item('Rename',()=>rename(ids[0]),'F2'),
     item('Group',group,'⌘G'),
