@@ -35,6 +35,7 @@
   .field input{all:unset;flex:1;min-width:0;width:100%}
   .field.pf .pre{color:var(--dim);font-family:Inter,system-ui,sans-serif;font-size:12px;flex:none}
   .field.pf input{text-align:right}
+  .field.off{opacity:.5}.field input:disabled{cursor:default}
   .field:focus-within{border-color:var(--gold)}
   .wh{display:grid;grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr);gap:2px;margin:0 8px;align-items:center}
   .xy{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin:0 8px}
@@ -125,7 +126,7 @@ const pf=(b,k,pre)=>`<div class="field pf"><span class="pre">${pre}</span><input
 function settings(b){
  const [ax,ay]=S.anchor,id=b.id;
  let h='';
- if(!b.p)h+=`<div class="rows" style="margin-top:8px">${row('Name',`<div class="field"><input aria-label="Name" data-k="name" value="${esc(b.name)}" placeholder="${esc(label(b))}"></div>`)}</div>`;
+ h+=`<div class="rows" style="margin-top:8px">${row('Name',`<div class="field ${b.p?'off':''}"><input aria-label="Name" data-k="name" value="${b.p?'Canvas':esc(b.name)}" placeholder="${esc(label(b))}" ${b.p?'disabled title="The Canvas keeps its name"':''}></div>`)}</div>`;
  h+=`<h3>Size</h3><div class="wh">${pf(b,'w','W')}<button class="chain ${S.linked?'on':''}" data-chain title="${S.linked?'Unlink width and height':'Keep aspect ratio'}" aria-label="${S.linked?'Unlink width and height':'Keep aspect ratio'}">${S.linked?I.link:I.unlink}</button>${pf(b,'h','H')}</div>`;
  if(b.p)h+=`<h3>Scale</h3><div class="rows">${row('Distance',`<span class="val">${S.scale}</span>`)}</div>`;
  h+=`<h3>Resize from</h3><div class="rows">${row('Anchor',`<div><div class="anchor" role="radiogroup" aria-label="Anchor">${[0,1,2].map(y=>[0,1,2].map(x=>{const on=ax===x&&ay===y;return `<button role="radio" aria-checked="${on}" class="${on?'on':''}" data-a="${x},${y}" title="${NAMES[y][x]}">${on?'●':''}</button>`}).join('')).join('')}</div><div class="hint">${NAMES[ay][ax]} stays put when the size changes</div></div>`)}</div>`;
@@ -145,7 +146,7 @@ function plan(){
 }
 const VARS={
  A:{name:'A · List, then settings',notes:'<p>The same shape as the Layers panel: the list is the top of the panel, and what you pick is edited underneath. The Canvas is the first row, so Canvas and Art boards are one list with one set of controls (Scale only appears on the Canvas).</p><ul><li>Click a row. The settings below follow it.</li><li>+ in the header adds a board.</li></ul>',
-  html:()=>`${head()}<div class="list">${S.boards.map(b=>item(b)).join('')}</div><h2>${esc(label(cur()))}</h2>${settings(cur())}`},
+  html:()=>`${head()}<div class="list">${S.boards.map(b=>item(b)).join('')}</div>${settings(cur())}`},
  B:{name:'B · Accordion',notes:'<p>No separate details area: a board opens its own settings in place, one at a time. Fewer places to look, but the list jumps when you switch boards and a long list pushes the settings off screen.</p><ul><li>Click a row to open it. Click an open row to close it.</li></ul>',
   html:()=>`${head()}<div style="margin-top:6px">${S.boards.map(b=>item(b,(S.open===b.id?'open':''),I.chev)+(S.open===b.id?`<div class="acc">${settings(b)}</div>`:'')).join('')}</div>`},
  C:{name:'C · Plan view',notes:'<p>The boards are placed on a page, so show where. The plan is the picker; the chips are the list for boards that are tiny or overlap. Position becomes visible instead of two numbers.</p><ul><li>Click a rectangle or a chip.</li><li>Edit X or Y and watch it move.</li></ul>',
