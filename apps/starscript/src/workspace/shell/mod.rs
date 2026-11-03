@@ -129,7 +129,7 @@ const MAP_NARROW: f32 = 264.0;
 pub enum PanelMode {
     /// A column of this width.
     Full(f32),
-    /// The 48 pt rail.
+    /// The icon rail.
     Rail,
     /// Not shown at all.
     Hidden,
