@@ -163,6 +163,10 @@ pub(crate) struct RowState {
     pub locked: bool,
     /// Locked only through a Layer above: dashed padlock, dim name, not toggleable here.
     pub locked_by_parent: bool,
+    /// Pinned to the Canvas itself: filled pin.
+    pub pinned: bool,
+    /// Pinned only through a Layer above: dashed pin, not toggleable here.
+    pub pinned_by_parent: bool,
 }
 
 impl RowState {
@@ -172,13 +176,21 @@ impl RowState {
                 hidden: false,
                 locked: false,
                 locked_by_parent: false,
+                pinned: false,
+                pinned_by_parent: false,
             };
         };
         let locked = node.locked();
+        let pinned = match node {
+            Node::Layer(layer) => layer.pinned,
+            Node::Object(object) => object.move_locked,
+        };
         Self {
             hidden: matches!(node, Node::Layer(layer) if !layer.visible),
             locked,
             locked_by_parent: !locked && map.is_locked(id),
+            pinned,
+            pinned_by_parent: !pinned && map.pinned_ancestor(id).is_some(),
         }
     }
 

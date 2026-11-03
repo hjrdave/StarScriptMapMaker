@@ -352,9 +352,9 @@ fn trailing_indicators(
     trailing_left
 }
 
-/// The Pin to Canvas button of an Object row, left of the lock: always when pinned, otherwise
-/// on hover. A lock already stops movement, so a locked Object shows no pin. Returns whether
-/// it was drawn.
+/// The Pin to Canvas button of a row, left of the lock: always when pinned, otherwise on hover.
+/// A pin that comes only from a Layer above shows dashed and cannot be changed here. A lock
+/// already stops movement, so a locked row shows no pin. Returns whether it was drawn.
 fn pin_button(trailing: &mut egui::Ui, paint: &RowPaint<'_>, actions: &mut Vec<Action>) -> bool {
     let RowPaint {
         row,
@@ -363,13 +363,28 @@ fn pin_button(trailing: &mut egui::Ui, paint: &RowPaint<'_>, actions: &mut Vec<A
         ..
     } = *paint;
     let palette = theme::palette(trailing.ctx());
-    let Node::Object(object) = paint.node else {
-        return false;
-    };
-    if state.locked || state.locked_by_parent || !(object.move_locked || hovering) {
+    if state.locked || state.locked_by_parent {
         return false;
     }
-    let (icon, label, tint) = if object.move_locked {
+    if state.pinned_by_parent {
+        let (rect, response) =
+            trailing.allocate_exact_size(egui::Vec2::splat(ROW_BUTTON), egui::Sense::click());
+        let label = "Pinned by parent Layer";
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, false, label));
+        icons::paint(
+            trailing,
+            rect,
+            Icon::PinDashed,
+            ROW_GLYPH,
+            palette.text_tertiary,
+        );
+        response.on_hover_text(label);
+        return true;
+    }
+    if !(state.pinned || hovering) {
+        return false;
+    }
+    let (icon, label, tint) = if state.pinned {
         (Icon::PinFilled, "Unpin from Canvas", palette.text_primary)
     } else {
         (Icon::Pin, "Pin to Canvas", palette.text_tertiary)
@@ -377,10 +392,44 @@ fn pin_button(trailing: &mut egui::Ui, paint: &RowPaint<'_>, actions: &mut Vec<A
     if icons::icon_button_with(trailing, icon, label, ROW_BUTTON, ROW_GLYPH, Some(tint)).clicked() {
         actions.push(Action::Run(Command::SetMoveLocked {
             id: row.id,
-            locked: !object.move_locked,
+            locked: !state.pinned,
         }));
     }
     true
+}
+
+/// Pin to Canvas for any row, and Depth sort, checked while on, for a Layer.
+fn pin_and_depth_sort_items(ui: &mut egui::Ui, paint: &RowPaint<'_>, actions: &mut Vec<Action>) {
+    let RowPaint { row, state, .. } = *paint;
+    let layer = paint.layer();
+    let pin = if state.pinned {
+        "Unpin from Canvas"
+    } else {
+        "Pin to Canvas"
+    };
+    let locked = state.locked || state.locked_by_parent;
+    if ui
+        .add_enabled(!locked, egui::Button::new(pin))
+        .on_disabled_hover_text("Unlock it first to change the pin")
+        .clicked()
+    {
+        actions.push(Action::Run(Command::SetMoveLocked {
+            id: row.id,
+            locked: !state.pinned,
+        }));
+        ui.close();
+    }
+    if let Some(layer) = layer {
+        // Depth sort orders the Stamps directly inside; its icon shows on the row while on.
+        let mut depth_sort = layer.depth_sort;
+        if ui.checkbox(&mut depth_sort, "Depth sort").clicked() {
+            actions.push(Action::Run(Command::SetDepthSort {
+                id: row.id,
+                depth_sort,
+            }));
+            ui.close();
+        }
+    }
 }
 
 /// The right-click menu of a row.
@@ -474,25 +523,7 @@ fn row_context_menu(
                 ui.close();
             }
         }
-        if let Node::Object(object) = paint.node {
-            let pin = if object.move_locked {
-                "Unpin from Canvas"
-            } else {
-                "Pin to Canvas"
-            };
-            let locked = state.locked || state.locked_by_parent;
-            if ui
-                .add_enabled(!locked, egui::Button::new(pin))
-                .on_disabled_hover_text("Unlock it first to change the pin")
-                .clicked()
-            {
-                actions.push(Action::Run(Command::SetMoveLocked {
-                    id: row.id,
-                    locked: !object.move_locked,
-                }));
-                ui.close();
-            }
-        }
+        pin_and_depth_sort_items(ui, paint, actions);
         if let Some(layer) = layer {
             let hide = if layer.visible { "Hide" } else { "Show" };
             if ui.button(hide).clicked() {
