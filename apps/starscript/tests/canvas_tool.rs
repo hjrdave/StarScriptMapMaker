@@ -160,11 +160,14 @@ fn type_size(harness: &mut Harness<'static, MapMakerApp>, shown: &str, n: usize,
 }
 
 #[test]
-fn the_canvas_shows_its_width_and_height_in_properties() {
+fn the_canvas_shows_its_width_and_height_in_the_art_boards_panel() {
     let (mut harness, _) = app();
     select_canvas(&mut harness);
+    harness
+        .state_mut()
+        .run_command(ssmap_app::menu::Command::ShowBoards);
     harness.run();
-    // The same fields the Map section has: typing a size sets it.
+    // Typing a size sets it.
     let width = WIDTH as u32;
     type_size(
         &mut harness,

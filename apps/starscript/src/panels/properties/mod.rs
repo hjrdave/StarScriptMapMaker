@@ -193,14 +193,11 @@ impl PropertiesPanel {
             return;
         }
         match editor.selection() {
-            [] if let Some(board) = editor.selected_board() => {
-                self.board_properties(ui, editor, board);
-            }
             [] => {
                 if !crate::tool_section::has_settings(editor.active_tool) {
                     caption(
                         ui,
-                        "Nothing selected. The Map's own settings are in the Map section of the left bar.",
+                        "Nothing selected. The Map's own settings are in the Map section of the left bar, and the Canvas and Art boards in the Art boards section.",
                     );
                 }
             }

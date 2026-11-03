@@ -1,7 +1,7 @@
 //! The Map section: the Canvas, its background and the Map-wide defaults.
 
 use eframe::egui;
-use ssmap_core::{Canvas, Color, Command, DistanceUnit, Id, MapTemplate, ShoreKind};
+use ssmap_core::{Canvas, Color, Command, Id, MapTemplate, ShoreKind};
 
 use crate::icons::Icon;
 
@@ -44,35 +44,39 @@ impl PropertiesPanel {
         let chain_id = egui::Id::new("canvas aspect chain");
         let mut linked = ui.ctx().data(|d| d.get_temp::<bool>(chain_id)) == Some(true);
         let field_height = crate::theme::metrics::FIELD[0];
-        let (width_edit, height_edit) = ui
-            .horizontal(|ui| {
-                const CHAIN: f32 = 24.0;
-                ui.spacing_mut().item_spacing.x = 2.0;
-                let each = ((ui.available_width() - CHAIN - 4.0) / 2.0).max(40.0);
-                let size = egui::vec2(each, field_height);
-                let w = ui
-                    .allocate_ui(size, |ui| {
-                        prop_widgets::scrub_field(ui, &mut width, &spec(width_label, "W"))
-                    })
-                    .inner;
-                if prop_widgets::chain_button(ui, &mut linked) {
-                    ui.ctx().data_mut(|d| d.insert_temp(chain_id, linked));
-                    // The ratio is the one at the moment the chain is turned on.
-                    self.chain_ratio = linked.then(|| {
-                        (
-                            id,
-                            f64::from(canvas.width) / f64::from(canvas.height.max(1)),
-                        )
-                    });
-                }
-                let h = ui
-                    .allocate_ui(size, |ui| {
-                        prop_widgets::scrub_field(ui, &mut height, &spec(height_label, "H"))
-                    })
-                    .inner;
-                (w, h)
-            })
-            .inner;
+        let mut edits = (Edit::default(), Edit::default());
+        prop_widgets::field_row(ui, "Size", Provenance::Plain, |ui| {
+            const CHAIN: f32 = 24.0;
+            ui.spacing_mut().item_spacing.x = 2.0;
+            let each = ((ui.available_width() - CHAIN - 4.0) / 2.0).max(40.0);
+            let size = egui::vec2(each, field_height);
+            edits = ui
+                .horizontal(|ui| {
+                    let w = ui
+                        .allocate_ui(size, |ui| {
+                            prop_widgets::scrub_field(ui, &mut width, &spec(width_label, "W"))
+                        })
+                        .inner;
+                    if prop_widgets::chain_button(ui, &mut linked) {
+                        ui.ctx().data_mut(|d| d.insert_temp(chain_id, linked));
+                        // The ratio is the one at the moment the chain is turned on.
+                        self.chain_ratio = linked.then(|| {
+                            (
+                                id,
+                                f64::from(canvas.width) / f64::from(canvas.height.max(1)),
+                            )
+                        });
+                    }
+                    let h = ui
+                        .allocate_ui(size, |ui| {
+                            prop_widgets::scrub_field(ui, &mut height, &spec(height_label, "H"))
+                        })
+                        .inner;
+                    (w, h)
+                })
+                .inner;
+        });
+        let (width_edit, height_edit) = edits;
         if linked && self.chain_ratio.is_none_or(|(board, _)| board != id) {
             self.chain_ratio = Some((
                 id,
@@ -90,14 +94,12 @@ impl PropertiesPanel {
                 width = limit(h * ratio);
             }
         }
-        ui.columns(2, |columns| {
-            if let Some(scale) = scale {
-                row(&mut columns[0], "Scale", |ui| {
-                    ui.label(scale);
-                });
-            }
-            self.anchor_grid(&mut columns[1]);
-        });
+        if let Some(scale) = scale {
+            prop_widgets::field_row(ui, "Scale", Provenance::Plain, |ui| {
+                ui.label(scale);
+            });
+        }
+        self.anchor_grid(ui);
         let edit = merge_edits(width_edit, height_edit);
         if edit.began {
             self.resize_base = Some((id, canvas.clone()));
@@ -118,9 +120,10 @@ impl PropertiesPanel {
         }
     }
 
-    /// The 3×3 grid that says which point of the board stays put when it is resized.
+    /// The 3×3 grid of 22 × 22 buttons that says which point of the board stays put when it is
+    /// resized, with a line naming that point.
     fn anchor_grid(&mut self, ui: &mut egui::Ui) {
-        row(ui, "Anchor", |ui| {
+        prop_widgets::field_row(ui, "Resize from", Provenance::Plain, |ui| {
             egui::Grid::new("canvas anchor")
                 .spacing([2.0, 2.0])
                 .show(ui, |ui| {
@@ -130,7 +133,7 @@ impl PropertiesPanel {
                             let selected = self.canvas_anchor == (x, y);
                             let button = ui
                                 .add_sized(
-                                    [18.0, 18.0],
+                                    [22.0, 22.0],
                                     egui::Button::new(if selected { "●" } else { "" })
                                         .selected(selected),
                                 )
@@ -150,6 +153,8 @@ impl PropertiesPanel {
                     }
                 });
         });
+        let (x, y) = self.canvas_anchor;
+        caption(ui, &format!("The {} stays put.", stays_put(x, y)));
     }
 
     /// The template the Map was made from, and its background: pick another template's look,
@@ -242,31 +247,18 @@ impl PropertiesPanel {
             .show(ui, |ui| self.map_fields(ui, editor));
     }
 
-    /// Three tabs: the Canvas (size, scale and anchor), the Style (background and Roughness),
-    /// and the Shores that Landmasses and Lakes inherit. The tab is remembered for the session.
+    /// Two tabs: the Style (background and Roughness), and the Shores that Landmasses and Lakes
+    /// inherit. The Canvas is in the Art boards section. The tab is remembered for the session.
     fn map_fields(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         let canvas = editor.map().canvas().clone();
         let primary = editor.map().primary_board();
         let tab_id = egui::Id::new("map panel tab");
         let mut tab = ui.ctx().data(|d| d.get_temp::<usize>(tab_id)).unwrap_or(0);
-        if prop_widgets::tab_bar(ui, &["Canvas", "Style", "Shores"], &mut tab) {
+        if prop_widgets::tab_bar(ui, &["Style", "Shores"], &mut tab) {
             ui.ctx().data_mut(|d| d.insert_temp(tab_id, tab));
         }
         match tab {
-            0 => prop_widgets::divider_section(
-                ui,
-                "Canvas",
-                |_| {},
-                |ui| {
-                    let unit = match canvas.scale.unit {
-                        DistanceUnit::Miles => "mi",
-                        DistanceUnit::Kilometres => "km",
-                    };
-                    let scale = format!("{} {unit} per unit", canvas.scale.distance_per_unit);
-                    self.canvas_fields(ui, editor, primary, &canvas, Some(&scale));
-                },
-            ),
-            1 => {
+            0 => {
                 prop_widgets::divider_section(
                     ui,
                     "Background",
@@ -429,6 +421,34 @@ pub(super) fn resize(
             width,
             height,
         }
+    }
+}
+
+/// The Command that sets a board's background: the Canvas's own, or an Art board's.
+pub(super) fn background_command(
+    editor: &Editor,
+    id: Id,
+    background: ssmap_core::Background,
+) -> Command {
+    if id == editor.map().primary_board() {
+        Command::SetBackground { background }
+    } else {
+        Command::SetBoardBackground { id, background }
+    }
+}
+
+/// What the anchor at (`x`, `y`) of the grid is called in the line under it.
+fn stays_put(x: u8, y: u8) -> &'static str {
+    match (x, y) {
+        (0, 0) => "top left corner",
+        (1, 0) => "top edge",
+        (2, 0) => "top right corner",
+        (0, 1) => "left edge",
+        (1, 1) => "centre",
+        (2, 1) => "right edge",
+        (0, 2) => "bottom left corner",
+        (1, 2) => "bottom edge",
+        _ => "bottom right corner",
     }
 }
 

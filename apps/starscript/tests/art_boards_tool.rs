@@ -64,7 +64,9 @@ fn new_art_board_adds_and_selects_a_board_beside_the_canvas() {
     assert_ne!(board, editor.map().primary_board());
     assert!(editor.map().board(board).unwrap().canvas.origin[0] > 4096.0);
     assert_eq!(editor.undo_label(), Some("Add Art board"));
-    // Properties shows the board.
+    // The Art boards section shows the board.
+    harness.state_mut().run_command(Command::ShowBoards);
+    harness.run();
     harness.get_by_role_and_label(egui::accesskit::Role::SpinButton, "Board width");
     harness.get_by_role_and_label(egui::accesskit::Role::SpinButton, "Board X");
 }
@@ -107,8 +109,10 @@ fn the_canvas_cannot_be_deleted() {
 }
 
 #[test]
-fn the_properties_buttons_make_a_board_the_canvas_duplicate_and_delete() {
+fn the_panel_buttons_make_a_board_the_canvas_duplicate_and_delete() {
     let mut harness = with_art_board();
+    harness.state_mut().run_command(Command::ShowBoards);
+    harness.run();
     let board = harness.state().editor().selected_board().unwrap();
     harness.get_by_label("Duplicate").click();
     harness.run();

@@ -13,7 +13,7 @@ The main, primary drawing area of a Map, with a fixed size and a real-world scal
 _Avoid_: Board, page
 
 **Art board**:
-A secondary area of a Map, separate from the Canvas, that the user draws on and places Assets in. A Map has one Canvas and may have several Art boards, each with its own name, size, position and background. The editor draws every board and clips each Object at the edge of its own board; Export draws the Canvas only. The Art board tool (key A) selects, moves, resizes and draws them, Properties edits the selected board, and New Art Board is in the Map menu; the sidebar list of boards does not exist yet (issue 457).
+A secondary area of a Map, separate from the Canvas, that the user draws on and places Assets in. A Map has one Canvas and may have several Art boards, each with its own name, size, position and background. The editor draws every board and clips each Object at the edge of its own board; Export draws the Canvas only. The Art board tool (key A) selects, moves, resizes and draws them, and New Art Board is in the Map menu. The Art boards section of the left sidebar is the one panel for the Canvas and every Art board: the list of boards, then the settings of the selected row (name, size, scale, anchor, position, background and actions). It is always available.
 _Avoid_: Board, page, frame
 
 **Off-Canvas**:

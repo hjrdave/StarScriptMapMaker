@@ -208,14 +208,16 @@ fn sidebar_section(ui: &mut egui::Ui, section: shell::SidebarSection, tab: &mut 
             tab.properties.map_panel(ui, &mut tab.editor);
         }
         shell::SidebarSection::Boards => {
-            shell::panel_header(ui, "Art boards", |ui| {
+            let tint = crate::theme::palette(ui.ctx()).text_primary;
+            shell::icon_header(ui, icons::Icon::ExportRegion, tint, "Art boards", |ui| {
                 if icons::icon_button(ui, icons::Icon::Add, "New Art Board").clicked()
                     && let Some(board) = tab.editor.new_art_board()
                 {
                     tab.board_list.jump_to(board);
                 }
             });
-            tab.board_list.show(ui, &mut tab.editor);
+            tab.properties
+                .boards_panel(ui, &mut tab.editor, &mut tab.board_list);
         }
         shell::SidebarSection::History => {
             // Step Back and Step Forward are Undo and Redo, so they carry their shortcuts.
