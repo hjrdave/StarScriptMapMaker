@@ -185,7 +185,7 @@ fn tab_hides_both_panels_and_brings_back_what_was_collapsed() {
 fn dragging_a_divider_resizes_within_its_range() {
     let mut harness = app();
     let y = 400.0;
-    // The panel's edge is just right of the 40 pt rail at the window's left edge.
+    // The panel's edge is just right of the rail at the window's left edge.
     let rail = metrics::LAYERS_PANEL_RAIL;
     drag(
         &mut harness,

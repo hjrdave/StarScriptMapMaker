@@ -125,7 +125,10 @@ fn at_the_minimum_both_panels_are_rails() {
     let layout = Shell::default().layout(1024.0);
     assert_eq!(layout.layers, PanelMode::Rail);
     assert_eq!(layout.properties, PanelMode::Rail);
-    assert_eq!(layout.canvas_width(1024.0), 944.0);
+    assert_eq!(
+        layout.canvas_width(1024.0),
+        1024.0 - 2.0 * metrics::LAYERS_PANEL_RAIL
+    );
 }
 
 #[test]
