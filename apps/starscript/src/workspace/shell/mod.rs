@@ -77,9 +77,6 @@ pub struct Shell {
     properties_width: f32,
     /// The user collapsed Layers to its rail.
     layers_collapsed: bool,
-    /// The user collapsed Properties to its icon strip.
-    #[serde(alias = "properties_hidden")]
-    properties_collapsed: bool,
     /// ⇥ hid both panels. Kept apart from the two flags above so that showing them again
     /// restores exactly what the user had collapsed.
     panels_hidden: bool,
@@ -170,7 +167,6 @@ impl Default for Shell {
             map_width: metrics::MAP_PANEL_DEFAULT,
             properties_width: metrics::PROPERTIES_PANEL_DEFAULT,
             layers_collapsed: true,
-            properties_collapsed: false,
             panels_hidden: false,
             window_width: FULL_WIDTH,
             layers_overlay: false,
@@ -295,11 +291,6 @@ impl Shell {
         !self.panels_hidden
     }
 
-    /// Whether Properties is collapsed to its icon strip.
-    pub fn properties_collapsed(&self) -> bool {
-        self.properties_collapsed
-    }
-
     pub fn panels_hidden(&self) -> bool {
         self.panels_hidden
     }
@@ -324,11 +315,8 @@ impl Shell {
     pub fn toggle_properties(&mut self) {
         if self.panels_hidden {
             self.panels_hidden = false;
-            self.properties_collapsed = false;
         } else if self.auto_rail(Side::Right) {
             self.set_properties_overlay(!self.properties_overlay);
-        } else {
-            self.properties_collapsed = !self.properties_collapsed;
         }
     }
 
@@ -355,7 +343,7 @@ impl Shell {
             } else {
                 PanelMode::Full(self.width(Side::Left))
             };
-            let properties = if self.properties_collapsed || window_width < MINIMUM_WIDTH {
+            let properties = if window_width < MINIMUM_WIDTH {
                 PanelMode::Rail
             } else {
                 PanelMode::Full(self.properties_width)
@@ -428,16 +416,10 @@ impl Shell {
         }
     }
 
-    /// The Properties strip was clicked. If the user collapsed Properties and the window has
-    /// room, that expands it; otherwise the window is too narrow and it opens over the Canvas.
+    /// The Properties strip was clicked: the window is too narrow for the panel, so it opens
+    /// over the Canvas, or closes again.
     pub fn click_properties_rail(&mut self) {
-        let mut expanded = self.clone();
-        expanded.properties_collapsed = false;
-        if expanded.layout(self.window_width).properties == PanelMode::Rail {
-            self.set_properties_overlay(!self.properties_overlay);
-        } else {
-            self.properties_collapsed = false;
-        }
+        self.set_properties_overlay(!self.properties_overlay);
     }
 
     pub fn close_overlays(&mut self) {
@@ -458,10 +440,7 @@ impl Shell {
                 expanded.layers_collapsed = false;
                 expanded.current_layout().layers == PanelMode::Rail
             }
-            Side::Right => {
-                expanded.properties_collapsed = false;
-                expanded.current_layout().properties == PanelMode::Rail
-            }
+            Side::Right => expanded.current_layout().properties == PanelMode::Rail,
         }
     }
 }
@@ -474,6 +453,5 @@ mod widgets;
 
 pub use status::{cursor_text, selection_path, selection_summary};
 pub use widgets::{
-    divider, history_list, icon_header, layers_rail, mode_chip, panel_header,
-    properties_collapse_button, properties_rail,
+    divider, history_list, icon_header, layers_rail, mode_chip, panel_header, properties_rail,
 };

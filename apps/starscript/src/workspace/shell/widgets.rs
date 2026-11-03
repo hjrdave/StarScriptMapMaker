@@ -223,17 +223,6 @@ pub fn divider(ui: &mut egui::Ui, shell: &mut Shell, side: Side, panel: egui::Re
         .vline(x, panel.y_range(), egui::Stroke::new(1.0, color));
 }
 
-/// The Properties collapse control: a double chevron that points right while the panel is
-/// expanded and left once `collapsed`. Its place is the bottom of the panel in both states.
-pub fn properties_collapse_button(ui: &mut egui::Ui, collapsed: bool) -> egui::Response {
-    let label = if collapsed {
-        "Expand Properties (⌘⌥2)"
-    } else {
-        "Collapse Properties (⌘⌥2)"
-    };
-    icons::icon_button_flipped(ui, Icon::CollapseDouble, label, !collapsed)
-}
-
 /// The size a rail icon is drawn at; it has its own crisp atlas.
 const RAIL_ICON: f32 = icons::RAIL_GRID;
 /// Height of the tile around a rail icon and its caption.
@@ -338,9 +327,8 @@ pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<
     clicked
 }
 
-/// The icon strip Properties collapses to, or narrows to at the smallest window: the
-/// Properties icon with the expand control pinned to the bottom, as on the Layers rail.
-/// Returns true when either is clicked.
+/// The icon strip Properties narrows to at the smallest window: the Properties icon, which
+/// opens the floating inspector. Returns true when it is clicked.
 pub fn properties_rail(ui: &mut egui::Ui) -> bool {
     let palette = theme::palette(ui.ctx());
     let rect = ui.max_rect();
@@ -361,23 +349,6 @@ pub fn properties_rail(ui: &mut egui::Ui) -> bool {
     };
     paint_rail_content(ui, slot, Icon::Shape, "Properties", tint);
     if response
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
-    {
-        clicked = true;
-    }
-    let bar = egui::Rect::from_min_max(
-        egui::pos2(
-            rect.left(),
-            rect.bottom() - crate::layer_tree::FOOTER_HEIGHT,
-        ),
-        rect.right_bottom(),
-    );
-    let mut bottom =
-        ui.new_child(egui::UiBuilder::new().max_rect(bar).layout(
-            egui::Layout::top_down(egui::Align::Center).with_main_align(egui::Align::Center),
-        ));
-    if properties_collapse_button(&mut bottom, true)
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
     {

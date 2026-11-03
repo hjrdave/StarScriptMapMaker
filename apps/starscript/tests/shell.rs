@@ -110,57 +110,18 @@ fn the_rail_stays_put_when_the_panel_opens_and_closes_and_the_canvas_makes_room(
 }
 
 #[test]
-fn the_properties_shortcut_hides_and_shows_properties() {
+fn properties_has_no_collapse_button_and_its_shortcut_leaves_it_open() {
     let mut harness = app();
     assert!(harness.query_by_label(PANEL_HEADER).is_some());
-    harness.key_press_modifiers(BOTH, egui::Key::Num2);
-    harness.run();
-    assert!(harness.state().shell().properties_collapsed());
-    assert!(harness.query_by_label(PANEL_HEADER).is_none());
-    harness.key_press_modifiers(BOTH, egui::Key::Num2);
-    harness.run();
-    assert!(!harness.state().shell().properties_collapsed());
-    assert!(harness.query_by_label(PANEL_HEADER).is_some());
-}
-
-#[test]
-fn the_collapse_button_collapses_properties_to_a_strip_and_the_strip_expands_it() {
-    let mut harness = app();
-    harness.get_by_label("Collapse Properties (⌘⌥2)").click();
-    harness.run();
-    assert!(harness.state().shell().properties_collapsed());
-    assert!(harness.query_by_label(PANEL_HEADER).is_none());
-    assert!(harness.query_by_label("Open Properties (⌘⌥2)").is_some());
-    harness.get_by_label("Expand Properties (⌘⌥2)").click();
-    harness.run();
-    assert!(!harness.state().shell().properties_collapsed());
-    assert!(harness.query_by_label(PANEL_HEADER).is_some());
-}
-
-#[test]
-fn clicking_the_properties_icon_expands_the_strip() {
-    let mut harness = app();
-    harness.key_press_modifiers(BOTH, egui::Key::Num2);
-    harness.run();
-    harness.get_by_label("Open Properties (⌘⌥2)").click();
-    harness.run();
-    assert!(!harness.state().shell().properties_collapsed());
     assert!(
         harness
             .query_by_label("Collapse Properties (⌘⌥2)")
-            .is_some()
+            .is_none()
     );
-}
-
-#[test]
-fn the_properties_control_sits_at_the_bottom_and_stays_put_when_toggled() {
-    let mut harness = app();
-    let expanded = harness.get_by_label("Collapse Properties (⌘⌥2)").rect();
-    assert!(expanded.center().y > 600.0);
-    harness.get_by_label("Collapse Properties (⌘⌥2)").click();
+    harness.key_press_modifiers(BOTH, egui::Key::Num2);
     harness.run();
-    let collapsed = harness.get_by_label("Expand Properties (⌘⌥2)").rect();
-    assert_eq!(expanded.center().y, collapsed.center().y);
+    assert!(harness.query_by_label(PANEL_HEADER).is_some());
+    assert!(harness.query_by_label("Open Properties (⌘⌥2)").is_none());
 }
 
 #[test]

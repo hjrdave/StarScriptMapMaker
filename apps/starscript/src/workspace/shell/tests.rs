@@ -79,12 +79,11 @@ fn the_left_sidebar_starts_collapsed_to_its_rail() {
 fn hiding_both_panels_keeps_what_the_user_collapsed() {
     let mut shell = expanded();
     shell.toggle_layers();
-    shell.toggle_properties();
     shell.toggle_panels();
     assert!(!shell.layers_shown() && !shell.properties_shown());
     shell.toggle_panels();
     assert!(shell.layers_collapsed());
-    assert!(shell.layers_shown() && shell.properties_collapsed());
+    assert!(shell.layers_shown() && shell.properties_shown());
 }
 
 fn full(width: f32) -> PanelMode {
@@ -153,12 +152,16 @@ fn the_canvas_keeps_480_points() {
 fn a_panel_the_user_collapsed_stays_collapsed_when_the_window_grows() {
     let mut shell = expanded();
     shell.toggle_layers();
-    shell.toggle_properties();
     for width in [1024.0, 1250.0, 1400.0, 3000.0] {
         let layout = shell.layout(width);
         assert_eq!(layout.layers, PanelMode::Rail, "{width}");
-        assert_eq!(layout.properties, PanelMode::Rail, "{width}");
     }
+    // Toggle Properties never collapses it: it stays a full panel wherever there is room.
+    shell.toggle_properties();
+    assert!(matches!(
+        shell.layout(3000.0).properties,
+        PanelMode::Full(_)
+    ));
     shell.toggle_panels();
     assert_eq!(shell.layout(1500.0).layers, PanelMode::Hidden);
 }
@@ -214,11 +217,10 @@ fn a_shortcut_opens_the_overlay_on_the_first_press_while_the_sidebar_is_collapse
     // Properties gives way to a strip below 1100.
     let mut shell = Shell::default();
     shell.set_window_width(1000.0);
-    shell.properties_collapsed = true;
     shell.toggle_properties();
-    assert!(shell.properties_overlay() && shell.properties_collapsed());
+    assert!(shell.properties_overlay());
     shell.toggle_properties();
-    assert!(!shell.properties_overlay() && shell.properties_collapsed());
+    assert!(!shell.properties_overlay());
 }
 
 #[test]

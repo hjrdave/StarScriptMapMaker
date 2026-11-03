@@ -149,23 +149,14 @@ impl PropertiesPanel {
         );
     }
 
-    /// Returns true when the collapse control at the bottom was clicked.
-    pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) -> bool {
+    pub(crate) fn show(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         // A change ends when the pointer is released, or when Escape cancelled it.
         self.live.apply(editor, Edit::default(), "", || {
             unreachable!("nothing changed")
         });
         self.header(ui, editor);
-        let footer = crate::layer_tree::FOOTER_HEIGHT;
-        // The control is pinned to the panel's bottom edge, where the collapsed strip has it too.
-        let panel = ui.max_rect();
-        let rect = egui::Rect::from_min_max(
-            egui::pos2(panel.left(), panel.bottom() - footer),
-            panel.right_bottom(),
-        );
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
-            .max_height((rect.top() - ui.cursor().top()).max(0.0))
             .show(ui, |ui| {
                 // A tool with settings shows only those (the Stamp's with its Asset card), so
                 // the selection's properties don't sit above them. Select, Pan, Label
@@ -184,18 +175,6 @@ impl PropertiesPanel {
                     self.selection(ui, editor);
                 }
             });
-        ui.painter().hline(
-            rect.x_range(),
-            rect.top(),
-            egui::Stroke::new(1.0, theme::palette(ui.ctx()).border_subtle),
-        );
-        let mut bar = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(rect)
-                .layout(egui::Layout::left_to_right(egui::Align::Center)),
-        );
-        bar.add_space(theme::SPACING[2]);
-        crate::shell::properties_collapse_button(&mut bar, false).clicked()
     }
 
     fn selection(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {

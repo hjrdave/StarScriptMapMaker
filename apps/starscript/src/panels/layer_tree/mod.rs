@@ -18,7 +18,6 @@ const INDENT: f32 = 14.0;
 const ROW_BUTTON: f32 = 18.0;
 /// Glyph size inside a row.
 const ROW_GLYPH: f32 = 14.0;
-pub(crate) const FOOTER_HEIGHT: f32 = 24.0;
 
 /// Why a Depth-sorted Layer's Stamps can't be reordered by hand.
 pub(crate) const DEPTH_SORT_HINT: &str = "Depth sort is on for this Layer: Stamps are listed in the order they draw, by Anchor height. Move a Stamp to re-sort it.";
