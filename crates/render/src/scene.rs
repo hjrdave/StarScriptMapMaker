@@ -252,12 +252,12 @@ impl MapScene {
         let mut latest: Option<(Id, LayerEnd)> = None;
         self.seen.clear();
         let mut clips: Vec<ClipScope> = Vec::new();
-        // The Landmass the last scope is clipped to, while that scope is still growing.
-        let mut open: Option<Id> = None;
+        // The Landmasses the last scope is clipped to, while that scope is still growing.
+        let mut open: Vec<Id> = Vec::new();
         let order = map.draw_order();
         self.build += 1;
         // What the Layers above an Object decide, worked out once per Layer and not per Object.
-        let mut above: HashMap<Option<Id>, (Option<Id>, f32)> = HashMap::new();
+        let mut above: HashMap<Option<Id>, (Vec<Id>, f32)> = HashMap::new();
         let mut placements: Vec<(Membership, Placement)> = Vec::new();
         // Each Layer's ripples draw beneath every fill of that Layer, so they never cover
         // land of that Layer.
@@ -266,9 +266,10 @@ impl MapScene {
             let Some(Node::Object(object)) = map.node(id) else {
                 continue;
             };
-            let (target, opacity) = *above
+            let (target, opacity) = above
                 .entry(map.parent(id))
-                .or_insert_with(|| (clip_target(map, id), layer_opacity(map, id)));
+                .or_insert_with(|| (map.clip_targets(id), layer_opacity(map, id)))
+                .clone();
             let placement = match placements.iter().find(|(m, _)| *m == object.membership) {
                 Some(&(_, placement)) => placement,
                 None => {
@@ -277,14 +278,14 @@ impl MapScene {
                     placement
                 }
             };
-            // Consecutive Objects clipped to the same Landmass share a scope.
+            // Consecutive Objects clipped to the same Landmasses share a scope.
             if target != open {
                 open = target;
-                if let Some(target) = target {
-                    clips.push(clip_scope(map, roughness, target, &order, groups.len()));
+                if !open.is_empty() {
+                    clips.push(clip_scope(map, roughness, &open, &order, groups.len()));
                 }
             }
-            let clip = open.map(|_| clips.len() - 1);
+            let clip = (!open.is_empty()).then(|| clips.len() - 1);
             if let Some(layer) = map.parent(id)
                 && !matches!(object.kind, ObjectKind::Stamp(_))
                 && map.shore(id).is_some()
@@ -329,7 +330,7 @@ impl MapScene {
             if stamps.len() > first_stamp {
                 slot_ids.push(id);
             }
-            if let Some(scope) = clips.last_mut().filter(|_| open.is_some()) {
+            if let Some(scope) = clips.last_mut().filter(|_| !open.is_empty()) {
                 scope.groups.end = groups.len();
             }
             if let Some(layer) = map.parent(id)
@@ -969,23 +970,12 @@ fn placement_in(map: &Map, membership: Membership) -> Placement {
     }
 }
 
-/// The Landmass `id` is clipped to: that of the nearest Layer above it that has a Clip. A
-/// Layer's own Clip replaces any Clip of the Layers around it.
-fn clip_target(map: &Map, id: Id) -> Option<Id> {
-    std::iter::successors(map.parent(id), |&layer| map.parent(layer)).find_map(|layer| {
-        match map.node(layer) {
-            Some(Node::Layer(layer)) => layer.clip,
-            _ => None,
-        }
-    })
-}
-
-/// A scope starting at group `start`, clipped to the Landmass `target`'s roughened outline
-/// minus every Lake that draws after it.
+/// A scope starting at group `start`, clipped to the roughened outlines of the Landmasses
+/// `targets` minus every Lake that draws after the first of them.
 fn clip_scope(
     map: &Map,
     roughness: &mut RoughnessCache,
-    target: Id,
+    targets: &[Id],
     order: &[Id],
     start: usize,
 ) -> ClipScope {
@@ -1002,12 +992,16 @@ fn clip_scope(
             })
             .collect()
     };
-    let land = outline(roughness, map, target)
-        .map(|outline| fills(&outline))
-        .unwrap_or_default();
-    let after = order
+    let land: Vec<VectorGroup> = targets
         .iter()
-        .position(|&id| id == target)
+        .filter_map(|&target| outline(roughness, map, target))
+        .flat_map(|outline| fills(&outline))
+        .collect();
+    // Water that draws above the lowest of the Landmasses cuts into the scope.
+    let after = targets
+        .iter()
+        .filter_map(|&target| order.iter().position(|&id| id == target))
+        .min()
         .map_or(0, |at| at + 1);
     let mut holes = Vec::new();
     for &id in &order[after..] {
@@ -1734,6 +1728,34 @@ mod tests {
         let rebuilt = scene.content(&map, &mut roughness);
         let fresh = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
         assert_eq!(rebuilt.clips().len(), fresh.clips().len());
+        assert_same_content(&rebuilt, &fresh);
+    }
+
+    #[test]
+    fn a_layer_attached_to_the_layer_below_clips_to_all_its_landmasses() {
+        let (mut map, lands) = map_with_land();
+        let layers: Vec<Id> = map.children(None).to_vec();
+        // Above (the Stamps on top) is attached to Land, which holds three Landmasses.
+        map.execute(&Command::SetAttached {
+            id: layers[2],
+            attached: true,
+        })
+        .unwrap();
+        let mut scene = MapScene::new(Fonts::bundled());
+        let content = scene.content(&map, &mut RoughnessCache::new());
+        assert_eq!(content.clips().len(), 1);
+        assert_eq!(content.clips()[0].land.len(), lands.len());
+        // Only the attached Layer's Stamps are clipped, not those of the Layer below Land.
+        let clipped = content.stamps().iter().filter(|s| s.clip.is_some()).count();
+        assert_eq!(clipped, 2);
+        // Editing a Landmass rebuilds the scope, as an edit under any clip does.
+        map.execute(&Command::Translate {
+            ids: vec![lands[0]],
+            offset: [10.0, 10.0],
+        })
+        .unwrap();
+        let rebuilt = scene.content(&map, &mut RoughnessCache::new());
+        let fresh = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
         assert_same_content(&rebuilt, &fresh);
     }
 

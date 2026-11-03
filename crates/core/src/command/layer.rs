@@ -127,6 +127,23 @@ pub(super) fn set_clip(map: &Map, id: Id, target: Option<Id>) -> Result<Vec<Op>,
     Ok(vec![set(id, Property::Clip(target))])
 }
 
+/// Attaches a Layer to the Layer below it, or releases it. Attaching needs a Layer below, and
+/// replaces a Clip to one Landmass in the same step.
+pub(super) fn set_attached(map: &Map, id: Id, attached: bool) -> Result<Vec<Op>, CommandError> {
+    let current = layer(map, id)?;
+    unlocked(map, id)?;
+    let mut ops = vec![set(id, Property::Attached(attached))];
+    if attached {
+        if map.layer_below(id).is_none() {
+            return Err(CommandError::NothingBelow(id));
+        }
+        if current.clip.is_some() {
+            ops.push(set(id, Property::Clip(None)));
+        }
+    }
+    Ok(ops)
+}
+
 /// Resizes the Canvas. The size must be at least 1 by 1 and the origin finite.
 pub(super) fn resize_canvas(
     origin: Point,

@@ -23,14 +23,13 @@ pub(crate) const FOOTER_HEIGHT: f32 = 24.0;
 /// Why a Depth-sorted Layer's Stamps can't be reordered by hand.
 pub(crate) const DEPTH_SORT_HINT: &str = "Depth sort is on for this Layer: Stamps are listed in the order they draw, by Anchor height. Move a Stamp to re-sort it.";
 
-mod layer_area;
 mod model;
 mod row;
 mod settings_row;
 use model::kind_icon;
 pub(crate) use model::{
-    DropTarget, Row, RowState, counts, footer_text, is_depth_sorted_stamp, landmass_name,
-    landmasses, move_command, node_name, rows, selected_landmass,
+    DropTarget, Row, RowState, counts, footer_text, is_depth_sorted_stamp, move_command, node_name,
+    rows,
 };
 #[cfg(test)]
 mod tests;
@@ -49,8 +48,6 @@ pub(crate) struct LayerTree {
     collapse_generation: u64,
     /// Turns the Opacity slider into one Undo step per drag.
     live: LiveEdit,
-    /// Height the Layer area took last frame, kept free below the list.
-    layer_area_height: f32,
     /// A delete waiting on the confirmation: the Group it names and how many nodes are inside.
     confirm_delete: Option<(Id, usize)>,
     /// The row a Shift-click range grows from: the last row clicked without Shift.
@@ -164,9 +161,8 @@ impl LayerTree {
         self.live.apply(editor, Edit::default(), "", || {
             unreachable!("nothing changed")
         });
-        // The sidebar's bottom bar sits under the tree, so only the Layer area comes off.
         self.settings_row(ui, editor);
-        let list_height = (ui.available_height() - self.layer_area_height).max(ROW_HEIGHT);
+        let list_height = ui.available_height().max(ROW_HEIGHT);
         let mut scroll = egui::ScrollArea::vertical()
             .auto_shrink(false)
             .max_height(list_height);
@@ -182,11 +178,6 @@ impl LayerTree {
                 self.row(ui, editor, *row, &mut actions);
             }
         });
-        let area_height = self.layer_area(ui, editor);
-        if (area_height - self.layer_area_height).abs() > 0.5 {
-            self.layer_area_height = area_height;
-            ui.ctx().request_repaint();
-        }
 
         for action in actions {
             match action {

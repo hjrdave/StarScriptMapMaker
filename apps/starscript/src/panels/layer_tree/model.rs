@@ -101,40 +101,6 @@ pub(crate) fn is_depth_sorted_stamp(map: &Map, id: Id) -> bool {
     )
 }
 
-/// Every Landmass, topmost first as the tree lists them.
-pub(crate) fn landmasses(map: &Map) -> Vec<Id> {
-    rows(map, &HashSet::new())
-        .into_iter()
-        .map(|row| row.id)
-        .filter(|&id| is_landmass(map, id))
-        .collect()
-}
-
-fn is_landmass(map: &Map, id: Id) -> bool {
-    matches!(
-        map.node(id),
-        Some(Node::Object(object)) if matches!(object.kind, ObjectKind::Landmass(_))
-    )
-}
-
-/// The Landmass a Layer should be clipped to: the one Object `selection` holds, if it is a
-/// Landmass.
-pub(crate) fn selected_landmass(map: &Map, selection: &[Id]) -> Option<Id> {
-    match selection {
-        &[id] if is_landmass(map, id) => Some(id),
-        _ => None,
-    }
-}
-
-/// A Landmass as a Clip target is named by its place in [`landmasses`], as Landmasses have no
-/// names of their own.
-pub(crate) fn landmass_name(map: &Map, id: Id) -> String {
-    match landmasses(map).iter().position(|&l| l == id) {
-        Some(index) => format!("Landmass {}", index + 1),
-        None => "Missing Landmass".to_owned(),
-    }
-}
-
 pub(crate) fn node_name(map: &Map, id: Id) -> String {
     match map.node(id) {
         Some(Node::Layer(layer)) if layer.name.trim().is_empty() => "Layer".to_owned(),
@@ -154,6 +120,23 @@ pub(crate) fn node_name(map: &Map, id: Id) -> String {
     }
 }
 
+/// Whether the Layer just above `id` in its parent is attached to it.
+fn is_attached_to(map: &Map, id: Id) -> bool {
+    if !map.node(id).is_some_and(Node::is_layer) {
+        return false;
+    }
+    let siblings = map.children(map.parent(id));
+    siblings
+        .iter()
+        .position(|&sibling| sibling == id)
+        .and_then(|at| {
+            siblings[at + 1..]
+                .iter()
+                .find(|&&s| map.node(s).is_some_and(Node::is_layer))
+        })
+        .is_some_and(|&above| matches!(map.node(above), Some(Node::Layer(layer)) if layer.attached))
+}
+
 /// How a row looks, apart from selection and hover.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) struct RowState {
@@ -167,6 +150,10 @@ pub(crate) struct RowState {
     pub pinned: bool,
     /// Pinned only through a Layer above: dashed pin, not toggleable here.
     pub pinned_by_parent: bool,
+    /// An attached Layer: indented, with a clip arrow before its icon.
+    pub attached: bool,
+    /// The Layer below one that is attached to it: its name is underlined.
+    pub attached_to: bool,
 }
 
 impl RowState {
@@ -178,6 +165,8 @@ impl RowState {
                 locked_by_parent: false,
                 pinned: false,
                 pinned_by_parent: false,
+                attached: false,
+                attached_to: false,
             };
         };
         let locked = node.locked();
@@ -191,6 +180,8 @@ impl RowState {
             locked_by_parent: !locked && map.is_locked(id),
             pinned,
             pinned_by_parent: !pinned && map.pinned_ancestor(id).is_some(),
+            attached: matches!(node, Node::Layer(layer) if layer.attached),
+            attached_to: is_attached_to(map, id),
         }
     }
 

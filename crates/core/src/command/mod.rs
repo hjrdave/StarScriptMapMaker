@@ -112,6 +112,14 @@ pub enum Command {
         /// The opacity, from 0 to 1.
         opacity: f32,
     },
+    /// Attaches a Layer to the Layer below it in its parent, or releases it. An attached Layer
+    /// clips to the Landmasses in the Layer below; attaching replaces a Clip to one Landmass.
+    SetAttached {
+        /// The Layer.
+        id: Id,
+        /// Whether it is attached.
+        attached: bool,
+    },
     /// Switches Depth sort on or off for a Layer: its direct Stamps then draw by Anchor
     /// height (ADR 0003).
     SetDepthSort {
@@ -577,6 +585,10 @@ impl Command {
             Command::SetLocked { .. } => "Change Lock",
             Command::SetMoveLocked { .. } => "Change Move Lock",
             Command::SetOpacity { .. } => "Change Opacity",
+            Command::SetAttached { attached: true, .. } => "Attach to Layer Below",
+            Command::SetAttached {
+                attached: false, ..
+            } => "Release from Layer Below",
             Command::SetDepthSort { .. } => "Change Depth Sort",
             Command::SetClip {
                 target: Some(_), ..
@@ -652,6 +664,7 @@ impl Command {
                 layer::set_depth_sort(map, *id, *depth_sort)
             }
             Command::SetClip { id, target } => layer::set_clip(map, *id, *target),
+            Command::SetAttached { id, attached } => layer::set_attached(map, *id, *attached),
             Command::CreateGroup { id, ids, name } => group::create_group(map, *id, ids, name),
             Command::Ungroup { ids } => group::ungroup(map, ids),
             Command::Link { id, ids } => link::link(map, *id, ids),
