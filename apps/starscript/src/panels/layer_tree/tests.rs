@@ -235,9 +235,8 @@ fn a_hidden_row_is_italic_with_the_slashed_eye() {
     assert!(RowState::of(editor.map(), a).italic());
     assert!(!RowState::of(editor.map(), b).italic());
     let harness = harness(editor);
-    // Only the hidden row shows its eye (as "Show") without hover.
-    harness.get_by_label("Show");
-    // The one "Hide" is the settings row's; the other rows show none without hover.
+    // Only the hidden row shows an indicator; the one "Hide" is the settings row's.
+    assert_eq!(harness.query_all_by_label("Hidden").count(), 1);
     assert_eq!(harness.query_all_by_label("Hide").count(), 1);
 }
 
@@ -261,7 +260,7 @@ fn a_child_of_a_locked_layer_shows_a_dashed_padlock_that_does_nothing() {
     let revision = editor.map().revision();
     let selection = editor.selection().to_vec();
     let mut harness = harness(editor);
-    harness.get_by_label("Unlock"); // the parent's own filled padlock
+    harness.get_by_label("Locked"); // the parent's own filled padlock
     harness.get_by_label("Locked by parent Layer").click();
     harness.run();
     let editor = &harness.state().editor;
@@ -805,7 +804,7 @@ fn a_layers_pin_shows_on_the_row_and_what_is_inside_it_shows_a_dashed_pin() {
     assert!(!state.pinned && state.pinned_by_parent);
     assert!(RowState::of(editor.map(), a).pinned);
     let harness = harness(editor);
-    harness.get_by_label("Unpin from Canvas");
+    harness.get_by_label("Pinned to Canvas");
     harness.get_by_label("Pinned by parent Layer");
 }
 
