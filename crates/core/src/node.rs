@@ -119,7 +119,7 @@ pub struct Object {
     /// Whether the Object refuses Commands.
     pub locked: bool,
     /// Whether the Object refuses to be moved or transformed, while its shape and settings
-    /// stay editable. New Landmasses, Lakes and Rivers start with this on.
+    /// stay editable. New Objects start with this off.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub move_locked: bool,
     /// Whether the Object belongs to the Canvas (and is clipped at its edge) or sits off it.
