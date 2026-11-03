@@ -1,0 +1,115 @@
+<!doctype html>
+<!-- PROTOTYPE (throwaway): Map panel, Canvas tab (#565). One layout.
+     Drawn at the app's real sizes (theme.rs): 1 egui point = 1 CSS px. In-memory state only. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Map Canvas Tab</title>
+<style>
+  /* App tokens (apps/starscript/src/chrome/theme.rs), dark palette. Body 12, caption 11, heading 13,
+     title 15; field 22; label column 80; gutter 8; radius field 4, button 6, chip 3; item spacing 8 x 6. */
+  :root{color-scheme:dark;--bg:#14161A;--panel:#1B1E23;--raised:#262A31;--line:#272B32;--strong:#3B414B;--text:#B4AE9F;--hi:#ECE6D8;--dim:#9D9788;--gold:#D4A84A;--goldtext:#F0CF7A;--sel:#3A311C;--field:#111317}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:12px/1.3 Inter,system-ui,sans-serif;padding:24px 16px 90px}
+  .wrap{display:flex;gap:28px;justify-content:center;flex-wrap:wrap;align-items:flex-start}
+  .panel{background:var(--panel);border:1px solid var(--line);min-height:600px;padding-bottom:12px;overflow:hidden;user-select:none}
+  .head{height:34px;display:flex;align-items:center;gap:6px;padding:0 8px;font-size:15px;color:var(--hi);border-bottom:1px solid var(--line)}
+  .head svg{width:16px;height:16px}
+  .tabs{height:30px;display:flex;border-bottom:1px solid var(--line)}
+  .tabs div{flex:1;text-align:center;line-height:29px;font-size:13px;color:var(--dim);border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tabs .on{color:var(--hi);border-color:var(--gold)}
+  h2{font-size:13px;font-weight:700;color:var(--hi);margin:6px 8px 0;line-height:16px}
+  h2::after{content:"";display:block;height:1px;background:var(--line);margin:6px 0 0}
+  h3{font-size:11px;font-weight:400;color:var(--dim);margin:8px 8px 4px}
+  .seg{display:flex;margin:0 8px 2px}
+  .seg button{flex:1;height:22px;border:1px solid var(--line);background:var(--field);color:var(--text);font:12px inherit;font-family:inherit;border-radius:0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;min-width:0}
+  .seg button:first-child{border-radius:4px 0 0 4px}.seg button:last-child{border-radius:0 4px 4px 0;border-left:0}
+  .seg button.on{background:var(--raised);color:var(--hi);border-color:var(--gold)}
+  .seg button.on:last-child{border-left:1px solid var(--gold)}
+  .seg svg{width:14px;height:14px;flex:none}
+  .rows{margin:0 8px;display:flex;flex-direction:column;gap:6px}
+  .row{display:grid;grid-template-columns:80px minmax(0,1fr);gap:8px;align-items:center}
+  .row>label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .above{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .above>label{font-size:11px;color:var(--dim);line-height:15px}
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:8px;min-width:0}
+  .field{height:22px;background:var(--field);border:1px solid var(--line);border-radius:4px;display:flex;align-items:center;padding:0 6px;gap:6px;min-width:0;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--hi)}
+  .field input{all:unset;flex:1;min-width:0;width:100%}
+  .field .u{color:var(--dim)}
+  .cs{display:flex;align-items:center;gap:6px;height:22px;min-width:0}
+  .cs .chip{width:44px;height:22px;border-radius:3px;border:1px solid var(--line);flex:none;position:relative;overflow:hidden;background-image:linear-gradient(45deg,#777 25%,transparent 25%,transparent 75%,#777 75%),linear-gradient(45deg,#777 25%,#ddd 25%,#ddd 75%,#777 75%);background-size:8px 8px;background-position:0 0,4px 4px}
+  .cs .chip i{position:absolute;inset:0}
+  .cs .chip input{position:absolute;inset:-4px;width:60px;height:34px;opacity:0;cursor:pointer}
+  .cs .hex{font-size:11px;color:var(--text);text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:clip;min-width:0}
+  .side{width:300px;font-size:13px;color:var(--dim)}
+  .side h3{margin:0 0 6px;color:var(--hi);font-size:15px}
+  .side ul{padding-left:18px;margin:6px 0}
+  .side label{display:block;margin:16px 0 4px;color:var(--hi)}
+  .side input[type=range]{width:100%}
+  .debug{margin-top:14px;font:11px/1.4 monospace;white-space:pre-wrap;word-break:break-all;background:#0b0c0f;border:1px solid var(--line);border-radius:6px;padding:8px;color:#9a9}
+  .switcher{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#f1ead2;color:#111;border-radius:999px;padding:6px 10px;display:flex;gap:12px;align-items:center;box-shadow:0 6px 20px #000c;z-index:20;font-weight:600;max-width:calc(100vw - 32px)}
+  .switcher button{background:#111;color:#f1ead2;border:0;border-radius:50%;width:28px;height:28px;cursor:pointer;flex:none}
+  :focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+  .wh{display:grid;grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr);gap:2px;margin:0 8px;align-items:center}
+  .field.pf .pre{color:var(--dim);font-family:Inter,system-ui,sans-serif;font-size:12px;flex:none}
+  .field.pf input{text-align:right}
+  .chain{width:24px;height:22px;display:grid;place-items:center;color:var(--dim);background:none;border:0;cursor:pointer;padding:0}
+  .chain.on{color:var(--gold)}.chain svg{width:16px;height:16px}
+  .val{color:var(--text);min-width:0;overflow-wrap:anywhere}
+  .anchor{display:grid;grid-template-columns:repeat(3,22px);gap:2px}
+  .anchor button{width:22px;height:22px;border-radius:4px;border:1px solid var(--line);background:var(--raised);color:var(--gold);cursor:pointer;padding:0;font-size:11px;line-height:1}
+  .anchor button.on{background:var(--sel);border-color:#8A6C2C}
+  .anchor button:hover{background:#30353D}
+  .hint{font-size:11px;color:var(--dim);margin-top:4px}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="panel" id="panel" style="width:320px"></div>
+  <div class="side">
+    <h3>Map panel · Canvas tab</h3>
+    <div id="notes"></div>
+    <label for="w">Panel width: <b id="wv">320</b> pt</label>
+    <input id="w" type="range" min="240" max="480" value="320">
+    <div class="debug" id="debug"></div>
+  </div>
+</div>
+<script>
+const SVG={
+ map:"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M1.5 4 5.5 2.5l5 1.5 4-1.5v9.5l-4 1.5-5-1.5-4 1.5ZM5.5 2.5v9.5M10.5 4v9.5\"/></svg>",
+ link:"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M6.5 9.5l3-3M7 5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1M9 11l-1 1A2.5 2.5 0 0 1 4.5 8.5l1-1\"/></svg>",
+ unlink:"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M7 5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1M9 11l-1 1A2.5 2.5 0 0 1 4.5 8.5l1-1M5 2.5v1.5M2.5 5H4M11 12v1.5M12 11h1.5\"/></svg>"
+};
+const S={w:4096,h:3072,linked:false,anchor:[0,0],scale:'0.25 mi per unit'};
+const log=[];const note=m=>{log.unshift(m);if(log.length>6)log.pop();};
+const NAMES=[['Top left','Top','Top right'],['Left','Centre','Right'],['Bottom left','Bottom','Bottom right']];
+const pf=(k,pre)=>`<div class="field pf"><span class="pre">${pre}</span><input aria-label="${k}" data-k="${k}" value="${S[k]}" inputmode="numeric"></div>`;
+const row=(l,f)=>`<div class="row"><label>${l}</label>${f}</div>`;
+function render(){
+  const [ax,ay]=S.anchor;
+  document.getElementById('panel').innerHTML=`
+   <div class="head">${SVG.map}Map</div>
+   <div class="tabs"><div class="on">Canvas</div><div>Style</div><div>Shores</div></div>
+   <h2>Canvas</h2>
+   <h3>Size</h3>
+   <div class="wh">${pf('w','W')}<button class="chain ${S.linked?'on':''}" id="chain" title="${S.linked?'Unlink width and height':'Keep aspect ratio'}" aria-label="${S.linked?'Unlink width and height':'Keep aspect ratio'}">${S.linked?SVG.link:SVG.unlink}</button>${pf('h','H')}</div>
+   <h3>Scale</h3>
+   <div class="rows">${row('Distance',`<span class="val">${S.scale}</span>`)}</div>
+   <h3>Resize from</h3>
+   <div class="rows">${row('Anchor',`<div><div class="anchor" role="radiogroup" aria-label="Anchor">${[0,1,2].map(y=>[0,1,2].map(x=>`<button role="radio" aria-checked="${ax===x&&ay===y}" class="${ax===x&&ay===y?'on':''}" data-a="${x},${y}" title="${NAMES[y][x]}">${ax===x&&ay===y?'●':''}</button>`).join('')).join('')}</div><div class="hint">${NAMES[ay][ax]} stays put when the size changes</div></div>`)}</div>`;
+  document.getElementById('notes').innerHTML='<p>Size is the only thing that can change here, so it comes first as one W | H row with the aspect chain between. Scale is read-only text. Anchor is stacked: the 3 × 3 grid, then a line that names the point that stays put. Nothing sits side by side, so a narrow panel never has to cut anything.</p><ul><li>Edit W or H (Enter applies it). The chain keeps the ratio.</li><li>Click an anchor point.</li><li>Drag the width slider to check a narrow panel.</li></ul>';
+  document.getElementById('debug').textContent=JSON.stringify(S)+'\n\nlast changes:\n'+log.join('\n');
+}
+const panel=document.getElementById('panel');
+panel.addEventListener('click',e=>{
+  const a=e.target.closest('[data-a]');if(a){S.anchor=a.dataset.a.split(',').map(Number);note('Anchor '+NAMES[S.anchor[1]][S.anchor[0]]);render();return;}
+  if(e.target.closest('#chain')){S.linked=!S.linked;S.ratio=S.w/S.h;note('Aspect link '+S.linked);render();}});
+panel.addEventListener('keydown',e=>{if(e.target.matches('input')&&e.key==='Enter')e.target.blur();});
+panel.addEventListener('change',e=>{const i=e.target,k=i.dataset.k;if(!k)return;let v=Math.max(1,Math.min(100000,Math.round(parseFloat(i.value)||S[k])));
+  if(S.linked){const r=S.ratio||S.w/S.h;if(k==='w'){S.h=Math.max(1,Math.round(v/r));}else{S.w=Math.max(1,Math.round(v*r));}}
+  S[k]=v;note(`Resize ${S.w} x ${S.h}`);render();});
+document.getElementById('w').oninput=e=>{panel.style.width=e.target.value+'px';document.getElementById('wv').textContent=e.target.value;};
+render();
+</script>
+</body>
+</html>

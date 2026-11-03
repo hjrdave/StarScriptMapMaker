@@ -194,3 +194,57 @@ Width, Colour. 6 rows; fits without scrolling. A colour that does not fit beside
 narrow width drops to its own row.
 
 Decision needed: A or B.
+
+## Canvas tab
+
+Reference: `prototype-canvas-tab.html`. Same tokens, group captions and 80 pt label column as the
+Style tab. The code is `canvas_fields` and `anchor_grid` in `panels/properties/map.rs`, and the
+Canvas section in `map_fields`. `canvas_fields` is also used for Art boards (without the Scale
+group), so check that panel.
+
+### Why it is cut off now
+
+After the W | H row, `canvas_fields` calls `ui.columns(2, ...)` and puts **Scale** in the left
+column and **Anchor** in the right. Each is the 64 pt `row` helper: a 64 pt label plus its content.
+At 320 each column is about 146, so:
+
+- the Scale text ("0.25 mi per unit", about 80) needs 64 + 80 and runs into the Anchor label;
+- the Anchor grid needs 64 + 3 × 18 + 2 × 2, plus the item spacing, and the third column is cut off.
+
+At narrower widths it only gets worse. Two things sit side by side that cannot both shrink.
+
+### Layout
+
+Heading "Canvas" (`divider_section`), then:
+
+1. **Caption "Size"**, then one row: `[W field][24 chain][H field]`. This is the existing row, which
+   already works: 22 tall, `item_spacing.x = 2`, each field half of the room left after the 24 pt
+   chain, the "W" and "H" shown as in-box prefixes. Keep it. The chain is `Icon::Link` (gold) /
+   `Icon::Unlink`.
+2. **Caption "Scale"**, then a row: label **Distance** (80 pt label column), the value
+   ("0.25 mi per unit") in `text_primary` 12, which wraps if it must. Left out for an Art board,
+   which has no Scale.
+3. **Caption "Resize from"**, then a row: label **Anchor** (80 pt column), and in the control column
+   the 3 × 3 grid, then a caption line under it that names the point that stays put ("Top left stays
+   put when the size changes", `text_tertiary` 11, wrapping, 4 above).
+
+Nothing is side by side except W | H and the chain, which already shrink. The Scale and Anchor rows
+use the same label column as the rest of the panel, so they line up with the other tabs.
+
+### Anchor grid
+
+- Buttons **22 × 22** (they are 18 × 18 now), 2 pt gap, so the grid is 70 × 70. Radius
+  `RADIUS_FIELD`.
+- Off: `bg_raised` fill, `border_subtle`. On: `gold_subtle` fill, `gold_ring` outline, and a gold dot
+  (the existing "●"). Hover: `hover_fill`.
+- Each button keeps its name from `anchor_name` for the tooltip and the accessible name, and is a
+  `RadioButton` in a group named "Anchor".
+- The grid is fixed-size, so the control column must be at least 70 wide. The label column is 80 and
+  the gutter 8, so that holds down to a panel width of about 180.
+
+### Also
+
+- The W and H labels in the fields stay. Their accessible names stay "Canvas width" and "Canvas
+  height" ("Board width" and "Board height" for an Art board).
+- No Command changes: resizing still goes through `resize(...)` and `self.live.apply(...)` as one
+  gesture, with the anchor held for the whole drag.
