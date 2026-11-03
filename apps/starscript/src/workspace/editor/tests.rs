@@ -1096,6 +1096,12 @@ fn pinning_the_selection_is_one_named_undo_step_and_a_lock_refuses_it() {
 #[test]
 fn a_refused_move_says_the_object_is_pinned() {
     let (mut editor, land) = editor_with_square();
+    editor
+        .run(Command::SetMoveLocked {
+            id: land,
+            locked: true,
+        })
+        .unwrap();
     let err = editor
         .run(Command::Translate {
             ids: vec![land],

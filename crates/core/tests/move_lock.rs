@@ -46,7 +46,7 @@ fn translate(map: &mut Map, id: Id) -> Result<(), CommandError> {
 }
 
 #[test]
-fn land_and_water_start_locked_for_movement_but_stamps_do_not() {
+fn every_new_object_starts_unpinned_and_can_be_moved() {
     let (mut map, layer) = map_with_layer();
     let (land, lake, stamp) = (Id::new(), Id::new(), Id::new());
     map.execute(&Command::CreateLandmass {
@@ -72,12 +72,8 @@ fn land_and_water_start_locked_for_movement_but_stamps_do_not() {
         stamp: Box::new(Stamp::default()),
     })
     .unwrap();
-    assert!(move_locked(&map, land) && move_locked(&map, lake));
-    assert!(!move_locked(&map, stamp));
-    assert_eq!(
-        translate(&mut map, land),
-        Err(CommandError::MoveLocked(land))
-    );
+    assert!(!move_locked(&map, land) && !move_locked(&map, lake) && !move_locked(&map, stamp));
+    translate(&mut map, land).unwrap();
 }
 
 #[test]
@@ -97,6 +93,15 @@ fn a_move_locked_object_can_still_be_edited_and_unlocking_allows_the_move() {
         name: "Isle".into(),
     })
     .unwrap();
+    map.execute(&Command::SetMoveLocked {
+        id: land,
+        locked: true,
+    })
+    .unwrap();
+    assert_eq!(
+        translate(&mut map, land),
+        Err(CommandError::MoveLocked(land))
+    );
     let mut history = History::default();
     history
         .execute_step(
@@ -133,8 +138,8 @@ fn a_linked_move_locked_object_blocks_the_whole_set() {
     })
     .unwrap();
     map.execute(&Command::SetMoveLocked {
-        id: a,
-        locked: false,
+        id: b,
+        locked: true,
     })
     .unwrap();
     assert_eq!(translate(&mut map, a), Err(CommandError::MoveLocked(b)));

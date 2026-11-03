@@ -319,6 +319,13 @@ mod tests {
     fn dragging_a_move_locked_object_leaves_it_in_place() {
         let (mut editor, view, mut state) = with_land();
         select_tool(&mut editor, &view, &mut state, &click(150.0, 125.0));
+        for id in editor.selection().to_vec() {
+            assert!(
+                editor
+                    .run(Command::SetMoveLocked { id, locked: true })
+                    .is_ok()
+            );
+        }
         let start = Bounds::of_selection(&mut editor).map(|b| b.min);
         select_tool(&mut editor, &view, &mut state, &press(150.0, 125.0));
         select_tool(&mut editor, &view, &mut state, &drag_to(170.0, 145.0));

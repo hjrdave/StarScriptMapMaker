@@ -137,13 +137,12 @@ pub struct Object {
 }
 
 impl Object {
-    /// An unnamed, unlocked Object of `kind` that belongs to the Canvas. It starts locked for
-    /// movement unless it is a Stamp or a Label, which are placed to be moved around.
+    /// An unnamed Object of `kind` that belongs to the Canvas. It starts unlocked and unpinned.
     pub fn new(kind: ObjectKind) -> Self {
         Self {
             name: None,
             locked: false,
-            move_locked: !matches!(kind, ObjectKind::Stamp(_) | ObjectKind::Label(_)),
+            move_locked: false,
             membership: Membership::default(),
             kind,
             link: None,

@@ -351,7 +351,6 @@ input_file: crates/core/tests/scripts/land_brush.json
                     "kind": "landmass"
                   },
                   "locked": false,
-                  "move_locked": true,
                   "name": "Landmass 001",
                   "type": "object"
                 }
@@ -762,7 +761,6 @@ input_file: crates/core/tests/scripts/land_brush.json
                     "kind": "landmass"
                   },
                   "locked": false,
-                  "move_locked": true,
                   "name": "Landmass 001",
                   "type": "object"
                 },
@@ -811,7 +809,6 @@ input_file: crates/core/tests/scripts/land_brush.json
                     "kind": "lake"
                   },
                   "locked": false,
-                  "move_locked": true,
                   "name": "Lake 001",
                   "type": "object"
                 }
@@ -854,7 +851,6 @@ input_file: crates/core/tests/scripts/land_brush.json
                     "kind": "landmass"
                   },
                   "locked": false,
-                  "move_locked": true,
                   "name": "Landmass 002",
                   "type": "object"
                 }
@@ -1508,7 +1504,6 @@ input_file: crates/core/tests/scripts/land_brush.json
                     "kind": "landmass"
                   },
                   "locked": true,
-                  "move_locked": true,
                   "name": "Landmass 001",
                   "type": "object"
                 }
@@ -1551,7 +1546,6 @@ input_file: crates/core/tests/scripts/land_brush.json
                     "kind": "landmass"
                   },
                   "locked": false,
-                  "move_locked": true,
                   "name": "Landmass 002",
                   "type": "object"
                 }
@@ -1723,7 +1717,6 @@ input_file: crates/core/tests/scripts/land_brush.json
               "kind": "landmass"
             },
             "locked": true,
-            "move_locked": true,
             "name": "Landmass 001",
             "type": "object"
           }
@@ -1766,7 +1759,6 @@ input_file: crates/core/tests/scripts/land_brush.json
               "kind": "landmass"
             },
             "locked": false,
-            "move_locked": true,
             "name": "Landmass 002",
             "type": "object"
           }
