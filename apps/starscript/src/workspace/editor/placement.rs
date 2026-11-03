@@ -346,7 +346,7 @@ impl Editor {
             return Ok(top);
         }
         let id = Id::new();
-        let name = format!("Layer {}", self.layer_count() + 1);
+        let name = self.map.next_name("Layer");
         let command = Command::CreateLayer {
             id,
             parent: None,
@@ -354,12 +354,5 @@ impl Editor {
             name,
         };
         Err(Box::new((id, command)))
-    }
-
-    pub(super) fn layer_count(&self) -> usize {
-        self.map
-            .ids()
-            .filter(|&id| self.map.node(id).is_some_and(Node::is_layer))
-            .count()
     }
 }

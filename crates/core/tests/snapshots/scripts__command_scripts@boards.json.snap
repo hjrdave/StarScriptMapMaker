@@ -333,6 +333,7 @@ input_file: crates/core/tests/scripts/boards.json
                   },
                   "locked": false,
                   "move_locked": true,
+                  "name": "Landmass 001",
                   "type": "object"
                 },
                 {
@@ -368,6 +369,7 @@ input_file: crates/core/tests/scripts/boards.json
                     "board": "00000000-0000-7000-8000-000000000021"
                   },
                   "move_locked": true,
+                  "name": "Landmass 002",
                   "type": "object"
                 }
               ],
@@ -569,6 +571,7 @@ input_file: crates/core/tests/scripts/boards.json
                     "board": "00000000-0000-0000-0000-000000000001"
                   },
                   "move_locked": true,
+                  "name": "Landmass 001",
                   "type": "object"
                 },
                 {
@@ -601,6 +604,7 @@ input_file: crates/core/tests/scripts/boards.json
                   },
                   "locked": false,
                   "move_locked": true,
+                  "name": "Landmass 002",
                   "type": "object"
                 }
               ],
@@ -799,6 +803,7 @@ input_file: crates/core/tests/scripts/boards.json
             },
             "locked": false,
             "move_locked": true,
+            "name": "Landmass 001",
             "type": "object"
           },
           {
@@ -834,6 +839,7 @@ input_file: crates/core/tests/scripts/boards.json
               "board": "00000000-0000-7000-8000-000000000021"
             },
             "move_locked": true,
+            "name": "Landmass 002",
             "type": "object"
           }
         ],

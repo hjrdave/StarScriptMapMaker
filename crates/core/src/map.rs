@@ -697,6 +697,24 @@ impl Map {
         None
     }
 
+    /// The next free number for names that read `<prefix> 001`, `<prefix> 002`: one above the
+    /// highest in the Map now, or 1. Layers and Objects are counted together, so a number is not
+    /// reused while the Map holds it.
+    pub fn next_number(&self, prefix: &str) -> u32 {
+        self.ids()
+            .filter_map(|id| match self.node(id)? {
+                Node::Layer(layer) => numbered_suffix(&layer.name, prefix),
+                Node::Object(object) => numbered_suffix(object.name.as_deref()?, prefix),
+            })
+            .max()
+            .map_or(1, |highest| highest + 1)
+    }
+
+    /// `<prefix> NNN` with the next free number, such as "Stamp 004".
+    pub fn next_name(&self, prefix: &str) -> String {
+        numbered_name(prefix, self.next_number(prefix))
+    }
+
     /// `id` is locked itself or through a Layer above it.
     pub fn is_locked(&self, id: Id) -> bool {
         std::iter::successors(Some(id), |&n| self.parent(n))
@@ -881,4 +899,18 @@ pub enum InvariantError {
     /// The primary board is not one of the boards.
     #[error("the primary board {0} does not exist")]
     NoPrimaryBoard(Id),
+}
+
+/// `<prefix> NNN`: the prefix, a space and the number at least three digits wide.
+pub(crate) fn numbered_name(prefix: &str, number: u32) -> String {
+    format!("{prefix} {number:03}")
+}
+
+/// The number in a name that reads `<prefix> <digits>`, if it does.
+fn numbered_suffix(name: &str, prefix: &str) -> Option<u32> {
+    let digits = name.strip_prefix(prefix)?.strip_prefix(' ')?;
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
 }

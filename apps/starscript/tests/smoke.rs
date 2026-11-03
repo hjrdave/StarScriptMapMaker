@@ -42,7 +42,7 @@ fn launches_and_creates_a_layer() {
     let map = &harness.state().editor().map();
     assert_eq!(map.children(None).len(), 5);
     // The new Layer shows in the tree (and in the Properties breadcrumb) and is selected.
-    assert!(harness.query_all_by_label("Layer 5").next().is_some());
+    assert!(harness.query_all_by_label("Layer 001").next().is_some());
     assert_eq!(
         harness.state().editor().selection(),
         &map.children(None)[4..]
@@ -107,7 +107,7 @@ fn a_locked_layer_refuses_edits_with_a_visible_message() {
     let mut harness = app();
     common::new_layer(&mut harness);
     // Lock and eye show on hover; the Layers panel lists the new, topmost Layer first.
-    layers_row(&harness, "Layer 5").hover();
+    layers_row(&harness, "Layer 001").hover();
     harness.run();
     harness.query_all_by_label("Lock").next().unwrap().click();
     harness.run();
@@ -121,12 +121,12 @@ fn a_locked_layer_refuses_edits_with_a_visible_message() {
     assert!(harness.state().editor().map().node(layer).unwrap().locked());
 
     // The hide toggle is refused, and the reason shows as a toast.
-    layers_row(&harness, "Layer 5").hover();
+    layers_row(&harness, "Layer 001").hover();
     harness.run();
     harness.query_all_by_label("Hide").next().unwrap().click();
     harness.run();
     let editor = harness.state().editor();
-    let message = "“Layer 5” is locked";
+    let message = "“Layer 001” is locked";
     assert_eq!(editor.notice().map(|n| n.text.as_str()), Some(message));
     harness.get_by_label(&format!("Error: {message}"));
     assert!(matches!(
@@ -215,7 +215,7 @@ fn save_as_then_open_round_trips_the_map() {
     assert_eq!(harness.state().editor().map().view(), edited_view);
     assert!(harness.state().editor().can_undo());
     assert_ne!(edited_view, saved_view);
-    assert!(harness.query_all_by_label("Layer 5").next().is_some());
+    assert!(harness.query_all_by_label("Layer 001").next().is_some());
     assert_eq!(harness.state().recent_files(), std::slice::from_ref(&saved));
     // Undo the extra edit so the Ctrl+S below leaves the file with one more Layer.
     common::undo(&mut harness);

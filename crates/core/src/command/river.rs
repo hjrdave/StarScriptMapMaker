@@ -10,6 +10,7 @@ use crate::river::{River, RiverPoint};
 
 use super::CommandError;
 use super::check::{existing, layer, set, unlocked};
+use super::object::default_name;
 
 pub(super) fn create_river(
     map: &Map,
@@ -29,7 +30,11 @@ pub(super) fn create_river(
         index: index.unwrap_or(map.children(Some(parent)).len()),
         subtree: Subtree {
             id,
-            node: Node::Object(Object::new(ObjectKind::River(Box::new(river.clone())))),
+            node: Node::Object({
+                let mut object = Object::new(ObjectKind::River(Box::new(river.clone())));
+                object.name = default_name(map, &object.kind);
+                object
+            }),
             children: Vec::new(),
         },
     }])

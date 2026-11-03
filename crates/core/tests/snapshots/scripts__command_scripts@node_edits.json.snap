@@ -209,6 +209,7 @@ input_file: crates/core/tests/scripts/node_edits.json
                   },
                   "locked": false,
                   "move_locked": true,
+                  "name": "Landmass 001",
                   "type": "object"
                 }
               ],
@@ -397,6 +398,7 @@ input_file: crates/core/tests/scripts/node_edits.json
                   },
                   "locked": false,
                   "move_locked": true,
+                  "name": "Landmass 001",
                   "type": "object"
                 }
               ],
@@ -718,6 +720,7 @@ input_file: crates/core/tests/scripts/node_edits.json
                   },
                   "locked": true,
                   "move_locked": true,
+                  "name": "Landmass 001",
                   "type": "object"
                 },
                 {
@@ -750,6 +753,7 @@ input_file: crates/core/tests/scripts/node_edits.json
                   },
                   "locked": false,
                   "move_locked": true,
+                  "name": "Lake 001",
                   "type": "object"
                 }
               ],
@@ -901,6 +905,7 @@ input_file: crates/core/tests/scripts/node_edits.json
             },
             "locked": true,
             "move_locked": true,
+            "name": "Landmass 001",
             "type": "object"
           },
           {
@@ -933,6 +938,7 @@ input_file: crates/core/tests/scripts/node_edits.json
             },
             "locked": false,
             "move_locked": true,
+            "name": "Lake 001",
             "type": "object"
           }
         ],

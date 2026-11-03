@@ -8,7 +8,9 @@ use crate::node::{Node, Object, ObjectKind, Stamp};
 use crate::op::{Op, Property};
 
 use super::check::{existing, layer, set, unlocked};
+use super::object::default_name;
 use super::{CommandError, PlacedStamp};
+use crate::map::numbered_name;
 
 pub(super) fn create_stamp(
     map: &Map,
@@ -28,7 +30,11 @@ pub(super) fn create_stamp(
         index: index.unwrap_or(map.children(Some(parent)).len()),
         subtree: Subtree {
             id,
-            node: Node::Object(Object::new(ObjectKind::Stamp(stamp.clone()))),
+            node: Node::Object({
+                let mut object = Object::new(ObjectKind::Stamp(stamp.clone()));
+                object.name = default_name(map, &object.kind);
+                object
+            }),
             children: Vec::new(),
         },
     }])
@@ -55,6 +61,8 @@ pub(super) fn place_stamps(
     layer(map, parent)?;
     unlocked(map, parent)?;
     let start = map.children(Some(parent)).len();
+    // Numbered one after another from the next free number.
+    let first = map.next_number("Stamp");
     let mut seen = HashSet::new();
     let mut ops = Vec::with_capacity(stamps.len());
     for (offset, placed) in stamps.iter().enumerate() {
@@ -67,7 +75,11 @@ pub(super) fn place_stamps(
             index: start + offset,
             subtree: Subtree {
                 id: placed.id,
-                node: Node::Object(Object::new(ObjectKind::Stamp(placed.stamp.clone()))),
+                node: Node::Object({
+                    let mut object = Object::new(ObjectKind::Stamp(placed.stamp.clone()));
+                    object.name = Some(numbered_name("Stamp", first + offset as u32));
+                    object
+                }),
                 children: Vec::new(),
             },
         });
