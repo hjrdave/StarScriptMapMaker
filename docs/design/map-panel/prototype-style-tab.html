@@ -67,6 +67,36 @@
   .debug{margin-top:14px;font:11px/1.4 monospace;white-space:pre-wrap;background:#0b0c0f;border:1px solid var(--line);border-radius:6px;padding:8px;color:#9a9}
   .switcher{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#f1ead2;color:#111;border-radius:999px;padding:6px 10px;display:flex;gap:12px;align-items:center;box-shadow:0 6px 20px #000c;z-index:20;font-weight:600;max-width:calc(100vw - 32px)}
   .switcher button{background:#111;color:#f1ead2;border:0;border-radius:50%;width:28px;height:28px;cursor:pointer;flex:none}
+
+  /* ---- App tokens (apps/starscript/src/chrome/theme.rs). 1 egui point = 1 CSS px here. ----
+     Body 12, caption 11, heading 13, title 15; field height 22; label column 80; gutter 8;
+     radius field 4, button 6; item spacing 8 x 6. Colours are the DARK palette. */
+  :root{--bg:#14161A;--panel:#1B1E23;--line:#272B32;--text:#B4AE9F;--hi:#ECE6D8;--dim:#9D9788;--accent:#D4A84A;--sel:#3A311C;--field:#111317;--btn:#262A31;--lw:80px}
+  body{font-size:12px}
+  .head{height:34px;padding:0 8px;gap:6px;font-size:15px}
+  .head svg,.ico svg{width:16px;height:16px}
+  .tabs{height:30px;margin:0;padding:0}
+  .tabs div{padding:0;line-height:29px;font-size:13px}
+  h2{font-size:13px;font-weight:700;margin:6px 8px 0;padding-bottom:0;border-bottom:0;line-height:16px;position:relative}
+  h2::after{content:"";display:block;height:1px;background:var(--line);margin:6px 0 0}
+  h3{font-size:11px;letter-spacing:0;text-transform:none;font-weight:400;color:var(--dim);margin:8px 8px 4px}
+  .grid{display:flex;flex-wrap:wrap;gap:8px;margin:0 8px}
+  .sw{width:84px;height:48px;border-radius:6px;padding:0 6px 6px;font-size:11px;border-width:1px}
+  .sw.on{border-width:2px;box-shadow:none;padding:0 5px 5px}
+  .rows{margin:0 8px;gap:6px}
+  .row{--lw:80px;grid-template-columns:80px minmax(0,1fr);gap:8px}
+  .row>label{font-size:12px;opacity:1}
+  .field{height:22px;border-radius:4px;font-size:11px;padding:0 6px}
+  .field .chip{width:44px;height:18px;border-radius:3px}
+  .dice{width:24px;height:22px;border-radius:6px}
+  .dice svg{width:16px;height:16px}
+  .panel{padding-bottom:12px;border-radius:0;min-height:600px}
+  .sec .body{padding:2px 8px 10px}
+  .rows+h2{margin-top:14px}
+  /* The app's swatch: a 44 x 22 chip with a 1 px outline and the hex as 11 pt text beside it, no field box. */
+  .field.cs{background:none;border:0;padding:0;height:22px;gap:6px;font-family:Inter,system-ui,sans-serif;color:var(--text)}
+  .field.cs .chip{width:44px;height:22px;border-radius:3px;border:1px solid var(--line);flex:none}
+  .field.cs input[data-h]{font-size:11px;letter-spacing:0;text-transform:uppercase}
   :focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 </style>
 </head>
@@ -101,7 +131,7 @@ const log=[];
 const note=m=>{log.unshift(m);if(log.length>6)log.pop();};
 
 const num=(k,dec,unit)=>`<div class="field"><input aria-label="${k}" data-k="${k}" data-dec="${dec}" value="${(+S[k]).toFixed(dec)}" inputmode="decimal">${unit?`<span class="u">${unit}</span>`:''}</div>`;
-const col=k=>`<div class="field"><span class="chip" style="background:${S[k]}"><input type="color" aria-label="${k}" data-c="${k}" value="${S[k].toLowerCase()}"></span><input aria-label="${k} hex" data-h="${k}" value="${S[k].toUpperCase()}" maxlength="7"></div>`;
+const col=k=>`<div class="field cs"><span class="chip" style="background:${S[k]}"><input type="color" aria-label="${k}" data-c="${k}" value="${S[k].toLowerCase()}"></span><input aria-label="${k} hex" data-h="${k}" value="${S[k].toUpperCase()}" maxlength="7"></div>`;
 const row=(l,f)=>`<div class="row"><label>${l}</label>${f}</div>`;
 const swatches=()=>`<div class="grid">${TEMPLATES.map(t=>`<div class="sw ${t.light?'light':''} ${S.template===t.n?'on':''}" role="button" tabindex="0" data-t="${t.n}" style="background:${t.c}">${t.n}</div>`).join('')}</div>`;
 const seed=()=>`<div class="seedrow"><div class="field" style="flex:1"><input aria-label="seed" data-k="seed" data-dec="0" value="${S.seed}"></div><button class="dice" id="dice" title="Re-roll seed" aria-label="Re-roll seed">${SVG.dice}</button></div>`;
@@ -143,7 +173,7 @@ function render(){
   const p=document.getElementById('panel');
   const keep=document.activeElement&&(document.activeElement.dataset.k||document.activeElement.dataset.h);
   p.innerHTML=({A:viewA,B:viewB,C:viewC})[variant]();
-  p.style.setProperty('--lw',(parseInt(p.style.width)<300?'92px':'112px'));
+  
   document.getElementById('vlabel').textContent=`${variant} (${VARIANTS[variant]})`;
   document.getElementById('notes').innerHTML=`<p>${NOTES[variant]}</p><ul><li>Click a template to take its look.</li><li>Edit any field; Enter or click away applies it.</li><li>Drag the width slider to check a narrow panel.</li></ul>`;
   document.getElementById('debug').textContent='state '+JSON.stringify(S)+'\n\nlast changes:\n'+log.join('\n');
