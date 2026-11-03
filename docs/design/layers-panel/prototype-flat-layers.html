@@ -14,7 +14,7 @@
   .wrap{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
   .panel{width:300px;min-height:520px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 14px;user-select:none}
   .head{display:flex;justify-content:space-between;align-items:center;font-size:19px;color:var(--hi);padding-bottom:10px;border-bottom:1px solid var(--line)}
-  .head button{background:none;border:0;color:var(--hi);font-size:22px;cursor:pointer}
+  .head button{background:none;border:0;color:var(--hi);cursor:pointer}.head svg{width:20px;height:20px}
   .props{display:flex;gap:6px;padding:10px 0;border-bottom:1px solid var(--line);align-items:center;flex-wrap:wrap}
   .props .op{width:84px;height:34px;background:#171a1f;border:1px solid var(--line);border-radius:6px;color:var(--dim);padding:0 8px;display:flex;align-items:center;justify-content:space-between;font-family:monospace}
   .props .op.off{opacity:.4}
@@ -28,12 +28,12 @@
   .row.drag{opacity:.4}
   .row.dropline::before{content:"";position:absolute;left:0;right:0;top:-2px;height:2px;background:var(--accent)}
   .row .chev{width:18px;text-align:center;color:var(--dim);cursor:pointer}
-  .row .ico{width:22px;text-align:center;margin-right:6px;font-size:15px;color:var(--text)}
+  .row .ico{width:22px;text-align:center;margin-right:6px;color:var(--text)}
   .row.sel .ico{color:var(--accent)}
   .row .name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .row .name input{background:#111;border:1px solid var(--accent);color:var(--hi);width:100%;font:inherit}
   .row .st{display:flex;gap:6px;color:var(--dim);font-size:13px}
-  .row .st span{min-width:14px;text-align:center}
+  .row .st span{min-width:14px;text-align:center;display:inline-flex}
   .row.hidden .name,.row.hidden .ico{opacity:.4}
   /* variant B: state shown as tint/dimming and a left stripe instead of glyphs */
   .row .stripe{position:absolute;left:-1px;top:4px;bottom:4px;width:3px;border-radius:2px}
@@ -68,7 +68,9 @@
 
 <script>
 // ---------- model (flat list; only a Group has children) ----------
-const KIND = {layer:'▤', group:'▣', landmass:'⛰', stamp:'✦', label:'T', lake:'◌', river:'≈'};
+// Icons copied from apps/starscript/icons (the app's own SVGs), recoloured with currentColor.
+const SVG = {"layer": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3\"/></svg>", "layer-group": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3M2 11l6 3 6-3\"/></svg>", "landmass": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 11.2 6.2 3.2 8.4 9.2\"/><path d=\"M8 7.8 9.6 6.4 12.6 11\"/><rect x=\"2\" y=\"12.3\" width=\"12\" height=\"2\" rx=\"1\" fill=\"currentColor\" stroke=\"none\"/></svg>", "stamp": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M6.5 8.5 7 4.5a1 1 0 0 1 2 0l.5 4M4.5 8.5h7a1 1 0 0 1 1 1V11h-9V9.5a1 1 0 0 1 1-1ZM2.5 13.5h11\"/></svg>", "label-kind": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 4h8M8 4v8.5\"/></svg>", "lake": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M9.59 3.22C10 3.15 10.46 3.31 10.89 3.4C11.33 3.48 11.75 3.64 12.19 3.72C12.62 3.81 13.11 3.74 13.5 3.92C13.88 4.1 14.44 4.44 14.5 4.81C14.56 5.17 14.17 5.73 13.88 6.09C13.59 6.45 13.03 6.57 12.78 6.95C12.53 7.34 12.4 7.9 12.39 8.4C12.37 8.9 12.69 9.43 12.7 9.94C12.7 10.45 12.64 11.05 12.42 11.45C12.19 11.84 11.73 12.12 11.34 12.32C10.94 12.52 10.48 12.59 10.05 12.67C9.62 12.74 9.17 12.77 8.73 12.78C8.29 12.8 7.85 12.78 7.41 12.74C6.97 12.7 6.54 12.62 6.1 12.52C5.67 12.41 5.25 12.26 4.83 12.11C4.41 11.96 3.98 11.82 3.57 11.63C3.15 11.45 2.69 11.32 2.35 11.02C2.01 10.73 1.6 10.3 1.5 9.86C1.4 9.42 1.56 8.8 1.77 8.38C1.98 7.96 2.4 7.63 2.77 7.34C3.13 7.06 3.54 6.83 3.95 6.66C4.37 6.48 4.81 6.42 5.24 6.31C5.67 6.2 6.15 6.21 6.53 6C6.92 5.78 7.25 5.4 7.56 5.03C7.86 4.67 8.05 4.11 8.39 3.8C8.73 3.5 9.17 3.29 9.59 3.22Z\"/><path stroke-width=\"1.25\" d=\"M4.4 7.6c.7-.6 1.4.6 2.1 0s1.4.6 2.1 0\"/><path stroke-width=\"1.25\" d=\"M7 10c.7-.6 1.4.6 2.1 0s1.4.6 2.1 0\"/></svg>", "river": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M7.4 1.5C11.6 4.6 2.4 8.4 5.2 14.5M8.6 1.5c5.2 3.1-3.9 7.4 1.8 13\"/></svg>", "visible": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M1.5 8C3 5 5.3 3.5 8 3.5S13 5 14.5 8C13 11 10.7 12.5 8 12.5S3 11 1.5 8ZM9.5 8a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z\"/></svg>", "hidden": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M1.5 8C3 5 5.3 3.5 8 3.5S13 5 14.5 8C13 11 10.7 12.5 8 12.5S3 11 1.5 8ZM2.5 2.5l11 11\"/></svg>", "lock": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 7.5h8v6H4ZM5.5 7.5v-2a2.5 2.5 0 0 1 5 0v2\"/></svg>", "lock-dashed": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-dasharray=\"1.6 1.6\"><path d=\"M4 7.5h8v6H4ZM5.5 7.5v-2a2.5 2.5 0 0 1 5 0v2\"/></svg>", "lock-filled": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5.5 7.5v-2a2.5 2.5 0 0 1 5 0v2\"/><rect x=\"4\" y=\"7.5\" width=\"8\" height=\"6\" rx=\"1\" fill=\"currentColor\"/></svg>", "pin": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M6 2.5h4l-.5 4 2 2.5h-7l2-2.5ZM8 9v4.5\"/></svg>", "pin-filled": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M6 2.5h4l-.5 4 2 2.5h-7l2-2.5Z\" fill=\"currentColor\"/><path d=\"M8 9v4.5\"/></svg>", "pin-dashed": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-dasharray=\"1.6 1.6\"><path d=\"M6 2.5h4l-.5 4 2 2.5h-7l2-2.5ZM8 9v4.5\"/></svg>", "depth-sort": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M5 3v10M3 11l2 2 2-2M11 13V3M9 5l2-2 2 2\"/></svg>", "chevron-down": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4.5 6.5 8 10l3.5-3.5\"/></svg>", "chevron-right": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M6.5 4.5 10 8l-3.5 3.5\"/></svg>", "add": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" style=\"vertical-align:middle\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 3v10M3 8h10\"/></svg>"};
+const KIND = {layer:SVG['layer'], group:SVG['layer-group'], landmass:SVG['landmass'], stamp:SVG['stamp'], label:SVG['label-kind'], lake:SVG['lake'], river:SVG['river']};
 let nextId = 20;
 let nodes = [
   {id:1,kind:'label',name:'Region names',parent:null},
@@ -131,21 +133,21 @@ function rename(id){ const n=byId(id); n.renaming=true; render(); const i=docume
 // ---------- rendering ----------
 function stateGlyphs(n){
   const s=st(n), g=[];
-  if(!s.visible) g.push(['👁̸','Hidden','h']);
-  else if(s.hiddenBy) g.push(['👁̸','Hidden by '+s.hiddenBy.name,'hd']);
-  if(s.locked) g.push(['🔒','Locked','l']); else if(s.lockedBy) g.push(['🔒','Locked by '+s.lockedBy.name,'ld']);
-  if(s.pinned) g.push(['📌','Pinned to Canvas','p']); else if(s.pinnedBy) g.push(['📌','Pinned by '+s.pinnedBy.name,'pd']);
-  if(n.depthSort) g.push(['⇅','Depth sort','d']);
+  if(!s.visible) g.push([SVG['hidden'],'Hidden','h']);
+  else if(s.hiddenBy) g.push([SVG['hidden'],'Hidden by '+s.hiddenBy.name,'hd']);
+  if(s.locked) g.push([SVG['lock-filled'],'Locked','l']); else if(s.lockedBy) g.push([SVG['lock-dashed'],'Locked by '+s.lockedBy.name,'ld']);
+  if(s.pinned) g.push([SVG['pin-filled'],'Pinned to Canvas','p']); else if(s.pinnedBy) g.push([SVG['pin-dashed'],'Pinned by '+s.pinnedBy.name,'pd']);
+  if(n.depthSort) g.push([SVG['depth-sort'],'Depth sort','d']);
   return g;
 }
 function rowHTML({n,depth}){
   const s=st(n), cls=['row']; if(sel.has(n.id))cls.push('sel'); if(!s.visible||s.hiddenBy)cls.push('hidden');
   const pad=`padding-left:${6+depth*16}px`;
-  const chev=isGroup(n)?`<span class="chev" data-chev="${n.id}">${n.open?'⌄':'›'}</span>`:`<span class="chev"></span>`;
+  const chev=isGroup(n)?`<span class="chev" data-chev="${n.id}">${n.open?SVG['chevron-down']:SVG['chevron-right']}</span>`:`<span class="chev"></span>`;
   const name=n.renaming?`<input value="${n.name}" data-rn="${n.id}">`:n.name;
   let right='', extra='';
   if(variant==='A'){
-    right=`<span class="st">${stateGlyphs(n).map(([c,t,k])=>`<span title="${t}" style="${k.endsWith('d')?'opacity:.45':''}">${c}</span>`).join('')}</span>`;
+    right=`<span class="st">${stateGlyphs(n).map(([c,t,k])=>`<span title="${t}" >${c}</span>`).join('')}</span>`;
   } else if(variant==='B'){
     const g=stateGlyphs(n);
     const col=s.locked?'#6aa0e8':s.pinned?'#e8c15a':(s.lockedBy||s.pinnedBy)?'#555':'transparent';
@@ -154,26 +156,26 @@ function rowHTML({n,depth}){
   } else {
     const s2=st(n);
     right=`<span class="gutter">
-      <span class="${s2.pinned||s2.pinnedBy?'on':''}" title="Pinned">📌</span>
-      <span class="${s2.locked||s2.lockedBy?'on':''}" title="Locked">🔒</span>
-      <span class="${!s2.visible||s2.hiddenBy?'on':''}" title="Hidden">👁̸</span></span>`;
+      <span class="${s2.pinned||s2.pinnedBy?'on':''}" title="Pinned">${SVG[s2.pinned?'pin-filled':'pin-dashed']}</span>
+      <span class="${s2.locked||s2.lockedBy?'on':''}" title="Locked">${SVG[s2.locked?'lock-filled':'lock-dashed']}</span>
+      <span class="${!s2.visible||s2.hiddenBy?'on':''}" title="Hidden">${SVG['hidden']}</span></span>`;
   }
   return `<div class="${cls.join(' ')}" style="${pad}" draggable="true" data-id="${n.id}">${extra}${chev}<span class="ico">${KIND[n.kind]}</span><span class="name">${name}</span>${right}</div>`;
 }
 function topBar(){
   const ids=[...sel], has=ids.length>0;
-  const mk=(prop,icon,label)=>{
+  const mk=(prop,icon,label)=>{ if(prop==='visible'&&has&&!ids.every(id=>st(byId(id)).visible)) icon=SVG['hidden'];
     const vals=ids.map(id=>st(byId(id))[prop]);
     const all=has&&vals.every(Boolean), some=vals.some(Boolean);
     return `<button class="tb ${all?'on':''} ${some&&!all?'mixed on':''}" data-tb="${prop}" ${has?'':'disabled'} title="${label}">${icon}</button>`;
   };
   const opv=has? (ids.length===1?(byId(ids[0]).opacity??100):'—'):'—';
   return `<div class="props"><div class="op ${has?'':'off'}">O <span>${opv}</span> <span>%</span></div>
-    ${mk('visible','👁','Visible')}${mk('locked','🔒','Lock')}${mk('pinned','📌','Pin to Canvas')}</div>`;
+    ${mk('visible',SVG['visible'],'Visible')}${mk('locked',SVG['lock'],'Lock')}${mk('pinned',SVG['pin'],'Pin to Canvas')}</div>`;
 }
 function render(){
   document.getElementById('panel').innerHTML=
-    `<div class="head">Layers <button id="add" title="New layer">+</button></div>${topBar()}<div class="rows">${visibleRows().map(rowHTML).join('')}</div>`;
+    `<div class="head">Layers <button id="add" title="New layer">${SVG['add']}</button></div>${topBar()}<div class="rows">${visibleRows().map(rowHTML).join('')}</div>`;
   document.getElementById('vlabel').textContent=`${variant} (${VARIANTS[variant]})`;
   document.getElementById('notes').innerHTML=`<h3>Flat Layers panel</h3>
     <ul><li>No Layer categories. Every row is a Layer or Object; kind icon kept.</li>
