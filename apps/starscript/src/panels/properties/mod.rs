@@ -109,12 +109,22 @@ impl PropertiesPanel {
     }
 
     /// The panel's header: the active tool's icon and name with its mode chip, while the tool
-    /// has settings or nothing is selected; otherwise "Properties" over the selection.
+    /// has settings, is not Select or nothing is selected; with Select and a selection, the
+    /// selected Node's name (or the summary of several) beside the Properties icon.
     fn header(&self, ui: &mut egui::Ui, editor: &Editor) {
         let tool = editor.active_tool;
         let nothing = editor.selection().is_empty() && editor.selected_board().is_none();
-        if !(crate::tool_section::has_settings(tool) || nothing) {
-            crate::shell::panel_header(ui, "Properties", |_| {});
+        if !(crate::tool_section::has_settings(tool)
+            || nothing
+            || tool != crate::tools::ToolId::Select)
+        {
+            let title = match editor.selection() {
+                [] => "Properties".to_owned(),
+                [id] => node_name(editor.map(), *id),
+                many => selection_summary(editor.map(), many),
+            };
+            let tint = theme::palette(ui.ctx()).text_primary;
+            crate::shell::icon_header(ui, Icon::Shape, tint, &title, |_| {});
             return;
         }
         let alt = ui.input(|i| i.modifiers.alt);
@@ -168,7 +178,9 @@ impl PropertiesPanel {
                         ui.add_space(theme::SPACING[2]);
                     }
                     crate::tool_section::tool_sections(ui, editor);
-                } else {
+                } else if tool == crate::tools::ToolId::Select || editor.selection().is_empty() {
+                    // Other tools hide a selection but keep it for the way back; with none,
+                    // the hint or a selected board still shows.
                     self.selection(ui, editor);
                 }
             });
