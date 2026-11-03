@@ -14,7 +14,7 @@
   .wrap{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;justify-content:center}
   .panel{width:300px;min-height:520px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 14px;user-select:none}
   .head{display:flex;justify-content:space-between;align-items:center;font-size:19px;color:var(--hi);padding-bottom:10px;border-bottom:1px solid var(--line)}
-  .head button{background:none;border:0;color:var(--hi);cursor:pointer}.head svg{width:20px;height:20px}
+  .head button{background:none;border:0;color:var(--hi);cursor:pointer}.head svg{width:20px;height:20px}.head .title{display:flex;align-items:center;gap:8px}
   .props{display:flex;gap:6px;padding:10px 0;border-bottom:1px solid var(--line);align-items:center;flex-wrap:wrap}
   .props .op{width:84px;height:34px;background:#171a1f;border:1px solid var(--line);border-radius:6px;color:var(--dim);padding:0 8px;display:flex;align-items:center;justify-content:space-between;font-family:monospace}
   .props .op.off{opacity:.4}
@@ -176,7 +176,7 @@ function topBar(){
 }
 function render(){
   document.getElementById('panel').innerHTML=
-    `<div class="head">Layers <button id="add" title="New layer">${SVG['add']}</button></div>${topBar()}<div class="rows">${visibleRows().map(rowHTML).join('')}</div>`;
+    `<div class="head"><span class="title">${SVG['layer-group']}Layers</span> <button id="add" title="New layer">${SVG['add']}</button></div>${topBar()}<div class="rows">${visibleRows().map(rowHTML).join('')}</div>`;
   document.getElementById('vlabel').textContent=`${variant} (${VARIANTS[variant]})`;
   document.getElementById('notes').innerHTML=`<h3>Flat Layers panel</h3>
     <ul><li>No Layer categories. Every row is a Layer or Object; kind icon kept.</li>
