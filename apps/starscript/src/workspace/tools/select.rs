@@ -225,9 +225,24 @@ pub(crate) fn selection_knobs(editor: &Editor) -> handles::Knobs {
         [id] => editor.map().resolved_label(*id).map(|label| label.arch),
         _ => None,
     };
-    handles::Knobs {
-        rotate: selection_has_label(editor),
-        arch,
+    // Pinned and Locked boxes are plain outlines. Pin keeps settings editable, so a Pinned
+    // Label keeps its arch knob; a Locked one has no knobs.
+    match selection_mode(editor) {
+        SelectionMode::Neither => handles::Knobs {
+            rotate: selection_has_label(editor),
+            arch,
+            plain: false,
+        },
+        SelectionMode::Pinned => handles::Knobs {
+            rotate: false,
+            arch,
+            plain: true,
+        },
+        SelectionMode::Locked => handles::Knobs {
+            rotate: false,
+            arch: None,
+            plain: true,
+        },
     }
 }
 
@@ -532,6 +547,48 @@ mod tests {
         assert_eq!(selection_mode(&editor), SelectionMode::Pinned);
         editor.select(Vec::new());
         assert_eq!(selection_mode(&editor), SelectionMode::Neither);
+    }
+
+    #[test]
+    fn pinned_and_locked_selections_hide_their_handles() {
+        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+        paint_stroke(&mut editor, &view, &mut state, false);
+        editor.set_selection_pinned(false);
+        assert!(!selection_knobs(&editor).plain);
+        editor.set_selection_pinned(true);
+        assert!(selection_knobs(&editor).plain);
+        editor.set_selection_locked(true);
+        let locked = selection_knobs(&editor);
+        assert!(locked.plain && !locked.rotate && locked.arch.is_none());
+
+        // A Label's rotate knob goes when Pinned, its arch knob stays; Locked has neither.
+        let (mut editor, _, _, id) = with_label();
+        editor.select(vec![id]);
+        let free = selection_knobs(&editor);
+        assert!(!free.plain && free.rotate && free.arch.is_some());
+        editor.set_selection_pinned(true);
+        let pinned = selection_knobs(&editor);
+        assert!(pinned.plain && !pinned.rotate && pinned.arch.is_some());
+        editor.set_selection_locked(true);
+        let locked = selection_knobs(&editor);
+        assert!(locked.plain && !locked.rotate && locked.arch.is_none());
+    }
+
+    #[test]
+    fn a_hidden_handle_does_not_resize_a_pinned_selection() {
+        let (mut editor, view, mut state) = with_land();
+        select_tool(&mut editor, &view, &mut state, &click(150.0, 125.0));
+        assert_eq!(selection_mode(&editor), SelectionMode::Pinned);
+        let Some(bounds) = Bounds::of_selection(&mut editor) else {
+            panic!("no bounds");
+        };
+        let (x, y) = (bounds.max[0] as f32, bounds.max[1] as f32);
+        let ids = editor.selection().to_vec();
+        select_tool(&mut editor, &view, &mut state, &press(x, y));
+        select_tool(&mut editor, &view, &mut state, &drag_to(x + 40.0, y + 40.0));
+        select_tool(&mut editor, &view, &mut state, &release(x + 40.0, y + 40.0));
+        let after = Bounds::of_ids(&mut editor, &ids).map(|b| (b.min, b.max));
+        assert_eq!(after, Some((bounds.min, bounds.max)), "not resized");
     }
 
     #[test]
