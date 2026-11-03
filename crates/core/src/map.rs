@@ -697,6 +697,21 @@ impl Map {
         None
     }
 
+    /// `id` is pinned to the Canvas: an Object that is itself, or a node inside a pinned Layer.
+    pub fn is_pinned(&self, id: Id) -> bool {
+        std::iter::successors(Some(id), |&n| self.parent(n)).any(|n| match self.node(n) {
+            Some(Node::Object(object)) => object.move_locked,
+            Some(Node::Layer(layer)) => layer.pinned,
+            None => false,
+        })
+    }
+
+    /// The nearest pinned Layer above `id`, the one that makes `id` "pinned by parent".
+    pub fn pinned_ancestor(&self, id: Id) -> Option<Id> {
+        std::iter::successors(self.parent(id), |&p| self.parent(p))
+            .find(|&ancestor| matches!(self.node(ancestor), Some(Node::Layer(l)) if l.pinned))
+    }
+
     /// `id` is locked itself or through a Layer above it.
     pub fn is_locked(&self, id: Id) -> bool {
         std::iter::successors(Some(id), |&n| self.parent(n))

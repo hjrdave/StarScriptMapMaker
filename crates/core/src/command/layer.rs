@@ -92,10 +92,8 @@ pub(super) fn set_locked(map: &Map, id: Id, locked: bool) -> Result<Vec<Op>, Com
 }
 
 pub(super) fn set_move_locked(map: &Map, id: Id, locked: bool) -> Result<Vec<Op>, CommandError> {
-    match existing(map, id)? {
-        Node::Object(_) => {}
-        Node::Layer(_) => return Err(CommandError::NotAnObject(id)),
-    }
+    // An Object or a Layer: a pinned Layer pins everything inside it.
+    existing(map, id)?;
     unlocked(map, id)?;
     Ok(vec![set(id, Property::MoveLocked(locked))])
 }
