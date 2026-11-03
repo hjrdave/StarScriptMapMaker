@@ -1,8 +1,9 @@
 <!doctype html>
-<!-- PROTOTYPE (throwaway): the selection box's colour for a Layer or Object in three modes.
-       Neither   blue, as today (`palette.select`).   Locked   grey.   Pinned   six candidates, one per row.
-     Only the colour changes: stroke 1.5, white square handles with a coloured edge, as `handles::paint` draws them.
-     Use the switches to check each on each ground, in each app theme, and under colour-vision simulation. -->
+<!-- PROTOTYPE (throwaway): the selection box for a Layer or Object in three modes, with the colours chosen on #575.
+       Neither   blue, with the eight resize handles (as today).
+       Pinned    violet, a plain box with no handles: it refuses to move or transform.
+       Locked    grey, a plain box with no handles: it refuses edits.
+     One row per map ground. Use the switches for the app theme and colour-vision simulation. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -45,36 +46,25 @@
  <filter id="trit"><feColorMatrix type="matrix" values="0.95 0.05 0 0 0  0 0.433 0.567 0 0  0 0.475 0.525 0 0  0 0 0 1 0"/></filter>
 </defs></svg>
 <div class="wrap">
-  <h1>Bounding box colours for Neither, Pinned and Locked</h1>
-  <p class="lede">The selected Layer's box tells you what the Layer lets you do. Neither stays blue and Locked is grey. Each row tries a different colour for Pinned. Only the colour changes; the stroke and the handles are the same in every cell.</p>
+  <h1>Bounding box for Neither, Pinned and Locked</h1>
+  <p class="lede">The selected Layer's box tells you what the Layer lets you do. Neither is blue and keeps its resize handles. Pinned (violet) and Locked (grey) are a plain box with no handles, since neither can be resized. One row per kind of map ground.</p>
   <div class="bar" role="toolbar" aria-label="Preview settings">
-    <div class="g" data-g="ground"><span>Map ground</span><button data-v="ocean" class="on">Ocean</button><button data-v="land">Land</button><button data-v="paper">Paper</button></div>
     <div class="g" data-g="theme"><span>App theme</span><button data-v="dark" class="on">Dark</button><button data-v="light">Light</button></div>
     <div class="g" data-g="cvd"><span>Colour vision</span><button data-v="none" class="on">Normal</button><button data-v="p">Protan</button><button data-v="d">Deutan</button><button data-v="t">Tritan</button></div>
   </div>
-  <div class="head"><div>Pinned colour</div><div>Neither</div><div>Pinned</div><div>Locked</div></div>
+  <div class="head"><div>Map ground</div><div>Neither</div><div>Pinned</div><div>Locked</div></div>
   <div id="grid"></div>
 </div>
 <script>
-/* colours per scheme and theme: [neither, pinned, locked]. Dark values are the dark palette's accents
-   (apps/starscript/src/chrome/theme.rs: select, warn, danger, gold); the light ones are darkened to hold
-   up on a light ground. New colours are marked in the description. */
-const NEI={dark:'#4FA3E0',light:'#1F6FB5'},LOC={dark:'#A3A3A3',light:'#6B6B6B'};
-const PIN=[
- {id:'1',name:'Amber',d:'The palette\'s existing warn colour, so nothing new.',dark:'#F2B65A',light:'#B8741A'},
- {id:'2',name:'Orange',d:'Warmer and redder than amber. New to the palette.',dark:'#F0884A',light:'#C2561A'},
- {id:'3',name:'Violet',d:'Far from blue in hue. Check it under the Tritan simulation. New to the palette.',dark:'#B494F0',light:'#6B4FC0'},
- {id:'4',name:'Pink',d:'A colour that no Land or water uses. New to the palette.',dark:'#F06BA8',light:'#C0306F'},
- {id:'5',name:'Teal',d:'A cool colour, close in family to the blue. New to the palette.',dark:'#3CC8B4',light:'#0E8F7E'},
- {id:'6',name:'Green',d:'The palette\'s existing ok colour. Can read as "safe" and sits near the green of Stamps.',dark:'#8FD49A',light:'#2E7D3E'}
-];
-const OPTS=PIN.map(p=>({id:p.id,name:'Pinned · '+p.name,d:p.d,dark:[NEI.dark,p.dark,LOC.dark],light:[NEI.light,p.light,LOC.light]}));
-const GROUND={ocean:{bg:['#2B6A93','#357CA3'],land:'#D8C49A',lbl:'#2B2118'},land:{bg:['#D8C49A','#CDB98C'],land:'#C9B07A',lbl:'#2B2118'},paper:{bg:['#EDE6D2','#E6DEC6'],land:'#D9CDAE',lbl:'#4A3F2A'}};
-const S={ground:'ocean',theme:'dark',cvd:'none'};
+const COL={dark:['#4FA3E0','#B494F0','#A3A3A3'],light:['#1F6FB5','#6B4FC0','#6B6B6B']};
+const NAMES=['Neither','Pinned','Locked'];
+const NOTE=['Eight resize handles, as today.','No handles. Refuses to move or transform.','No handles. Refuses edits.'];
+const GROUND={ocean:{n:'Ocean',bg:['#2B6A93','#357CA3'],land:'#D8C49A',lbl:'#2B2118'},land:{n:'Land',bg:['#D8C49A','#CDB98C'],land:'#C9B07A',lbl:'#2B2118'},paper:{n:'Paper',bg:['#EDE6D2','#E6DEC6'],land:'#D9CDAE',lbl:'#4A3F2A'}};
+const S={theme:'dark',cvd:'none'};
 const lum=h=>{const c=[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)/255).map(v=>v<=.03928?v/12.92:((v+.055)/1.055)**2.4);return .2126*c[0]+.7152*c[1]+.0722*c[2];};
 const ratio=(a,b)=>{const x=lum(a),y=lum(b),hi=Math.max(x,y),lo=Math.min(x,y);return (hi+.05)/(lo+.05);};
 const LAND=[[60,50],[95,32],[140,40],[178,28],[205,62],[196,98],[160,124],[110,118],[78,132],[52,100]];
-function scene(col,ground){
+function scene(col,ground,handles){
  const g=GROUND[ground];
  const xs=LAND.map(p=>p[0]),ys=LAND.map(p=>p[1]),x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
  const h=(x,y)=>`<rect x="${x-4}" y="${y-4}" width="8" height="8" rx="1" fill="#fff" stroke="${col}" stroke-width="1"/>`;
@@ -84,16 +74,15 @@ function scene(col,ground){
  <polygon points="${LAND.map(p=>p.join(',')).join(' ')}" fill="${g.land}" stroke="#5A4628" stroke-width="1.5" stroke-linejoin="round"/>${trees}
  <text x="125" y="146" text-anchor="middle" font-family="Georgia,serif" font-size="11" fill="${g.lbl}">Landmass 001</text>
  <rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="none" stroke="${col}" stroke-width="1.5"/>
- ${[[x0,y0],[(x0+x1)/2,y0],[x1,y0],[x0,(y0+y1)/2],[x1,(y0+y1)/2],[x0,y1],[(x0+x1)/2,y1],[x1,y1]].map(p=>h(...p)).join('')}</svg>`;
+ ${handles?[[x0,y0],[(x0+x1)/2,y0],[x1,y0],[x0,(y0+y1)/2],[x1,(y0+y1)/2],[x0,y1],[(x0+x1)/2,y1],[x1,y1]].map(p=>h(...p)).join(''):''}</svg>`;
 }
 function render(){
- const bg=GROUND[S.ground].bg[0];
+ const cols=COL[S.theme];
  document.getElementById('grid').className='cvd-'+S.cvd;
- document.getElementById('grid').innerHTML=OPTS.map(o=>{
-  const cols=o[S.theme];
-  return `<div class="opt"><div><h2>${o.name}</h2><p class="d">${o.d}</p><div class="sw">${['Neither','Pinned','Locked'].map((n,i)=>`<span><i style="background:${cols[i]}"></i>${n} ${cols[i]}</span>`).join('')}</div></div>`+
-  cols.map((c,i)=>{const r=ratio(c,bg);return `<div class="cell">${scene(c,S.ground)}<div class="c">${['Neither','Pinned','Locked'][i]} · <span class="ratio ${r<3?'bad':''}">${r.toFixed(1)}:1</span></div></div>`;}).join('')+`</div>`;
- }).join('');
+ document.getElementById('grid').innerHTML=Object.entries(GROUND).map(([id,g])=>
+  `<div class="opt"><div><h2>${g.n}</h2><p class="d">${id==='ocean'?'Blue water, as in the default Map.':id==='land'?'The box over tan land.':'A pale paper ground.'}</p></div>`+
+  cols.map((c,i)=>{const r=ratio(c,g.bg[0]);return `<div class="cell">${scene(c,id,i===0)}<div class="c">${NAMES[i]} ${c} · <span class="ratio ${r<3?'bad':''}">${r.toFixed(1)}:1</span></div></div>`;}).join('')+`</div>`).join('')+
+  `<div class="opt"><div><h2>Handles</h2></div>${NOTE.map(n=>`<div class="cell"><div class="c" style="text-align:left;font-family:inherit;font-size:12px">${n}</div></div>`).join('')}</div>`;
 }
 document.querySelectorAll('.bar .g').forEach(g=>g.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
  g.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));S[g.dataset.g]=b.dataset.v;render();}));
