@@ -234,10 +234,34 @@ pub fn properties_collapse_button(ui: &mut egui::Ui, collapsed: bool) -> egui::R
     icons::icon_button_flipped(ui, Icon::CollapseDouble, label, !collapsed)
 }
 
-/// The size a rail icon is drawn at: the tool dock's, which has its own crisp atlas.
-const RAIL_ICON: f32 = icons::TOOL_GRID;
-/// The square tile around a rail icon.
-const RAIL_SLOT: f32 = RAIL_ICON + 12.0;
+/// The size a rail icon is drawn at; it has its own crisp atlas.
+const RAIL_ICON: f32 = icons::RAIL_GRID;
+/// Height of the tile around a rail icon and its caption.
+const RAIL_SLOT_HEIGHT: f32 = RAIL_ICON + 26.0;
+/// The tile: the rail less a margin each side, wide enough for the longest caption.
+const RAIL_SLOT: egui::Vec2 = egui::vec2(metrics::LAYERS_PANEL_RAIL - 8.0, RAIL_SLOT_HEIGHT);
+
+/// A rail slot's icon, near the top of the tile, and its caption centred under it, both in `tint`.
+fn paint_rail_content(
+    ui: &egui::Ui,
+    slot: egui::Rect,
+    icon: Icon,
+    caption: &str,
+    tint: egui::Color32,
+) {
+    let icon_area = egui::Rect::from_center_size(
+        egui::pos2(slot.center().x, slot.top() + 6.0 + RAIL_ICON / 2.0),
+        egui::Vec2::splat(RAIL_ICON),
+    );
+    icons::paint(ui, icon_area, icon, RAIL_ICON, tint);
+    ui.painter().text(
+        egui::pos2(slot.center().x, slot.bottom() - 5.0),
+        egui::Align2::CENTER_BOTTOM,
+        caption,
+        egui::FontId::proportional(theme::CAPTION),
+        tint,
+    );
+}
 
 /// The rounded tile behind a rail icon: filled for the open section, lighter on hover.
 fn paint_rail_tile(ui: &egui::Ui, slot: egui::Rect, open: bool, hovered: bool) {
@@ -260,8 +284,8 @@ pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<
     let palette = theme::palette(ui.ctx());
     let rect = ui.max_rect();
     let mut clicked = None;
-    let step = RAIL_SLOT + theme::SPACING[1];
-    let mut layers_y = rect.top() + metrics::PANEL_HEADER / 2.0;
+    let step = RAIL_SLOT_HEIGHT + theme::SPACING[1];
+    let mut layers_y = rect.top() + metrics::PANEL_HEADER / 2.0 + RAIL_SLOT_HEIGHT / 2.0 - 12.0;
     let mut count = 0.0;
     for section in SidebarSection::ALL
         .into_iter()
@@ -269,7 +293,7 @@ pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<
     {
         let slot = egui::Rect::from_center_size(
             egui::pos2(rect.center().x, layers_y + count * step),
-            egui::Vec2::splat(RAIL_SLOT),
+            RAIL_SLOT,
         );
         let response = ui.interact(
             slot,
@@ -286,7 +310,7 @@ pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<
         } else {
             palette.text_secondary
         };
-        icons::paint(ui, slot, section.icon(), RAIL_ICON, tint);
+        paint_rail_content(ui, slot, section.icon(), section.title(), tint);
         if response
             .on_hover_text(section.label())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -308,7 +332,7 @@ pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<
         // and sits in a column as wide as one line of text.
         let origin = egui::pos2(
             rect.center().x + galley.size().y / 2.0,
-            layers_y + RAIL_SLOT / 2.0 + theme::SPACING[3],
+            layers_y + RAIL_SLOT_HEIGHT / 2.0 + theme::SPACING[3],
         );
         let shape = egui::epaint::TextShape::new(origin, galley, palette.text_secondary)
             .with_angle(std::f32::consts::FRAC_PI_2);
@@ -326,7 +350,7 @@ pub fn properties_rail(ui: &mut egui::Ui) -> bool {
     let mut clicked = false;
     let slot = egui::Rect::from_center_size(
         egui::pos2(rect.center().x, rect.top() + metrics::PANEL_HEADER / 2.0),
-        egui::Vec2::splat(RAIL_SLOT),
+        RAIL_SLOT,
     );
     let response = ui.interact(slot, ui.id().with("properties rail"), egui::Sense::click());
     response.widget_info(|| {
@@ -338,7 +362,7 @@ pub fn properties_rail(ui: &mut egui::Ui) -> bool {
     } else {
         palette.text_secondary
     };
-    icons::paint(ui, slot, Icon::Shape, RAIL_ICON, tint);
+    paint_rail_content(ui, slot, Icon::Shape, "Properties", tint);
     if response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
