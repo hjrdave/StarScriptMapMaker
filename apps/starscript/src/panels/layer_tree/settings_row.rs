@@ -6,7 +6,7 @@ use ssmap_core::{Command, Id, Node};
 
 use super::*;
 use crate::icons::Icon;
-use crate::prop_widgets::{self, Handle, ScrubSpec};
+use crate::prop_widgets::{self, Handle, ScrubSpec, ToggleState};
 
 /// What the row acts on: the selection, else the active Layer.
 fn targets(editor: &Editor) -> Vec<Id> {
@@ -52,9 +52,18 @@ impl LayerTree {
                 _ => None,
             })
             .collect();
-        let hidden = !layers.is_empty() && layers.iter().all(|&id| !visible(map, id));
-        let locked = !writable.is_empty() && writable.iter().all(|&id| node_locked(map, id));
-        let pinned = !writable.is_empty() && writable.iter().all(|&id| pin_on(map, id));
+        let hidden = ToggleState::of(
+            layers.iter().filter(|&&id| !visible(map, id)).count(),
+            layers.len(),
+        );
+        let locked = ToggleState::of(
+            writable.iter().filter(|&&id| node_locked(map, id)).count(),
+            writable.len(),
+        );
+        let pinned = ToggleState::of(
+            writable.iter().filter(|&&id| pin_on(map, id)).count(),
+            writable.len(),
+        );
         let any_locked = writable.iter().any(|&id| node_locked(map, id));
 
         let mut percent = opacities.first().map_or(100.0, |&o| f64::from(o) * 100.0);
@@ -79,33 +88,32 @@ impl LayerTree {
                             .mixed(mixed),
                     );
                 });
-                hide_clicked = prop_widgets::icon_toggle(
-                    ui,
-                    if hidden { Icon::Hidden } else { Icon::Visible },
-                    if hidden { "Show" } else { "Hide" },
-                    hidden,
-                );
+                // Mixed looks on but a click turns the state on for all, so it keeps the "on" name.
+                hide_clicked =
+                    state_button(ui, hidden, [Icon::Visible, Icon::Hidden], ["Hide", "Show"]);
             });
             ui.add_enabled_ui(!writable.is_empty(), |ui| {
-                lock_clicked = prop_widgets::icon_toggle(
+                lock_clicked = state_button(
                     ui,
-                    if locked { Icon::LockFilled } else { Icon::Lock },
-                    if locked { "Unlock" } else { "Lock" },
                     locked,
+                    [Icon::Lock, Icon::LockFilled],
+                    ["Lock", "Unlock"],
                 );
             });
             ui.add_enabled_ui(!writable.is_empty() && !any_locked, |ui| {
-                pin_clicked = prop_widgets::icon_toggle(
+                pin_clicked = state_button(
                     ui,
-                    if pinned { Icon::PinFilled } else { Icon::Pin },
-                    if pinned {
-                        "Unpin from Canvas"
-                    } else {
-                        "Pin to Canvas"
-                    },
                     pinned,
+                    [Icon::Pin, Icon::PinFilled],
+                    ["Pin to Canvas", "Unpin from Canvas"],
                 );
             });
+            if ids.len() > 1 {
+                ui.label(
+                    egui::RichText::new(format!("{} selected", ids.len()))
+                        .color(palette.text_secondary),
+                );
+            }
         });
         ui.add_space(theme::SPACING[2]);
         ui.painter().hline(
@@ -124,16 +132,17 @@ impl LayerTree {
                     .collect()
             });
         if hide_clicked {
-            let visible = hidden;
+            // Off or mixed turns Hide on for all; on turns it off.
+            let visible = hidden == ToggleState::On;
             run_all(
                 editor,
-                if hidden { "Show" } else { "Hide" },
+                if visible { "Show" } else { "Hide" },
                 &layers,
                 |id| Command::SetVisible { id, visible },
             );
         }
         if lock_clicked {
-            let lock = !locked;
+            let lock = locked != ToggleState::On;
             run_all(
                 editor,
                 if lock { "Lock" } else { "Unlock" },
@@ -142,7 +151,7 @@ impl LayerTree {
             );
         }
         if pin_clicked {
-            let pin = !pinned;
+            let pin = pinned != ToggleState::On;
             let label = if pin {
                 "Pin to Canvas"
             } else {
@@ -154,6 +163,22 @@ impl LayerTree {
             });
         }
     }
+}
+
+/// One of Hide, Lock or Pin. `icons` and `names` are [off, on]; Mixed has the on look and is
+/// named for the click that turns the state on for all.
+fn state_button(ui: &mut egui::Ui, state: ToggleState, icons: [Icon; 2], names: [&str; 2]) -> bool {
+    let icon = if state == ToggleState::Off {
+        icons[0]
+    } else {
+        icons[1]
+    };
+    let name = if state == ToggleState::On {
+        names[1]
+    } else {
+        names[0]
+    };
+    prop_widgets::icon_tristate(ui, icon, name, state)
 }
 
 /// Whether the Layer itself is shown (its own eye, not one above it).

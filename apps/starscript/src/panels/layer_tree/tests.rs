@@ -892,3 +892,58 @@ fn attach_to_layer_below_is_in_the_menu_and_the_rows_show_the_pair() {
     assert_eq!(editor.undo_label(), Some("Release from Layer Below"));
     assert!(!RowState::of(editor.map(), a).attached_to);
 }
+
+#[test]
+fn hide_lock_and_pin_show_off_on_and_mixed_and_one_click_turns_mixed_on_for_all() {
+    type Set = fn(Id) -> Command;
+    type Read = fn(&Editor, Id) -> bool;
+    // (off name, mixed name, on name, turns it on for one Layer, reads it from a Layer)
+    let cases: [(&str, &str, &str, Set, Read); 3] = [
+        (
+            "Hide",
+            "Hide (Mixed)",
+            "Show",
+            |id| Command::SetVisible { id, visible: false },
+            |e, id| !layer_data(e, id).visible,
+        ),
+        (
+            "Lock",
+            "Lock (Mixed)",
+            "Unlock",
+            |id| Command::SetLocked { id, locked: true },
+            |e, id| layer_data(e, id).locked,
+        ),
+        (
+            "Pin to Canvas",
+            "Pin to Canvas (Mixed)",
+            "Unpin from Canvas",
+            |id| Command::SetMoveLocked { id, locked: true },
+            |e, id| layer_data(e, id).pinned,
+        ),
+    ];
+    for (off, mixed, on, set, read) in cases {
+        let (mut editor, a, b) = editor_with_two_layers();
+        editor.run(set(a)).unwrap();
+        editor.select(vec![a, b]);
+        let mut harness = harness(editor);
+        // Some of the selected rows are on: mixed. One click turns all on.
+        assert_eq!(harness.get_all_by_label(mixed).count(), 1, "{mixed}");
+        harness.get_by_label(mixed).click();
+        harness.run();
+        let editor = &harness.state().editor;
+        assert!(read(editor, a) && read(editor, b), "{mixed} click");
+        // All on: not mixed any more. The next click turns all off.
+        assert_eq!(harness.query_all_by_label(mixed).count(), 0);
+        harness
+            .get_all_by_label(on)
+            .next()
+            .expect("the settings row")
+            .click();
+        harness.run();
+        let editor = &harness.state().editor;
+        assert!(!read(editor, a) && !read(editor, b), "{on} click");
+        // None on: the off name.
+        assert!(harness.get_all_by_label(off).next().is_some());
+        harness.get_by_label("2 selected");
+    }
+}

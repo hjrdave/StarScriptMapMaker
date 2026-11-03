@@ -738,12 +738,49 @@ const ICON_BUTTON: Vec2 = Vec2::new(26.0, 24.0);
 /// An outlined icon button that stays pressed while `on` (Flip horizontal). Its accessible
 /// name is `label` and it reads as checked or not. Returns whether it was clicked.
 pub fn icon_toggle(ui: &mut egui::Ui, icon: Icon, label: &str, on: bool) -> bool {
-    outlined_icon(ui, icon, label, Some(on), label).clicked()
+    outlined_icon(ui, icon, label, Some(on), label, false).clicked()
+}
+
+/// [`icon_toggle`] for a state that can hold across only some of a selection. `Mixed` looks
+/// like on with a dashed outline; its accessible name and tooltip end in "(Mixed)".
+pub fn icon_tristate(ui: &mut egui::Ui, icon: Icon, label: &str, state: ToggleState) -> bool {
+    let mixed = state == ToggleState::Mixed;
+    let name = if mixed {
+        format!("{label} (Mixed)")
+    } else {
+        label.to_owned()
+    };
+    let on = state != ToggleState::Off;
+    outlined_icon(ui, icon, &name, Some(on), &name, mixed).clicked()
+}
+
+/// How much of a selection has a state on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToggleState {
+    /// None of it.
+    Off,
+    /// All of it.
+    On,
+    /// Some of it.
+    Mixed,
+}
+
+impl ToggleState {
+    /// The state of a selection from how many of its `total` items have it on.
+    pub fn of(on: usize, total: usize) -> Self {
+        if on == 0 {
+            Self::Off
+        } else if on == total {
+            Self::On
+        } else {
+            Self::Mixed
+        }
+    }
 }
 
 /// An outlined icon button for a one-off action next to icon toggles (Flip vertical).
 pub fn icon_action(ui: &mut egui::Ui, icon: Icon, label: &str) -> bool {
-    outlined_icon(ui, icon, label, None, label).clicked()
+    outlined_icon(ui, icon, label, None, label, false).clicked()
 }
 
 /// [`icon_action`] that can be disabled and says what it does on hover. Returns whether it
@@ -755,9 +792,11 @@ pub fn icon_action_enabled(
     enabled: bool,
     hint: &str,
 ) -> bool {
-    ui.add_enabled_ui(enabled, |ui| outlined_icon(ui, icon, label, None, hint))
-        .inner
-        .clicked()
+    ui.add_enabled_ui(enabled, |ui| {
+        outlined_icon(ui, icon, label, None, hint, false)
+    })
+    .inner
+    .clicked()
 }
 
 fn outlined_icon(
@@ -766,6 +805,7 @@ fn outlined_icon(
     label: &str,
     on: Option<bool>,
     hint: &str,
+    mixed: bool,
 ) -> egui::Response {
     let palette = theme::palette(ui.ctx());
     let enabled = ui.is_enabled();
@@ -803,6 +843,25 @@ fn outlined_icon(
         Stroke::new(1.0, stroke),
         StrokeKind::Inside,
     );
+    if mixed && enabled {
+        let outline = rect.shrink(0.5);
+        let corners = [
+            outline.left_top(),
+            outline.right_top(),
+            outline.right_bottom(),
+            outline.left_bottom(),
+            outline.left_top(),
+        ];
+        // The solid outline is covered in the fill colour, so the dashes show as gaps.
+        ui.painter()
+            .add(egui::Shape::line(corners.to_vec(), Stroke::new(1.5, fill)));
+        ui.painter().extend(egui::Shape::dashed_line(
+            &corners,
+            Stroke::new(1.0, stroke),
+            3.0,
+            2.0,
+        ));
+    }
     icons::paint(ui, rect, icon, 14.0, glyph);
     response.on_hover_text(hint)
 }
