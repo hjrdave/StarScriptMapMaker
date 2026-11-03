@@ -55,11 +55,11 @@ left or right margin.
    `border_subtle` line, 6 below.
    - **Caption "Template"**, then the template cards.
    - **Caption "Water"**, then one row: label **Colour**, a swatch.
-   - **Caption "Texture"**, then rows: **Strength**, **Scale**, and **Light / dark** (two swatches
-     side by side).
+   - **Caption "Texture"**, then **Strength | Scale** inline on one row, then **Light / dark** (two
+     swatches side by side).
 4. **Section "Roughness".** The same `divider_section`, with 14 above it (the 6 the section adds
-   plus 8 of its own) so the two sections read as separate. Rows: **Amount**, **Scale**, **Seed**
-   with the dice button.
+   plus 8 of its own) so the two sections read as separate. Rows: **Amount | Scale** inline, then
+   **Seed** with the dice button.
 
 ### Group caption (new helper)
 
@@ -78,8 +78,8 @@ further right than the rows around it. That is the ragged left edge in the scree
 
 - Make the label column a fixed width: `LABEL_COLUMN = 80.0`. `label_width` returns it.
 - A label that does not fit is cut with an ellipsis and its full text shows as a tooltip.
-- Rename the visible labels so none is cut: **Colour**, **Strength**, **Scale**, **Light / dark**,
-  **Amount**, **Scale**, **Seed**. The group caption supplies the context ("Water", "Texture").
+- Rename the visible labels so none is cut: **Colour**, **Light / dark**; the numeric fields carry
+  **Strength**, **Scale**, **Amount**, **Scale** and **Seed** as in-box prefixes. The group caption supplies the context ("Water", "Texture").
 - The accessible names stay "Water colour", "Texture strength", "Texture scale", "Texture light" and
   "Texture dark", so assistive tools and the existing tests still find them. Add a `display`
   label to `swatch` and `ScrubSpec` (`.shown_as("Strength")`) rather than changing the name.
@@ -98,13 +98,22 @@ further right than the rows around it. That is the ragged left edge in the scree
 
 Every row is `[80 label column][8 gap][control that fills the rest]`, `metrics::FIELD[0]` (22) tall.
 
+- **Inline pairs** (Strength | Scale, Amount | Scale): `prop_widgets::pair`, two equal columns with
+  the 8 pt gap, no label column. Each field carries its name **inside the box at the left**, in
+  `text_tertiary` 12, and the value right-aligned in mono 11, as W / H do on the Canvas tab. This
+  needs one addition to `ScrubSpec`: `.prefix("Strength")`, drawn inside the box (the existing
+  `Handle` is a 22 pt icon-sized slot and is too small for a word). The box still scrubs and types as
+  before; the prefix is painted, so the field keeps its accessible name. Seed is the same kind of
+  field (prefix "Seed") with the dice button after it, so the whole Roughness group has no label
+  column.
 - **Number fields** (`scrub_field`): fill the width to the right of the label column, so every
   right edge lines up with the panel's content edge. The `u` unit sits inside the box at the right.
 - **Colour swatch**: a 44 × 22 chip (1 px `border_subtle`, radius 3) followed by the hex in
   caption 11, `text_secondary`. No box around the hex; this is the existing `swatch` widget.
 - **Light / dark**: one label, then two swatches in `ui.columns(2)` (`prop_widgets::pair`). Each half
   is chip plus hex. When a half is narrower than chip + 6 + hex (about 100), hide the hex text and
-  keep it in the tooltip; at that width the row never overflows.
+  keep it in the tooltip; at that width the row never overflows. (The label column is used by the
+  colour rows only; the numeric rows above carry their names inside the boxes.)
 - **Seed**: a number field that fills the row minus the button, then a 24 × 22 dice button
   (`Icon::ReRoll`, 16 pt, radius 6) after an 8 gap. The dice is an icon button, not a field.
 

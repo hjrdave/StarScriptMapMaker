@@ -93,6 +93,11 @@
   .panel{padding-bottom:12px;border-radius:0;min-height:600px}
   .sec .body{padding:2px 8px 10px}
   .rows+h2{margin-top:14px}
+  .pair{container-type:inline-size}
+  @container (max-width:215px){.pair .cs .hex{display:none}}
+  /* Prefixed field: the name sits inside the box at the left, like W / H on the Canvas tab. */
+  .field.pf .pre{color:var(--dim);font-family:Inter,system-ui,sans-serif;font-size:12px;flex:none;white-space:nowrap}
+  .field.pf input{text-align:right}
   /* The app's swatch: a 44 x 22 chip with a 1 px outline and the hex as 11 pt text beside it, no field box. */
   .field.cs{background:none;border:0;padding:0;height:22px;gap:6px;font-family:Inter,system-ui,sans-serif;color:var(--text)}
   .field.cs .chip{width:44px;height:22px;border-radius:3px;border:1px solid var(--line);flex:none}
@@ -131,10 +136,12 @@ const log=[];
 const note=m=>{log.unshift(m);if(log.length>6)log.pop();};
 
 const num=(k,dec,unit)=>`<div class="field"><input aria-label="${k}" data-k="${k}" data-dec="${dec}" value="${(+S[k]).toFixed(dec)}" inputmode="decimal">${unit?`<span class="u">${unit}</span>`:''}</div>`;
+const numP=(k,dec,unit,label)=>`<div class="field pf"><span class="pre">${label}</span><input aria-label="${k}" data-k="${k}" data-dec="${dec}" value="${(+S[k]).toFixed(dec)}" inputmode="decimal">${unit?`<span class="u">${unit}</span>`:''}</div>`;
 const col=k=>`<div class="field cs"><span class="chip" style="background:${S[k]}"><input type="color" aria-label="${k}" data-c="${k}" value="${S[k].toLowerCase()}"></span><input aria-label="${k} hex" data-h="${k}" value="${S[k].toUpperCase()}" maxlength="7"></div>`;
 const row=(l,f)=>`<div class="row"><label>${l}</label>${f}</div>`;
 const swatches=()=>`<div class="grid">${TEMPLATES.map(t=>`<div class="sw ${t.light?'light':''} ${S.template===t.n?'on':''}" role="button" tabindex="0" data-t="${t.n}" style="background:${t.c}">${t.n}</div>`).join('')}</div>`;
 const seed=()=>`<div class="seedrow"><div class="field" style="flex:1"><input aria-label="seed" data-k="seed" data-dec="0" value="${S.seed}"></div><button class="dice" id="dice" title="Re-roll seed" aria-label="Re-roll seed">${SVG.dice}</button></div>`;
+const seedP=()=>`<div class="seedrow"><div class="field pf" style="flex:1"><span class="pre">Seed</span><input aria-label="seed" data-k="seed" data-dec="0" value="${S.seed}"></div><button class="dice" id="dice" title="Re-roll seed" aria-label="Re-roll seed">${SVG.dice}</button></div>`;
 const head=()=>`<div class="head"><span class="ico">${SVG.map}</span>Map</div><div class="tabs"><div>Canvas</div><div class="on">Style</div><div>Shores</div></div>`;
 
 function viewA(){return head()+`
@@ -142,10 +149,11 @@ function viewA(){return head()+`
  <h3>Template</h3>${swatches()}
  <h3>Water</h3><div class="rows">${row('Colour',col('water'))}</div>
  <h3>Texture</h3><div class="rows">
-   ${row('Strength',num('strength',2))}${row('Scale',num('tscale',1))}
+   <div class="pair">${numP('strength',2,'','Strength')}${numP('tscale',1,'','Scale')}</div>
    ${row('Light / dark',`<div class="pair">${col('tlight')}${col('tdark')}</div>`)}</div>
  <h2>Roughness</h2><div class="rows" style="margin-top:12px">
-   ${row('Amount',num('ramount',1,'u'))}${row('Scale',num('rscale',1,'u'))}${row('Seed',seed())}</div>`;}
+   <div class="pair">${numP('ramount',1,'u','Amount')}${numP('rscale',1,'u','Scale')}</div>
+   ${seedP()}</div>`;}
 
 function sec(id,title,summary,inner){return `<details class="sec" data-s="${id}" ${open[id]?'open':''}><summary>${SVG.chev}${title}<span class="sum">${summary}</span></summary><div class="body">${inner}</div></details>`;}
 function viewB(){const t=TEMPLATES.find(x=>x.n===S.template);return head()+`
@@ -166,7 +174,7 @@ function viewC(){return head()+`
  <h3>Roughness</h3><div class="rows stack"><div class="pair">${row('Amount',num('ramount',1,'u'))}${row('Scale',num('rscale',1,'u'))}</div>${row('Seed',seed())}</div>`;}
 
 const NOTES={
- A:'Every label shares one column and every field starts at the same x. Background is split into Template, Water and Texture under quiet captions; the template name appears once, on the swatch. Light and dark sit side by side.',
+ A:'Strength / Scale and Amount / Scale sit inline, each with its name inside the field. Every other label shares one column and every field starts at the same x. Background is split into Template, Water and Texture under quiet captions; the template name appears once, on the swatch. Light and dark sit side by side.',
  B:'Same fields, folded into three groups. A closed group shows a one-line summary, so the whole tab fits without scrolling.',
  C:'A live strip previews the water and texture. Templates become chips, and labels sit above fields, so it never has to squeeze a label column in a narrow panel.'};
 function render(){
