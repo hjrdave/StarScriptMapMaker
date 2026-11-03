@@ -23,12 +23,10 @@ pub(crate) const FOOTER_HEIGHT: f32 = 24.0;
 /// Why a Depth-sorted Layer's Stamps can't be reordered by hand.
 pub(crate) const DEPTH_SORT_HINT: &str = "Depth sort is on for this Layer: Stamps are listed in the order they draw, by Anchor height. Move a Stamp to re-sort it.";
 
-/// What the Layer area says while Depth sort is off.
-const DEPTH_SORT_OFF_HINT: &str = "Depth sort is off for this Layer: Stamps draw in the order listed, which you can change by dragging.";
-
 mod layer_area;
 mod model;
 mod row;
+mod settings_row;
 use model::kind_icon;
 pub(crate) use model::{
     DropTarget, Row, RowState, counts, footer_text, is_depth_sorted_stamp, landmass_name,
@@ -167,6 +165,7 @@ impl LayerTree {
             unreachable!("nothing changed")
         });
         // The sidebar's bottom bar sits under the tree, so only the Layer area comes off.
+        self.settings_row(ui, editor);
         let list_height = (ui.available_height() - self.layer_area_height).max(ROW_HEIGHT);
         let mut scroll = egui::ScrollArea::vertical()
             .auto_shrink(false)

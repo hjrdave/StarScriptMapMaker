@@ -1,14 +1,13 @@
-//! The Layer area pinned under the list: opacity, depth sort and the clip target of the
-//! selected Layer, or of the active Layer when none is selected.
+//! The Layer area pinned under the list: the clip target of the selected Layer, or of the
+//! active Layer when none is selected. Opacity, Hide, Lock and Pin are in the settings row above
+//! the list, and Depth sort is in a Layer's right-click menu.
 
 use eframe::egui;
 use ssmap_core::{Command, Id, Node};
 
-use super::{
-    DEPTH_SORT_HINT, DEPTH_SORT_OFF_HINT, LayerTree, landmass_name, landmasses, selected_landmass,
-};
+use super::{LayerTree, landmass_name, landmasses, selected_landmass};
 use crate::editor::Editor;
-use crate::prop_widgets::{self, Provenance, ScrubSpec, SectionHeader};
+use crate::prop_widgets::{self, Provenance, SectionHeader};
 use crate::theme;
 
 /// The Layer the area edits: the one Layer selected, else the active Layer.
@@ -43,35 +42,6 @@ impl LayerTree {
             badge: None,
             action: None,
         };
-        prop_widgets::section(ui, header("layer-appearance", "Appearance"), |ui| {
-            // Dragging the slider is one gesture: live updates, one Undo step.
-            let mut percent = f64::from(layer.opacity) * 100.0;
-            let edit = prop_widgets::slider(
-                ui,
-                &mut percent,
-                &ScrubSpec::new("Opacity").unit("%").range(0.0, 100.0),
-            );
-            self.live
-                .apply(editor, edit, "Change Opacity", || Command::SetOpacity {
-                    id,
-                    opacity: (percent / 100.0).clamp(0.0, 1.0) as f32,
-                });
-        });
-        prop_widgets::section(ui, header("layer-ordering", "Ordering"), |ui| {
-            let mut depth_sort = layer.depth_sort;
-            if prop_widgets::checkbox_row(ui, "Depth sort", &mut depth_sort) {
-                let _ = editor.run(Command::SetDepthSort { id, depth_sort });
-            }
-            ui.label(
-                egui::RichText::new(if depth_sort {
-                    DEPTH_SORT_HINT
-                } else {
-                    DEPTH_SORT_OFF_HINT
-                })
-                .size(theme::CAPTION)
-                .color(palette.text_tertiary),
-            );
-        });
         prop_widgets::section(ui, header("layer-clipping", "Clipping"), |ui| {
             clip_row(ui, editor, id, layer.clip);
         });

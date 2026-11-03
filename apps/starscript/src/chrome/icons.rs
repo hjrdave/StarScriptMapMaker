@@ -157,6 +157,7 @@ icons! {
     Rotate, "Rotate", "rotate";
     Pin, "Pin", "pin";
     PinFilled, "Pin filled", "pin-filled";
+    PinDashed, "Pin dashed", "pin-dashed";
 }
 
 /// Hand-hinted 1x replacements, by icon. None yet: the thinned 1 px stroke is crisp enough
