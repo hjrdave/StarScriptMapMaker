@@ -169,13 +169,16 @@ pub enum Property {
     Visible(bool),
     /// Layers and Objects.
     Locked(bool),
-    /// Objects only: whether they refuse to be moved or transformed.
+    /// Whether the Object, or everything in the Layer, refuses to be moved or transformed
+    /// (pinned to the Canvas).
     MoveLocked(bool),
     /// Layers only.
     Opacity(f32),
     /// Layers only. Ops don't check the target, so that inverses always apply; Commands
     /// keep it pointing at a Landmass.
     Clip(Option<Id>),
+    /// Layers only: whether it is attached to the Layer below.
+    Attached(bool),
     /// Layers only.
     DepthSort(bool),
     /// Layers and Objects: the Link set, or `None` for no link.
@@ -615,7 +618,6 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
             ObjectKind::River(_) => Ok(()),
             _ => Err("river"),
         },
-        (Node::Layer(_), Property::MoveLocked(_)) => Err("move_locked"),
         (Node::Layer(_), _)
         | (
             Node::Object(_),
@@ -630,6 +632,7 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
         (Node::Object(_), Property::Visible(_)) => Err("visible"),
         (Node::Object(_), Property::Opacity(_)) => Err("opacity"),
         (Node::Object(_), Property::Clip(_)) => Err("clip"),
+        (Node::Object(_), Property::Attached(_)) => Err("attached"),
         (Node::Object(_), Property::DepthSort(_)) => Err("depth_sort"),
         (Node::Object(object), Property::Fill(_)) => object.kind.fill().map(|_| ()).ok_or("fill"),
     }
@@ -657,6 +660,9 @@ fn set_property(node: &mut Node, property: Property) -> Property {
         (Node::Layer(layer), Property::Clip(clip)) => {
             Property::Clip(std::mem::replace(&mut layer.clip, clip))
         }
+        (Node::Layer(layer), Property::Attached(on)) => {
+            Property::Attached(std::mem::replace(&mut layer.attached, on))
+        }
         (Node::Layer(layer), Property::DepthSort(on)) => {
             Property::DepthSort(std::mem::replace(&mut layer.depth_sort, on))
         }
@@ -672,6 +678,9 @@ fn set_property(node: &mut Node, property: Property) -> Property {
         }
         (Node::Object(object), Property::Locked(locked)) => {
             Property::Locked(std::mem::replace(&mut object.locked, locked))
+        }
+        (Node::Layer(layer), Property::MoveLocked(pinned)) => {
+            Property::MoveLocked(std::mem::replace(&mut layer.pinned, pinned))
         }
         (Node::Object(object), Property::MoveLocked(locked)) => {
             Property::MoveLocked(std::mem::replace(&mut object.move_locked, locked))

@@ -10,6 +10,9 @@ pub enum CommandError {
     /// No Layer or Object has this id.
     #[error("nothing has id {0}")]
     NotFound(Id),
+    /// The Layer has no Layer below it to attach to.
+    #[error("{0} has no Layer below it to attach to")]
+    NothingBelow(Id),
     /// The node is an Object where a Layer is needed.
     #[error("{0} is not a Layer")]
     NotALayer(Id),

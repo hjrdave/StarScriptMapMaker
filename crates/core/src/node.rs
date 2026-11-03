@@ -67,11 +67,19 @@ pub struct Layer {
     pub visible: bool,
     /// Whether the Layer refuses Commands, along with everything inside it.
     pub locked: bool,
+    /// Whether everything inside the Layer is pinned to the Canvas: it refuses to be moved or
+    /// transformed, as a pinned Object does, while its shape and settings stay editable.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pinned: bool,
     /// From 0 (transparent) to 1 (opaque).
     pub opacity: f32,
     /// The Landmass this Layer is clipped to, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clip: Option<Id>,
+    /// Whether the Layer is attached to the Layer below it: it clips to the Landmasses in that
+    /// Layer, at any depth. Takes the place of `clip` while on.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub attached: bool,
     /// Draws the Stamps directly inside by Anchor height, lower in front (ADR 0003).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub depth_sort: bool,
@@ -91,8 +99,10 @@ impl Layer {
             name: name.into(),
             visible: true,
             locked: false,
+            pinned: false,
             opacity: 1.0,
             clip: None,
+            attached: false,
             depth_sort: false,
             link: None,
             extra: Extra::new(),

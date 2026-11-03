@@ -106,10 +106,7 @@ pub(super) fn transform(
     ids.extend(along.into_iter().filter(
         |&id| matches!(map.node(id), Some(Node::Object(o)) if o.kind.geometry().is_some()),
     ));
-    if let Some(&id) = ids
-        .iter()
-        .find(|&&id| matches!(map.node(id), Some(Node::Object(o)) if o.move_locked))
-    {
+    if let Some(&id) = ids.iter().find(|&&id| map.is_pinned(id)) {
         return Err(CommandError::MoveLocked(id));
     }
     let mut ops = Vec::with_capacity(ids.len());
