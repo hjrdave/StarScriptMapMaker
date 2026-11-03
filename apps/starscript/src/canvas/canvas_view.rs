@@ -112,6 +112,15 @@ pub(crate) fn step_export(
     ))
 }
 
+/// The selection's box for the handles: only under the Select tool and outside node editing.
+/// The selection itself survives other tools; it just isn't painted.
+fn handles_bounds(editor: &mut Editor) -> Option<Bounds> {
+    if editor.active_tool != tools::ToolId::Select || editor.node_edit().is_some() {
+        return None;
+    }
+    Bounds::of_selection(editor)
+}
+
 /// Gives `view` a new target size, keeping the Canvas point at the middle of the target where
 /// it is, so the Map does not jump when a panel opens, closes or resizes beside it.
 fn resize_keeping_centre(view: &mut View, size: [u32; 2]) {
@@ -357,9 +366,7 @@ impl CanvasView {
         } else {
             paint_placeholder(&painter, rect, &scene, &view, ppp);
         }
-        if editor.node_edit().is_none()
-            && let Some(bounds) = Bounds::of_selection(editor)
-        {
+        if let Some(bounds) = handles_bounds(editor) {
             let knobs = tools::selection_knobs(editor);
             let select = crate::theme::palette(ui.ctx()).select;
             handles::paint(&painter, &bounds, &view, rect.min, ppp, knobs, select);
@@ -924,6 +931,44 @@ mod tests {
         let after = centre(&view);
         assert!((before[0] - after[0]).abs() < 1e-9 && (before[1] - after[1]).abs() < 1e-9);
         assert_eq!(view.size[0], pixels(width_without));
+    }
+
+    #[test]
+    fn the_selection_box_is_painted_only_under_the_select_tool() {
+        let mut editor = Editor::new(Map::new(Canvas::new(
+            100,
+            100,
+            Scale::new(1.0, DistanceUnit::Miles),
+        )));
+        let layer = editor.new_layer().unwrap();
+        let island = Id::new();
+        assert!(
+            editor
+                .run(ssmap_core::Command::CreateLandmass {
+                    id: island,
+                    parent: layer,
+                    index: None,
+                    geometry: MultiPolygon(vec![Polygon {
+                        exterior: vec![[0.0, 0.0], [40.0, 0.0], [40.0, 40.0], [0.0, 40.0]],
+                        holes: Vec::new(),
+                    }]),
+                    fill: None,
+                })
+                .is_ok()
+        );
+        editor.select(vec![island]);
+        editor.active_tool = tools::ToolId::Select;
+        assert!(handles_bounds(&mut editor).is_some());
+        for tool in [
+            tools::ToolId::LandBrush,
+            tools::ToolId::Stamp,
+            tools::ToolId::Pan,
+        ] {
+            editor.active_tool = tool;
+            assert!(handles_bounds(&mut editor).is_none(), "{tool:?}");
+        }
+        editor.active_tool = tools::ToolId::Select;
+        assert!(handles_bounds(&mut editor).is_some());
     }
 
     /// A Canvas view and an Editor holding one square Landmass in node-edit mode with its

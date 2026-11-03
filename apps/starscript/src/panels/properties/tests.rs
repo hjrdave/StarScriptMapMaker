@@ -195,7 +195,8 @@ fn a_multi_selection_is_summarised_and_can_be_combined() {
     );
     fixture.editor.select(vec![island, other]);
     let mut harness = harness(fixture);
-    assert!(harness.query_by_label("2 Landmasses").is_some());
+    // In the title and in the breadcrumb row.
+    assert!(harness.query_all_by_label("2 Landmasses").next().is_some());
     assert!(!harness.get_by_label("Union").accesskit_node().is_disabled());
 
     harness.get_by_label("Union").click();
@@ -979,7 +980,7 @@ fn several_stamps_share_one_section_with_mixed_fields_and_one_undo_step() {
     let b = add_stamp(&mut fixture, layer, 30.0);
     fixture.editor.select(vec![a, b]);
     let mut harness = harness(fixture);
-    assert!(harness.query_by_label("2 Stamps").is_some());
+    assert!(harness.query_all_by_label("2 Stamps").next().is_some());
     assert!(harness.query_by_label("Lock Stamps").is_some());
     // No Asset card for several Stamps.
     assert!(harness.query_by_label("Replace Asset").is_none());
@@ -1259,4 +1260,38 @@ fn the_label_panel_groups_its_fields_into_divider_sections() {
         ssmap_core::Align::Right
     );
     assert_eq!(harness.state().editor.undo_label(), Some("Edit Label"));
+}
+
+#[test]
+fn properties_follow_the_select_tool_and_its_selection() {
+    let (mut fixture, layer, island) = fixture();
+    fixture.editor.active_tool = ToolId::Select;
+    fixture.editor.select(vec![island]);
+    let name = crate::layer_tree::node_name(fixture.editor.map(), island);
+    let layer_name = crate::layer_tree::node_name(fixture.editor.map(), layer);
+    let mut harness = harness(fixture);
+    assert!(harness.query_all_by_label(&name).next().is_some());
+    harness.get_by_label("Roughness");
+
+    // Picking the Layer in the Layers panel changes the title.
+    harness.state_mut().editor.select(vec![layer]);
+    harness.run();
+    assert!(harness.query_all_by_label(&layer_name).next().is_some());
+    harness.state_mut().editor.select(vec![island]);
+    harness.run();
+
+    // Other tools hide the selection's properties and title, and keep the selection.
+    for tool in [ToolId::LandBrush, ToolId::Stamp, ToolId::Pan, ToolId::Label] {
+        harness.state_mut().editor.active_tool = tool;
+        harness.run();
+        assert!(harness.query_by_label(&name).is_none(), "{tool:?}");
+        assert!(harness.query_by_label("Roughness").is_none(), "{tool:?}");
+        assert_eq!(harness.state().editor.selection(), [island], "{tool:?}");
+    }
+
+    // Back to Select: the same selection and properties.
+    harness.state_mut().editor.active_tool = ToolId::Select;
+    harness.run();
+    assert!(harness.query_all_by_label(&name).next().is_some());
+    harness.get_by_label("Roughness");
 }
