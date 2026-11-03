@@ -247,7 +247,8 @@ fn sidebar_section(ui: &mut egui::Ui, section: shell::SidebarSection, tab: &mut 
             }
         }
         shell::SidebarSection::Layers => {
-            shell::panel_header(ui, "Layers", |ui| {
+            let tint = crate::theme::palette(ui.ctx()).text_primary;
+            shell::icon_header(ui, icons::Icon::LayerGroup, tint, "Layers", |ui| {
                 if icons::icon_button(ui, icons::Icon::Add, "New Layer (⇧⌘N)").clicked() {
                     tab.editor.new_layer();
                 }
