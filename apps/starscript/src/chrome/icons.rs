@@ -5,7 +5,8 @@
 //!
 //! Icons drawn at [`TOOL_GRID`] (the tool dock's 20 pt) get their own pair of atlases, rasterised
 //! at 20 px and 40 px cells with the stroke rescaled to still land on 1 px and 3 px, so they are
-//! drawn 1:1 rather than stretched from the 16 pt cells.
+//! drawn 1:1 rather than stretched from the 16 pt cells. The sidebar rails' [`RAIL_GRID`] (24 pt)
+//! gets a third pair, at 24 px and 48 px cells.
 //!
 //! The atlases are built at startup, on first use of each scale, rather than in a `build.rs`:
 //! about 40 tiny paths rasterise in well under a millisecond, and a build script would need
@@ -26,6 +27,9 @@ pub(crate) const GRID: f32 = 16.0;
 /// Side of the larger icon grid in points, used by the tool dock.
 pub(crate) const TOOL_GRID: f32 = 20.0;
 
+/// Side of the largest icon grid in points, used by the sidebar rails.
+pub(crate) const RAIL_GRID: f32 = 24.0;
+
 /// Which grid an atlas is rasterised for: the cell is `points * scale` pixels.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub(crate) enum Grid {
@@ -33,13 +37,17 @@ pub(crate) enum Grid {
     Standard,
     /// [`TOOL_GRID`] points.
     Tool,
+    /// [`RAIL_GRID`] points.
+    Rail,
 }
 
 impl Grid {
-    /// The grid for an icon drawn at `size` points: sizes of [`TOOL_GRID`] and up use the
-    /// larger one.
+    /// The grid for an icon drawn at `size` points: sizes of [`RAIL_GRID`] and up use the
+    /// largest, of [`TOOL_GRID`] and up the next.
     fn for_size(size: f32) -> Self {
-        if size >= TOOL_GRID - 1e-3 {
+        if size >= RAIL_GRID - 1e-3 {
+            Grid::Rail
+        } else if size >= TOOL_GRID - 1e-3 {
             Grid::Tool
         } else {
             Grid::Standard
@@ -50,6 +58,7 @@ impl Grid {
         match self {
             Grid::Standard => GRID as u32,
             Grid::Tool => TOOL_GRID as u32,
+            Grid::Rail => RAIL_GRID as u32,
         }
     }
 
@@ -62,6 +71,9 @@ impl Grid {
             // A unit is 1.25 px at 1x and 2.5 px at 2x.
             (Grid::Tool, Scale::X1) => Some("0.8"),
             (Grid::Tool, Scale::X2) => Some("1.2"),
+            // A unit is 1.5 px at 1x and 3 px at 2x.
+            (Grid::Rail, Scale::X1) => Some("0.67"),
+            (Grid::Rail, Scale::X2) => Some("1"),
         }
     }
 }
@@ -465,19 +477,24 @@ mod tests {
         assert_eq!(Scale::X2.cell(Grid::Standard), 32);
         assert_eq!(Scale::X1.cell(Grid::Tool), 20);
         assert_eq!(Scale::X2.cell(Grid::Tool), 40);
+        assert_eq!(Scale::X1.cell(Grid::Rail), 24);
+        assert_eq!(Scale::X2.cell(Grid::Rail), 48);
     }
 
     #[test]
     fn the_grid_follows_the_icon_size() {
         assert_eq!(Grid::for_size(GRID), Grid::Standard);
         assert_eq!(Grid::for_size(TOOL_GRID), Grid::Tool);
+        assert_eq!(Grid::for_size(RAIL_GRID), Grid::Rail);
     }
 
-    const ALL_ATLASES: [(Scale, Grid); 4] = [
+    const ALL_ATLASES: [(Scale, Grid); 6] = [
         (Scale::X1, Grid::Standard),
         (Scale::X2, Grid::Standard),
         (Scale::X1, Grid::Tool),
         (Scale::X2, Grid::Tool),
+        (Scale::X1, Grid::Rail),
+        (Scale::X2, Grid::Rail),
     ];
 
     #[test]
@@ -519,7 +536,7 @@ mod tests {
     }
 
     #[test]
-    fn strokes_are_one_pixel_at_1x_and_three_at_2x_on_both_grids() {
+    fn strokes_are_one_pixel_at_1x_and_three_at_2x_on_every_grid() {
         // Add is a plus centred in the cell: a vertical bar crosses the row at a quarter.
         let row = |scale: Scale, grid: Grid| {
             let atlas = Atlas::build(scale, grid);
@@ -530,7 +547,7 @@ mod tests {
                 .map(|x| u32::from(pixels[(y * cell + x) * 4 + 3]))
                 .sum::<u32>()
         };
-        for grid in [Grid::Standard, Grid::Tool] {
+        for grid in [Grid::Standard, Grid::Tool, Grid::Rail] {
             assert!(row(Scale::X1, grid).abs_diff(255) <= 3, "{grid:?} 1x");
             assert!(row(Scale::X2, grid).abs_diff(3 * 255) <= 3, "{grid:?} 2x");
         }

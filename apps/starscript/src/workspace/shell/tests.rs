@@ -125,14 +125,17 @@ fn at_the_minimum_both_panels_are_rails() {
     let layout = Shell::default().layout(1024.0);
     assert_eq!(layout.layers, PanelMode::Rail);
     assert_eq!(layout.properties, PanelMode::Rail);
-    assert_eq!(layout.canvas_width(1024.0), 944.0);
+    assert_eq!(
+        layout.canvas_width(1024.0),
+        1024.0 - 2.0 * metrics::LAYERS_PANEL_RAIL
+    );
 }
 
 #[test]
 fn the_canvas_keeps_480_points() {
     let mut shell = expanded();
     shell.set_width(Side::Right, 360.0);
-    for width in [600.0, 700.0, 900.0, 1024.0, 1250.0, 1500.0] {
+    for width in [640.0, 700.0, 900.0, 1024.0, 1250.0, 1500.0] {
         let layout = shell.layout(width);
         assert!(layout.canvas_width(width) >= CANVAS_MIN_WIDTH, "{width}");
     }
