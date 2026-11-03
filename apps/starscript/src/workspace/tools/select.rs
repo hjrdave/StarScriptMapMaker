@@ -231,6 +231,43 @@ pub(crate) fn selection_knobs(editor: &Editor) -> handles::Knobs {
     }
 }
 
+/// How the selection's box is drawn: whether a drag would move it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SelectionMode {
+    /// Not all Pinned or Locked.
+    Neither,
+    /// Everything selected is Pinned to the Canvas, itself or through a Layer.
+    Pinned,
+    /// Everything selected is Locked, itself or through a Layer. Wins over Pinned.
+    Locked,
+}
+
+impl SelectionMode {
+    /// The box and handle colour for this mode.
+    pub(crate) fn colour(self, palette: &crate::theme::Palette) -> egui::Color32 {
+        match self {
+            Self::Neither => palette.select,
+            Self::Pinned => palette.pinned,
+            Self::Locked => palette.locked,
+        }
+    }
+}
+
+/// The mode of the selection: all Locked is Locked, else all Pinned is Pinned, else Neither.
+/// Inherited Locks and Pins count.
+pub(crate) fn selection_mode(editor: &Editor) -> SelectionMode {
+    let (map, ids) = (editor.map(), editor.selection());
+    if ids.is_empty() {
+        SelectionMode::Neither
+    } else if ids.iter().all(|&id| map.is_locked(id)) {
+        SelectionMode::Locked
+    } else if ids.iter().all(|&id| map.is_pinned(id)) {
+        SelectionMode::Pinned
+    } else {
+        SelectionMode::Neither
+    }
+}
+
 /// Whether the selection holds a Label or a Stamp, the only selected things that rotate.
 pub(crate) fn selection_has_label(editor: &Editor) -> bool {
     editor
@@ -454,6 +491,79 @@ mod tests {
         }
         assert_eq!(editor.history_steps().1, before + 2);
         let _ = view;
+    }
+
+    #[test]
+    fn the_selection_mode_follows_pins_and_locks() {
+        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+        paint_stroke(&mut editor, &view, &mut state, false);
+        let first = editor.selection().to_vec();
+        assert_eq!(first.len(), 1);
+        // A Landmass starts Pinned to the Canvas.
+        assert_eq!(selection_mode(&editor), SelectionMode::Pinned);
+        editor.set_selection_pinned(false);
+        assert_eq!(selection_mode(&editor), SelectionMode::Neither);
+        editor.set_selection_pinned(true);
+        assert_eq!(selection_mode(&editor), SelectionMode::Pinned);
+        // A Locked and Pinned Object shows the stricter Locked.
+        editor.set_selection_locked(true);
+        assert_eq!(selection_mode(&editor), SelectionMode::Locked);
+        editor.set_selection_locked(false);
+        assert_eq!(selection_mode(&editor), SelectionMode::Pinned);
+        editor.set_selection_pinned(false);
+        assert_eq!(selection_mode(&editor), SelectionMode::Neither);
+        // Several Objects: a mixed selection is Neither, all Pinned is Pinned.
+        // A Label starts unpinned.
+        editor.active_tool = ToolId::Label;
+        label_tool(&mut editor, &view, &mut state, &click(300.0, 300.0));
+        let Some(label) = state.editing.take() else {
+            panic!("no Label");
+        };
+        let second = vec![label.id];
+        label.finish(&mut editor);
+        let both = [first, second.clone()].concat();
+        editor.select(both.clone());
+        assert_eq!(selection_mode(&editor), SelectionMode::Neither);
+        editor.select(second);
+        editor.set_selection_pinned(true);
+        editor.select(both);
+        assert_eq!(selection_mode(&editor), SelectionMode::Neither, "mixed");
+        editor.set_selection_pinned(true);
+        assert_eq!(selection_mode(&editor), SelectionMode::Pinned);
+        editor.select(Vec::new());
+        assert_eq!(selection_mode(&editor), SelectionMode::Neither);
+    }
+
+    #[test]
+    fn an_inherited_lock_or_pin_counts() {
+        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+        paint_stroke(&mut editor, &view, &mut state, false);
+        let object = editor.selection().to_vec();
+        let Some(layer) = editor.map().parent(object[0]) else {
+            panic!("no parent Layer");
+        };
+        editor.set_selection_pinned(false);
+        assert_eq!(selection_mode(&editor), SelectionMode::Neither);
+        editor.select(vec![layer]);
+        editor.set_selection_pinned(true);
+        editor.select(object.clone());
+        assert_eq!(selection_mode(&editor), SelectionMode::Pinned);
+        editor.select(vec![layer]);
+        editor.set_selection_locked(true);
+        editor.select(object);
+        assert_eq!(selection_mode(&editor), SelectionMode::Locked);
+    }
+
+    #[test]
+    fn each_mode_has_its_own_colour_in_both_themes() {
+        use crate::theme::Palette;
+        for p in [&Palette::DARK, &Palette::LIGHT] {
+            assert_eq!(SelectionMode::Neither.colour(p), p.select);
+            assert_eq!(SelectionMode::Pinned.colour(p), p.pinned);
+            assert_eq!(SelectionMode::Locked.colour(p), p.locked);
+            assert_ne!(p.pinned, p.locked);
+            assert_ne!(p.pinned, p.select);
+        }
     }
 
     #[test]
