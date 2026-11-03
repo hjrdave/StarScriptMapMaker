@@ -202,7 +202,12 @@ Width (half), Colour. That is 7 rows against A's 11, and it follows the Style ta
 Scale, Amount | Scale, Seed at half width, colours as label rows), so a narrow panel never has to
 hide a hex. It uses the same `.prefix(...)` addition to `ScrubSpec` as the Style tab.
 
-**Chosen: C.**
+**Chosen: C**, with the Landmass | Lake switch drawn as **mode buttons**, as the tool panels do
+(`prop_widgets::mode_buttons`: 40 × 32 icon buttons, 4 apart, the picked one with the gold fill and
+ring), not as the full-width labelled switch described above. The heading row also carries a gold
+chip at the right naming the picked kind ("Landmass" or "Lake"), like the mode chip ("Paint") in a
+tool's header. `LandBrush` and `LakeBrush` icons, 18 pt, names as tooltips and accessible names. The
+switch sits 8 under the heading, and the "Outline" caption follows it. `icon_switch` goes away.
 
 ## Canvas tab
 

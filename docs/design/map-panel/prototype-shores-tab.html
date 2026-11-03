@@ -46,6 +46,13 @@
   .cs .hex{font-size:11px;color:var(--text);text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:clip;min-width:0}
   .field.pf .pre{color:var(--dim);font-family:Inter,system-ui,sans-serif;font-size:12px;flex:none;white-space:nowrap}
   .field.pf input{text-align:right}
+  /* Mode buttons, as the tool panels draw them (prop_widgets::mode_buttons): 40 x 32 icon buttons, 4 apart. */
+  .modes{display:flex;gap:4px;margin:8px 8px 0}
+  .modes button{width:40px;height:32px;border-radius:4px;border:1px solid var(--line);background:var(--raised);color:var(--text);cursor:pointer;display:grid;place-items:center;padding:0}
+  .modes button:hover{background:#30353D;border-color:var(--strong);color:var(--hi)}
+  .modes button.on{background:#3a311cb0;border-color:var(--gold);color:var(--gold)}
+  .modes svg{width:18px;height:18px}
+  .chipm{float:right;font-size:11px;font-weight:400;padding:2px 8px;border-radius:3px;background:var(--sel);color:var(--goldtext);line-height:14px}
   .side{width:300px;font-size:13px;color:var(--dim)}
   .side h3{margin:0 0 6px;color:var(--hi);font-size:15px}
   .side ul{padding-left:18px;margin:6px 0}
@@ -90,6 +97,7 @@ const numP=(k,dec,unit,label)=>`<div class="field pf"><span class="pre">${label}
 const row=(l,f)=>`<div class="row"><label title="${l}">${l}</label>${f}</div>`;
 const above=(l,f)=>`<div class="above"><label>${l}</label>${f}</div>`;
 const seg=()=>`<div class="seg" role="radiogroup">${['Landmass','Lake'].map(n=>`<button role="radio" aria-checked="${which===n}" class="${which===n?'on':''}" data-w="${n}">${SVG[n==='Landmass'?'land':'lake']}${n}</button>`).join('')}</div>`;
+const headC=()=>`<div class="head">${SVG.map}Map</div><div class="tabs"><div>Canvas</div><div>Style</div><div class="on">Shores</div></div><h2>Shore<span class="chipm">${which}</span></h2><div class="modes" role="radiogroup" aria-label="Shore">${['Landmass','Lake'].map(n=>`<button role="radio" aria-checked="${which===n}" class="${which===n?'on':''}" data-w="${n}" title="${n}" aria-label="${n}">${SVG[n==='Landmass'?'land':'lake']}</button>`).join('')}</div>`;
 const head=()=>`<div class="head">${SVG.map}Map</div><div class="tabs"><div>Canvas</div><div>Style</div><div class="on">Shores</div></div><h2>Shore</h2><div style="height:8px"></div>${seg()}`;
 function viewA(){return head()+`
  <h3>Outline</h3><div class="rows">${row('Width',num('ow',1,1))}${row('Colour',col('oc','oa'))}</div>
@@ -100,14 +108,14 @@ function viewB(){return head()+`
  <h3>Ripples</h3><div class="rows"><div class="pair">${above('Count',num('rc',0))}${above('Spacing',num('rs',1,1))}</div>
    <div class="pair">${above('Width',num('rw',1,1))}${above('Fade',num('fade',2))}</div>${above('Colour',col('rcol','ra'))}</div>
  <h3>Inner shade</h3><div class="rows"><div class="pair">${above('Width',num('sw',1,1))}${above('Colour',col('scol','sa'))}</div></div>`;}
-function viewC(){return head()+`
+function viewC(){return headC()+`
  <h3>Outline</h3><div class="rows"><div class="pair">${numP('ow',1,1,'Width')}<div></div></div>${row('Colour',col('oc','oa'))}</div>
  <h3>Ripples</h3><div class="rows"><div class="pair">${numP('rc',0,0,'Count')}${numP('rs',1,1,'Spacing')}</div>
    <div class="pair">${numP('rw',1,1,'Width')}${numP('fade',2,0,'Fade')}</div>${row('Colour',col('rcol','ra'))}</div>
  <h3>Inner shade</h3><div class="rows"><div class="pair">${numP('sw',1,1,'Width')}<div></div></div>${row('Colour',col('scol','sa'))}</div>`;}
 const NOTES={
  A:'Same rows as the Style tab: one 80 pt label column, fields that fill the rest. The group captions carry the context, so labels shrink to Width, Colour, Count, Spacing and Fade. Landmass and Lake are a labelled switch under the heading.',
- C:'The Style tab\'s rule: every number is a field with its name inside the box, two to a row (a lone one takes half); every colour is a label row, so a narrow panel never has to hide a hex. Ripples is three rows plus the colour.',
+ C:'Landmass and Lake are icon mode buttons under the heading, as in the tool panels, and the header chip names the one picked. The Style tab\'s rule: every number is a field with its name inside the box, two to a row (a lone one takes half); every colour is a label row, so a narrow panel never has to hide a hex. Ripples is three rows plus the colour.',
  B:'Fields in pairs with the name above, so Ripples takes three rows instead of five and the tab fits without scrolling. Same captions and switch.'};
 function render(){
   document.getElementById('panel').innerHTML=({A:viewA,B:viewB,C:viewC})[variant]();
