@@ -4,7 +4,7 @@ use crate::asset_browser::install_test_pack;
 use crate::tools::ToolId;
 use egui_kittest::Harness;
 use egui_kittest::kittest::{NodeT as _, Queryable};
-use ssmap_core::{Canvas, DistanceUnit, Label, MultiPolygon, Polygon, Roughness, Scale};
+use ssmap_core::{Align, Canvas, DistanceUnit, Label, MultiPolygon, Polygon, Roughness, Scale};
 
 struct Fixture {
     editor: Editor,
@@ -317,6 +317,45 @@ fn fixture_with_overridden_label() -> (Fixture, Id) {
     );
     fixture.editor.select(vec![label]);
     (fixture, label)
+}
+
+#[test]
+fn align_is_one_choice_and_format_is_two_independent_toggles() {
+    let (fixture, id) = fixture_with_overridden_label();
+    let mut harness = harness(fixture);
+    let resolved = |harness: &Harness<'_, Fixture>| {
+        let editor = &harness.state().editor;
+        editor
+            .label(id)
+            .expect("a Label")
+            .resolve(editor.map().label_styles())
+    };
+    let (italic, caps, align) = {
+        let r = resolved(&harness);
+        (r.font.italic, r.all_caps, r.align)
+    };
+    assert_ne!(align, Align::Right);
+
+    harness.get_by_label("Align right").click();
+    harness.run();
+    assert_eq!(resolved(&harness).align, Align::Right);
+    assert_eq!(harness.state().editor.undo_label(), Some("Edit Label"));
+
+    // Italic and All caps flip on their own, each in one Undo step.
+    harness.get_by_label("Italic").click();
+    harness.run();
+    let r = resolved(&harness);
+    assert_eq!((r.font.italic, r.all_caps), (!italic, caps));
+    harness.get_by_label("All caps").click();
+    harness.run();
+    let r = resolved(&harness);
+    assert_eq!((r.font.italic, r.all_caps), (!italic, !caps));
+    harness.get_by_label("Italic").click();
+    harness.run();
+    let r = resolved(&harness);
+    assert_eq!((r.font.italic, r.all_caps), (italic, !caps));
+    // Align is untouched by Format.
+    assert_eq!(r.align, Align::Right);
 }
 
 #[test]
