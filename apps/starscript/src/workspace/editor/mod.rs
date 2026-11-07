@@ -53,9 +53,6 @@ pub const DEFAULT_BRUSH_SIZE: f64 = 48.0;
 /// The land brush's starting Irregularity: enough that strokes look natural, not round.
 pub const DEFAULT_BRUSH_IRREGULARITY: f64 = 0.15;
 
-/// The name of the Layer the water brush paints into.
-pub const WATER_LAYER: &str = "Water";
-
 /// How the Land Brush draws: a stroke, or a closed shape that fills with land.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum DrawMode {
