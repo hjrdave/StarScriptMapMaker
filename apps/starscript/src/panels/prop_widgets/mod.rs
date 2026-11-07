@@ -523,46 +523,74 @@ pub fn mode_buttons(
     options: &[(Icon, &str, bool)],
     selected: usize,
 ) -> Option<usize> {
-    let palette = theme::palette(ui.ctx());
     let mut clicked = None;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         for (index, &(icon, name, danger)) in options.iter().enumerate() {
-            let (rect, response) = ui.allocate_exact_size(Vec2::new(40.0, 32.0), Sense::click());
             let on = selected == index;
-            response.widget_info(|| {
-                egui::WidgetInfo::selected(egui::WidgetType::RadioButton, ui.is_enabled(), on, name)
-            });
-            let accent = if danger { palette.danger } else { palette.gold };
-            let (fill, ring, glyph) = if on {
-                (accent.gamma_multiply(0.18), accent, accent)
-            } else if response.hovered() {
-                (
-                    palette.hover_fill,
-                    palette.border_strong,
-                    palette.text_primary,
-                )
-            } else {
-                (
-                    palette.bg_raised,
-                    palette.border_subtle,
-                    palette.text_secondary,
-                )
-            };
-            ui.painter().rect(
-                rect,
-                theme::RADIUS_FIELD,
-                fill,
-                Stroke::new(1.0, ring),
-                StrokeKind::Inside,
-            );
-            icons::paint(ui, rect, icon, 18.0, glyph);
-            if response.on_hover_text(name).clicked() && !on {
+            let kind = egui::WidgetType::RadioButton;
+            if mode_button(ui, icon, name, on, danger, kind) && !on {
                 clicked = Some(index);
             }
         }
     });
     clicked
+}
+
+/// [`mode_buttons`] for settings that are on or off independently (Italic, All caps): each of
+/// `options` (icon, name, whether it is on) is its own checkbox, drawn like a mode button, and
+/// a click on any one is reported. Returns the index clicked, if any.
+pub fn mode_toggles(ui: &mut egui::Ui, options: &[(Icon, &str, bool)]) -> Option<usize> {
+    let mut clicked = None;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        for (index, &(icon, name, on)) in options.iter().enumerate() {
+            let kind = egui::WidgetType::Checkbox;
+            if mode_button(ui, icon, name, on, false, kind) {
+                clicked = Some(index);
+            }
+        }
+    });
+    clicked
+}
+
+/// One 40 x 32 mode button, gold (or `danger`) while `on`. Returns whether it was clicked.
+fn mode_button(
+    ui: &mut egui::Ui,
+    icon: Icon,
+    name: &str,
+    on: bool,
+    danger: bool,
+    kind: egui::WidgetType,
+) -> bool {
+    let palette = theme::palette(ui.ctx());
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(40.0, 32.0), Sense::click());
+    response.widget_info(|| egui::WidgetInfo::selected(kind, ui.is_enabled(), on, name));
+    let accent = if danger { palette.danger } else { palette.gold };
+    let (fill, ring, glyph) = if on {
+        (accent.gamma_multiply(0.18), accent, accent)
+    } else if response.hovered() {
+        (
+            palette.hover_fill,
+            palette.border_strong,
+            palette.text_primary,
+        )
+    } else {
+        (
+            palette.bg_raised,
+            palette.border_subtle,
+            palette.text_secondary,
+        )
+    };
+    ui.painter().rect(
+        rect,
+        theme::RADIUS_FIELD,
+        fill,
+        Stroke::new(1.0, ring),
+        StrokeKind::Inside,
+    );
+    icons::paint(ui, rect, icon, 18.0, glyph);
+    response.on_hover_text(name).clicked()
 }
 
 /// The chain between two linked fields: a broken chain when off and a gold linked chain when on.

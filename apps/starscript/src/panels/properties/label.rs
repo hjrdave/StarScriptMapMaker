@@ -402,16 +402,16 @@ impl PropertiesPanel {
             },
             |ui| {
                 prop_widgets::named_above(ui, "Format", Provenance::Plain, |ui| {
-                    ui.horizontal(|ui| {
-                        toggled |=
-                            prop_widgets::icon_toggle(ui, Icon::Italic, "Italic", next.font.italic)
-                                .then(|| next.font.italic = !next.font.italic)
-                                .is_some();
-                        toggled |=
-                            prop_widgets::icon_toggle(ui, Icon::AllCaps, "All caps", next.all_caps)
-                                .then(|| next.all_caps = !next.all_caps)
-                                .is_some();
-                    });
+                    let options = [
+                        (Icon::Italic, "Italic", next.font.italic),
+                        (Icon::AllCaps, "All caps", next.all_caps),
+                    ];
+                    match prop_widgets::mode_toggles(ui, &options) {
+                        Some(0) => next.font.italic = !next.font.italic,
+                        Some(_) => next.all_caps = !next.all_caps,
+                        None => return,
+                    }
+                    toggled = true;
                 });
             },
         )
@@ -435,19 +435,15 @@ impl PropertiesPanel {
         ctx: &LabelEdit<'_>,
         next: &mut ResolvedLabel,
     ) {
-        let mut aligned = None;
-        prop_widgets::named_above(ui, "Align", Provenance::Plain, |ui| {
-            ui.horizontal(|ui| {
-                for (align, icon, name) in [
-                    (Align::Left, Icon::AlignLeft, "Align left"),
-                    (Align::Centre, Icon::AlignCentre, "Align centre"),
-                    (Align::Right, Icon::AlignRight, "Align right"),
-                ] {
-                    if prop_widgets::icon_toggle(ui, icon, name, next.align == align) {
-                        aligned = Some(align);
-                    }
-                }
-            });
+        let aligns = [Align::Left, Align::Centre, Align::Right];
+        let options = [
+            (Icon::AlignLeft, "Align left", false),
+            (Icon::AlignCentre, "Align centre", false),
+            (Icon::AlignRight, "Align right", false),
+        ];
+        let selected = aligns.iter().position(|&a| a == next.align).unwrap_or(0);
+        let aligned = prop_widgets::named_above(ui, "Align", Provenance::Plain, |ui| {
+            prop_widgets::mode_buttons(ui, &options, selected).map(|index| aligns[index])
         });
         if let Some(align) = aligned {
             next.align = align;
