@@ -368,7 +368,7 @@ impl CanvasView {
         }
         if let Some(bounds) = handles_bounds(editor) {
             let knobs = tools::selection_knobs(editor);
-            let select = crate::theme::palette(ui.ctx()).select;
+            let select = tools::selection_mode(editor).colour(crate::theme::palette(ui.ctx()));
             handles::paint(&painter, &bounds, &view, rect.min, ppp, knobs, select);
         }
         // The Art board tool names the boards itself, in the colour of the selection.

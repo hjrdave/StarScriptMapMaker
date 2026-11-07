@@ -34,7 +34,7 @@ use self::select::SelectBox;
 
 pub use self::export_region::custom_region;
 pub use self::label::{TextEditing, edits_in_place};
-pub(crate) use self::select::selection_knobs;
+pub(crate) use self::select::{selection_knobs, selection_mode};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ToolId {
