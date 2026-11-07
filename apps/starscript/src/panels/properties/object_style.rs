@@ -7,10 +7,6 @@ use super::{Inherit, PropertiesPanel, caption};
 use crate::editor::Editor;
 use crate::icons::{self, Icon};
 use crate::prop_widgets::{self, Edit, Provenance, ScrubSpec, SectionHeader};
-use crate::theme::metrics;
-
-/// The room an icon button takes at the end of a row, with its gap.
-const ICON_SLOT: f32 = 24.0;
 
 impl PropertiesPanel {
     /// Applies what a field did. A reset goes back to the default; anything else is an edit of
@@ -106,44 +102,54 @@ impl PropertiesPanel {
         let provenance = group.provenance;
         let mut next = group.current().clone();
         let spec = |label| ScrubSpec::new(label).provenance(provenance);
-        let edit = prop_widgets::scrub_field(
+        let (amount_edit, scale_edit) = prop_widgets::pair(
             ui,
-            &mut next.amount,
-            &spec("Amount")
-                .unit(" u")
-                .range(0.0, 1000.0)
-                .step(0.5)
-                .decimals(1)
-                .mixed(group.mixed(|r| r.amount)),
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut next.amount,
+                    &spec("Amount")
+                        .prefix("Amount")
+                        .unit(" u")
+                        .range(0.0, 1000.0)
+                        .step(0.5)
+                        .decimals(1)
+                        .mixed(group.mixed(|r| r.amount)),
+                )
+            },
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut next.scale,
+                    &spec("Scale")
+                        .prefix("Scale")
+                        .unit(" u")
+                        .range(0.5, 10_000.0)
+                        .step(1.0)
+                        .decimals(1)
+                        .mixed(group.mixed(|r| r.scale)),
+                )
+            },
         );
-        let amount = next.amount;
-        self.edit(editor, edit, group, |r| r.amount = amount);
-        let edit = prop_widgets::scrub_field(
-            ui,
-            &mut next.scale,
-            &spec("Scale")
-                .unit(" u")
-                .range(0.5, 10_000.0)
-                .step(1.0)
-                .decimals(1)
-                .mixed(group.mixed(|r| r.scale)),
-        );
-        let scale = next.scale;
-        self.edit(editor, edit, group, |r| r.scale = scale);
+        let (amount, scale) = (next.amount, next.scale);
+        self.edit(editor, amount_edit, group, |r| r.amount = amount);
+        self.edit(editor, scale_edit, group, |r| r.scale = scale);
+        // The seed is the same kind of field, half the row wide, with the dice beside it.
         let mut seed = f64::from(next.seed);
-        let mut reroll = false;
-        let mut edit = Edit::default();
-        ui.horizontal(|ui| {
-            let room = ui.available_width() - ICON_SLOT - ui.spacing().item_spacing.x;
-            ui.allocate_ui(egui::vec2(room, metrics::FIELD[0]), |ui| {
-                edit = prop_widgets::scrub_field(
+        let (edit, reroll) = prop_widgets::pair(
+            ui,
+            |ui| {
+                prop_widgets::scrub_field(
                     ui,
                     &mut seed,
-                    &spec("Seed").range(0.0, f64::from(u32::MAX)),
-                );
-            });
-            reroll = icons::icon_button(ui, Icon::ReRoll, "Re-roll").clicked();
-        });
+                    &spec("Seed").prefix("Seed").range(0.0, f64::from(u32::MAX)),
+                )
+            },
+            |ui| {
+                ui.horizontal(|ui| icons::icon_button(ui, Icon::ReRoll, "Re-roll").clicked())
+                    .inner
+            },
+        );
         let seed = seed as u32;
         self.edit(editor, edit, group, |r| r.seed = seed);
         if reroll {

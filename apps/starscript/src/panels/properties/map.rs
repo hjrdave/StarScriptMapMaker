@@ -5,7 +5,7 @@ use ssmap_core::{Canvas, Color, Command, Id, MapTemplate, ShoreKind};
 
 use crate::icons::Icon;
 
-use super::{Inherit, PropertiesPanel, caption, row};
+use super::{Inherit, PropertiesPanel, caption, group_caption};
 use crate::editor::Editor;
 use crate::prop_widgets::{self, Edit, Handle, Provenance, ScrubSpec};
 
@@ -157,9 +157,9 @@ impl PropertiesPanel {
         caption(ui, &format!("The {} stays put.", stays_put(x, y)));
     }
 
-    /// The template the Map was made from, and its background: pick another template's look,
-    /// or edit the water and texture fields. Either way the background changes on its own;
-    /// the template shown stays the one the Map was made from.
+    /// The Style tab's Background: the template looks as cards, then the Water colour and the
+    /// Texture, each group under a quiet caption. Picking a card or editing a field changes
+    /// the background; the card of the current look has the gold ring.
     pub(super) fn background_fields(
         &mut self,
         ui: &mut egui::Ui,
@@ -178,16 +178,12 @@ impl PropertiesPanel {
                 }
             }
         };
-        if primary {
-            row(ui, "Template", |ui| {
-                ui.label(canvas.template.as_deref().unwrap_or("None"));
-            });
-        }
         let templates = self
             .templates
             .get_or_insert_with(|| MapTemplate::load_all().0);
-        caption(ui, "Take the look of a template");
+        group_caption(ui, "Template");
         ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
             for template in templates.iter() {
                 let same = *template.background() == canvas.background;
                 if look_card(ui, template.name(), template.background(), same).clicked() {
@@ -203,35 +199,68 @@ impl PropertiesPanel {
             edit.changed |= next_edit.changed;
             edit.finished |= next_edit.finished;
         };
-        let colour_field = |ui: &mut egui::Ui, label: &str, colour: &mut Color| {
+        // The group caption says "Water" or "Texture", so the row only says what it is; the
+        // accessible name keeps the whole of it.
+        let colour_field = |ui: &mut egui::Ui, label: &str, shown: &str, colour: &mut Color| {
             let mut value = Some(*colour);
-            let edit = prop_widgets::swatch(ui, label, &mut value, false, Provenance::Plain).edit;
+            let edit = prop_widgets::swatch_shown_as(
+                ui,
+                label,
+                shown,
+                &mut value,
+                false,
+                Provenance::Plain,
+            )
+            .edit;
             *colour = value.unwrap_or(*colour);
             edit
         };
-        merge(colour_field(ui, "Water colour", &mut next.water));
+        group_caption(ui, "Water");
+        merge(colour_field(ui, "Water colour", "Colour", &mut next.water));
+        group_caption(ui, "Texture");
         let mut strength = f64::from(next.texture.strength);
-        merge(prop_widgets::scrub_field(
-            ui,
-            &mut strength,
-            &ScrubSpec::new("Texture strength")
-                .range(0.0, 1.0)
-                .step(0.05)
-                .decimals(2),
-        ));
-        next.texture.strength = strength as f32;
         let mut scale = f64::from(next.texture.scale);
-        merge(prop_widgets::scrub_field(
+        let (strength_edit, scale_edit) = prop_widgets::pair(
             ui,
-            &mut scale,
-            &ScrubSpec::new("Texture scale")
-                .range(0.1, 20.0)
-                .step(0.1)
-                .decimals(1),
-        ));
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut strength,
+                    &ScrubSpec::new("Texture strength")
+                        .prefix("Strength")
+                        .range(0.0, 1.0)
+                        .step(0.05)
+                        .decimals(2),
+                )
+            },
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut scale,
+                    &ScrubSpec::new("Texture scale")
+                        .prefix("Scale")
+                        .range(0.1, 20.0)
+                        .step(0.1)
+                        .decimals(1),
+                )
+            },
+        );
+        merge(strength_edit);
+        merge(scale_edit);
+        next.texture.strength = strength as f32;
         next.texture.scale = scale as f32;
-        merge(colour_field(ui, "Texture light", &mut next.texture.light));
-        merge(colour_field(ui, "Texture dark", &mut next.texture.dark));
+        merge(colour_field(
+            ui,
+            "Texture light",
+            "Light",
+            &mut next.texture.light,
+        ));
+        merge(colour_field(
+            ui,
+            "Texture dark",
+            "Dark",
+            &mut next.texture.dark,
+        ));
         self.live
             .apply(editor, edit, "Change Background", || set(next.clone()));
     }
@@ -267,6 +296,7 @@ impl PropertiesPanel {
                         self.background_fields(ui, editor, primary, &canvas);
                     },
                 );
+                ui.add_space(crate::theme::SPACING[3]);
                 prop_widgets::divider_section(
                     ui,
                     "Roughness",

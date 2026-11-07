@@ -18,7 +18,9 @@ use self::color::hex_text;
 pub use self::color::parse_hex;
 use self::expr::eval_expression;
 pub use self::number::{Handle, MIXED, ScrubSpec, number_field, scrub_field, slider};
-pub use self::swatch::{SwatchChange, SwatchResponse, swatch, swatch_field, swatch_unlabelled};
+pub use self::swatch::{
+    SwatchChange, SwatchResponse, swatch, swatch_field, swatch_shown_as, swatch_unlabelled,
+};
 use crate::editor::{Editor, GestureId};
 use crate::icons::{self, Icon};
 use crate::theme::{self, metrics};
@@ -205,10 +207,13 @@ pub enum Provenance {
 }
 
 const DOT_WIDTH: f32 = 10.0;
-/// The label column: labels line up across rows and sections.
-const LABEL_MIN: f32 = 80.0;
+/// The label column: a fixed width, so labels and the fields after them line up across rows,
+/// sections and panels. A label that does not fit is cut short with an ellipsis, and shows in
+/// full as a tooltip.
+const LABEL_COLUMN: f32 = 80.0;
 
-/// The label of a field, with the gold dot when overridden.
+/// The label of a field, with the gold dot when overridden. A label wider than `rect` is cut
+/// short with an ellipsis, and the whole of it shows when the pointer rests on it.
 fn paint_label(ui: &egui::Ui, rect: egui::Rect, label: &str, provenance: Provenance) {
     let palette = theme::palette(ui.ctx());
     let colour = match (ui.is_enabled(), provenance) {
@@ -222,27 +227,25 @@ fn paint_label(ui: &egui::Ui, rect: egui::Rect, label: &str, provenance: Provena
             .circle_filled(egui::pos2(left + 3.0, rect.center().y), 3.0, palette.gold);
         left += DOT_WIDTH;
     }
-    ui.painter().text(
-        egui::pos2(left, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        label,
+    let mut job = egui::text::LayoutJob::simple_singleline(
+        label.to_owned(),
         egui::FontId::proportional(theme::BODY),
         colour,
     );
-}
-
-fn label_width(ui: &egui::Ui, label: &str, provenance: Provenance) -> f32 {
-    let galley = ui.painter().layout_no_wrap(
-        label.to_owned(),
-        egui::FontId::proportional(theme::BODY),
-        Color32::WHITE,
-    );
-    let dot = if provenance == Provenance::Overridden {
-        DOT_WIDTH
-    } else {
-        0.0
-    };
-    (galley.size().x + dot + 8.0).max(LABEL_MIN)
+    job.wrap = egui::text::TextWrapping::truncate_at_width((rect.right() - left).max(0.0));
+    let galley = ui.painter().layout_job(job);
+    let top_left = egui::pos2(left, rect.center().y - galley.size().y / 2.0);
+    let elided = galley.elided;
+    ui.painter().galley(top_left, galley, colour);
+    if elided {
+        let id = ui.id().with((
+            "label tip",
+            label,
+            rect.min.x.to_bits(),
+            rect.min.y.to_bits(),
+        ));
+        ui.interact(rect, id, Sense::hover()).on_hover_text(label);
+    }
 }
 
 /// The width the trailing glyph or reset arrow of a provenance takes.
@@ -697,10 +700,8 @@ pub fn field_row(
     body: impl FnOnce(&mut egui::Ui),
 ) -> bool {
     ui.horizontal(|ui| {
-        let (rect, response) = ui.allocate_exact_size(
-            Vec2::new(label_width(ui, label, provenance), metrics::FIELD[0]),
-            Sense::hover(),
-        );
+        let (rect, response) =
+            ui.allocate_exact_size(Vec2::new(LABEL_COLUMN, metrics::FIELD[0]), Sense::hover());
         response.widget_info(|| {
             egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), label)
         });
@@ -1112,6 +1113,32 @@ mod tests {
         // The handle inside the box keeps the field's name; the value carries the unit.
         harness.get_by_label("Scale");
         harness.get(by().value("150%"));
+    }
+
+    #[test]
+    fn a_prefixed_field_paints_its_word_but_keeps_the_whole_name_and_the_unit() {
+        use egui_kittest::Harness;
+        use egui_kittest::kittest::{Queryable, by};
+
+        let mut harness = Harness::builder()
+            .with_size(Vec2::new(120.0, 60.0))
+            .build_ui(|ui| {
+                let mut strength = 0.35;
+                let spec = ScrubSpec::new("Texture strength")
+                    .prefix("Strength")
+                    .range(0.0, 1.0)
+                    .decimals(2);
+                scrub_field(ui, &mut strength, &spec);
+            });
+        harness.run();
+        // The word is painted, not a widget: the field is found by its name, and its value
+        // still reads as a number.
+        harness.get_by_label("Texture strength");
+        assert!(harness.query_by_label("Strength").is_none());
+        harness.get(by().value("0.35"));
+        // The drag handle is the word's width, not the whole box.
+        let handle = harness.get_by_label("Texture strength").rect();
+        assert!(handle.width() > 22.0 && handle.width() < 70.0, "{handle:?}");
     }
 
     #[test]

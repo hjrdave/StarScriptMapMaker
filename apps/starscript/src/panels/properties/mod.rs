@@ -378,6 +378,24 @@ fn caption(ui: &mut egui::Ui, text: &str) {
     );
 }
 
+/// A quiet caption that starts a group of rows inside a section ("Water", "Texture"): 8 above
+/// and 4 below, sentence case. Painted, so it adds no accessible node.
+fn group_caption(ui: &mut egui::Ui, text: &str) {
+    let palette = theme::palette(ui.ctx());
+    ui.add_space(theme::SPACING[3]);
+    let galley = ui.painter().layout_no_wrap(
+        text.to_owned(),
+        egui::FontId::proportional(theme::CAPTION),
+        palette.text_tertiary,
+    );
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), galley.size().y),
+        egui::Sense::hover(),
+    );
+    ui.painter().galley(rect.min, galley, palette.text_tertiary);
+    ui.add_space(theme::SPACING[1]);
+}
+
 /// A label with something other than a scrub field next to it.
 fn row(ui: &mut egui::Ui, label: &str, body: impl FnOnce(&mut egui::Ui)) {
     let palette = theme::palette(ui.ctx());

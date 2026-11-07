@@ -37,6 +37,8 @@ pub enum Handle<'a> {
     Text(&'a str),
     /// A glyph, such as the rotate arrow.
     Icon(Icon),
+    /// The field's name as a word, such as "Strength": the box is as wide as the word needs.
+    Word(&'a str),
 }
 
 impl<'a> ScrubSpec<'a> {
@@ -61,6 +63,13 @@ impl<'a> ScrubSpec<'a> {
     pub fn handle(mut self, handle: Handle<'a>) -> Self {
         self.handle = Some(handle);
         self
+    }
+
+    /// Draws `name` inside the box at the left, in place of the label beside it, for fields in
+    /// a [`pair`](super::pair) that have no room for a label column. The box still scrubs and
+    /// types as before; the label stays the accessible name, so the word is only painted.
+    pub fn prefix(self, name: &'a str) -> Self {
+        self.handle(Handle::Word(name))
     }
 
     /// Marks the setting as differing across the selection.
@@ -190,10 +199,8 @@ fn labelled_parts(
     spec: &ScrubSpec<'_>,
 ) -> (egui::Response, egui::Rect, egui::Response) {
     let palette = theme::palette(ui.ctx());
-    let (label_rect, handle) = ui.allocate_exact_size(
-        Vec2::new(label_width(ui, spec.label, spec.provenance), spec.height),
-        Sense::drag(),
-    );
+    let (label_rect, handle) =
+        ui.allocate_exact_size(Vec2::new(LABEL_COLUMN, spec.height), Sense::drag());
     paint_label(ui, label_rect, spec.label, spec.provenance);
     let field_w = (ui.available_width() - gap_before_trailing(ui, spec.provenance)).max(40.0);
     let (field_rect, field) =
@@ -216,6 +223,7 @@ fn compact_parts(
     glyph: Handle<'_>,
 ) -> (egui::Response, egui::Rect, egui::Response) {
     let palette = theme::palette(ui.ctx());
+    let word_handle = matches!(glyph, Handle::Word(_));
     let width = (ui.available_width() - gap_before_trailing(ui, spec.provenance)).max(40.0);
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, spec.height), Sense::hover());
     ui.painter().rect(
@@ -225,14 +233,35 @@ fn compact_parts(
         Stroke::new(1.0, palette.border_subtle),
         StrokeKind::Inside,
     );
-    let handle_rect = egui::Rect::from_min_size(rect.min, Vec2::new(HANDLE_WIDTH, rect.height()));
+    let colour = palette.text_tertiary;
+    // A word takes the room it needs, with a little before and after; a letter or glyph a slot.
+    let word = match glyph {
+        Handle::Word(text) => Some(ui.painter().layout_no_wrap(
+            text.to_owned(),
+            egui::FontId::proportional(theme::BODY),
+            colour,
+        )),
+        _ => None,
+    };
+    let handle_width = word.as_ref().map_or(HANDLE_WIDTH, |galley| {
+        (galley.size().x + 12.0).min(rect.width() * 0.6)
+    });
+    let handle_rect = egui::Rect::from_min_size(rect.min, Vec2::new(handle_width, rect.height()));
     let handle = ui.interact(
         handle_rect,
         ui.id().with(("scrub handle", spec.label)),
         Sense::drag(),
     );
-    let colour = palette.text_tertiary;
     match glyph {
+        Handle::Word(_) => {
+            if let Some(galley) = word {
+                let pos = egui::pos2(
+                    handle_rect.left() + 6.0,
+                    handle_rect.center().y - galley.size().y / 2.0,
+                );
+                ui.painter().galley(pos, galley, colour);
+            }
+        }
         Handle::Text(text) => {
             ui.painter().text(
                 handle_rect.center(),
@@ -244,8 +273,12 @@ fn compact_parts(
         }
         Handle::Icon(icon) => icons::paint(ui, handle_rect, icon, 12.0, colour),
     }
-    let mut value_rect =
-        egui::Rect::from_min_max(egui::pos2(handle_rect.right() - 6.0, rect.top()), rect.max);
+    // The value box overlaps a letter or glyph slot a little, but not a word.
+    let overlap = if word_handle { 0.0 } else { 6.0 };
+    let mut value_rect = egui::Rect::from_min_max(
+        egui::pos2(handle_rect.right() - overlap, rect.top()),
+        rect.max,
+    );
     if !spec.unit.is_empty() && !spec.mixed {
         let unit = ui.painter().text(
             egui::pos2(rect.right() - 6.0, rect.center().y),
@@ -539,10 +572,8 @@ pub fn number_field(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) ->
     let mut typing: Option<String> = ui.data(|d| d.get_temp(id));
     let mut edit = Edit::default();
     ui.horizontal(|ui| {
-        let (label_rect, _) = ui.allocate_exact_size(
-            Vec2::new(label_width(ui, spec.label, spec.provenance), spec.height),
-            Sense::hover(),
-        );
+        let (label_rect, _) =
+            ui.allocate_exact_size(Vec2::new(LABEL_COLUMN, spec.height), Sense::hover());
         paint_label(ui, label_rect, spec.label, spec.provenance);
         if let Some(next) = number_box(ui, *value, spec, &mut typing, BOX_WIDTH) {
             *value = next;
@@ -572,10 +603,8 @@ pub fn slider(ui: &mut egui::Ui, value: &mut f64, spec: &ScrubSpec<'_>) -> Edit 
     let mut typing: Option<String> = ui.data(|d| d.get_temp(id));
     let mut edit = Edit::default();
     ui.horizontal(|ui| {
-        let (label_rect, _) = ui.allocate_exact_size(
-            Vec2::new(label_width(ui, spec.label, spec.provenance), spec.height),
-            Sense::hover(),
-        );
+        let (label_rect, _) =
+            ui.allocate_exact_size(Vec2::new(LABEL_COLUMN, spec.height), Sense::hover());
         paint_label(ui, label_rect, spec.label, spec.provenance);
 
         let readout_w = BOX_WIDTH;

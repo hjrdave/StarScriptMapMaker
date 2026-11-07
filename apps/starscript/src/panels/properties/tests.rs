@@ -908,11 +908,85 @@ fn look_of(name: &str) -> ssmap_core::Background {
 }
 
 #[test]
-fn map_settings_name_the_template_the_map_was_made_from() {
+fn the_style_tab_shows_the_template_cards_and_no_template_row() {
     let mut harness = map_harness(ocean_fixture());
     click(&mut harness, "Style");
-    harness.get_by_label("Template");
-    harness.get_by_label("Ocean");
+    // The card of the current look is the one sign of which template it is.
+    let ocean = harness.get_by_label("Ocean look");
+    assert_eq!(
+        ocean.accesskit_node().toggled(),
+        Some(egui::accesskit::Toggled::True)
+    );
+    assert!(harness.query_by_label("Template").is_none());
+    assert!(harness.query_by_label("Ocean").is_none());
+}
+
+#[test]
+fn the_style_tab_keeps_every_field_findable_by_its_whole_name() {
+    let mut harness = map_harness(ocean_fixture());
+    click(&mut harness, "Style");
+    // The rows show "Colour", "Light", "Dark" and the numbers carry "Strength" and "Scale" in
+    // the box, but assistive tools and tests still find them by the whole name.
+    for name in [
+        "Water colour",
+        "Texture strength",
+        "Texture scale",
+        "Texture light",
+        "Texture dark",
+        "Amount",
+        "Scale",
+        "Seed",
+        "Re-roll",
+    ] {
+        assert!(harness.query_by_label(name).is_some(), "{name}");
+    }
+}
+
+#[test]
+fn the_style_tab_swatches_start_at_one_x_at_every_width() {
+    for width in [480.0, 320.0, 240.0, 200.0] {
+        let (fixture, _, _) = fixture();
+        let mut harness = narrow_harness(fixture, width, |ui, f| {
+            let id = egui::Id::new("map panel tab");
+            ui.ctx().data_mut(|d| d.insert_temp(id, 0_usize));
+            f.panel.map_panel(ui, &mut f.editor);
+        });
+        harness.run();
+        let lefts: Vec<f32> = ["Water colour", "Texture light", "Texture dark"]
+            .into_iter()
+            .map(|name| harness.get_by_label(name).rect().left())
+            .collect();
+        assert!(
+            lefts.windows(2).all(|w| (w[0] - w[1]).abs() < 0.5),
+            "swatches at {width}: {lefts:?}"
+        );
+        // The pair sits side by side, each in its own half, inside the panel.
+        let strength = harness.get_by_label("Texture strength").rect();
+        let scale = harness.get_by_label("Texture scale").rect();
+        assert!(strength.right() <= scale.left(), "pair at {width}");
+        assert!(scale.right() <= width, "pair at {width}");
+    }
+}
+
+#[test]
+fn a_long_label_does_not_move_its_field() {
+    let (fixture, _, _) = fixture();
+    let mut harness = narrow_harness(fixture, 320.0, |ui, _| {
+        let mut short = 1.0;
+        let mut long = 2.0;
+        prop_widgets::scrub_field(ui, &mut short, &prop_widgets::ScrubSpec::new("Size"));
+        prop_widgets::scrub_field(
+            ui,
+            &mut long,
+            &prop_widgets::ScrubSpec::new("Texture strength jitter"),
+        );
+    });
+    harness.run();
+    // The label is the scrub handle: both columns are the same width, so the boxes line up.
+    let short = harness.get_by_label("Size").rect();
+    let long = harness.get_by_label("Texture strength jitter").rect();
+    assert_eq!(short.width(), long.width());
+    assert_eq!(short.right(), long.right());
 }
 
 #[test]
