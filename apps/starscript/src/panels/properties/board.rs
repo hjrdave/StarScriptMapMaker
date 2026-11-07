@@ -151,7 +151,7 @@ impl PropertiesPanel {
     /// For the selected Objects: which board they belong to, and a way to move them to
     /// another, to the Canvas, or off the boards. One Undo step. Nothing for a selection that
     /// is not all Objects.
-    pub(super) fn membership_row(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+    pub(super) fn membership_row(&mut self, ui: &mut egui::Ui, editor: &mut Editor, above: bool) {
         let ids: Vec<Id> = editor.selection().to_vec();
         let memberships: Vec<Membership> = ids
             .iter()
@@ -180,18 +180,26 @@ impl PropertiesPanel {
         options.push(Membership::OffCanvas);
         let names: Vec<String> = options.iter().map(|&m| membership_name(map, m)).collect();
         let mut chosen = None;
-        row(ui, "Board", |ui| {
-            egui::ComboBox::from_id_salt("object board")
-                .selected_text(shown)
-                .show_ui(ui, |ui| {
-                    for (option, name) in options.iter().zip(&names) {
-                        let current = same && memberships[0] == *option;
-                        if ui.selectable_label(current, name).clicked() && !current {
-                            chosen = Some(*option);
-                        }
+        let combo = |ui: &mut egui::Ui| {
+            let mut picker = egui::ComboBox::from_id_salt("object board");
+            if above {
+                // Full width, with the name above it.
+                picker = picker.width(ui.available_width());
+            }
+            picker.selected_text(shown).show_ui(ui, |ui| {
+                for (option, name) in options.iter().zip(&names) {
+                    let current = same && memberships[0] == *option;
+                    if ui.selectable_label(current, name).clicked() && !current {
+                        chosen = Some(*option);
                     }
-                });
-        });
+                }
+            });
+        };
+        if above {
+            prop_widgets::named_above(ui, "Board", Provenance::Plain, combo);
+        } else {
+            row(ui, "Board", combo);
+        }
         if let Some(membership) = chosen {
             let _ = editor.run(Command::SetMembership { ids, membership });
         }

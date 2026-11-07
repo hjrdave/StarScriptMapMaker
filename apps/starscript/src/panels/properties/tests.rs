@@ -1239,7 +1239,7 @@ fn a_selected_landmass_has_a_lock_in_its_header_and_no_locked_checkbox() {
 }
 
 #[test]
-fn a_labels_halo_colour_appears_with_a_halo_and_overrides_can_be_reset_from_the_header() {
+fn a_labels_halo_colour_always_shows_and_overrides_can_be_reset_from_the_header() {
     let (mut fixture, layer, _) = fixture();
     let id = Id::new();
     fixture
@@ -1269,8 +1269,9 @@ fn a_labels_halo_colour_appears_with_a_halo_and_overrides_can_be_reset_from_the_
         assert!(harness.query_by_label(label).is_some(), "{label}");
     }
     assert!(harness.query_by_label("Locked").is_none());
-    // No halo yet, so no colour for it.
-    assert!(harness.query_by_label("Halo colour").is_none());
+    // The halo's colour sits beside its size even while the halo has none, so the row keeps
+    // its shape when a size is typed.
+    harness.get_by_label("Halo colour");
 
     // One field is overridden, so the header offers the reset and says so.
     harness.get_by_label("Reset overrides").click();
@@ -1280,6 +1281,52 @@ fn a_labels_halo_colour_appears_with_a_halo_and_overrides_can_be_reset_from_the_
         None
     );
     assert!(harness.query_by_label("Reset overrides").is_none());
+}
+
+#[test]
+fn a_labels_board_is_a_full_width_field_in_its_appearance_section() {
+    use ssmap_core::Membership;
+    let (mut fixture, layer, _) = fixture();
+    let board = fixture.editor.new_art_board().unwrap();
+    let id = Id::new();
+    fixture
+        .editor
+        .run(Command::CreateLabel {
+            id,
+            parent: layer,
+            index: None,
+            label: Box::new(Label {
+                text: "Hello".to_owned(),
+                ..Label::default()
+            }),
+        })
+        .unwrap();
+    fixture.editor.select_board(None);
+    fixture.editor.select(vec![id]);
+    let mut harness = narrow_harness(fixture, 260.0, |ui, f| f.panel.show(ui, &mut f.editor));
+    // The Board field is the combo that says "Canvas"; it spans the panel, not a default width.
+    let boards: Vec<_> = harness
+        .query_all_by_role(egui::accesskit::Role::ComboBox)
+        .filter(|node| node.accesskit_node().value().as_deref() == Some("Canvas"))
+        .collect();
+    let [combo] = boards.as_slice() else {
+        panic!("one Board field, found {}", boards.len())
+    };
+    let rect = combo.rect();
+    assert!(rect.width() > 200.0, "{rect:?}");
+    assert!(rect.right() <= 260.0, "{rect:?}");
+    // Only one: the generic row under the sections is not drawn for a Label.
+    assert_eq!(harness.query_all_by_label("Board").count(), 0);
+
+    combo.click();
+    harness.run();
+    harness.get_by_label("Art board 1").click();
+    harness.run();
+    let member = match harness.state().editor.map().node(id) {
+        Some(Node::Object(object)) => object.membership,
+        _ => panic!("an Object"),
+    };
+    assert_eq!(member, Membership::Board(board));
 }
 
 fn pinned(harness: &Harness<'_, Fixture>, id: Id) -> bool {

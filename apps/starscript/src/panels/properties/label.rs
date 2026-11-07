@@ -339,7 +339,7 @@ impl PropertiesPanel {
             },
             |ui| {
                 let spacing = provenance(label.letter_spacing.is_some());
-                prop_widgets::named_above(ui, "Letter spacing", spacing, |ui| {
+                prop_widgets::named_above(ui, "Spacing", spacing, |ui| {
                     prop_widgets::scrub_field(
                         ui,
                         &mut next.letter_spacing,
@@ -479,7 +479,6 @@ impl PropertiesPanel {
         next: &mut ResolvedLabel,
     ) {
         let halo = provenance(ctx.label.halo.is_some());
-        let has_halo = next.halo.width > 0.0;
         let mut colour = Some(next.halo.color);
         let (size_edit, colour_edit) = prop_widgets::pair(
             ui,
@@ -499,23 +498,18 @@ impl PropertiesPanel {
                 })
             },
             |ui| {
-                // The halo's colour matters only once it has a width.
-                has_halo.then(|| {
-                    prop_widgets::named_above(ui, "Colour", halo, |ui| {
-                        prop_widgets::swatch_field(ui, "Halo colour", &mut colour, false, halo).edit
-                    })
+                prop_widgets::named_above(ui, "Colour", halo, |ui| {
+                    prop_widgets::swatch_field(ui, "Halo colour", &mut colour, false, halo).edit
                 })
             },
         );
         self.label_apply_as("Change Label Halo", editor, ctx, size_edit, &*next, |l| {
             l.halo = None
         });
-        if let Some(edit) = colour_edit {
-            if edit.changed {
-                next.halo.color = colour.unwrap_or(next.halo.color);
-            }
-            self.label_apply(editor, ctx, edit, &*next, |l| l.halo = None);
+        if colour_edit.changed {
+            next.halo.color = colour.unwrap_or(next.halo.color);
         }
+        self.label_apply(editor, ctx, colour_edit, &*next, |l| l.halo = None);
     }
 
     /// Opacity and rotation.
@@ -569,6 +563,7 @@ impl PropertiesPanel {
             |l| l.opacity = None,
         );
         self.label_apply(editor, ctx, rotation_edit, &*next, |_| {});
+        self.membership_row(ui, editor, true);
     }
 
     /// Applies what a Label field did: a reset clears that one override with `clear`, anything
