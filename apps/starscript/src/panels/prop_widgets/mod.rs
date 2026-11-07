@@ -18,7 +18,7 @@ use self::color::hex_text;
 pub use self::color::parse_hex;
 use self::expr::eval_expression;
 pub use self::number::{Handle, MIXED, ScrubSpec, number_field, scrub_field, slider};
-pub use self::swatch::{SwatchChange, SwatchResponse, swatch, swatch_unlabelled};
+pub use self::swatch::{SwatchChange, SwatchResponse, swatch, swatch_field, swatch_unlabelled};
 use crate::editor::{Editor, GestureId};
 use crate::icons::{self, Icon};
 use crate::theme::{self, metrics};

@@ -303,12 +303,12 @@ fn the_label_tool_places_a_label_and_types_its_text_in_one_undo_step() {
         Some(ssmap_core::Node::Layer(layer)) if layer.name == "Labels"
     ));
     // Its first line names it in the Layers panel and, with the Select tool back, in the
-    // Properties title and breadcrumb.
+    // Properties breadcrumb. The Properties title is "Label", not its name.
     assert_eq!(
         harness.state().editor().active_tool,
         ssmap_app::tools::ToolId::Select
     );
-    assert_eq!(harness.get_all_by_label("Ærendál").count(), 3);
+    assert_eq!(harness.get_all_by_label("Ærendál").count(), 2);
 
     // Clicking empty Canvas deselects it, and clicking it picks it again.
     click_at(&mut harness, egui::pos2(300.0, 120.0));

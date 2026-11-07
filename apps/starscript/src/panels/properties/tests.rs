@@ -286,6 +286,86 @@ fn manage_label_styles_asks_for_the_window() {
     assert!(harness.state_mut().panel.take_manage_label_styles());
 }
 
+/// A Label that overrides every field the panel marks, selected, with the Select tool.
+fn fixture_with_overridden_label() -> (Fixture, Id) {
+    let (mut fixture, layer, _) = fixture();
+    let label = Id::new();
+    assert!(
+        fixture
+            .editor
+            .run(Command::CreateLabel {
+                id: label,
+                parent: layer,
+                index: None,
+                label: Box::new(Label {
+                    text: "Hello".to_owned(),
+                    size: Some(48.0),
+                    line_height: Some(1.4),
+                    letter_spacing: Some(0.05),
+                    arch: Some(0.25),
+                    fill: Some(Color::rgb(43, 33, 24)),
+                    opacity: Some(0.8),
+                    halo: Some(ssmap_core::Halo {
+                        width: 2.0,
+                        color: Color::rgb(244, 234, 210),
+                        ..ssmap_core::Halo::default()
+                    }),
+                    ..Label::default()
+                }),
+            })
+            .is_ok()
+    );
+    fixture.editor.select(vec![label]);
+    (fixture, label)
+}
+
+#[test]
+fn a_selected_label_is_titled_label_not_properties() {
+    let (fixture, _) = fixture_with_overridden_label();
+    let harness = harness(fixture);
+    assert!(harness.query_by_label("Properties").is_none());
+    // The title, and the lock button's "Lock Label" are the only things named Label.
+    assert!(harness.query_all_by_label("Label").next().is_some());
+    // The breadcrumb keeps the Layer and the Pin and Lock buttons under the title.
+    harness.get_by_label("Pin to Canvas");
+    harness.get_by_label("Lock Label");
+}
+
+#[test]
+fn a_landmass_keeps_the_properties_title() {
+    let (mut fixture, _, island) = fixture();
+    fixture.editor.select(vec![island]);
+    let harness = harness(fixture);
+    assert!(harness.query_all_by_label("Label").next().is_none());
+}
+
+#[test]
+fn the_label_panel_fits_at_its_narrowest_width() {
+    const NARROW: f32 = 240.0;
+    let (fixture, _) = fixture_with_overridden_label();
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(NARROW, 1600.0))
+        .build_ui_state(
+            |ui, fixture: &mut Fixture| {
+                theme::install(&ui.ctx().clone());
+                fixture.panel.show(ui, &mut fixture.editor);
+            },
+            fixture,
+        );
+    harness.run();
+    // Every override shows its reset arrow here, the widest a row gets.
+    harness.get_by_label("Reset Size");
+    harness.get_by_label("Reset Halo colour");
+    let clipped: Vec<_> = harness
+        .root()
+        .children_recursive()
+        .filter(|node| node.accesskit_node().bounding_box().is_some())
+        .map(|node| node.rect())
+        .filter(|rect| rect.right() > NARROW + 0.5 || rect.left() < -0.5)
+        .collect();
+    assert!(clipped.is_empty(), "outside the panel: {clipped:?}");
+}
+
 #[test]
 fn shuffle_variant_in_properties_stays_within_the_variant_group() {
     use ssmap_core::asset::{AssetRef, PackLibrary, PackRoots};

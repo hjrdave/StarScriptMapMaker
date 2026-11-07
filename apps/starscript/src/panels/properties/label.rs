@@ -16,11 +16,13 @@ struct LabelEdit<'a> {
     styles: &'a LabelStyles,
 }
 
+/// A Label field is marked only when this Label overrides its style: a gold dot after the name
+/// and a reset arrow. A value taken from the style carries no mark (no link glyph).
 fn provenance(overridden: bool) -> Provenance {
     if overridden {
         Provenance::Overridden
     } else {
-        Provenance::Inherited
+        Provenance::Plain
     }
 }
 
@@ -166,28 +168,31 @@ impl PropertiesPanel {
         styles: &LabelStyles,
         restyled: &mut Option<Label>,
     ) -> bool {
-        prop_widgets::field_row(ui, "Style", Provenance::Plain, |ui| {
+        prop_widgets::named_above(ui, "Style", Provenance::Plain, |ui| {
             let current = styles
                 .get(label.style)
                 .unwrap_or_else(|| styles.default_style());
-            egui::ComboBox::from_id_salt("style")
-                .selected_text(&current.name)
-                .show_ui(ui, |ui| {
-                    for style in styles.iter() {
-                        if ui
-                            .selectable_label(style.id == current.id, &style.name)
-                            .clicked()
-                        {
-                            *restyled = Some(Label {
-                                style: style.id,
-                                ..label.clone()
-                            });
+            ui.horizontal(|ui| {
+                egui::ComboBox::from_id_salt("style")
+                    .width((ui.available_width() - 28.0).max(40.0))
+                    .selected_text(&current.name)
+                    .show_ui(ui, |ui| {
+                        for style in styles.iter() {
+                            if ui
+                                .selectable_label(style.id == current.id, &style.name)
+                                .clicked()
+                            {
+                                *restyled = Some(Label {
+                                    style: style.id,
+                                    ..label.clone()
+                                });
+                            }
                         }
-                    }
-                });
-            if icons::icon_button(ui, Icon::More, "Manage Label styles…").clicked() {
-                self.manage_label_styles = true;
-            }
+                    });
+                if icons::icon_button(ui, Icon::More, "Manage Label styles…").clicked() {
+                    self.manage_label_styles = true;
+                }
+            });
         });
         restyled.is_some()
     }
@@ -459,13 +464,10 @@ impl PropertiesPanel {
         next: &mut ResolvedLabel,
     ) {
         let mut colour = Some(next.fill);
-        let response = prop_widgets::swatch(
-            ui,
-            "Fill",
-            &mut colour,
-            false,
-            provenance(ctx.label.fill.is_some()),
-        );
+        let fill = provenance(ctx.label.fill.is_some());
+        let response = prop_widgets::named_above(ui, "Fill", fill, |ui| {
+            prop_widgets::swatch_field(ui, "Fill", &mut colour, false, fill)
+        });
         if response.edit.changed {
             next.fill = colour.unwrap_or(next.fill);
         }
@@ -504,7 +506,7 @@ impl PropertiesPanel {
                 // The halo's colour matters only once it has a width.
                 has_halo.then(|| {
                     prop_widgets::named_above(ui, "Colour", halo, |ui| {
-                        prop_widgets::swatch(ui, "Halo colour", &mut colour, false, halo).edit
+                        prop_widgets::swatch_field(ui, "Halo colour", &mut colour, false, halo).edit
                     })
                 })
             },
@@ -646,7 +648,8 @@ mod tests {
     #[test]
     fn provenance_is_overridden_only_where_the_label_sets_the_field() {
         assert_eq!(provenance(true), Provenance::Overridden);
-        assert_eq!(provenance(false), Provenance::Inherited);
+        // A value from the style has no link glyph.
+        assert_eq!(provenance(false), Provenance::Plain);
     }
 
     #[test]

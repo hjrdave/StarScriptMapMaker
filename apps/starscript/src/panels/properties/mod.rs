@@ -118,12 +118,20 @@ impl PropertiesPanel {
             || nothing
             || tool != crate::tools::ToolId::Select)
         {
+            let tint = theme::palette(ui.ctx()).text_primary;
+            // A selected Label is titled by its kind, with the Label tool's icon; the
+            // breadcrumb under it carries its name.
+            if let [id] = editor.selection()
+                && is_label(editor.map(), *id)
+            {
+                crate::shell::icon_header(ui, Icon::Label, tint, "Label", |_| {});
+                return;
+            }
             let title = match editor.selection() {
                 [] => "Properties".to_owned(),
                 [id] => node_name(editor.map(), *id),
                 many => selection_summary(editor.map(), many),
             };
-            let tint = theme::palette(ui.ctx()).text_primary;
             crate::shell::icon_header(ui, Icon::Shape, tint, &title, |_| {});
             return;
         }
@@ -331,6 +339,14 @@ impl PropertiesPanel {
 }
 
 /// "Layer › Object" for a selected Object, or the Layer's own name.
+/// Whether `id` is a Label.
+fn is_label(map: &Map, id: Id) -> bool {
+    matches!(
+        map.node(id),
+        Some(Node::Object(object)) if matches!(object.kind, ObjectKind::Label(_))
+    )
+}
+
 fn breadcrumb(ui: &mut egui::Ui, map: &Map, id: Id) {
     let text = match (map.node(id), map.parent(id)) {
         (Some(Node::Object(_)), Some(layer)) => {

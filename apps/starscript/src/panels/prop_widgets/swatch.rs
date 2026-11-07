@@ -26,7 +26,31 @@ pub fn swatch(
     optional: bool,
     provenance: Provenance,
 ) -> SwatchResponse {
-    swatch_row(ui, label, true, colour, optional, provenance)
+    swatch_row(ui, label, Column::Label, colour, optional, provenance)
+}
+
+/// [`swatch`] with no label column, for a field whose name sits above it (or in a half-width
+/// column): `label` is only the accessible name. The hex text truncates before it can push the
+/// reset arrow out of a narrow column.
+pub fn swatch_field(
+    ui: &mut egui::Ui,
+    label: &str,
+    colour: &mut Option<Color>,
+    optional: bool,
+    provenance: Provenance,
+) -> SwatchResponse {
+    swatch_row(ui, label, Column::None, colour, optional, provenance)
+}
+
+/// What the swatch row puts before the chip.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Column {
+    /// The label in the label column.
+    Label,
+    /// An empty label column, to line up under another row.
+    Blank,
+    /// Nothing: the chip starts at the left edge.
+    None,
 }
 
 /// [`swatch`] under the row that chose it (Colour: Tint): the label column stays empty and
@@ -37,13 +61,20 @@ pub fn swatch_unlabelled(
     colour: &mut Option<Color>,
     optional: bool,
 ) -> SwatchResponse {
-    swatch_row(ui, label, false, colour, optional, Provenance::Plain)
+    swatch_row(
+        ui,
+        label,
+        Column::Blank,
+        colour,
+        optional,
+        Provenance::Plain,
+    )
 }
 
 fn swatch_row(
     ui: &mut egui::Ui,
     label: &str,
-    show_label: bool,
+    column: Column,
     colour: &mut Option<Color>,
     optional: bool,
     provenance: Provenance,
@@ -54,15 +85,17 @@ fn swatch_row(
     let enabled = ui.is_enabled();
     let response = ui
         .horizontal(|ui| {
-            let label_w = if show_label {
-                label_width(ui, label, provenance)
-            } else {
-                LABEL_MIN
-            };
-            let (label_rect, _) =
-                ui.allocate_exact_size(Vec2::new(label_w, metrics::FIELD[0]), Sense::hover());
-            if show_label {
-                paint_label(ui, label_rect, label, provenance);
+            if column != Column::None {
+                let label_w = if column == Column::Label {
+                    label_width(ui, label, provenance)
+                } else {
+                    LABEL_MIN
+                };
+                let (label_rect, _) =
+                    ui.allocate_exact_size(Vec2::new(label_w, metrics::FIELD[0]), Sense::hover());
+                if column == Column::Label {
+                    paint_label(ui, label_rect, label, provenance);
+                }
             }
             let (rect, response) = ui.allocate_exact_size(
                 Vec2::new(44.0, metrics::FIELD[0]),
@@ -102,11 +135,19 @@ fn swatch_row(
                 Stroke::new(1.0, outline),
                 StrokeKind::Inside,
             );
-            ui.label(
-                egui::RichText::new(colour.map_or("None".to_owned(), hex_text))
-                    .size(theme::CAPTION)
-                    .color(palette.text_secondary),
-            );
+            let hex = egui::RichText::new(colour.map_or("None".to_owned(), hex_text))
+                .size(theme::CAPTION)
+                .color(palette.text_secondary);
+            if column == Column::None {
+                // Leave room for the reset arrow, and cut the hex short rather than push it out.
+                let room = (ui.available_width() - gap_before_trailing(ui, provenance)).max(0.0);
+                ui.add_sized(
+                    Vec2::new(room, metrics::FIELD[0]),
+                    egui::Label::new(hex).truncate(),
+                );
+            } else {
+                ui.label(hex);
+            }
             if trailing(ui, label, provenance) {
                 edit.reset = true;
             }
