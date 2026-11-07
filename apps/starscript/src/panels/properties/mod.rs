@@ -239,7 +239,10 @@ impl PropertiesPanel {
                 self.combine(ui, editor);
             }
         }
-        self.membership_row(ui, editor);
+        // A Label shows its Board inside its Appearance section.
+        if !matches!(editor.selection(), [id] if is_label(editor.map(), *id)) {
+            self.membership_row(ui, editor, false);
+        }
     }
 
     /// A Landmass, Lake or River: the header with the lock, a River's own settings, its Fill,

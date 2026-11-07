@@ -265,7 +265,7 @@ impl PropertiesPanel {
                 self.stamps_apply(editor, members, Edit::instant(), flip_vertical);
             }
 
-            self.membership_row(ui, editor);
+            self.membership_row(ui, editor, false);
         });
     }
 
