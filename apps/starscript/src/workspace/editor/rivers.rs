@@ -23,9 +23,8 @@ impl Editor {
             .with_open_source(open_source)
     }
 
-    /// Adds the River the tool's `path` makes ([`Self::planned_river`]) to the "Water" Layer
-    /// and selects it, as one Undo step. The first River or water stroke also creates that
-    /// Layer, as the water brush does. Returns whether it was added.
+    /// Adds the River the tool's `path` makes ([`Self::planned_river`]) to the Layer new Objects go
+    /// into and selects it, as one Undo step. On a Map with no Layer it also creates one. Returns whether it was added.
     pub fn finish_river(&mut self, path: &[RiverPoint], seed: u32) -> bool {
         let river = self.planned_river(path, seed);
         if let Some(problem) = river.problem() {
@@ -43,7 +42,7 @@ impl Editor {
                         id: layer,
                         parent: None,
                         index: None,
-                        name: WATER_LAYER.to_owned(),
+                        name: g.editor.map.next_name("Layer"),
                     });
                     if !created {
                         return Err(());

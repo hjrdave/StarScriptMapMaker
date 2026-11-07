@@ -195,7 +195,7 @@ fn the_canvas_and_the_layers_panel_share_one_selection() {
     let (mut harness, [a, b, _]) = app();
     let (from, to) = around(&harness, A, B);
     box_drag(&mut harness, from, to, egui::Modifiers::NONE);
-    // Both Labels sit in the Labels Layer, which the panel shows with the selection's
+    // Both Labels sit in the template's Layer, which the panel shows with the selection's
     // active Layer: grouping from the panel's menu acts on what the Canvas selected.
     let layer = harness.state().editor().map().parent(a).unwrap();
     assert_eq!(harness.state().editor().map().parent(b), Some(layer));
@@ -203,7 +203,7 @@ fn the_canvas_and_the_layers_panel_share_one_selection() {
     // And the other way: a row clicked in the panel is what the Canvas now has selected.
     // The Properties header names the Layer too; the Layers panel is the first match.
     harness
-        .get_all_by_label("Labels")
+        .get_all_by_label("Layer 001")
         .next()
         .expect("the Layers row")
         .click();
@@ -302,7 +302,7 @@ fn the_panel_menu_pastes_what_the_canvas_copied() {
     let layer = harness.state().editor().map().parent(a).unwrap();
     let before = harness.state().editor().map().children(Some(layer)).len();
     harness
-        .get_all_by_label("Labels")
+        .get_all_by_label("Layer 001")
         .next()
         .expect("the Layers row")
         .click_secondary();

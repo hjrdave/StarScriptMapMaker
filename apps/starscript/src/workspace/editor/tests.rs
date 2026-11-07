@@ -314,7 +314,7 @@ fn a_duplicate_with_nothing_selected_does_nothing() {
 }
 
 #[test]
-fn a_water_stroke_makes_a_lake_in_a_water_layer_in_one_undo_step() {
+fn a_water_stroke_makes_a_lake_in_a_plain_layer_in_one_undo_step() {
     let mut editor = editor();
     let stroke = |erase| BrushStroke {
         region: land::stroke_region(&[[10.0, 10.0], [60.0, 10.0]], 5.0),
@@ -324,7 +324,7 @@ fn a_water_stroke_makes_a_lake_in_a_water_layer_in_one_undo_step() {
     let gesture = editor.begin_gesture(Editor::water_label(false));
     editor.finish_water_stroke(gesture, stroke(false));
     assert_eq!(editor.undo_label(), Some("Paint Water"));
-    let layer = editor.water_layer().expect("a Water layer");
+    let layer = editor.water_layer().expect("a Layer");
     let lakes = editor.map.children(Some(layer)).to_vec();
     assert_eq!(lakes.len(), 1);
     assert_eq!(editor.selection(), lakes);
@@ -703,7 +703,7 @@ fn adding_the_credits_as_a_label_is_one_undo_step() {
 }
 
 #[test]
-fn a_new_map_places_stamps_and_labels_in_the_template_layers_without_setup() {
+fn a_new_map_places_its_first_objects_in_the_template_layers_without_setup() {
     use ssmap_core::{Canvas, DistanceUnit, Scale};
     let canvas = Canvas::new(1000, 800, Scale::new(1.0, DistanceUnit::Miles));
     let (map, layers, problem) = crate::new_map::start_map(canvas);
@@ -718,9 +718,10 @@ fn a_new_map_places_stamps_and_labels_in_the_template_layers_without_setup() {
     assert_eq!(editor.map.parent(stamp), layers.assets);
     let (label, gesture) = editor.place_label([60.0, 50.0]).unwrap();
     editor.end_gesture(gesture);
-    assert_eq!(editor.map.parent(label), layers.labels);
+    // The Stamp made its Layer active, and Layers are not categorised, so the Label follows it.
+    assert_eq!(editor.map.parent(label), layers.assets);
     assert_eq!(editor.default_layer(Placing::Land), layers.land);
-    assert_eq!(editor.map.children(layers.assets), [stamp]);
+    assert_eq!(editor.map.children(layers.assets), [stamp, label]);
 }
 
 #[test]
@@ -1152,4 +1153,23 @@ fn new_layers_groups_and_stamps_get_numbered_names() {
     let b = editor.place_stamp([2.0, 2.0]).unwrap();
     assert_eq!(node_name(&editor.map, a), "Stamp 001");
     assert_eq!(node_name(&editor.map, b), "Stamp 002");
+}
+
+#[test]
+fn new_objects_go_into_the_active_layer_whatever_their_kind() {
+    use ssmap_core::{Canvas, DistanceUnit, Scale};
+    let canvas = Canvas::new(1000, 800, Scale::new(1.0, DistanceUnit::Miles));
+    let (map, layers, _) = crate::new_map::start_map(canvas);
+    let mut editor = editor_with_assets();
+    editor.map = map;
+    editor.default_layers = layers;
+    let layer = editor.new_layer().unwrap();
+    assert_ne!(Some(layer), layers.land);
+
+    editor.selected_asset = Some(asset("test-pack/castle"));
+    let stamp = editor.place_stamp([40.0, 50.0]).unwrap();
+    assert_eq!(editor.map.parent(stamp), Some(layer));
+    let (label, gesture) = editor.place_label([60.0, 50.0]).unwrap();
+    editor.end_gesture(gesture);
+    assert_eq!(editor.map.parent(label), Some(layer));
 }

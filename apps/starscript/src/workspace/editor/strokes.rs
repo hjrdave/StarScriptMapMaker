@@ -106,17 +106,15 @@ impl Editor {
         if erase { "Erase Water" } else { "Paint Water" }
     }
 
-    /// The top-level Layer the water brush paints into: the Map's "Water" Layer, if it has one.
+    /// The Layer the water brush paints into: where new Objects go, if the Map has a Layer.
     pub(super) fn water_layer(&self) -> Option<Id> {
-        self.map.children(None).iter().copied().find(|&id| {
-            matches!(self.map.node(id), Some(Node::Layer(layer)) if layer.name == WATER_LAYER)
-        })
+        self.placement_layer_or_new(Placing::Land).ok()
     }
 
     /// Finishes the water brush stroke whose gesture `id` opened, as [`Self::finish_brush_stroke`]
     /// does for land: one Command ([`land::water_command`]) as the gesture's Undo step. The
-    /// first stroke that needs it also creates the "Water" Layer, in the same Undo step, so
-    /// water has its own Layer to rename, lock, hide and reorder. A new Lake becomes the
+    /// first stroke on a Map with no Layer also creates a plain Layer, in the same Undo step.
+    /// A new Lake becomes the
     /// Selection, so the next stroke extends it.
     pub fn finish_water_stroke(&mut self, id: GestureId, stroke: BrushStroke) {
         let new_id = Id::new();
@@ -137,7 +135,7 @@ impl Editor {
                     id: layer,
                     parent: None,
                     index: None,
-                    name: WATER_LAYER.to_owned(),
+                    name: self.map.next_name("Layer"),
                 },
             );
             if !created {

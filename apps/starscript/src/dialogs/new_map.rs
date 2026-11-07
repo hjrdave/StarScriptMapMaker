@@ -574,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn a_new_map_has_the_starter_layers_and_the_chosen_canvas() {
+    fn a_new_map_has_one_plain_layer_and_the_chosen_canvas() {
         let canvas = Canvas::new(1000, 800, Scale::new(2.0, DistanceUnit::Kilometres));
         let (map, layers, problem) = start_map(canvas.clone());
         assert_eq!(problem, None);
@@ -586,7 +586,7 @@ mod tests {
             ..canvas
         };
         assert_eq!(map.canvas(), &expected);
-        assert_eq!(map.children(None).len(), 4);
+        assert_eq!(map.children(None).len(), 1);
         assert_eq!(map.label_styles().len(), 5);
     }
 }

@@ -2,9 +2,9 @@
   "format_version": "1.3",
   "name": "Dark Ink",
   "default_layers": {
-    "land": "00000000-0000-0000-0000-000000000102",
-    "assets": "00000000-0000-0000-0000-000000000103",
-    "labels": "00000000-0000-0000-0000-000000000104"
+    "land": "00000000-0000-0000-0000-000000000101",
+    "assets": "00000000-0000-0000-0000-000000000101",
+    "labels": "00000000-0000-0000-0000-000000000101"
   },
   "canvas": {
     "width": 4096,
@@ -95,32 +95,7 @@
     {
       "id": "00000000-0000-0000-0000-000000000101",
       "type": "layer",
-      "name": "Backdrop",
-      "visible": true,
-      "locked": false,
-      "opacity": 1.0
-    },
-    {
-      "id": "00000000-0000-0000-0000-000000000102",
-      "type": "layer",
-      "name": "Land",
-      "visible": true,
-      "locked": false,
-      "opacity": 1.0
-    },
-    {
-      "id": "00000000-0000-0000-0000-000000000103",
-      "type": "layer",
-      "name": "Assets",
-      "visible": true,
-      "locked": false,
-      "opacity": 1.0,
-      "depth_sort": true
-    },
-    {
-      "id": "00000000-0000-0000-0000-000000000104",
-      "type": "layer",
-      "name": "Labels",
+      "name": "Layer 001",
       "visible": true,
       "locked": false,
       "opacity": 1.0

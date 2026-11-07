@@ -301,24 +301,12 @@ impl Editor {
         layer.filter(|&id| matches!(self.map.node(id), Some(Node::Layer(_))))
     }
 
-    /// The template's Layer for `placing` if no Layer is active, or if the active one is the
-    /// template's Layer for something else (placing a Stamp makes its Layer active, and the next
-    /// Label should still go to the Labels Layer); else the active Layer.
+    /// The active Layer, else the template's Layer for `placing`. Layers are not categorised
+    /// (ADR 0014), so what is being placed does not pick the Layer.
     pub(super) fn target_layer(&self, placing: Placing) -> Option<Id> {
-        let active = self.active_layer.filter(|&id| self.map.contains(id));
-        let layers = &self.default_layers;
-        let taken_by_other = |id: Id| {
-            let others = match placing {
-                Placing::Land => [layers.assets, layers.labels],
-                Placing::Stamp => [layers.land, layers.labels],
-                Placing::Label => [layers.land, layers.assets],
-            };
-            others.contains(&Some(id))
-        };
-        match active {
-            Some(id) if !taken_by_other(id) => Some(id),
-            _ => self.default_layer(placing).or(active),
-        }
+        self.active_layer
+            .filter(|&id| self.map.contains(id))
+            .or_else(|| self.default_layer(placing))
     }
 
     /// The Layer new Objects go into: see [`Self::target_layer`], else the top Layer, creating
