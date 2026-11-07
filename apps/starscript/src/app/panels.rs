@@ -204,7 +204,8 @@ pub(super) fn layers_panel(ui: &mut egui::Ui, shell: &mut shell::Shell, tab: &mu
 fn sidebar_section(ui: &mut egui::Ui, section: shell::SidebarSection, tab: &mut MapTab) {
     match section {
         shell::SidebarSection::Map => {
-            shell::panel_header(ui, "Map", |_| {});
+            let tint = crate::theme::palette(ui.ctx()).text_primary;
+            shell::icon_header(ui, icons::Icon::Map, tint, "Map", |_| {});
             tab.properties.map_panel(ui, &mut tab.editor);
         }
         shell::SidebarSection::Boards => {
