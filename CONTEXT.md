@@ -135,7 +135,7 @@ A setting on a Layer or Object, inherited by everything inside a locked Layer, t
 _Avoid_: Freeze, protect
 
 **Pin** (pinned to the Canvas):
-A setting on an Object that makes it refuse to be moved or transformed while its shape and settings stay editable. Landmasses, Lakes and Rivers start with it on; Stamps and Labels start with it off. In code and the file it is still called the move lock (`move_locked`, `SetMoveLocked`).
+A setting on an Object that makes it refuse to be moved or transformed while its shape and settings stay editable. Every new Object starts with it off. In code and the file it is still called the move lock (`move_locked`, `SetMoveLocked`).
 _Avoid_: Move lock, Position lock
 
 **Selection**:

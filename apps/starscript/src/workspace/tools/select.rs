@@ -371,6 +371,13 @@ mod tests {
     fn dragging_a_move_locked_object_leaves_it_in_place() {
         let (mut editor, view, mut state) = with_land();
         select_tool(&mut editor, &view, &mut state, &click(150.0, 125.0));
+        for id in editor.selection().to_vec() {
+            assert!(
+                editor
+                    .run(Command::SetMoveLocked { id, locked: true })
+                    .is_ok()
+            );
+        }
         let start = Bounds::of_selection(&mut editor).map(|b| b.min);
         select_tool(&mut editor, &view, &mut state, &press(150.0, 125.0));
         select_tool(&mut editor, &view, &mut state, &drag_to(170.0, 145.0));
@@ -514,9 +521,7 @@ mod tests {
         paint_stroke(&mut editor, &view, &mut state, false);
         let first = editor.selection().to_vec();
         assert_eq!(first.len(), 1);
-        // A Landmass starts Pinned to the Canvas.
-        assert_eq!(selection_mode(&editor), SelectionMode::Pinned);
-        editor.set_selection_pinned(false);
+        // A new Landmass starts unpinned and unlocked.
         assert_eq!(selection_mode(&editor), SelectionMode::Neither);
         editor.set_selection_pinned(true);
         assert_eq!(selection_mode(&editor), SelectionMode::Pinned);
@@ -578,6 +583,7 @@ mod tests {
     fn a_hidden_handle_does_not_resize_a_pinned_selection() {
         let (mut editor, view, mut state) = with_land();
         select_tool(&mut editor, &view, &mut state, &click(150.0, 125.0));
+        editor.set_selection_pinned(true);
         assert_eq!(selection_mode(&editor), SelectionMode::Pinned);
         let Some(bounds) = Bounds::of_selection(&mut editor) else {
             panic!("no bounds");
