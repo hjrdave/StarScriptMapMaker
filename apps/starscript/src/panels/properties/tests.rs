@@ -1486,3 +1486,151 @@ fn properties_follow_the_select_tool_and_its_selection() {
     assert!(harness.query_all_by_label(&name).next().is_some());
     harness.get_by_label("Roughness");
 }
+
+/// Widgets of `harness` that reach outside a panel `width` wide.
+fn outside(harness: &Harness<'_, Fixture>, width: f32) -> Vec<egui::Rect> {
+    harness
+        .root()
+        .children_recursive()
+        .filter(|node| node.accesskit_node().bounding_box().is_some())
+        .map(|node| node.rect())
+        .filter(|rect| rect.right() > width + 0.5 || rect.left() < -0.5)
+        .collect()
+}
+
+/// Every state of the Properties panel, as a name and the way to set it up.
+#[allow(clippy::type_complexity, reason = "a list of named set-ups")]
+fn properties_states() -> Vec<(&'static str, fn(&mut Fixture, Id, Id, Id))> {
+    vec![
+        ("nothing selected", |_, _, _, _| {}),
+        ("a Landmass", |f, _, island, _| {
+            f.editor.select(vec![island])
+        }),
+        ("a Lake", |f, _, _, lake| f.editor.select(vec![lake])),
+        ("a Landmass and a Lake", |f, _, island, lake| {
+            f.editor.select(vec![island, lake]);
+        }),
+        ("the Land brush", |f, _, _, _| {
+            f.editor.active_tool = ToolId::LandBrush;
+        }),
+        ("the Water brush", |f, _, _, _| {
+            f.editor.active_tool = ToolId::WaterBrush;
+        }),
+        ("the River tool", |f, _, _, _| {
+            f.editor.active_tool = ToolId::River;
+        }),
+        ("the Stamp tool", |f, _, _, _| {
+            install_test_pack(&mut f.editor, false);
+            f.editor.active_tool = ToolId::Stamp;
+        }),
+        ("the Stamp eraser", |f, _, _, _| {
+            f.editor.active_tool = ToolId::StampEraser;
+        }),
+        ("a River", |f, layer, _, _| {
+            let id = Id::new();
+            let river = ssmap_core::River::new(vec![
+                ssmap_core::RiverPoint::new([0.0, 0.0], 6.0),
+                ssmap_core::RiverPoint::new([100.0, 0.0], 6.0),
+                ssmap_core::RiverPoint::new([100.0, 100.0], 12.0),
+            ]);
+            f.editor
+                .run(Command::CreateRiver {
+                    id,
+                    parent: layer,
+                    index: None,
+                    river: Box::new(river),
+                })
+                .unwrap();
+            f.editor.select(vec![id]);
+        }),
+        ("a Stamp", |f, layer, _, _| {
+            install_test_pack(&mut f.editor, false);
+            let id = Id::new();
+            f.editor
+                .run(Command::CreateStamp {
+                    id,
+                    parent: layer,
+                    index: None,
+                    stamp: Box::new(ssmap_core::Stamp::default()),
+                })
+                .unwrap();
+            f.editor.select(vec![id]);
+        }),
+        ("two Stamps", |f, layer, _, _| {
+            install_test_pack(&mut f.editor, false);
+            let ids = [Id::new(), Id::new()];
+            for id in ids {
+                f.editor
+                    .run(Command::CreateStamp {
+                        id,
+                        parent: layer,
+                        index: None,
+                        stamp: Box::new(ssmap_core::Stamp::default()),
+                    })
+                    .unwrap();
+            }
+            f.editor.select(ids.to_vec());
+        }),
+    ]
+}
+
+/// A harness `width` wide and tall enough not to scroll, that draws with `show`.
+fn narrow_harness(
+    fixture: Fixture,
+    width: f32,
+    mut show: impl FnMut(&mut egui::Ui, &mut Fixture) + 'static,
+) -> Harness<'static, Fixture> {
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(width, 1600.0))
+        .build_ui_state(
+            move |ui, fixture: &mut Fixture| {
+                theme::install(&ui.ctx().clone());
+                show(ui, fixture);
+            },
+            fixture,
+        );
+    harness.run();
+    harness
+}
+
+/// The Properties panel goes down to 260 pt (`PROPERTIES_PANEL_MIN`); 240 leaves some room.
+#[test]
+fn no_properties_state_reaches_outside_a_narrow_panel() {
+    for width in [260.0, 240.0] {
+        for (name, setup) in properties_states() {
+            let (mut fixture, layer, island) = fixture();
+            let lake = Id::new();
+            fixture
+                .editor
+                .run(Command::CreateLake {
+                    id: lake,
+                    parent: layer,
+                    index: None,
+                    geometry: square(50.0, 10.0),
+                    fill: None,
+                })
+                .unwrap();
+            setup(&mut fixture, layer, island, lake);
+            let harness = narrow_harness(fixture, width, |ui, f| f.panel.show(ui, &mut f.editor));
+            let out = outside(&harness, width);
+            assert!(out.is_empty(), "{name} at {width}: {out:?}");
+        }
+    }
+}
+
+/// The Map section shares the sidebar column, which goes down to 200 pt (`LAYERS_PANEL_MIN`).
+#[test]
+fn the_map_panel_tabs_fit_down_to_the_sidebar_minimum() {
+    for width in [200.0, 240.0] {
+        for tab in 0..2_usize {
+            let (fixture, _, _) = fixture();
+            let harness = narrow_harness(fixture, width, move |ui, f| {
+                let id = egui::Id::new("map panel tab");
+                ui.ctx().data_mut(|d| d.insert_temp(id, tab));
+                f.panel.map_panel(ui, &mut f.editor);
+            });
+            let out = outside(&harness, width);
+            assert!(out.is_empty(), "tab {tab} at {width}: {out:?}");
+        }
+    }
+}
