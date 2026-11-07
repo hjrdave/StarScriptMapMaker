@@ -71,6 +71,18 @@ pub fn swatch_field(
     swatch_row(ui, label, label, Column::None, colour, optional, provenance)
 }
 
+/// The hex shown beside the chip, with the opacity after it when the colour is translucent
+/// ("#FFFFFF 60%"). The popover's hex field is the colour only.
+fn shown_hex(colour: Color) -> String {
+    let hex = hex_text(colour);
+    if colour.a < 255 {
+        let percent = (f32::from(colour.a) / 255.0 * 100.0).round();
+        format!("{hex} {percent}%")
+    } else {
+        hex
+    }
+}
+
 /// What the swatch row puts before the chip.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Column {
@@ -163,19 +175,17 @@ fn swatch_row(
                 Stroke::new(1.0, outline),
                 StrokeKind::Inside,
             );
-            let hex = egui::RichText::new(colour.map_or("None".to_owned(), hex_text))
+            let full = colour.map_or("None".to_owned(), shown_hex);
+            let hex = egui::RichText::new(full.as_str())
                 .size(theme::CAPTION)
                 .color(palette.text_secondary);
-            if column == Column::None {
-                // Leave room for the reset arrow, and cut the hex short rather than push it out.
-                let room = (ui.available_width() - gap_before_trailing(ui, provenance)).max(0.0);
-                ui.add_sized(
-                    Vec2::new(room, metrics::FIELD[0]),
-                    egui::Label::new(hex).truncate(),
-                );
-            } else {
-                ui.label(hex);
-            }
+            // Leave room for the reset arrow, and cut the hex short rather than push the row
+            // out of the panel; the whole of it shows when the pointer rests on it.
+            let room = (ui.available_width() - gap_before_trailing(ui, provenance)).max(0.0);
+            ui.allocate_ui(Vec2::new(room, metrics::FIELD[0]), |ui| {
+                ui.add(egui::Label::new(hex).truncate().sense(Sense::hover()))
+                    .on_hover_text(&full);
+            });
             if trailing(ui, label, provenance) {
                 edit.reset = true;
             }

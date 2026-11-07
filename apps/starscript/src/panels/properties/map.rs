@@ -326,14 +326,24 @@ impl PropertiesPanel {
         });
     }
 
-    /// One set of shore fields, for the Landmass shore or the Lake shore: an icon switch at the
-    /// right of the header picks which. The two keep their own values.
+    /// One set of shore fields, for the Landmass shore or the Lake shore. Two icon mode buttons
+    /// right under the tab bar pick which, as in the tool panels; the tab already says Shores,
+    /// so there is no heading row. The two keep their own values.
     fn shores_tab(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
         let switch_id = egui::Id::new("map panel shore");
         let mut which = ui
             .ctx()
             .data(|d| d.get_temp::<usize>(switch_id))
             .unwrap_or(0);
+        ui.add_space(crate::theme::SPACING[3]);
+        let options = [
+            (Icon::LandBrush, "Landmass", false),
+            (Icon::LakeBrush, "Lake", false),
+        ];
+        if let Some(picked) = prop_widgets::mode_buttons(ui, &options, which) {
+            which = picked;
+            ui.ctx().data_mut(|d| d.insert_temp(switch_id, which));
+        }
         let (kind, title, label) = if which == 0 {
             (
                 ShoreKind::Landmass,
@@ -347,28 +357,16 @@ impl PropertiesPanel {
                 "Change Default Lake Shore Style",
             )
         };
-        prop_widgets::divider_section(
-            ui,
-            title,
-            |ui| {
-                let options = [(Icon::LandBrush, "Landmass"), (Icon::LakeBrush, "Lake")];
-                if prop_widgets::icon_switch(ui, &options, &mut which) {
-                    ui.ctx().data_mut(|d| d.insert_temp(switch_id, which));
-                }
-            },
-            |ui| {
-                let current = [editor.map().defaults().shore_for(kind).clone()];
-                let set = move |_, shore| Command::SetDefaultShore { kind, shore };
-                let group = Inherit {
-                    members: &current,
-                    provenance: Provenance::Plain,
-                    label,
-                    set: &set,
-                    reset: None,
-                };
-                ui.push_id(title, |ui| self.shore_fields(ui, editor, &group));
-            },
-        );
+        let current = [editor.map().defaults().shore_for(kind).clone()];
+        let set = move |_, shore| Command::SetDefaultShore { kind, shore };
+        let group = Inherit {
+            members: &current,
+            provenance: Provenance::Plain,
+            label,
+            set: &set,
+            reset: None,
+        };
+        ui.push_id(title, |ui| self.shore_fields(ui, editor, &group));
     }
 }
 

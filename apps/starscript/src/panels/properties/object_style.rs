@@ -1,9 +1,9 @@
 //! The Roughness and Shore style sections, for Landmasses and Lakes and for the Map defaults.
 
 use eframe::egui;
-use ssmap_core::{Command, Id, MAX_RIPPLES, Node, ObjectKind, Roughness, ShoreStyle};
+use ssmap_core::{Color, Command, Id, MAX_RIPPLES, Node, ObjectKind, Roughness, ShoreStyle};
 
-use super::{Inherit, PropertiesPanel, caption};
+use super::{Inherit, PropertiesPanel, group_caption};
 use crate::editor::Editor;
 use crate::icons::{self, Icon};
 use crate::prop_widgets::{self, Edit, Provenance, ScrubSpec, SectionHeader};
@@ -214,7 +214,9 @@ impl PropertiesPanel {
         });
     }
 
-    /// Outline, ripples and inner shade.
+    /// Outline, ripples and inner shade (variant C of the Shores tab): each group under a
+    /// caption, every number a field with its name inside the box, two to a row (a lone one
+    /// takes half), and every colour a row with its label.
     pub(super) fn shore_fields(
         &mut self,
         ui: &mut egui::Ui,
@@ -225,73 +227,109 @@ impl PropertiesPanel {
         let mut style = group.current().clone();
         let spec = |label| ScrubSpec::new(label).provenance(provenance);
         let length = |label, max: f64| spec(label).unit(" u").range(0.0, max).step(0.1).decimals(1);
+        let colour_row = |ui: &mut egui::Ui, label: &str, colour: Color| {
+            let mut value = Some(colour);
+            let edit =
+                prop_widgets::swatch_shown_as(ui, label, "Colour", &mut value, false, provenance)
+                    .edit;
+            (edit, value.unwrap_or(colour))
+        };
 
-        caption(ui, "Outline");
-        let edit = prop_widgets::scrub_field(
+        group_caption(ui, "Outline");
+        let (edit, ()) = prop_widgets::pair(
             ui,
-            &mut style.outline.width,
-            &length("Width", 100.0).mixed(group.mixed(|s| s.outline.width)),
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut style.outline.width,
+                    &length("Outline width", 100.0)
+                        .prefix("Width")
+                        .mixed(group.mixed(|s| s.outline.width)),
+                )
+            },
+            |_| {},
         );
         let width = style.outline.width;
         self.edit(editor, edit, group, |s| s.outline.width = width);
-        let mut colour = Some(style.outline.color);
-        let edit = prop_widgets::swatch(ui, "Colour", &mut colour, false, provenance).edit;
-        let colour = colour.unwrap_or(style.outline.color);
+        let (edit, colour) = colour_row(ui, "Outline colour", style.outline.color);
         self.edit(editor, edit, group, |s| s.outline.color = colour);
 
-        caption(ui, "Ripples");
+        group_caption(ui, "Ripples");
         let mut count = f64::from(style.ripples.count);
-        let edit = prop_widgets::scrub_field(
+        let (count_edit, spacing_edit) = prop_widgets::pair(
             ui,
-            &mut count,
-            &spec("Count")
-                .range(0.0, f64::from(MAX_RIPPLES))
-                .step(1.0)
-                .mixed(group.mixed(|s| f64::from(s.ripples.count))),
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut count,
+                    &spec("Ripple count")
+                        .prefix("Count")
+                        .range(0.0, f64::from(MAX_RIPPLES))
+                        .step(1.0)
+                        .mixed(group.mixed(|s| f64::from(s.ripples.count))),
+                )
+            },
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut style.ripples.spacing,
+                    &length("Ripple spacing", 500.0)
+                        .prefix("Spacing")
+                        .mixed(group.mixed(|s| s.ripples.spacing)),
+                )
+            },
         );
         let count = count as u32;
-        self.edit(editor, edit, group, |s| s.ripples.count = count);
-        let edit = prop_widgets::scrub_field(
-            ui,
-            &mut style.ripples.spacing,
-            &length("Spacing", 500.0).mixed(group.mixed(|s| s.ripples.spacing)),
-        );
         let spacing = style.ripples.spacing;
-        self.edit(editor, edit, group, |s| s.ripples.spacing = spacing);
-        let edit = prop_widgets::scrub_field(
+        self.edit(editor, count_edit, group, |s| s.ripples.count = count);
+        self.edit(editor, spacing_edit, group, |s| s.ripples.spacing = spacing);
+        let (width_edit, fade_edit) = prop_widgets::pair(
             ui,
-            &mut style.ripples.width,
-            &length("Line width", 50.0).mixed(group.mixed(|s| s.ripples.width)),
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut style.ripples.width,
+                    &length("Ripple line width", 50.0)
+                        .prefix("Width")
+                        .mixed(group.mixed(|s| s.ripples.width)),
+                )
+            },
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut style.ripples.fade,
+                    &spec("Ripple fade")
+                        .prefix("Fade")
+                        .range(0.0, 1.0)
+                        .step(0.01)
+                        .decimals(2)
+                        .mixed(group.mixed(|s| s.ripples.fade)),
+                )
+            },
         );
-        let width = style.ripples.width;
-        self.edit(editor, edit, group, |s| s.ripples.width = width);
-        let mut colour = Some(style.ripples.color);
-        let edit = prop_widgets::swatch(ui, "Line colour", &mut colour, false, provenance).edit;
-        let colour = colour.unwrap_or(style.ripples.color);
+        let (width, fade) = (style.ripples.width, style.ripples.fade);
+        self.edit(editor, width_edit, group, |s| s.ripples.width = width);
+        self.edit(editor, fade_edit, group, |s| s.ripples.fade = fade);
+        let (edit, colour) = colour_row(ui, "Ripple line colour", style.ripples.color);
         self.edit(editor, edit, group, |s| s.ripples.color = colour);
-        let edit = prop_widgets::scrub_field(
-            ui,
-            &mut style.ripples.fade,
-            &spec("Fade")
-                .range(0.0, 1.0)
-                .step(0.01)
-                .decimals(2)
-                .mixed(group.mixed(|s| s.ripples.fade)),
-        );
-        let fade = style.ripples.fade;
-        self.edit(editor, edit, group, |s| s.ripples.fade = fade);
 
-        caption(ui, "Inner shade");
-        let edit = prop_widgets::scrub_field(
+        group_caption(ui, "Inner shade");
+        let (edit, ()) = prop_widgets::pair(
             ui,
-            &mut style.shading.width,
-            &length("Shade width", 500.0).mixed(group.mixed(|s| s.shading.width)),
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut style.shading.width,
+                    &length("Shade width", 500.0)
+                        .prefix("Width")
+                        .mixed(group.mixed(|s| s.shading.width)),
+                )
+            },
+            |_| {},
         );
         let width = style.shading.width;
         self.edit(editor, edit, group, |s| s.shading.width = width);
-        let mut colour = Some(style.shading.color);
-        let edit = prop_widgets::swatch(ui, "Shade colour", &mut colour, false, provenance).edit;
-        let colour = colour.unwrap_or(style.shading.color);
+        let (edit, colour) = colour_row(ui, "Shade colour", style.shading.color);
         self.edit(editor, edit, group, |s| s.shading.color = colour);
     }
 }

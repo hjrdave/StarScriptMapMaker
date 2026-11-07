@@ -487,36 +487,6 @@ pub fn divider_section(
     body(ui);
 }
 
-/// A switch of icon-only options (which shore to edit): 32 × 28 buttons, the selected one in
-/// gold. Each has `name` as its tooltip and accessible name. Returns whether the selection
-/// changed.
-pub fn icon_switch(ui: &mut egui::Ui, options: &[(Icon, &str)], selected: &mut usize) -> bool {
-    let palette = theme::palette(ui.ctx());
-    let mut changed = false;
-    // Right to left: add the last option first so they read in order.
-    for (index, &(icon, name)) in options.iter().enumerate().rev() {
-        let (rect, response) = ui.allocate_exact_size(Vec2::new(32.0, 28.0), Sense::click());
-        let on = *selected == index;
-        response.widget_info(|| {
-            egui::WidgetInfo::selected(egui::WidgetType::RadioButton, ui.is_enabled(), on, name)
-        });
-        let (fill, glyph) = if on {
-            (palette.gold_subtle, palette.gold_text)
-        } else if response.hovered() {
-            (palette.hover_fill, palette.text_primary)
-        } else {
-            (Color32::TRANSPARENT, palette.text_secondary)
-        };
-        ui.painter().rect_filled(rect, theme::RADIUS_FIELD, fill);
-        icons::paint(ui, rect, icon, 24.0, glyph);
-        if response.on_hover_text(name).clicked() && !on {
-            *selected = index;
-            changed = true;
-        }
-    }
-    changed
-}
-
 /// A mode control of icon-only buttons side by side (Paint, Paint Lasso, Erase). `options` are
 /// the icon, the name (tooltip and accessible label) and whether the option is the erasing one,
 /// which is drawn in the danger colour when selected. The selected button has the gold fill and
