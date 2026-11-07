@@ -1,0 +1,94 @@
+<!doctype html>
+<!-- PROTOTYPE (throwaway): the selection box for a Layer or Object in three modes, with the colours chosen on #575.
+       Neither   blue, with the eight resize handles (as today).
+       Pinned    violet, a plain box with no handles: it refuses to move or transform.
+       Locked    grey, a plain box with no handles: it refuses edits.
+     One row per map ground. Use the switches for the app theme and colour-vision simulation. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bounding Box Colours</title>
+<style>
+  :root{color-scheme:dark;--bg:#14161A;--panel:#1B1E23;--raised:#262A31;--line:#272B32;--strong:#3B414B;--text:#B4AE9F;--hi:#ECE6D8;--dim:#9D9788;--gold:#D4A84A;--goldtext:#F0CF7A;--sel:#3A311C}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:13px/1.4 Inter,system-ui,sans-serif;padding:24px 16px 40px}
+  .wrap{max-width:1000px;margin:0 auto}
+  h1{font-size:18px;color:var(--hi);margin:0 0 4px}
+  p.lede{margin:0 0 16px;color:var(--dim);max-width:70ch}
+  .bar{display:flex;flex-wrap:wrap;gap:16px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 12px;margin-bottom:16px}
+  .bar .g{display:flex;gap:6px;align-items:center}
+  .bar .g>span{color:var(--dim);font-size:11px;margin-right:2px}
+  .bar button{height:24px;padding:0 10px;border:1px solid var(--line);background:var(--raised);color:var(--text);border-radius:6px;cursor:pointer;font:inherit;font-size:12px}
+  .bar button.on{background:var(--sel);border-color:#8A6C2C;color:var(--goldtext)}
+  .head,.opt{display:grid;grid-template-columns:150px repeat(3,minmax(0,1fr));gap:12px;align-items:start}
+  .head{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+  .head div:not(:first-child){text-align:center}
+  .opt{padding:12px 0;border-top:1px solid var(--line)}
+  .opt h2{font-size:14px;color:var(--hi);margin:0 0 4px}
+  .opt .d{color:var(--dim);font-size:12px;margin:0}
+  .sw{display:flex;flex-direction:column;gap:4px;margin-top:10px;font:11px ui-monospace,Menlo,monospace}
+  .sw i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+  .cell{min-width:0}
+  .cell svg{display:block;width:100%;height:auto;border-radius:4px;border:1px solid var(--line)}
+  .cell .c{text-align:center;font:11px ui-monospace,Menlo,monospace;color:var(--dim);margin-top:4px}
+  .cvd{display:contents}
+  #grid.cvd-p{filter:url(#prot)}#grid.cvd-d{filter:url(#deut)}#grid.cvd-t{filter:url(#trit)}
+  .ratio{color:var(--text)}
+  .bad{color:#F2A093}
+  :focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+  @media (max-width:760px){.head{display:none}.opt{grid-template-columns:1fr 1fr 1fr}.opt>div:first-child{grid-column:1/-1}}
+</style></head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+ <filter id="prot"><feColorMatrix type="matrix" values="0.567 0.433 0 0 0  0.558 0.442 0 0 0  0 0.242 0.758 0 0  0 0 0 1 0"/></filter>
+ <filter id="deut"><feColorMatrix type="matrix" values="0.625 0.375 0 0 0  0.7 0.3 0 0 0  0 0.3 0.7 0 0  0 0 0 1 0"/></filter>
+ <filter id="trit"><feColorMatrix type="matrix" values="0.95 0.05 0 0 0  0 0.433 0.567 0 0  0 0.475 0.525 0 0  0 0 0 1 0"/></filter>
+</defs></svg>
+<div class="wrap">
+  <h1>Bounding box for Neither, Pinned and Locked</h1>
+  <p class="lede">The selected Layer's box tells you what the Layer lets you do. Neither is blue and keeps its resize handles. Pinned (violet) and Locked (grey) are a plain box with no handles, since neither can be resized. One row per kind of map ground.</p>
+  <div class="bar" role="toolbar" aria-label="Preview settings">
+    <div class="g" data-g="theme"><span>App theme</span><button data-v="dark" class="on">Dark</button><button data-v="light">Light</button></div>
+    <div class="g" data-g="edge"><span>Dark edge</span><button data-v="off" class="on">Off</button><button data-v="on">On</button></div>
+    <div class="g" data-g="cvd"><span>Colour vision</span><button data-v="none" class="on">Normal</button><button data-v="p">Protan</button><button data-v="d">Deutan</button><button data-v="t">Tritan</button></div>
+  </div>
+  <div class="head"><div>Map ground</div><div>Neither</div><div>Pinned</div><div>Locked</div></div>
+  <div id="grid"></div>
+</div>
+<script>
+const COL={dark:['#4FA3E0','#B494F0','#A3A3A3'],light:['#1F6FB5','#6B4FC0','#6B6B6B']};
+const NAMES=['Neither','Pinned','Locked'];
+const NOTE=['Eight resize handles, as today.','No handles. Refuses to move or transform.','No handles. Refuses edits.'];
+const GROUND={ocean:{n:'Ocean',bg:['#2B6A93','#357CA3'],land:'#D8C49A',lbl:'#2B2118'},land:{n:'Land',bg:['#D8C49A','#CDB98C'],land:'#C9B07A',lbl:'#2B2118'},paper:{n:'Paper',bg:['#EDE6D2','#E6DEC6'],land:'#D9CDAE',lbl:'#4A3F2A'}};
+const S={theme:'dark',cvd:'none',edge:'off'};
+const lum=h=>{const c=[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)/255).map(v=>v<=.03928?v/12.92:((v+.055)/1.055)**2.4);return .2126*c[0]+.7152*c[1]+.0722*c[2];};
+const ratio=(a,b)=>{const x=lum(a),y=lum(b),hi=Math.max(x,y),lo=Math.min(x,y);return (hi+.05)/(lo+.05);};
+const LAND=[[60,50],[95,32],[140,40],[178,28],[205,62],[196,98],[160,124],[110,118],[78,132],[52,100]];
+function scene(col,ground,handles){
+ const g=GROUND[ground];
+ const xs=LAND.map(p=>p[0]),ys=LAND.map(p=>p[1]),x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+ const h=(x,y)=>`<rect x="${x-4}" y="${y-4}" width="8" height="8" rx="1" fill="#fff" stroke="${col}" stroke-width="1"/>`;
+ const trees=[[96,70],[112,84],[132,66],[150,86],[168,70],[122,100]].map(([x,y])=>`<path d="M${x} ${y-7}l5 10h-10z" fill="#4C6B3A" opacity=".85"/>`).join('');
+ return `<svg viewBox="0 0 250 160" role="img" aria-label="A selected Landmass with its bounding box"><defs><linearGradient id="o${ground}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${g.bg[0]}"/><stop offset="1" stop-color="${g.bg[1]}"/></linearGradient></defs>
+ <rect width="250" height="160" fill="url(#o${ground})"/>
+ <polygon points="${LAND.map(p=>p.join(',')).join(' ')}" fill="${g.land}" stroke="#5A4628" stroke-width="1.5" stroke-linejoin="round"/>${trees}
+ <text x="125" y="146" text-anchor="middle" font-family="Georgia,serif" font-size="11" fill="${g.lbl}">Landmass 001</text>
+ ${S.edge==='on'?`<rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="none" stroke="#000" stroke-opacity=".55" stroke-width="3.5"/>`:''}
+ <rect x="${x0}" y="${y0}" width="${x1-x0}" height="${y1-y0}" fill="none" stroke="${col}" stroke-width="1.5"/>
+ ${handles?[[x0,y0],[(x0+x1)/2,y0],[x1,y0],[x0,(y0+y1)/2],[x1,(y0+y1)/2],[x0,y1],[(x0+x1)/2,y1],[x1,y1]].map(p=>h(...p)).join(''):''}</svg>`;
+}
+function render(){
+ const cols=COL[S.theme];
+ document.getElementById('grid').className='cvd-'+S.cvd;
+ document.getElementById('grid').innerHTML=Object.entries(GROUND).map(([id,g])=>
+  `<div class="opt"><div><h2>${g.n}</h2><p class="d">${id==='ocean'?'Blue water, as in the default Map.':id==='land'?'The box over tan land.':'A pale paper ground.'}</p></div>`+
+  cols.map((c,i)=>{const r=ratio(c,g.bg[0]);return `<div class="cell">${scene(c,id,i===0)}<div class="c">${NAMES[i]} ${c} · <span class="ratio ${r<3?'bad':''}">${r.toFixed(1)}:1</span></div></div>`;}).join('')+`</div>`).join('')+
+  `<div class="opt"><div><h2>Handles</h2></div>${NOTE.map(n=>`<div class="cell"><div class="c" style="text-align:left;font-family:inherit;font-size:12px">${n}</div></div>`).join('')}</div>`;
+}
+document.querySelectorAll('.bar .g').forEach(g=>g.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+ g.querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));S[g.dataset.g]=b.dataset.v;render();}));
+render();
+</script>
+</body>
+</html>

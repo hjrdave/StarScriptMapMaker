@@ -1,0 +1,195 @@
+<!doctype html>
+<!-- PROTOTYPE (throwaway): one "Art boards" panel for the Canvas and every Art board.
+     Question: where do the board list, the Canvas resize and the board properties live?
+     Three variants on one page, switch with ?variant=A|B|C or the bar at the bottom.
+       A  List on top, the selected board's settings below.
+       B  Accordion: each board opens its own settings in the list.
+       C  Plan view of where the boards sit, chips for the list, settings below.
+     Drawn at the app's real sizes (apps/starscript/src/chrome/theme.rs): 1 egui point = 1 CSS px.
+     In-memory state only. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Art Boards Panel</title>
+<style>
+  /* App tokens, dark palette. Body 12, caption 11, heading 13, title 15; field 22; label column 80;
+     gutter 8; radius field 4, button 6, chip 3; item spacing 8 x 6. */
+  :root{color-scheme:dark;--bg:#14161A;--panel:#1B1E23;--raised:#262A31;--line:#272B32;--strong:#3B414B;--text:#B4AE9F;--hi:#ECE6D8;--dim:#9D9788;--gold:#D4A84A;--goldtext:#F0CF7A;--sel:#3A311C;--field:#111317}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:12px/1.3 Inter,system-ui,sans-serif;padding:24px 16px 90px}
+  .wrap{display:flex;gap:28px;justify-content:center;flex-wrap:wrap;align-items:flex-start}
+  .panel{background:var(--panel);border:1px solid var(--line);min-height:640px;padding-bottom:12px;overflow:hidden;user-select:none;container-type:inline-size}
+  .head{height:34px;display:flex;align-items:center;gap:6px;padding:0 8px;font-size:15px;color:var(--hi);border-bottom:1px solid var(--line)}
+  .head svg{width:16px;height:16px;flex:none}.grow{flex:1}
+  .ib{width:22px;height:22px;border:0;border-radius:4px;background:none;color:var(--text);display:grid;place-items:center;cursor:pointer;padding:0;flex:none}
+  .ib:hover{background:var(--raised);color:var(--hi)}.ib svg{width:14px;height:14px}
+  .ib:disabled{opacity:.35;cursor:default;background:none}
+  h2{font-size:13px;font-weight:700;color:var(--hi);margin:8px 8px 0;line-height:16px}
+  h2::after{content:"";display:block;height:1px;background:var(--line);margin:6px 0 0}
+  h3{font-size:11px;font-weight:400;color:var(--dim);margin:8px 8px 4px}
+  .rows{margin:0 8px;display:flex;flex-direction:column;gap:6px}
+  .row{display:grid;grid-template-columns:80px minmax(0,1fr);gap:8px;align-items:center}
+  .row>label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .field{height:22px;background:var(--field);border:1px solid var(--line);border-radius:4px;display:flex;align-items:center;padding:0 6px;gap:6px;min-width:0;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--hi)}
+  .field input{all:unset;flex:1;min-width:0;width:100%}
+  .field.pf .pre{color:var(--dim);font-family:Inter,system-ui,sans-serif;font-size:12px;flex:none}
+  .field.pf input{text-align:right}
+  .field.off{opacity:.5}.field input:disabled{cursor:default}
+  .field:focus-within{border-color:var(--gold)}
+  .wh{display:grid;grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr);gap:2px;margin:0 8px;align-items:center}
+  .xy{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin:0 8px}
+  .chain{width:24px;height:22px;display:grid;place-items:center;color:var(--dim);background:none;border:0;cursor:pointer;padding:0}
+  .chain.on{color:var(--gold)}.chain svg{width:16px;height:16px}
+  .val{color:var(--text);min-width:0;overflow-wrap:anywhere}
+  .anchor{display:grid;grid-template-columns:repeat(3,22px);gap:2px}
+  .anchor button{width:22px;height:22px;border-radius:4px;border:1px solid var(--line);background:var(--raised);color:var(--gold);cursor:pointer;padding:0;font-size:11px;line-height:1}
+  .anchor button.on{background:var(--sel);border-color:#8A6C2C}.anchor button:hover{background:#30353D}
+  .hint{font-size:11px;color:var(--dim);margin-top:4px}
+  .cs{display:flex;align-items:center;gap:6px;height:22px;min-width:0}
+  .cs .chip{width:44px;height:22px;border-radius:3px;border:1px solid var(--line);flex:none;position:relative;overflow:hidden}
+  .cs .chip i{position:absolute;inset:0}
+  .cs .chip input{position:absolute;inset:-4px;width:60px;height:34px;opacity:0;cursor:pointer}
+  .cs .hex{font-size:11px;color:var(--text);text-transform:uppercase;white-space:nowrap}
+  .acts{margin:0 8px;display:flex;flex-wrap:wrap;gap:6px}
+  .btn{height:22px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:var(--raised);color:var(--hi);font-size:12px;font-family:inherit;cursor:pointer}
+  .btn:hover{background:#30353D}.btn.danger{color:#E08A7A}.btn:disabled{opacity:.35;cursor:default}
+  /* board list */
+  .list{margin:6px 0 0;max-height:132px;overflow:auto}
+  .li{height:24px;display:flex;align-items:center;gap:6px;padding:0 8px;color:var(--hi);cursor:pointer;min-width:0}
+  .li:hover{background:var(--raised)}
+  .li.on{background:var(--sel);color:var(--goldtext)}
+  .li svg{width:14px;height:14px;flex:none;color:var(--dim)}.li.on svg,.li.p svg{color:var(--gold)}
+  .li .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .li .cap{font-size:11px;color:var(--dim);flex:none}
+  .li .chev{transition:transform .1s}.li.open .chev{transform:rotate(90deg)}
+  @container (max-width:259px){.cap{display:none}}
+  .acc{border-left:2px solid var(--gold);margin:2px 0 6px 14px;padding-bottom:6px;background:#181B20}
+  .acc h3:first-child{margin-top:6px}
+  /* plan view */
+  .plan{margin:8px;height:128px;background:var(--field);border:1px solid var(--line);border-radius:4px;position:relative}
+  .plan svg{width:100%;height:100%;display:block}
+  .plan rect{cursor:pointer;stroke:var(--strong);stroke-width:1;vector-effect:non-scaling-stroke}
+  .plan rect.on{stroke:var(--gold);stroke-width:2}
+  .chips{margin:0 8px;display:flex;flex-wrap:wrap;gap:4px}
+  .chips .c{height:22px;padding:0 8px;border-radius:3px;border:1px solid var(--line);background:var(--raised);color:var(--text);display:flex;align-items:center;gap:4px;cursor:pointer;max-width:100%}
+  .chips .c span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chips .c.on{background:var(--sel);border-color:#8A6C2C;color:var(--goldtext)}
+  .chips .c svg{width:12px;height:12px;flex:none}
+  .side{width:300px;font-size:13px;color:var(--dim)}
+  .side h3{margin:0 0 6px;color:var(--hi);font-size:15px}
+  .side ul{padding-left:18px;margin:6px 0}.side label{display:block;margin:16px 0 4px;color:var(--hi)}
+  .side input[type=range]{width:100%}
+  .debug{margin-top:14px;font:11px/1.4 monospace;white-space:pre-wrap;word-break:break-all;background:#0b0c0f;border:1px solid var(--line);border-radius:6px;padding:8px;color:#9a9}
+  .switcher{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#f1ead2;color:#111;border-radius:999px;padding:6px 10px;display:flex;gap:12px;align-items:center;box-shadow:0 6px 20px #000c;z-index:20;font-weight:600;max-width:calc(100vw - 32px)}
+  .switcher button{background:#111;color:#f1ead2;border:0;border-radius:50%;width:28px;height:28px;cursor:pointer;flex:none}
+  :focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="panel" id="panel" style="width:320px"></div>
+  <div class="side">
+    <h3 id="vt"></h3>
+    <div id="notes"></div>
+    <label for="w">Panel width: <b id="wv">320</b> pt</label>
+    <input id="w" type="range" min="240" max="480" value="320">
+    <div class="debug" id="debug"></div>
+  </div>
+</div>
+<div class="switcher"><button id="prev" aria-label="Previous variant">&lsaquo;</button><span id="vl"></span><button id="next" aria-label="Next variant">&rsaquo;</button></div>
+<script>
+const svg=p=>`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+const I={
+ board:svg('<path d="M4 1.5V12h10.5M1.5 4H12v10.5"/>'),
+ canvas:svg('<path d="M4 1.5V12h10.5M1.5 4H12v10.5"/>'),
+ plus:svg('<path d="M8 3v10M3 8h10"/>'),
+ up:svg('<path d="M4 10l4-4 4 4"/>'),down:svg('<path d="M4 6l4 4 4-4"/>'),
+ chev:svg('<path d="M6 4l4 4-4 4"/>'),
+ link:svg('<path d="M6.5 9.5l3-3M7 5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1M9 11l-1 1A2.5 2.5 0 0 1 4.5 8.5l1-1"/>'),
+ unlink:svg('<path d="M7 5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1M9 11l-1 1A2.5 2.5 0 0 1 4.5 8.5l1-1M5 2.5v1.5M2.5 5H4M11 12v1.5M12 11h1.5"/>')
+};
+let num=2;
+const S={sel:1,open:1,linked:false,ratio:null,anchor:[0,0],scale:'0.25 mi per unit',
+ boards:[
+  {id:1,p:true,name:'',w:4096,h:3072,x:0,y:0,bg:'#1d3a52'},
+  {id:2,num:1,name:'Harbour inset',w:1024,h:768,x:4400,y:200,bg:'#2a3342'},
+  {id:3,num:2,name:'',w:2048,h:1536,x:4400,y:1200,bg:'#3a3425'}]};
+let nextId=4;
+const log=[];const note=m=>{log.unshift(m);if(log.length>6)log.pop();};
+const NAMES=[['Top left','Top','Top right'],['Left','Centre','Right'],['Bottom left','Bottom','Bottom right']];
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+const label=b=>b.p?'Canvas':(b.name||'Art board '+b.num);
+const cur=()=>S.boards.find(b=>b.id===S.sel)||S.boards[0];
+const row=(l,f)=>`<div class="row"><label>${l}</label>${f}</div>`;
+const pf=(b,k,pre)=>`<div class="field pf"><span class="pre">${pre}</span><input aria-label="${pre}" data-k="${k}" value="${b[k]}" inputmode="numeric"></div>`;
+
+function settings(b){
+ const [ax,ay]=S.anchor,id=b.id;
+ let h='';
+ h+=`<div class="rows" style="margin-top:8px">${row('Name',`<div class="field ${b.p?'off':''}"><input aria-label="Name" data-k="name" value="${b.p?'Canvas':esc(b.name)}" placeholder="${esc(label(b))}" ${b.p?'disabled title="The Canvas keeps its name"':''}></div>`)}</div>`;
+ h+=`<h3>Size</h3><div class="wh">${pf(b,'w','W')}<button class="chain ${S.linked?'on':''}" data-chain title="${S.linked?'Unlink width and height':'Keep aspect ratio'}" aria-label="${S.linked?'Unlink width and height':'Keep aspect ratio'}">${S.linked?I.link:I.unlink}</button>${pf(b,'h','H')}</div>`;
+ if(b.p)h+=`<h3>Scale</h3><div class="rows">${row('Distance',`<span class="val">${S.scale}</span>`)}</div>`;
+ h+=`<h3>Resize from</h3><div class="rows">${row('Anchor',`<div><div class="anchor" role="radiogroup" aria-label="Anchor">${[0,1,2].map(y=>[0,1,2].map(x=>{const on=ax===x&&ay===y;return `<button role="radio" aria-checked="${on}" class="${on?'on':''}" data-a="${x},${y}" title="${NAMES[y][x]}">${on?'●':''}</button>`}).join('')).join('')}</div><div class="hint">${NAMES[ay][ax]} stays put when the size changes</div></div>`)}</div>`;
+ h+=`<h3>Position</h3><div class="xy">${pf(b,'x','X')}${pf(b,'y','Y')}</div>`;
+ h+=`<h3>Background</h3><div class="rows">${row('Colour',`<div class="cs"><div class="chip"><i style="background:${b.bg}"></i><input type="color" data-k="bg" value="${b.bg}" aria-label="Background colour"></div><span class="hex">${b.bg}</span></div>`)}</div>`;
+ const i=S.boards.indexOf(b);
+ h+=`<h3>Actions</h3><div class="acts"><button class="btn" data-act="dup">Duplicate</button>${b.p?'':'<button class="btn" data-act="canvas">Set as Canvas</button><button class="btn danger" data-act="del">Delete</button>'}<button class="ib" data-act="up" title="Move up" aria-label="Move up" ${i===0?'disabled':''}>${I.up}</button><button class="ib" data-act="down" title="Move down" aria-label="Move down" ${i===S.boards.length-1?'disabled':''}>${I.down}</button></div>`;
+ return h;
+}
+const head=()=>`<div class="head">${I.board}Art boards<span class="grow"></span><button class="ib" data-act="new" title="New Art Board" aria-label="New Art Board">${I.plus}</button></div>`;
+const item=(b,extra='',icon)=>`<div class="li ${b.id===S.sel?'on':''} ${b.p?'p':''} ${extra}" data-sel="${b.id}">${icon||(b.p?I.canvas:I.board)}<span class="nm">${esc(label(b))}</span><span class="cap">${b.w} × ${b.h}</span></div>`;
+
+function plan(){
+ const bs=S.boards,x0=Math.min(...bs.map(b=>b.x)),y0=Math.min(...bs.map(b=>b.y)),x1=Math.max(...bs.map(b=>b.x+b.w)),y1=Math.max(...bs.map(b=>b.y+b.h));
+ const pad=Math.max(x1-x0,y1-y0)*.04;
+ return `<div class="plan"><svg viewBox="${x0-pad} ${y0-pad} ${x1-x0+2*pad} ${y1-y0+2*pad}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Where the boards sit">${bs.map(b=>`<rect data-sel="${b.id}" class="${b.id===S.sel?'on':''}" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="${b.bg}"><title>${esc(label(b))}</title></rect>`).join('')}</svg></div>`;
+}
+const VARS={
+ A:{name:'A · List, then settings',notes:'<p>The same shape as the Layers panel: the list is the top of the panel, and what you pick is edited underneath. The Canvas is the first row, so Canvas and Art boards are one list with one set of controls (Scale only appears on the Canvas).</p><ul><li>Click a row. The settings below follow it.</li><li>+ in the header adds a board.</li></ul>',
+  html:()=>`${head()}<div class="list">${S.boards.map(b=>item(b)).join('')}</div>${settings(cur())}`},
+ B:{name:'B · Accordion',notes:'<p>No separate details area: a board opens its own settings in place, one at a time. Fewer places to look, but the list jumps when you switch boards and a long list pushes the settings off screen.</p><ul><li>Click a row to open it. Click an open row to close it.</li></ul>',
+  html:()=>`${head()}<div style="margin-top:6px">${S.boards.map(b=>item(b,(S.open===b.id?'open':''),I.chev)+(S.open===b.id?`<div class="acc">${settings(b)}</div>`:'')).join('')}</div>`},
+ C:{name:'C · Plan view',notes:'<p>The boards are placed on a page, so show where. The plan is the picker; the chips are the list for boards that are tiny or overlap. Position becomes visible instead of two numbers.</p><ul><li>Click a rectangle or a chip.</li><li>Edit X or Y and watch it move.</li></ul>',
+  html:()=>`${head()}${plan()}<div class="chips">${S.boards.map(b=>`<div class="c ${b.id===S.sel?'on':''}" data-sel="${b.id}">${b.p?I.canvas:I.board}<span>${esc(label(b))}</span></div>`).join('')}</div><h2>${esc(label(cur()))}</h2>${settings(cur())}`}
+};
+let variant=(()=>{const v=new URLSearchParams(location.search).get('variant');return VARS[v]?v:'A';})();
+function render(){
+ const v=VARS[variant],p=$('panel'),y=p.scrollTop;
+ p.innerHTML=v.html();
+ $('vt').textContent=v.name;$('vl').textContent=v.name;
+ $('notes').innerHTML=v.notes+'<p>Questions this raises: the Canvas tab leaves the Map panel (Map keeps Style and Shores); the board section leaves Properties; the section shows from the start, since the Canvas is always a board.</p>';
+ $('debug').textContent=JSON.stringify({variant,sel:S.sel,open:S.open,anchor:S.anchor,linked:S.linked,boards:S.boards.map(b=>[b.id,label(b),b.w+'x'+b.h,b.x+','+b.y])})+'\n\nlast changes:\n'+log.join('\n');
+ p.scrollTop=y;
+}
+function $(id){return document.getElementById(id);}
+const panel=$('panel');
+panel.addEventListener('click',e=>{
+ const t=e.target;let m;
+ if(m=t.closest('[data-act]')){const a=m.dataset.act,b=cur(),i=S.boards.indexOf(b);
+  if(a==='new'){const r=Math.max(...S.boards.map(q=>q.x+q.w));const n={id:nextId++,num:num++,name:'',w:2048,h:1536,x:r+400,y:0,bg:'#2a3342'};S.boards.push(n);S.sel=S.open=n.id;note('New Art Board');}
+  else if(a==='dup'){const n={...b,id:nextId++,p:false,num:num++,name:b.p?'':b.name,x:b.x+64,y:b.y+64};S.boards.splice(i+1,0,n);S.sel=S.open=n.id;note('Duplicate '+label(b));}
+  else if(a==='canvas'&&!b.p){const o=S.boards.find(q=>q.p);o.p=false;o.num=num++;b.p=true;b.name='';note(label(b)+' is now the Canvas');}
+  else if(a==='del'&&!b.p){S.boards.splice(i,1);S.sel=S.open=S.boards[Math.max(0,i-1)].id;note('Delete '+label(b));}
+  else if(a==='up'&&i>0){[S.boards[i-1],S.boards[i]]=[S.boards[i],S.boards[i-1]];note('Move up');}
+  else if(a==='down'&&i<S.boards.length-1){[S.boards[i+1],S.boards[i]]=[S.boards[i],S.boards[i+1]];note('Move down');}
+  render();return;}
+ if(m=t.closest('[data-a]')){S.anchor=m.dataset.a.split(',').map(Number);note('Anchor '+NAMES[S.anchor[1]][S.anchor[0]]);render();return;}
+ if(t.closest('[data-chain]')){const b=cur();S.linked=!S.linked;S.ratio=b.w/b.h;note('Aspect link '+S.linked);render();return;}
+ if(m=t.closest('[data-sel]')){const id=+m.dataset.sel;S.sel=id;if(variant==='B')S.open=(S.open===id&&m.classList.contains('li'))?null:id;render();}
+});
+panel.addEventListener('keydown',e=>{if(e.target.matches('input[type=text],input:not([type])')&&e.key==='Enter')e.target.blur();});
+function edit(i){const k=i.dataset.k;if(!k)return;const b=cur();
+ if(k==='name'){b.name=i.value.trim();note('Rename '+label(b));render();return;}
+ if(k==='bg'){b.bg=i.value;note('Background '+i.value);render();return;}
+ let v=Math.round(parseFloat(i.value));if(isNaN(v))v=b[k];
+ if(k==='w'||k==='h'){v=Math.max(1,Math.min(100000,v));
+  if(S.linked){const r=S.ratio||b.w/b.h;if(k==='w')b.h=Math.max(1,Math.round(v/r));else b.w=Math.max(1,Math.round(v*r));}}
+ b[k]=v;note(k==='x'||k==='y'?`Move ${label(b)} to ${b.x}, ${b.y}`:`Resize ${label(b)} ${b.w} × ${b.h} from ${NAMES[S.anchor[1]][S.anchor[0]]}`);render();}
+panel.addEventListener('change',e=>edit(e.target));
+const go=d=>{const k=Object.keys(VARS),i=(k.indexOf(variant)+d+k.length)%k.length;variant=k[i];history.replaceState(null,'','?variant='+variant);render();};
+$('prev').onclick=()=>go(-1);$('next').onclick=()=>go(1);
+$('w').oninput=e=>{panel.style.width=e.target.value+'px';$('wv').textContent=e.target.value;};
+render();
+</script>
+</body>
+</html>
