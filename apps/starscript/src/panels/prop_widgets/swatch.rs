@@ -26,7 +26,36 @@ pub fn swatch(
     optional: bool,
     provenance: Provenance,
 ) -> SwatchResponse {
-    swatch_row(ui, label, Column::Label, colour, optional, provenance)
+    swatch_row(
+        ui,
+        label,
+        label,
+        Column::Label,
+        colour,
+        optional,
+        provenance,
+    )
+}
+
+/// [`swatch`] whose label column shows `shown` ("Colour") while `label` ("Water colour") stays
+/// its accessible name, for a row a group caption already gives the context for.
+pub fn swatch_shown_as(
+    ui: &mut egui::Ui,
+    label: &str,
+    shown: &str,
+    colour: &mut Option<Color>,
+    optional: bool,
+    provenance: Provenance,
+) -> SwatchResponse {
+    swatch_row(
+        ui,
+        label,
+        shown,
+        Column::Label,
+        colour,
+        optional,
+        provenance,
+    )
 }
 
 /// [`swatch`] with no label column, for a field whose name sits above it (or in a half-width
@@ -39,7 +68,7 @@ pub fn swatch_field(
     optional: bool,
     provenance: Provenance,
 ) -> SwatchResponse {
-    swatch_row(ui, label, Column::None, colour, optional, provenance)
+    swatch_row(ui, label, label, Column::None, colour, optional, provenance)
 }
 
 /// What the swatch row puts before the chip.
@@ -64,6 +93,7 @@ pub fn swatch_unlabelled(
     swatch_row(
         ui,
         label,
+        label,
         Column::Blank,
         colour,
         optional,
@@ -74,6 +104,7 @@ pub fn swatch_unlabelled(
 fn swatch_row(
     ui: &mut egui::Ui,
     label: &str,
+    shown: &str,
     column: Column,
     colour: &mut Option<Color>,
     optional: bool,
@@ -86,15 +117,12 @@ fn swatch_row(
     let response = ui
         .horizontal(|ui| {
             if column != Column::None {
-                let label_w = if column == Column::Label {
-                    label_width(ui, label, provenance)
-                } else {
-                    LABEL_MIN
-                };
-                let (label_rect, _) =
-                    ui.allocate_exact_size(Vec2::new(label_w, metrics::FIELD[0]), Sense::hover());
+                let (label_rect, _) = ui.allocate_exact_size(
+                    Vec2::new(LABEL_COLUMN, metrics::FIELD[0]),
+                    Sense::hover(),
+                );
                 if column == Column::Label {
-                    paint_label(ui, label_rect, label, provenance);
+                    paint_label(ui, label_rect, shown, provenance);
                 }
             }
             let (rect, response) = ui.allocate_exact_size(
