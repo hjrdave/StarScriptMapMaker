@@ -1383,10 +1383,10 @@ fn the_map_panel_has_style_and_shores_tabs_and_no_canvas_tab() {
     // It starts on Style; the Canvas is in the Art boards section.
     harness.get_by_label("Parchment look");
     assert!(harness.query_by_label("Canvas width").is_none());
-    assert!(harness.query_by_label("Landmass shore").is_none());
+    assert!(harness.query_by_label("Outline width").is_none());
 
     click(&mut harness, "Shores");
-    harness.get_by_label("Landmass shore");
+    harness.get_by_label("Outline width");
     assert!(harness.query_by_label("Parchment look").is_none());
 }
 
@@ -1443,13 +1443,33 @@ fn the_background_colour_row_is_in_the_boards_panel_and_a_board_has_no_propertie
     }
 }
 
+const SHORE_FIELDS: [&str; 9] = [
+    "Outline width",
+    "Outline colour",
+    "Ripple count",
+    "Ripple spacing",
+    "Ripple line width",
+    "Ripple fade",
+    "Ripple line colour",
+    "Shade width",
+    "Shade colour",
+];
+
 #[test]
-fn the_shores_tab_edits_one_shore_and_the_switch_picks_which() {
+fn the_shores_tab_edits_one_shore_and_the_mode_buttons_pick_which() {
+    use egui::accesskit::Toggled;
     let mut harness = map_harness(ocean_fixture());
     click(&mut harness, "Shores");
-    for label in ["Outline", "Ripples", "Inner shade", "Landmass", "Lake"] {
+    for label in SHORE_FIELDS {
         harness.get_by_label(label);
     }
+    // No heading row: the tab already says Shores, and the buttons say which kind it is.
+    assert!(harness.query_by_label("Landmass shore").is_none());
+    let toggled = |harness: &Harness<'_, Fixture>, name: &str| {
+        harness.get_by_label(name).accesskit_node().toggled()
+    };
+    assert_eq!(toggled(&harness, "Landmass"), Some(Toggled::True));
+    assert_eq!(toggled(&harness, "Lake"), Some(Toggled::False));
     let landmass = harness
         .state()
         .editor
@@ -1458,8 +1478,8 @@ fn the_shores_tab_edits_one_shore_and_the_switch_picks_which() {
         .shore_for(ssmap_core::ShoreKind::Landmass)
         .clone();
     click(&mut harness, "Lake");
-    harness.get_by_label("Lake shore");
-    assert!(harness.query_by_label("Landmass shore").is_none());
+    assert_eq!(toggled(&harness, "Landmass"), Some(Toggled::False));
+    assert_eq!(toggled(&harness, "Lake"), Some(Toggled::True));
     // Switching only changes which shore is shown.
     assert_eq!(
         harness
@@ -1470,6 +1490,91 @@ fn the_shores_tab_edits_one_shore_and_the_switch_picks_which() {
             .shore_for(ssmap_core::ShoreKind::Landmass),
         &landmass
     );
+}
+
+#[test]
+fn editing_the_lake_shore_leaves_the_landmass_shore_alone() {
+    use ssmap_core::ShoreKind;
+    let mut harness = map_harness(ocean_fixture());
+    click(&mut harness, "Shores");
+    click(&mut harness, "Lake");
+    let before = |harness: &Harness<'_, Fixture>, kind| {
+        harness
+            .state()
+            .editor
+            .map()
+            .defaults()
+            .shore_for(kind)
+            .clone()
+    };
+    let (landmass, lake) = (
+        before(&harness, ShoreKind::Landmass),
+        before(&harness, ShoreKind::Lake),
+    );
+    // Type a new Ripple count into the Lake shore.
+    type_into(&mut harness, &lake.ripples.count.to_string(), "7");
+    assert_eq!(before(&harness, ShoreKind::Landmass), landmass);
+    assert_eq!(before(&harness, ShoreKind::Lake).ripples.count, 7);
+    assert_ne!(before(&harness, ShoreKind::Lake), lake);
+    assert_eq!(
+        harness.state().editor.undo_label(),
+        Some("Change Default Lake Shore Style")
+    );
+}
+
+#[test]
+fn the_shores_tab_lines_up_its_colours_and_pairs_its_numbers_at_every_width() {
+    for width in [480.0, 320.0, 240.0, 200.0] {
+        let (fixture, _, _) = fixture();
+        let harness = narrow_harness(fixture, width, |ui, f| {
+            let id = egui::Id::new("map panel tab");
+            ui.ctx().data_mut(|d| d.insert_temp(id, 1_usize));
+            f.panel.map_panel(ui, &mut f.editor);
+        });
+        let lefts: Vec<f32> = ["Outline colour", "Ripple line colour", "Shade colour"]
+            .into_iter()
+            .map(|name| harness.get_by_label(name).rect().left())
+            .collect();
+        assert!(
+            lefts.windows(2).all(|w| (w[0] - w[1]).abs() < 0.5),
+            "colours at {width}: {lefts:?}"
+        );
+        // Count | Spacing and Width | Fade sit side by side, inside the panel.
+        for (a, b) in [
+            ("Ripple count", "Ripple spacing"),
+            ("Ripple line width", "Ripple fade"),
+        ] {
+            let (a, b) = (
+                harness.get_by_label(a).rect(),
+                harness.get_by_label(b).rect(),
+            );
+            assert!(
+                a.right() <= b.left() && (a.top() - b.top()).abs() < 0.5,
+                "{a:?} {b:?} at {width}"
+            );
+            assert!(b.right() <= width, "{b:?} at {width}");
+        }
+        // The two mode buttons sit directly under the tab bar, one row, 40 x 32.
+        let (landmass, lake) = (
+            harness.get_by_label("Landmass").rect(),
+            harness.get_by_label("Lake").rect(),
+        );
+        assert_eq!((landmass.width(), landmass.height()), (40.0, 32.0));
+        assert!(landmass.right() < lake.left() && (landmass.top() - lake.top()).abs() < 0.5);
+    }
+}
+
+#[test]
+fn a_translucent_shore_colour_shows_its_opacity_after_the_hex() {
+    let mut harness = map_harness(ocean_fixture());
+    click(&mut harness, "Shores");
+    let shown: Vec<String> = harness
+        .query_all_by_label_contains("#")
+        .filter_map(|node| node.accesskit_node().value())
+        .collect();
+    // An opaque colour is the hex alone; a translucent one adds its percentage.
+    assert!(shown.iter().any(|text| text.contains('%')), "{shown:?}");
+    assert!(shown.iter().any(|text| !text.contains('%')), "{shown:?}");
 }
 
 #[test]
