@@ -1163,12 +1163,13 @@ fn new_objects_go_into_the_active_layer_whatever_their_kind() {
     let mut editor = editor_with_assets();
     editor.map = map;
     editor.default_layers = layers;
-    editor.active_layer = layers.land;
+    let layer = editor.new_layer().unwrap();
+    assert_ne!(Some(layer), layers.land);
 
     editor.selected_asset = Some(asset("test-pack/castle"));
     let stamp = editor.place_stamp([40.0, 50.0]).unwrap();
-    assert_eq!(editor.map.parent(stamp), layers.land);
+    assert_eq!(editor.map.parent(stamp), Some(layer));
     let (label, gesture) = editor.place_label([60.0, 50.0]).unwrap();
     editor.end_gesture(gesture);
-    assert_eq!(editor.map.parent(label), layers.land);
+    assert_eq!(editor.map.parent(label), Some(layer));
 }

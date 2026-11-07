@@ -31,15 +31,7 @@ fn the_starter_template_is_a_ready_layer_stack() {
             _ => panic!("an Object at the top level"),
         })
         .collect();
-    assert_eq!(
-        layers,
-        [
-            ("Backdrop".to_owned(), false),
-            ("Land".to_owned(), false),
-            ("Assets".to_owned(), true),
-            ("Labels".to_owned(), false),
-        ]
-    );
+    assert_eq!(layers, [("Layer 001".to_owned(), false)]);
 }
 
 #[test]
@@ -58,7 +50,7 @@ fn the_starter_template_sets_the_map_wide_defaults() {
 #[test]
 fn land_painted_into_a_new_map_follows_the_default_land_colour() {
     let mut map = MapTemplate::starter().unwrap().new_map(canvas());
-    let land = map.children(None)[1];
+    let land = map.children(None)[0];
     let square = ssmap_core::Polygon {
         exterior: vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
         holes: Vec::new(),
@@ -283,7 +275,7 @@ fn a_saved_map_reads_back_as_a_template_with_the_same_look() {
     let templates = MapTemplate::load_all().0;
     let parchment = templates.iter().find(|t| t.id() == "parchment").unwrap();
     let mut map = parchment.new_map(canvas());
-    let land = map.children(None)[1];
+    let land = map.children(None)[0];
     let id = Id::new();
     let square = ssmap_core::Polygon {
         exterior: vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
