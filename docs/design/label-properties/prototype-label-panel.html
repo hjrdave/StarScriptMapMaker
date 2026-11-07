@@ -1,0 +1,177 @@
+<!doctype html>
+<!-- PROTOTYPE (throwaway): the Label panel. Questions: what does it look like, and what shows when the
+     Label tool is picked with nothing selected? Two layouts, switch with ?variant=A|B or the bar below.
+       A  One 80 pt label column, numbers inline with their name inside the box (the Map panel's Style tab).
+       B  Names above the fields, two columns (docs/design/label-properties/proposed.png).
+     Drawn at the app's real sizes (apps/starscript/src/chrome/theme.rs): 1 egui point = 1 CSS px.
+     In-memory state only. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Label Panel</title>
+<style>
+  /* App tokens, dark palette. Body 12, caption 11, heading 13, title 15; field 22; label column 80;
+     gutter 8; radius field 4, button 6, chip 3; item spacing 8 x 6. */
+  :root{color-scheme:dark;--bg:#14161A;--panel:#1B1E23;--raised:#262A31;--line:#272B32;--strong:#3B414B;--text:#B4AE9F;--hi:#ECE6D8;--dim:#9D9788;--gold:#D4A84A;--goldtext:#F0CF7A;--sel:#3A311C;--field:#111317}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:12px/1.3 Inter,system-ui,sans-serif;padding:24px 16px 90px}
+  .wrap{display:flex;gap:28px;justify-content:center;flex-wrap:wrap;align-items:flex-start}
+  .panel{background:var(--panel);border:1px solid var(--line);min-height:760px;padding-bottom:12px;overflow:hidden;user-select:none;container-type:inline-size}
+  .head{height:34px;display:flex;align-items:center;gap:6px;padding:0 8px;font-size:15px;color:var(--hi);border-bottom:1px solid var(--line)}
+  .head svg{width:16px;height:16px;flex:none}.grow{flex:1}
+  .crumb{height:30px;display:flex;align-items:center;gap:6px;padding:0 8px;color:var(--dim);border-bottom:1px solid var(--line)}
+  .crumb svg{width:14px;height:14px;flex:none}.crumb b{font-weight:400;color:var(--text)}
+  .ib{width:22px;height:22px;border:0;border-radius:4px;background:none;color:var(--text);display:grid;place-items:center;cursor:pointer;padding:0;flex:none}
+  .ib:hover{background:var(--raised);color:var(--hi)}.ib svg{width:14px;height:14px}
+  .ib.on{color:var(--gold)}
+  h2{font-size:13px;font-weight:700;color:var(--hi);margin:12px 8px 0;line-height:16px;display:flex;align-items:center}
+  h2 span{flex:1}
+  .sec{margin:0 8px;display:flex;flex-direction:column;gap:6px;padding-top:6px}
+  .cap{font-size:11px;color:var(--dim);margin:6px 8px 0}
+  .hr{height:1px;background:var(--line);margin:12px 0 0}
+  .row{display:grid;grid-template-columns:80px minmax(0,1fr);gap:8px;align-items:center}
+  .row>label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .above{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .above>label{font-size:11px;color:var(--dim);line-height:15px}
+  .pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;min-width:0}
+  .field{height:22px;background:var(--field);border:1px solid var(--line);border-radius:4px;display:flex;align-items:center;padding:0 6px;gap:6px;min-width:0;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--hi)}
+  .field:focus-within{border-color:var(--gold)}
+  .field input{all:unset;flex:1;min-width:0;width:100%}
+  .field .pre{color:var(--dim);font-family:Inter,system-ui,sans-serif;font-size:12px;flex:none;white-space:nowrap}
+  .field .pre.o::after{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--gold);margin-left:4px;vertical-align:middle}
+  .field .u{color:var(--dim);flex:none}
+  .field.num input{text-align:right}
+  .sel{height:22px;background:var(--raised);border:1px solid var(--line);border-radius:6px;display:flex;align-items:center;padding:0 6px 0 8px;color:var(--hi);min-width:0;position:relative}
+  .sel select{all:unset;position:absolute;inset:0;padding:0 24px 0 8px;cursor:pointer;color:var(--hi)}
+  .sel select option{background:var(--raised)}
+  .sel::after{content:"";position:absolute;right:8px;top:8px;border:4px solid transparent;border-top:5px solid var(--dim)}
+  .sel .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none}
+  .seg{display:flex;min-width:0}
+  .seg button{flex:1;height:22px;border:1px solid var(--line);background:var(--raised);color:var(--text);border-radius:0;cursor:pointer;display:grid;place-items:center;padding:0;min-width:0}
+  .seg button:first-child{border-radius:6px 0 0 6px}.seg button:last-child{border-radius:0 6px 6px 0}
+  .seg button+button{border-left:0}
+  .seg button.on{background:var(--sel);color:var(--goldtext);border-color:#8A6C2C}
+  .seg button.on+button{border-left:1px solid #8A6C2C}
+  .seg svg{width:14px;height:14px}
+  .seg .at{font-size:11px;font-weight:600}
+  .cs{display:flex;align-items:center;gap:6px;height:22px;min-width:0}
+  .cs .chip{width:44px;height:22px;border-radius:3px;border:1px solid var(--line);flex:none;position:relative;overflow:hidden}
+  .cs .chip i{position:absolute;inset:0}
+  .cs .chip input{position:absolute;inset:-4px;width:60px;height:34px;opacity:0;cursor:pointer}
+  .cs .hex{font-size:11px;color:var(--text);text-transform:uppercase;white-space:nowrap}
+  textarea{all:unset;box-sizing:border-box;display:block;width:100%;height:52px;background:var(--field);border:1px solid var(--line);border-radius:4px;padding:5px 6px;color:var(--hi);font-size:12px;line-height:1.3;white-space:pre-wrap;user-select:text}
+  textarea:focus{border-color:var(--gold)}
+  .side{width:310px;font-size:13px;color:var(--dim)}
+  .side h3{margin:0 0 6px;color:var(--hi);font-size:15px}
+  .side ul{padding-left:18px;margin:6px 0}.side label.k{display:block;margin:16px 0 4px;color:var(--hi)}
+  .side input[type=range]{width:100%}
+  .modes{display:flex;flex-direction:column;gap:6px;margin:12px 0}
+  .modes label{display:flex;gap:8px;align-items:flex-start;color:var(--hi);cursor:pointer}
+  .debug{margin-top:14px;font:11px/1.4 monospace;white-space:pre-wrap;word-break:break-all;background:#0b0c0f;border:1px solid var(--line);border-radius:6px;padding:8px;color:#9a9}
+  .switcher{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#f1ead2;color:#111;border-radius:999px;padding:6px 10px;display:flex;gap:12px;align-items:center;box-shadow:0 6px 20px #000c;z-index:20;font-weight:600;max-width:calc(100vw - 32px)}
+  .switcher button{background:#111;color:#f1ead2;border:0;border-radius:50%;width:28px;height:28px;cursor:pointer;flex:none}
+  :focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+  /* B: bands between sections, names above */
+  .B h2{margin:0;padding:12px 8px 0}
+  .B .hr{margin:12px 0 0}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="panel" id="panel" style="width:320px"></div>
+  <div class="side">
+    <h3 id="vt"></h3>
+    <div id="notes"></div>
+    <div class="modes" role="radiogroup" aria-label="What is shown">
+      <label><input type="radio" name="m" value="tool" checked> Label tool picked, nothing selected</label>
+      <label><input type="radio" name="m" value="sel"> A Label is selected</label>
+    </div>
+    <label class="k" for="w">Panel width: <b id="wv">320</b> pt</label>
+    <input id="w" type="range" min="240" max="480" value="320">
+    <div class="debug" id="debug"></div>
+  </div>
+</div>
+<div class="switcher"><button id="prev" aria-label="Previous variant">&lsaquo;</button><span id="vl"></span><button id="next" aria-label="Next variant">&rsaquo;</button></div>
+<script>
+const svg=p=>`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+const I={
+ label:svg('<path d="M3 5V3.5h10V5M8 3.5V13M6 13h4"/>'),
+ layers:svg('<path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3M2 11l6 3 6-3"/>'),
+ pin:svg('<path d="M6 2.5h4l-.5 4 2 2.5h-7l2-2.5ZM8 9v4.5"/>'),
+ lock:svg('<path d="M4 7.5h8v6H4ZM5.5 7.5v-2a2.5 2.5 0 0 1 5 0v2"/>'),
+ left:svg('<path d="M2.5 3.5h11M2.5 6.5h7M2.5 9.5h11M2.5 12.5h7"/>'),
+ centre:svg('<path d="M2.5 3.5h11M4.5 6.5h7M2.5 9.5h11M4.5 12.5h7"/>'),
+ right:svg('<path d="M2.5 3.5h11M6.5 6.5h7M2.5 9.5h11M6.5 12.5h7"/>'),
+ italic:svg('<path d="M6.5 3h5M4.5 13h5M9.5 3l-3 10"/>'),
+ more:svg('<path d="M3.5 8h.01M8 8h.01M12.5 8h.01"/>'),
+ reset:svg('<path d="M3.5 6H10a3 3 0 0 1 0 6H7M6 3.5 3.5 6 6 8.5"/>')
+};
+const D={text:'Label',style:'Default',font:'Cinzel',weight:400,size:48,lh:1.2,ls:0,arch:0,italic:false,caps:false,align:'centre',fill:'#2B2118',hsize:0,hcol:'#F4EAD2',opacity:100,rot:0,board:'Canvas'};
+const S={...D,over:{}};
+let mode='tool',variant='A';
+const log=[];const note=m=>{log.unshift(m);if(log.length>6)log.pop();};
+const esc=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+const A=()=>variant==='A';
+/* numbers: A puts the name inside the box, B puts it above */
+const num=(k,name,unit='',step)=>{const o=S.over[k];
+ const box=`<div class="field num ${A()?'':''}">${A()?`<span class="pre ${o?'o':''}">${name}</span>`:''}<input aria-label="${name}" data-k="${k}" value="${S[k]}" inputmode="decimal">${unit?`<span class="u">${unit}</span>`:''}</div>`;
+ return A()?box:`<div class="above"><label>${name}${o?' •':''}</label>${box}</div>`;};
+const pick=(k,opts)=>`<div class="sel"><select aria-label="${k}" data-k="${k}">${opts.map(o=>`<option ${o===S[k]?'selected':''}>${o}</option>`).join('')}</select></div>`;
+const colour=k=>`<div class="cs"><div class="chip"><i style="background:${S[k]}"></i><input type="color" data-k="${k}" value="${S[k]}" aria-label="${k} colour"></div><span class="hex">${S[k]}</span></div>`;
+const line=(label,ctl)=>A()?`<div class="row"><label>${label}</label>${ctl}</div>`:`<div class="above"><label>${label}</label>${ctl}</div>`;
+const pair=(a,b)=>`<div class="pair">${a}${b}</div>`;
+const sec=(title,body,reset)=>`<h2><span>${title}</span>${reset?`<button class="ib" data-reset title="Reset to the Label style" aria-label="Reset to the Label style">${I.reset}</button>`:''}</h2><div class="sec">${body}</div>`;
+const fmt=()=>`<div class="seg" role="group" aria-label="Format"><button data-t="italic" class="${S.italic?'on':''}" title="Italic" aria-pressed="${S.italic}">${I.italic}</button><button data-t="caps" class="${S.caps?'on':''}" title="All caps" aria-pressed="${S.caps}"><span class="at">AT</span></button></div>`;
+const fmtBox=()=>A()?`<div class="row" style="grid-template-columns:1fr">${fmt()}</div>`:`<div class="above"><label>Format</label>${fmt()}</div>`;
+const alignSeg=()=>`<div class="seg" role="radiogroup" aria-label="Align" style="${A()?'':'max-width:140px'}">${['left','centre','right'].map(a=>`<button role="radio" aria-checked="${S.align===a}" data-al="${a}" class="${S.align===a?'on':''}" title="Align ${a}">${I[a]}</button>`).join('')}</div>`;
+const sepB=()=>A()?'':'<div class="hr"></div>';
+function typography(){
+ const reset=Object.keys(S.over).some(k=>['font','weight','size','lh','ls','arch','italic','caps','align'].includes(k));
+ return sec('Typography',
+  (A()?`<div class="row"><label>Style</label><div style="display:grid;grid-template-columns:minmax(0,1fr) 22px;gap:6px">${pick('style',['Default','Realm','City','River'])}<button class="ib" title="Manage Label styles" aria-label="Manage Label styles">${I.more}</button></div></div>`
+      :`<div class="above"><label>Style</label><div style="display:grid;grid-template-columns:minmax(0,1fr) 22px;gap:6px">${pick('style',['Default','Realm','City','River'])}<button class="ib" title="Manage Label styles" aria-label="Manage Label styles">${I.more}</button></div></div>`)
+  +line('Font',pick('font',['Cinzel','IM Fell English','Cormorant','Inter']))
+  +pair(num('weight','Weight'),num('size','Size','u'))
+  +pair(num('lh','Line height','×'),num('ls','Spacing','em'))
+  +pair(num('arch','Arch','%'),fmtBox())
+  +line('Align',alignSeg()),reset);
+}
+const fill=()=>sec('Fill',line('Fill',colour('fill')));
+const halo=()=>sec('Halo',A()?pair(num('hsize','Size','u'),`<div class="cs">${colour('hcol').replace('class="cs"','class="cs"')}</div>`):pair(num('hsize','Size','u'),`<div class="above"><label>Colour</label>${colour('hcol')}</div>`));
+function render(){
+ const p=$('panel'),y=p.scrollTop;p.className='panel '+variant;
+ let h=`<div class="head">${I.label}Label</div>`;
+ if(mode==='sel'){
+  h+=`<div class="crumb">${I.layers}<span>Water ›</span><b>Label</b><span class="grow"></span><button class="ib" title="Pin" aria-label="Pin">${I.pin}</button><button class="ib" title="Lock" aria-label="Lock">${I.lock}</button></div>`;
+  h+=sec('Text',`<textarea aria-label="Text" data-k="text">${esc(S.text)}</textarea>`)+sepB();
+  h+=typography()+sepB()+fill()+sepB()+halo()+sepB();
+  h+=sec('Appearance',pair(num('opacity','Opacity','%'),num('rot','Rotation','°'))+line('Board',pick('board',['Canvas','Harbour inset','Off the boards'])));
+ }else{
+  h+=`<div class="cap">The next Label you place uses these. Click the Map to place one.</div>`;
+  h+=typography()+sepB()+fill()+sepB()+halo();
+ }
+ p.innerHTML=h;p.scrollTop=y;
+ const v={A:'A · One label column',B:'B · Names above'}[variant];
+ $('vt').textContent=v;$('vl').textContent=v;
+ $('notes').innerHTML=(A()?'<p>Same language as the Map panel\'s Style tab: one 80 pt label column, every number named inside its box, two to a row. A gold dot after a name marks a value this Label overrides, replacing the link icon at the end of every row. The reset button at Typography clears the overrides.</p>':'<p>The mockup\'s layout: the name sits above each field in two columns, with a rule between sections. Roomier, but every pair costs an extra line of height.</p>')+'<ul><li>Switch between the two states below.</li><li>Edit any number and the dot appears.</li></ul>';
+ $('debug').textContent=JSON.stringify({variant,mode,over:Object.keys(S.over)})+'\n\nlast changes:\n'+log.join('\n');
+}
+function $(i){return document.getElementById(i);}
+const panel=$('panel');
+panel.addEventListener('click',e=>{const t=e.target;let m;
+ if(m=t.closest('[data-al]')){S.align=m.dataset.al;S.over.align=1;note('Align '+S.align);render();}
+ else if(m=t.closest('[data-t]')){const k=m.dataset.t;S[k]=!S[k];S.over[k]=1;note(k+' '+S[k]);render();}
+ else if(t.closest('[data-reset]')){['font','weight','size','lh','ls','arch','italic','caps','align'].forEach(k=>{S[k]=D[k];delete S.over[k];});note('Reset Typography to the Label style');render();}});
+panel.addEventListener('change',e=>{const i=e.target,k=i.dataset.k;if(!k)return;
+ let v=i.value;if(['weight','size','lh','ls','arch','hsize','opacity','rot'].includes(k)){v=parseFloat(v);if(isNaN(v))v=S[k];}
+ S[k]=v;if(!['text','board','style'].includes(k))S.over[k]=1;note(`${k} = ${v}`);render();});
+panel.addEventListener('input',e=>{if(e.target.dataset.k==='text')S.text=e.target.value;});
+document.querySelectorAll('[name=m]').forEach(r=>r.onchange=()=>{mode=r.value;note('Showing '+(mode==='sel'?'a selected Label':'the Label tool'));render();});
+const go=d=>{variant=variant==='A'?'B':'A';history.replaceState(null,'','?variant='+variant);render();};
+$('prev').onclick=go;$('next').onclick=go;
+$('w').oninput=e=>{panel.style.width=e.target.value+'px';$('wv').textContent=e.target.value;};
+variant=new URLSearchParams(location.search).get('variant')==='B'?'B':'A';
+render();
+</script>
+</body>
+</html>

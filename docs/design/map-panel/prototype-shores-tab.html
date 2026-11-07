@@ -1,0 +1,140 @@
+<!doctype html>
+<!-- PROTOTYPE (throwaway): Map panel, Shores tab (#565). Three variants (bottom bar, ←/→, or ?variant=A|B|C).
+     A = same label-column rows as the Style tab. B = paired fields with the name above each.
+     C = A with the Style tab's inline pairs: numbers are in-box-named fields on a two-column grid, colours are label rows.
+     Drawn at the app's real sizes (theme.rs): 1 egui point = 1 CSS px. In-memory state only. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Map Shores Tab</title>
+<style>
+  /* App tokens (apps/starscript/src/chrome/theme.rs), dark palette. Body 12, caption 11, heading 13,
+     title 15; field 22; label column 80; gutter 8; radius field 4, button 6, chip 3; item spacing 8 x 6. */
+  :root{color-scheme:dark;--bg:#14161A;--panel:#1B1E23;--raised:#262A31;--line:#272B32;--strong:#3B414B;--text:#B4AE9F;--hi:#ECE6D8;--dim:#9D9788;--gold:#D4A84A;--goldtext:#F0CF7A;--sel:#3A311C;--field:#111317}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:12px/1.3 Inter,system-ui,sans-serif;padding:24px 16px 90px}
+  .wrap{display:flex;gap:28px;justify-content:center;flex-wrap:wrap;align-items:flex-start}
+  .panel{background:var(--panel);border:1px solid var(--line);min-height:600px;padding-bottom:12px;overflow:hidden;user-select:none}
+  .head{height:34px;display:flex;align-items:center;gap:6px;padding:0 8px;font-size:15px;color:var(--hi);border-bottom:1px solid var(--line)}
+  .head svg{width:16px;height:16px}
+  .tabs{height:30px;display:flex;border-bottom:1px solid var(--line)}
+  .tabs div{flex:1;text-align:center;line-height:29px;font-size:13px;color:var(--dim);border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tabs .on{color:var(--hi);border-color:var(--gold)}
+  h2{font-size:13px;font-weight:700;color:var(--hi);margin:6px 8px 0;line-height:16px}
+  h2::after{content:"";display:block;height:1px;background:var(--line);margin:6px 0 0}
+  h3{font-size:11px;font-weight:400;color:var(--dim);margin:8px 8px 4px}
+  .seg{display:flex;margin:0 8px 2px}
+  .seg button{flex:1;height:22px;border:1px solid var(--line);background:var(--field);color:var(--text);font:12px inherit;font-family:inherit;border-radius:0;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;min-width:0}
+  .seg button:first-child{border-radius:4px 0 0 4px}.seg button:last-child{border-radius:0 4px 4px 0;border-left:0}
+  .seg button.on{background:var(--raised);color:var(--hi);border-color:var(--gold)}
+  .seg button.on:last-child{border-left:1px solid var(--gold)}
+  .seg svg{width:14px;height:14px;flex:none}
+  .rows{margin:0 8px;display:flex;flex-direction:column;gap:6px}
+  .row{display:grid;grid-template-columns:80px minmax(0,1fr);gap:8px;align-items:center}
+  .row>label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .above{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .above>label{font-size:11px;color:var(--dim);line-height:15px}
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:8px;min-width:0}
+  .field{height:22px;background:var(--field);border:1px solid var(--line);border-radius:4px;display:flex;align-items:center;padding:0 6px;gap:6px;min-width:0;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--hi)}
+  .field input{all:unset;flex:1;min-width:0;width:100%}
+  .field .u{color:var(--dim)}
+  .cs{display:flex;align-items:center;gap:6px;height:22px;min-width:0}
+  .cs .chip{width:44px;height:22px;border-radius:3px;border:1px solid var(--line);flex:none;position:relative;overflow:hidden;background-image:linear-gradient(45deg,#777 25%,transparent 25%,transparent 75%,#777 75%),linear-gradient(45deg,#777 25%,#ddd 25%,#ddd 75%,#777 75%);background-size:8px 8px;background-position:0 0,4px 4px}
+  .cs .chip i{position:absolute;inset:0}
+  .cs .chip input{position:absolute;inset:-4px;width:60px;height:34px;opacity:0;cursor:pointer}
+  .cs .hex{font-size:11px;color:var(--text);text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:clip;min-width:0}
+  .field.pf .pre{color:var(--dim);font-family:Inter,system-ui,sans-serif;font-size:12px;flex:none;white-space:nowrap}
+  .field.pf input{text-align:right}
+  /* Mode buttons, as the tool panels draw them (prop_widgets::mode_buttons): 40 x 32 icon buttons, 4 apart. */
+  .modes{display:flex;gap:4px;margin:8px 8px 0}
+  .modes button{width:40px;height:32px;border-radius:4px;border:1px solid var(--line);background:var(--raised);color:var(--text);cursor:pointer;display:grid;place-items:center;padding:0}
+  .modes button:hover{background:#30353D;border-color:var(--strong);color:var(--hi)}
+  .modes button.on{background:#3a311cb0;border-color:var(--gold);color:var(--gold)}
+  .modes svg{width:18px;height:18px}
+  .chipm{float:right;font-size:11px;font-weight:400;padding:2px 8px;border-radius:3px;background:var(--sel);color:var(--goldtext);line-height:14px}
+  .side{width:300px;font-size:13px;color:var(--dim)}
+  .side h3{margin:0 0 6px;color:var(--hi);font-size:15px}
+  .side ul{padding-left:18px;margin:6px 0}
+  .side label{display:block;margin:16px 0 4px;color:var(--hi)}
+  .side input[type=range]{width:100%}
+  .debug{margin-top:14px;font:11px/1.4 monospace;white-space:pre-wrap;word-break:break-all;background:#0b0c0f;border:1px solid var(--line);border-radius:6px;padding:8px;color:#9a9}
+  .switcher{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#f1ead2;color:#111;border-radius:999px;padding:6px 10px;display:flex;gap:12px;align-items:center;box-shadow:0 6px 20px #000c;z-index:20;font-weight:600;max-width:calc(100vw - 32px)}
+  .switcher button{background:#111;color:#f1ead2;border:0;border-radius:50%;width:28px;height:28px;cursor:pointer;flex:none}
+  :focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel" id="panel" style="width:320px"></div>
+  <div class="side">
+    <h3>Map panel · Shores tab</h3>
+    <div id="notes"></div>
+    <label for="w">Panel width: <b id="wv">320</b> pt</label>
+    <input id="w" type="range" min="240" max="480" value="320">
+    <div class="debug" id="debug"></div>
+  </div>
+</div>
+<div class="switcher"><button id="prev" aria-label="Previous variant">←</button><span id="vlabel"></span><button id="next" aria-label="Next variant">→</button></div>
+<script>
+const SVG={
+ map:'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 4 5.5 2.5l5 1.5 4-1.5v9.5l-4 1.5-5-1.5-4 1.5ZM5.5 2.5v9.5M10.5 4v9.5"/></svg>',
+ land:"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 11.2 6.2 3.2 8.4 9.2\"/><path d=\"M8 7.8 9.6 6.4 12.6 11\"/><rect x=\"2\" y=\"12.3\" width=\"12\" height=\"2\" rx=\"1\" fill=\"currentColor\" stroke=\"none\"/></svg>",
+ lake:"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M9.59 3.22C10 3.15 10.46 3.31 10.89 3.4C11.33 3.48 11.75 3.64 12.19 3.72C12.62 3.81 13.11 3.74 13.5 3.92C13.88 4.1 14.44 4.44 14.5 4.81C14.56 5.17 14.17 5.73 13.88 6.09C13.59 6.45 13.03 6.57 12.78 6.95C12.53 7.34 12.4 7.9 12.39 8.4C12.37 8.9 12.69 9.43 12.7 9.94C12.7 10.45 12.64 11.05 12.42 11.45C12.19 11.84 11.73 12.12 11.34 12.32C10.94 12.52 10.48 12.59 10.05 12.67C9.62 12.74 9.17 12.77 8.73 12.78C8.29 12.8 7.85 12.78 7.41 12.74C6.97 12.7 6.54 12.62 6.1 12.52C5.67 12.41 5.25 12.26 4.83 12.11C4.41 11.96 3.98 11.82 3.57 11.63C3.15 11.45 2.69 11.32 2.35 11.02C2.01 10.73 1.6 10.3 1.5 9.86C1.4 9.42 1.56 8.8 1.77 8.38C1.98 7.96 2.4 7.63 2.77 7.34C3.13 7.06 3.54 6.83 3.95 6.66C4.37 6.48 4.81 6.42 5.24 6.31C5.67 6.2 6.15 6.21 6.53 6C6.92 5.78 7.25 5.4 7.56 5.03C7.86 4.67 8.05 4.11 8.39 3.8C8.73 3.5 9.17 3.29 9.59 3.22Z\"/><path stroke-width=\"1.25\" d=\"M4.4 7.6c.7-.6 1.4.6 2.1 0s1.4.6 2.1 0\"/><path stroke-width=\"1.25\" d=\"M7 10c.7-.6 1.4.6 2.1 0s1.4.6 2.1 0\"/></svg>"
+};
+const S={
+ Landmass:{ow:1.5,oc:'#5A4628',oa:1,rc:3,rs:12,rw:1.5,rcol:'#FFFFFF',ra:.6,fade:.60,sw:18,scol:'#8A6A38',sa:1},
+ Lake:{ow:1.0,oc:'#2C4A66',oa:1,rc:4,rs:8,rw:1.0,rcol:'#FFFFFF',ra:.5,fade:.45,sw:10,scol:'#3D6E8C',sa:1}};
+let which='Landmass';
+const VARIANTS={A:'Rows, as the Style tab',B:'Paired fields, names above',C:'Inline pairs, as the Style tab'};
+let variant=(new URLSearchParams(location.search).get('variant')||'C').toUpperCase();if(!VARIANTS[variant])variant='A';
+const log=[];const note=m=>{log.unshift(m);if(log.length>6)log.pop();};
+const cur=()=>S[which];
+const rgba=(h,a)=>{const n=parseInt(h.slice(1),16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`};
+const num=(k,dec,unit)=>`<div class="field"><input aria-label="${k}" data-k="${k}" data-dec="${dec}" value="${(+cur()[k]).toFixed(dec)}" inputmode="decimal">${unit?`<span class="u">u</span>`:''}</div>`;
+const col=(k,a)=>{const c=cur();return `<div class="cs"><span class="chip"><i style="background:${rgba(c[k],c[a])}"></i><input type="color" aria-label="${k}" data-c="${k}" value="${c[k].toLowerCase()}"></span><span class="hex">${c[k]}${c[a]<1?' '+Math.round(c[a]*100)+'%':''}</span></div>`};
+const numP=(k,dec,unit,label)=>`<div class="field pf"><span class="pre">${label}</span><input aria-label="${k}" data-k="${k}" data-dec="${dec}" value="${(+cur()[k]).toFixed(dec)}" inputmode="decimal">${unit?`<span class="u">u</span>`:''}</div>`;
+const row=(l,f)=>`<div class="row"><label title="${l}">${l}</label>${f}</div>`;
+const above=(l,f)=>`<div class="above"><label>${l}</label>${f}</div>`;
+const seg=()=>`<div class="seg" role="radiogroup">${['Landmass','Lake'].map(n=>`<button role="radio" aria-checked="${which===n}" class="${which===n?'on':''}" data-w="${n}">${SVG[n==='Landmass'?'land':'lake']}${n}</button>`).join('')}</div>`;
+const headC=()=>`<div class="head">${SVG.map}Map</div><div class="tabs"><div>Canvas</div><div>Style</div><div class="on">Shores</div></div><div class="modes" role="radiogroup" aria-label="Shore">${['Landmass','Lake'].map(n=>`<button role="radio" aria-checked="${which===n}" class="${which===n?'on':''}" data-w="${n}" title="${n}" aria-label="${n}">${SVG[n==='Landmass'?'land':'lake']}</button>`).join('')}</div>`;
+const head=()=>`<div class="head">${SVG.map}Map</div><div class="tabs"><div>Canvas</div><div>Style</div><div class="on">Shores</div></div><h2>Shore</h2><div style="height:8px"></div>${seg()}`;
+function viewA(){return head()+`
+ <h3>Outline</h3><div class="rows">${row('Width',num('ow',1,1))}${row('Colour',col('oc','oa'))}</div>
+ <h3>Ripples</h3><div class="rows">${row('Count',num('rc',0))}${row('Spacing',num('rs',1,1))}${row('Width',num('rw',1,1))}${row('Colour',col('rcol','ra'))}${row('Fade',num('fade',2))}</div>
+ <h3>Inner shade</h3><div class="rows">${row('Width',num('sw',1,1))}${row('Colour',col('scol','sa'))}</div>`;}
+function viewB(){return head()+`
+ <h3>Outline</h3><div class="rows"><div class="pair">${above('Width',num('ow',1,1))}${above('Colour',col('oc','oa'))}</div></div>
+ <h3>Ripples</h3><div class="rows"><div class="pair">${above('Count',num('rc',0))}${above('Spacing',num('rs',1,1))}</div>
+   <div class="pair">${above('Width',num('rw',1,1))}${above('Fade',num('fade',2))}</div>${above('Colour',col('rcol','ra'))}</div>
+ <h3>Inner shade</h3><div class="rows"><div class="pair">${above('Width',num('sw',1,1))}${above('Colour',col('scol','sa'))}</div></div>`;}
+function viewC(){return headC()+`
+ <h3>Outline</h3><div class="rows"><div class="pair">${numP('ow',1,1,'Width')}<div></div></div>${row('Colour',col('oc','oa'))}</div>
+ <h3>Ripples</h3><div class="rows"><div class="pair">${numP('rc',0,0,'Count')}${numP('rs',1,1,'Spacing')}</div>
+   <div class="pair">${numP('rw',1,1,'Width')}${numP('fade',2,0,'Fade')}</div>${row('Colour',col('rcol','ra'))}</div>
+ <h3>Inner shade</h3><div class="rows"><div class="pair">${numP('sw',1,1,'Width')}<div></div></div>${row('Colour',col('scol','sa'))}</div>`;}
+const NOTES={
+ A:'Same rows as the Style tab: one 80 pt label column, fields that fill the rest. The group captions carry the context, so labels shrink to Width, Colour, Count, Spacing and Fade. Landmass and Lake are a labelled switch under the heading.',
+ C:'Landmass and Lake are icon mode buttons right under the tabs, as in the tool panels, with no heading row because the tab already says Shores. The Style tab\'s rule: every number is a field with its name inside the box, two to a row (a lone one takes half); every colour is a label row, so a narrow panel never has to hide a hex. Ripples is three rows plus the colour.',
+ B:'Fields in pairs with the name above, so Ripples takes three rows instead of five and the tab fits without scrolling. Same captions and switch.'};
+function render(){
+  document.getElementById('panel').innerHTML=({A:viewA,B:viewB,C:viewC})[variant]();
+  document.getElementById('vlabel').textContent=`${variant} (${VARIANTS[variant]})`;
+  document.getElementById('notes').innerHTML=`<p>${NOTES[variant]}</p><ul><li>Switch between Landmass and Lake: they keep their own values.</li><li>Edit any field (Enter applies it) or click a colour chip.</li><li>Drag the width slider to check a narrow panel.</li></ul>`;
+  document.getElementById('debug').textContent=which+' '+JSON.stringify(cur())+'\n\nlast changes:\n'+log.join('\n');
+}
+const panel=document.getElementById('panel');
+panel.addEventListener('click',e=>{const b=e.target.closest('[data-w]');if(b){which=b.dataset.w;note('Switch to '+which);render();}});
+panel.addEventListener('keydown',e=>{if(e.target.matches('input[data-k]')&&e.key==='Enter')e.target.blur();});
+panel.addEventListener('change',e=>{const i=e.target;
+  if(i.dataset.k){const v=parseFloat(i.value);if(!isNaN(v)){cur()[i.dataset.k]=v;note(`${which}: ${i.dataset.k}=${v}`);}render();}
+  else if(i.dataset.c){cur()[i.dataset.c]=i.value.toUpperCase();note(`${which}: ${i.dataset.c}=${i.value.toUpperCase()}`);render();}});
+document.getElementById('w').oninput=e=>{panel.style.width=e.target.value+'px';document.getElementById('wv').textContent=e.target.value;};
+function setVariant(v){variant=v;const u=new URL(location);u.searchParams.set('variant',v);try{history.replaceState(null,'',u)}catch(_){}render();}
+const keys=Object.keys(VARIANTS),step=d=>setVariant(keys[(keys.indexOf(variant)+d+keys.length)%keys.length]);
+prev.onclick=()=>step(-1);next.onclick=()=>step(1);
+document.addEventListener('keydown',e=>{if(/INPUT|TEXTAREA/.test(document.activeElement.tagName))return;if(e.key==='ArrowLeft')step(-1);if(e.key==='ArrowRight')step(1);});
+render();
+</script>
+</body>
+</html>
