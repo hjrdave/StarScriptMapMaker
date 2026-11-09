@@ -703,7 +703,7 @@ fn adding_the_credits_as_a_label_is_one_undo_step() {
 }
 
 #[test]
-fn a_new_map_places_its_first_objects_in_the_template_layers_without_setup() {
+fn a_new_map_has_no_layer_and_the_first_object_makes_one() {
     use ssmap_core::{Canvas, DistanceUnit, Scale};
     let canvas = Canvas::new(1000, 800, Scale::new(1.0, DistanceUnit::Miles));
     let (map, layers, problem) = crate::new_map::start_map(canvas);
@@ -712,16 +712,16 @@ fn a_new_map_places_its_first_objects_in_the_template_layers_without_setup() {
     editor.map = map;
     editor.default_layers = layers;
     assert_eq!(editor.active_layer(), None);
+    assert!(editor.map.children(None).is_empty());
 
     editor.selected_asset = Some(asset("test-pack/castle"));
     let stamp = editor.place_stamp([40.0, 50.0]).unwrap();
-    assert_eq!(editor.map.parent(stamp), layers.assets);
+    let layer = editor.map.parent(stamp).unwrap();
+    assert_eq!(editor.map.children(None), [layer]);
     let (label, gesture) = editor.place_label([60.0, 50.0]).unwrap();
     editor.end_gesture(gesture);
-    // The Stamp made its Layer active, and Layers are not categorised, so the Label follows it.
-    assert_eq!(editor.map.parent(label), layers.assets);
-    assert_eq!(editor.default_layer(Placing::Land), layers.land);
-    assert_eq!(editor.map.children(layers.assets), [stamp, label]);
+    // Layers are not categorised, so the Label follows the Stamp into the same Layer.
+    assert_eq!(editor.map.children(Some(layer)), [stamp, label]);
 }
 
 #[test]

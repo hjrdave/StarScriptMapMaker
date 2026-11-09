@@ -289,10 +289,10 @@ fn a_map_never_saved_journals_under_the_data_dir_and_is_offered_at_startup() {
     harness.get_by_label("Recover").click();
     harness.run();
     let state = harness.state();
-    // The starter template's Layer, then the two made above.
+    // The two Layers made above.
     assert_eq!(
         layer_names(state.editor().map()),
-        ["Layer 001", "Layer 002", "Layer 003"]
+        ["Layer 001", "Layer 002"]
     );
     assert!(state.document().path().is_none());
     assert!(state.document().has_unsaved_changes(state.editor().map()));
