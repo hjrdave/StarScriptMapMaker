@@ -7,7 +7,7 @@ mod renderer;
 use std::sync::Arc;
 
 use lyon::path::Path;
-use ssmap_core::{Grain, Id};
+use ssmap_core::{FillStyle, Id};
 
 pub use lyon::tessellation::FillRule;
 
@@ -48,15 +48,15 @@ pub struct VectorShape {
     pub path: Arc<Path>,
     pub color: Color,
     pub paint: Paint,
-    /// Fine speckle over a fill; strokes have none.
-    pub grain: Option<Grain>,
+    /// Grain and mottle over a fill; strokes have none.
+    pub style: FillStyle,
 }
 
 impl PartialEq for VectorShape {
     fn eq(&self, other: &Self) -> bool {
         self.color == other.color
             && self.paint == other.paint
-            && self.grain == other.grain
+            && self.style == other.style
             && self.path.iter().eq(other.path.iter())
     }
 }
@@ -92,7 +92,7 @@ impl VectorGroup {
                 path: Arc::new(path),
                 color,
                 paint: Paint::Fill(rule),
-                grain: None,
+                style: FillStyle::FLAT,
             }],
             effect: false,
             object: None,
@@ -106,10 +106,10 @@ impl VectorGroup {
         self
     }
 
-    /// Draws the group's fills with `grain`, if any.
-    pub fn with_grain(mut self, grain: Option<Grain>) -> Self {
+    /// Draws the group's fills with `style`.
+    pub fn with_style(mut self, style: FillStyle) -> Self {
         for shape in &mut self.shapes {
-            shape.grain = grain;
+            shape.style = style;
         }
         self
     }

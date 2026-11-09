@@ -11,6 +11,9 @@ use ssmap_core::{Affine, Id, MultiPolygon, ShoreStyle, land};
 /// How many bands approximate the inward glow.
 pub(crate) const SHADING_BANDS: u32 = 6;
 
+/// How many bands approximate the outward glow.
+pub(crate) const GLOW_BANDS: u32 = 10;
+
 /// How far out each ripple line runs, nearest first. Empty when ripples draw nothing.
 pub(crate) fn ripple_distances(shore: &ShoreStyle) -> Vec<f64> {
     let ripples = &shore.ripples;
@@ -19,6 +22,18 @@ pub(crate) fn ripple_distances(shore: &ShoreStyle) -> Vec<f64> {
     }
     (1..=ripples.count)
         .map(|k| ripples.spacing * f64::from(k))
+        .collect()
+}
+
+/// How far out each band of the glow runs, nearest the coast first. Empty when the glow draws
+/// nothing.
+pub(crate) fn glow_distances(shore: &ShoreStyle) -> Vec<f64> {
+    let glow = &shore.glow;
+    if glow.width <= 0.0 || glow.color.a == 0 {
+        return Vec::new();
+    }
+    (0..GLOW_BANDS)
+        .map(|i| (f64::from(i) + 0.5) / f64::from(GLOW_BANDS) * glow.width)
         .collect()
 }
 
@@ -218,6 +233,7 @@ impl RingStore {
         entry.drawn = true;
         let mut distances = ripple_distances(shore);
         distances.extend(shading_distances(shore));
+        distances.extend(glow_distances(shore));
         if entry.has_all(&distances) {
             return;
         }
@@ -490,6 +506,7 @@ mod tests {
     fn distances() -> Vec<f64> {
         let mut all = ripple_distances(&shore());
         all.extend(shading_distances(&shore()));
+        all.extend(glow_distances(&shore()));
         all
     }
 

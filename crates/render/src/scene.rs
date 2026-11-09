@@ -10,14 +10,16 @@ use lyon::math::point;
 use lyon::path::Path;
 use ssmap_core::{
     ContentHash, Id, Landmass, Map, Membership, MultiPolygon, Node, ObjectKind, Polygon,
-    ResolvedLabel, RoughnessCache, ShoreStyle, Stamp,
+    ResolvedLabel, RoughnessCache, ShoreStyle, Stamp, land,
 };
 
 use crate::canvas::{ClipScope, Content};
 use crate::color::Color;
 use crate::color::ColorExt as _;
 use crate::profile::{self, Stage};
-use crate::shore_rings::{RingStore, SHADING_BANDS, ripple_distances, shading_distances};
+use crate::shore_rings::{
+    GLOW_BANDS, RingStore, SHADING_BANDS, glow_distances, ripple_distances, shading_distances,
+};
 use crate::stamp::{PlacedStamp, StampDraw};
 use crate::text::{Fonts, LabelLayout, LayoutKey};
 use crate::vector::{FillRule, ObjectRef, Paint, Placement, VectorGroup, VectorShape};
@@ -764,6 +766,18 @@ impl MapScene {
         };
         let first = groups.len();
         self.rings.prepare(sibling, &outline, shore, self.complete);
+        let opacity = layer_opacity(map, sibling);
+        // Only Landmasses have the glow and the water lines, and both lie beneath the ripples.
+        if matches!(map.node(sibling), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Landmass(_)))
+        {
+            glow_groups(
+                &mut |distance| self.rings.ring(sibling, distance),
+                shore,
+                opacity,
+                groups,
+            );
+            line_groups(&outline, shore, opacity, groups);
+        }
         ripple_groups(
             &mut |distance| self.rings.ring(sibling, distance),
             shore,
@@ -849,10 +863,10 @@ impl MapScene {
                 // holes stay open. Parts are separate groups so overlapping parts never
                 // cancel out.
                 let color = fill.faded(opacity);
-                let grain = kind.fill_style().grain();
+                let style = kind.fill_style();
                 groups.extend(outline.0.iter().map(|polygon| {
                     VectorGroup::fill(polygon_path(polygon), color, FillRule::EvenOdd)
-                        .with_grain(grain)
+                        .with_style(style)
                 }));
                 if let Some(shore) = map.shore(id) {
                     self.rings.prepare(id, &outline, shore, self.complete);
@@ -1037,7 +1051,7 @@ fn stroke(path: Path, color: Color, width: f32, opacity: f32) -> VectorGroup {
             path: Arc::new(path),
             color: color.faded(opacity),
             paint: Paint::Stroke { width },
-            grain: None,
+            style: ssmap_core::FillStyle::FLAT,
         }],
         effect: false,
         object: None,
@@ -1049,6 +1063,80 @@ fn stroke(path: Path, color: Color, width: f32, opacity: f32) -> VectorGroup {
 fn faded(mut color: Color, factor: f64) -> Color {
     color.a = (f64::from(color.a) * factor.clamp(0.0, 1.0)).round() as u8;
     color
+}
+
+/// A tinted glow outward from the coast: bands along rings grown from it, each fainter than the
+/// last.
+fn glow_groups(
+    ring: &mut impl FnMut(f64) -> Option<Arc<MultiPolygon>>,
+    shore: &ShoreStyle,
+    opacity: f32,
+    groups: &mut Vec<VectorGroup>,
+) {
+    let glow = &shore.glow;
+    let band = glow.width / f64::from(GLOW_BANDS);
+    for distance in glow_distances(shore) {
+        // A ring still being computed with nothing to stand in for it is left out for now.
+        let Some(ring) = ring(distance) else {
+            continue;
+        };
+        // Fainter than linear near the far edge, so the glow melts into the water.
+        let middle = distance / glow.width;
+        let strength = (1.0 - middle).powf(1.5);
+        groups.push(
+            stroke(
+                region_path(&ring),
+                faded(glow.color, strength),
+                band as f32,
+                opacity,
+            )
+            .with_effect(),
+        );
+    }
+}
+
+/// How strong each stretch of a water line is, from the coast outward: a line is drawn in
+/// stretches, each fainter than the one before, as one stroke cannot fade along its length.
+const LINE_FADE: [f64; 3] = [1.0, 0.6, 0.25];
+
+/// The short horizontal lines beside the coast, fading as they run out over the water.
+fn line_groups(
+    outline: &MultiPolygon,
+    shore: &ShoreStyle,
+    opacity: f32,
+    groups: &mut Vec<VectorGroup>,
+) {
+    let lines = &shore.lines;
+    if lines.length <= 0.0 || lines.width <= 0.0 || lines.color.a == 0 {
+        return;
+    }
+    let found = land::shore_lines(outline, lines.spacing, lines.length);
+    let stretches = LINE_FADE.len();
+    for (k, strength) in LINE_FADE.into_iter().enumerate() {
+        let (from, to) = (
+            k as f64 / stretches as f64,
+            (k + 1) as f64 / stretches as f64,
+        );
+        let point = |line: &land::ShoreLine, t: f64| {
+            [line[0][0] + (line[1][0] - line[0][0]) * t, line[0][1]]
+        };
+        let pieces: Vec<Vec<[f64; 2]>> = found
+            .iter()
+            .map(|line| vec![point(line, from), point(line, to)])
+            .collect();
+        if pieces.is_empty() {
+            return;
+        }
+        groups.push(
+            stroke(
+                lines_path(&pieces),
+                faded(lines.color, strength),
+                lines.width as f32,
+                opacity,
+            )
+            .with_effect(),
+        );
+    }
 }
 
 /// Lines stepping outward from the coast, each fainter than the last.
@@ -1661,36 +1749,39 @@ mod tests {
     }
 
     #[test]
-    fn a_landmass_fill_carries_its_grain_and_nothing_else_does() {
+    fn a_landmass_fill_carries_its_style_and_nothing_else_does() {
         let (mut map, lands) = map_with_land();
-        let grain = ssmap_core::Grain {
-            amount: 0.3,
-            size: 2.5,
+        let style = ssmap_core::FillStyle {
+            grain: Some(ssmap_core::Grain {
+                amount: 0.3,
+                size: 2.5,
+            }),
+            mottle: Some(ssmap_core::Mottle::DEFAULT),
         };
         map.execute(&Command::SetFillStyle {
             ids: vec![lands[1]],
-            style: ssmap_core::FillStyle::Grain(grain),
+            style,
         })
         .unwrap();
         let mut scene = MapScene::new(Fonts::bundled());
         let content = scene.content(&map, &mut RoughnessCache::new());
-        let grains = |id: Id| -> Vec<Option<ssmap_core::Grain>> {
+        let styles = |id: Id| -> Vec<ssmap_core::FillStyle> {
             content
                 .groups()
                 .iter()
                 .filter(|g| g.object.is_some_and(|o| o.id == id))
-                .flat_map(|g| g.shapes.iter().map(|shape| shape.grain))
+                .flat_map(|g| g.shapes.iter().map(|shape| shape.style))
                 .collect()
         };
-        let grained = grains(lands[1]);
-        // Its fill has grain; its outline and shore effects do not.
-        assert!(grained.contains(&Some(grain)));
-        assert!(grained.contains(&None));
-        assert!(grains(lands[0]).iter().all(Option::is_none));
-        // Switching back to flat draws the same as a Map that never had grain.
+        let styled = styles(lands[1]);
+        // Its fill has the style; its outline and shore effects do not.
+        assert!(styled.contains(&style));
+        assert!(styled.contains(&ssmap_core::FillStyle::FLAT));
+        assert!(styles(lands[0]).iter().all(|s| s.is_flat()));
+        // Switching back to flat draws the same as a Map that never had a style.
         map.execute(&Command::SetFillStyle {
             ids: vec![lands[1]],
-            style: ssmap_core::FillStyle::Flat,
+            style: ssmap_core::FillStyle::FLAT,
         })
         .unwrap();
         let flat = scene.content(&map, &mut RoughnessCache::new());
@@ -1698,8 +1789,46 @@ mod tests {
             flat.groups()
                 .iter()
                 .flat_map(|g| &g.shapes)
-                .all(|shape| shape.grain.is_none())
+                .all(|shape| shape.style.is_flat())
         );
+    }
+
+    #[test]
+    fn the_soft_glow_adds_its_bands_and_lines_beneath_the_land_and_nothing_else_changes() {
+        let (mut map, lands) = map_with_land();
+        let mut scene = MapScene::new(Fonts::bundled());
+        let before = scene.content(&map, &mut RoughnessCache::new());
+        let effects = |content: &Content, id: Id| {
+            content
+                .groups()
+                .iter()
+                .filter(|g| g.object.is_some_and(|o| o.id == id) && g.effect)
+                .count()
+        };
+        let style = ShoreStyle::soft_glow();
+        map.execute(&Command::SetShore {
+            ids: vec![lands[1]],
+            shore: Some(style.clone()),
+        })
+        .unwrap();
+        let mut scene = MapScene::new(Fonts::bundled());
+        let after = scene.content(&map, &mut RoughnessCache::new());
+        // Inner shade bands, glow bands and the stretches of the lines, and no ripples.
+        let expected =
+            shading_distances(&style).len() + glow_distances(&style).len() + LINE_FADE.len();
+        assert_eq!(effects(&after, lands[1]), expected);
+        // The others are as they were.
+        assert_eq!(effects(&after, lands[0]), effects(&before, lands[0]));
+        assert_eq!(effects(&after, lands[2]), effects(&before, lands[2]));
+        // A glow band is as wide as its share of the glow.
+        let band = (style.glow.width / f64::from(GLOW_BANDS)) as f32;
+        assert!(after.groups().iter().any(|g| {
+            g.object.is_some_and(|o| o.id == lands[1])
+                && matches!(g.shapes[0].paint, Paint::Stroke { width } if (width - band).abs() < 1e-4)
+        }));
+        // The styles from before glow and lines draw neither.
+        let plain = ShoreStyle::landmass_default();
+        assert!(glow_distances(&plain).is_empty());
     }
 
     #[test]

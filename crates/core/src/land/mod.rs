@@ -11,6 +11,7 @@ use crate::geometry::{MultiPolygon, Point, Polygon};
 
 mod brush;
 mod nodes;
+mod shore_lines;
 #[cfg(test)]
 mod tests;
 
@@ -19,6 +20,7 @@ pub use brush::{
     lasso_region, preview_area, simplify_tolerance, stroke_region, water_command,
 };
 pub use nodes::{NodeEditError, delete_nodes, insert_node, move_nodes, signed_area};
+pub use shore_lines::{MAX_LINE_ROWS, ShoreLine, shore_lines};
 
 /// `outline` with `region` added.
 pub fn union(outline: &MultiPolygon, region: &MultiPolygon) -> MultiPolygon {
