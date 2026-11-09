@@ -110,6 +110,14 @@ fn thumbnail_label(
     label
 }
 
+/// Height of the pack and category dropdowns.
+const FILTER_HEIGHT: f32 = 32.0;
+
+/// The result count under the filters: "24 Assets".
+fn count_label(count: usize) -> String {
+    format!("{count} {}", if count == 1 { "Asset" } else { "Assets" })
+}
+
 impl AssetBrowser {
     /// Whether "Open Asset packs" was clicked since the last call.
     pub(crate) fn take_open_packs(&mut self) -> bool {
@@ -152,12 +160,17 @@ impl AssetBrowser {
         {
             self.pack = None;
         }
-        ui.add(
-            egui::TextEdit::singleline(&mut self.search)
-                .hint_text("Search names and tags")
-                .desired_width(f32::INFINITY),
-        );
+        crate::search_box::SearchBox::new(
+            &mut self.search,
+            "Search names and tags",
+            f32::INFINITY,
+            "asset browser",
+        )
+        .show(ui);
+        ui.add_space(theme::SPACING[1]);
         ui.horizontal(|ui| {
+            // The two dropdowns share one height and sit on one centre line.
+            ui.spacing_mut().interact_size.y = FILTER_HEIGHT;
             let width = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
             egui::ComboBox::from_id_salt("asset pack")
                 .width(width)
@@ -215,6 +228,11 @@ impl AssetBrowser {
             }
         }
         let mut chosen = None;
+        ui.label(
+            egui::RichText::new(count_label(shown_assets.len()))
+                .size(theme::CAPTION)
+                .color(theme::palette(ui.ctx()).text_tertiary),
+        );
         if shown_assets.is_empty() {
             self.empty_state(ui);
         } else {
@@ -489,6 +507,13 @@ pub(crate) fn install_test_pack(editor: &mut Editor, attribution_required: bool)
 mod tests {
     use super::*;
     use ssmap_core::asset::{ArtFormat, PackSource, parse_manifest};
+
+    #[test]
+    fn the_count_label_pluralises() {
+        assert_eq!(count_label(0), "0 Assets");
+        assert_eq!(count_label(1), "1 Asset");
+        assert_eq!(count_label(24), "24 Assets");
+    }
 
     fn pack(id: &str, flags: &str) -> Pack {
         let text = format!(

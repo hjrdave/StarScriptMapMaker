@@ -19,7 +19,7 @@ pub use panels::prop_widgets;
 pub use workspace::{editor, shell, tools};
 
 use canvas::{handles, zoom};
-use chrome::{icons, logo, native_menu, tab, toast};
+use chrome::{icons, logo, native_menu, search_box, tab, toast};
 use dialogs::{dialog, native_dialog, recovery};
 use export::export_region;
 use workspace::{clipboard, credits, document, home, update};
