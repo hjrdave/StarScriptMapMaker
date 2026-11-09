@@ -242,7 +242,7 @@ impl ObjectKind {
     pub fn fill_style(&self) -> FillStyle {
         match self {
             ObjectKind::Landmass(landmass) => landmass.fill_style,
-            _ => FillStyle::Flat,
+            _ => FillStyle::FLAT,
         }
     }
 
@@ -374,7 +374,7 @@ impl Landmass {
         Self {
             geometry,
             fill: Self::DEFAULT_FILL,
-            fill_style: FillStyle::Flat,
+            fill_style: FillStyle::FLAT,
             roughness: None,
             shore: None,
             extra: Extra::new(),

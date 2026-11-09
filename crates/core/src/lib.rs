@@ -43,7 +43,10 @@ pub use export::{
     ExportSizeError, MAX_EXPORT_SIDE, SizeMode, WARN_EXPORT_SIDE, credits_file_path,
 };
 pub use extra::Extra;
-pub use fill::{FillStyle, Grain, MAX_GRAIN_AMOUNT, MAX_GRAIN_SIZE, MIN_GRAIN_SIZE};
+pub use fill::{
+    FillStyle, Grain, MAX_GRAIN_AMOUNT, MAX_GRAIN_SIZE, MAX_MOTTLE_SCALE, MIN_GRAIN_SIZE,
+    MIN_MOTTLE_SCALE, Mottle,
+};
 pub use geometry::{Affine, MultiPolygon, NodeRef, Point, Polygon, Rect};
 pub use history::{DEFAULT_BUDGET_BYTES, ExecuteError, History, HistoryError, Selection, UndoStep};
 pub use id::Id;

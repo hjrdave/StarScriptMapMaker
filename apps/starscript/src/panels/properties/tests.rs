@@ -184,32 +184,95 @@ fn fill_style_of(editor: &Editor, id: Id) -> ssmap_core::FillStyle {
 }
 
 #[test]
-fn a_landmass_fill_switches_between_flat_and_grain() {
+fn a_landmass_fill_switches_grain_and_mottle_on_and_off() {
     let (mut fixture, _, island) = fixture();
     fixture.editor.select(vec![island]);
     let mut harness = harness(fixture);
-    // Flat to begin with: no grain fields.
-    harness.get_by_label("Flat");
+    // Flat to begin with: both switches off and no fields.
+    harness.get_by_label("Grain");
+    harness.get_by_label("Mottled");
     assert!(harness.query_by_label("Grain amount").is_none());
+    assert!(harness.query_by_label("Mottle scale").is_none());
 
     harness.get_by_label("Grain").click();
     harness.run();
     let editor = &harness.state().editor;
     assert_eq!(
         fill_style_of(editor, island),
-        ssmap_core::FillStyle::Grain(ssmap_core::Grain::DEFAULT)
+        ssmap_core::FillStyle {
+            grain: Some(ssmap_core::Grain::DEFAULT),
+            mottle: None,
+        }
     );
     assert_eq!(editor.undo_label(), Some("Change Fill Style"));
     harness.get_by_label("Grain amount");
     harness.get_by_label("Grain size");
+    assert!(harness.query_by_label("Mottle scale").is_none());
 
-    harness.get_by_label("Flat").click();
+    // Mottled on top of grain: both fields show, and the grain is kept.
+    harness.get_by_label("Mottled").click();
     harness.run();
     assert_eq!(
         fill_style_of(&harness.state().editor, island),
-        ssmap_core::FillStyle::Flat
+        ssmap_core::FillStyle {
+            grain: Some(ssmap_core::Grain::DEFAULT),
+            mottle: Some(ssmap_core::Mottle::DEFAULT),
+        }
+    );
+    harness.get_by_label("Grain amount");
+    harness.get_by_label("Mottle scale");
+    harness.get_by_label("Mottle contrast");
+    harness.get_by_label("Mottle seed");
+    harness.get_by_label("Re-roll mottle");
+
+    // Grain off: the mottle stays.
+    harness.get_by_label("Grain").click();
+    harness.run();
+    assert_eq!(
+        fill_style_of(&harness.state().editor, island),
+        ssmap_core::FillStyle {
+            grain: None,
+            mottle: Some(ssmap_core::Mottle::DEFAULT),
+        }
     );
     assert!(harness.query_by_label("Grain amount").is_none());
+    harness.get_by_label("Mottle scale");
+
+    harness.get_by_label("Mottled").click();
+    harness.run();
+    assert!(fill_style_of(&harness.state().editor, island).is_flat());
+}
+
+#[test]
+fn re_rolling_the_mottle_changes_only_its_seed() {
+    let (mut fixture, _, island) = fixture();
+    let before = ssmap_core::FillStyle {
+        grain: Some(ssmap_core::Grain::DEFAULT),
+        mottle: Some(ssmap_core::Mottle::DEFAULT),
+    };
+    assert!(
+        fixture
+            .editor
+            .run(Command::SetFillStyle {
+                ids: vec![island],
+                style: before,
+            })
+            .is_ok()
+    );
+    fixture.editor.select(vec![island]);
+    let mut harness = harness(fixture);
+    harness.get_by_label("Re-roll mottle").click();
+    harness.run();
+    let editor = &harness.state().editor;
+    let after = fill_style_of(editor, island);
+    assert_eq!(after.grain, before.grain);
+    let (old, new) = (before.mottle.unwrap(), after.mottle.unwrap());
+    assert_ne!(new.seed, old.seed);
+    assert_eq!(
+        (new.color, new.scale, new.contrast),
+        (old.color, old.scale, old.contrast)
+    );
+    assert_eq!(editor.undo_label(), Some("Change Mottle"));
 }
 
 #[test]
@@ -231,6 +294,7 @@ fn a_lake_has_no_fill_style() {
     fixture.editor.select(vec![lake]);
     let harness = harness(fixture);
     assert!(harness.query_by_label("Grain").is_none());
+    assert!(harness.query_by_label("Mottled").is_none());
 }
 
 #[test]

@@ -9,7 +9,9 @@ use lyon::tessellation::{
     BuffersBuilder, FillOptions, FillTessellator, FillVertex, LineCap, LineJoin, StrokeOptions,
     StrokeTessellator, StrokeVertex, VertexBuffers,
 };
-use ssmap_core::Id;
+use ssmap_core::{
+    FillStyle, Id, MAX_GRAIN_SIZE, MAX_MOTTLE_SCALE, MIN_GRAIN_SIZE, MIN_MOTTLE_SCALE,
+};
 
 use super::cache::TessellationCache;
 use super::{ObjectRef, Paint, VectorGroup, VectorShape};
@@ -21,8 +23,44 @@ use crate::profile::{self, Stage};
 pub(super) struct Vertex {
     position: [f32; 2],
     color: [f32; 4],
-    /// Grain strength and speck width in Canvas units; a strength of 0 is no grain.
-    grain: [f32; 2],
+    /// Grain and mottle settings, packed as the shader unpacks them (see [`pack_style`]).
+    look: [u8; 4],
+    /// The mottle colour (sRGB) and the byte that offsets its patches.
+    tint: [u8; 4],
+}
+
+/// A value on a log scale from `min` to `max`, as a byte. The shader undoes it with
+/// `min * pow(max / min, byte / 255)`, so the ranges here and in `fill.wgsl` must agree.
+fn log_byte(value: f64, min: f64, max: f64) -> u8 {
+    ((value / min).ln() / (max / min).ln() * 255.0)
+        .round()
+        .clamp(0.0, 255.0) as u8
+}
+
+/// A fraction from 0 to 1 as a byte.
+fn unit_byte(value: f64) -> u8 {
+    (value * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
+/// Packs a fill's style into two 4-byte vertex attributes, so the vertex stays 32 bytes:
+/// `look` is the grain amount, the grain size, the mottle contrast and the mottle scale, and
+/// `tint` is the mottle colour and a byte that moves its patches about. An amount or contrast
+/// of 0 means that part is off.
+pub(super) fn pack_style(style: &FillStyle) -> ([u8; 4], [u8; 4]) {
+    let mut look = [0; 4];
+    let mut tint = [0; 4];
+    if let Some(grain) = &style.grain {
+        look[0] = unit_byte(grain.amount);
+        look[1] = log_byte(grain.size, MIN_GRAIN_SIZE, MAX_GRAIN_SIZE);
+    }
+    if let Some(mottle) = &style.mottle {
+        look[2] = unit_byte(mottle.contrast);
+        look[3] = log_byte(mottle.scale, MIN_MOTTLE_SCALE, MAX_MOTTLE_SCALE);
+        // Spread the seed over the byte, so nearby seeds do not look alike.
+        let offset = mottle.seed.wrapping_mul(2_654_435_761) >> 24;
+        tint = [mottle.color.r, mottle.color.g, mottle.color.b, offset as u8];
+    }
+    (look, tint)
 }
 
 /// A run of indices: either several groups that can't overlap themselves, drawn plainly,
@@ -68,9 +106,9 @@ fn tessellate(
     stroke: &mut StrokeTessellator,
 ) {
     let color = shape.color.to_linear_premultiplied();
-    let grain = match (shape.paint, shape.grain) {
-        (Paint::Fill(_), Some(grain)) => [grain.amount as f32, grain.size as f32],
-        _ => [0.0, 1.0],
+    let (look, tint) = match shape.paint {
+        Paint::Fill(_) => pack_style(&shape.style),
+        Paint::Stroke { .. } => ([0; 4], [0; 4]),
     };
     match shape.paint {
         Paint::Fill(rule) => {
@@ -81,7 +119,8 @@ fn tessellate(
                 &mut BuffersBuilder::new(geometry, |vertex: FillVertex| Vertex {
                     position: vertex.position().to_array(),
                     color,
-                    grain,
+                    look,
+                    tint,
                 }),
             );
         }
@@ -96,7 +135,8 @@ fn tessellate(
                 &mut BuffersBuilder::new(geometry, |vertex: StrokeVertex| Vertex {
                     position: vertex.position().to_array(),
                     color,
-                    grain,
+                    look,
+                    tint,
                 }),
             );
         }
@@ -487,7 +527,7 @@ mod tests {
                 path: Arc::new(square(x)),
                 color: Color::rgb(200, 0, 0),
                 paint: Paint::Stroke { width: 2.0 },
-                grain: None,
+                style: FillStyle::FLAT,
             }],
             effect: false,
             object: Some(object),
@@ -780,33 +820,123 @@ mod tests {
     }
 
     #[test]
-    fn grain_reaches_the_fill_vertices_and_only_those() {
-        let grain = ssmap_core::Grain {
-            amount: 0.5,
-            size: 3.0,
+    fn grain_and_mottle_reach_the_fill_vertices_and_only_those() {
+        let style = FillStyle {
+            grain: Some(ssmap_core::Grain {
+                amount: 0.5,
+                size: 4.0,
+            }),
+            mottle: Some(ssmap_core::Mottle {
+                color: Color::rgb(10, 20, 30),
+                scale: 100.0,
+                contrast: 1.0,
+                seed: 9,
+            }),
         };
         let object = object(1);
-        let grained = fill(0.0, Some(object)).with_grain(Some(grain));
+        let styled = fill(0.0, Some(object)).with_style(style);
         let plain = fill(20.0, Some(object));
         let mut stroked = stroke(40.0, object);
-        stroked.shapes[0].grain = Some(grain);
-        let built = batched(&[grained, plain, stroked]);
+        stroked.shapes[0].style = style;
+        let built = batched(&[styled, plain, stroked]);
         let (with, without): (Vec<&Vertex>, Vec<&Vertex>) =
             built.vertices.iter().partition(|v| v.position[0] < 15.0);
-        assert!(with.iter().all(|v| v.grain == [0.5, 3.0]));
-        // Plain fills and strokes carry no strength, even if a stroke was given grain.
-        assert!(without.iter().all(|v| v.grain[0] == 0.0));
+        let (look, tint) = pack_style(&style);
+        assert!(with.iter().all(|v| v.look == look && v.tint == tint));
+        assert_eq!(look[0], 128, "half the grain amount");
+        assert_eq!(look[2], 255, "full contrast");
+        assert_eq!(tint[..3], [10, 20, 30]);
+        // Plain fills and strokes carry nothing, even if a stroke was given a style.
+        assert!(without.iter().all(|v| v.look == [0; 4] && v.tint == [0; 4]));
     }
 
     #[test]
-    fn a_grain_change_retessellates_even_at_the_same_version() {
+    fn sizes_and_scales_survive_packing_to_within_a_few_percent() {
+        // The shader's decode: `min * pow(max / min, byte / 255)`.
+        let decode = |byte: u8, min: f64, max: f64| min * (max / min).powf(f64::from(byte) / 255.0);
+        for size in [0.25, 1.0, 2.0, 7.5, 16.0] {
+            let style = FillStyle {
+                grain: Some(ssmap_core::Grain { amount: 1.0, size }),
+                mottle: None,
+            };
+            let (look, _) = pack_style(&style);
+            let back = decode(look[1], 0.25, 16.0);
+            assert!(
+                (back / size - 1.0).abs() < 0.02,
+                "{size} came back as {back}"
+            );
+        }
+        for scale in [10.0, 80.0, 150.0, 1200.0, 5000.0] {
+            let style = FillStyle {
+                grain: None,
+                mottle: Some(ssmap_core::Mottle {
+                    scale,
+                    ..ssmap_core::Mottle::DEFAULT
+                }),
+            };
+            let (look, _) = pack_style(&style);
+            let back = decode(look[3], 10.0, 5000.0);
+            assert!(
+                (back / scale - 1.0).abs() < 0.03,
+                "{scale} came back as {back}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_flat_style_packs_to_nothing_and_each_part_is_off_alone() {
+        assert_eq!(pack_style(&FillStyle::FLAT), ([0; 4], [0; 4]));
+        let grain_only = FillStyle {
+            grain: Some(ssmap_core::Grain::DEFAULT),
+            mottle: None,
+        };
+        let (look, tint) = pack_style(&grain_only);
+        assert_eq!((look[2], look[3], tint), (0, 0, [0; 4]));
+        let mottle_only = FillStyle {
+            grain: None,
+            mottle: Some(ssmap_core::Mottle::DEFAULT),
+        };
+        let (look, _) = pack_style(&mottle_only);
+        assert_eq!((look[0], look[1]), (0, 0));
+    }
+
+    #[test]
+    fn nearby_mottle_seeds_pick_different_offsets() {
+        let offset = |seed| {
+            pack_style(&FillStyle {
+                grain: None,
+                mottle: Some(ssmap_core::Mottle {
+                    seed,
+                    ..ssmap_core::Mottle::DEFAULT
+                }),
+            })
+            .1[3]
+        };
+        assert_eq!(offset(5), offset(5));
+        let offsets: std::collections::HashSet<u8> = (1..=8).map(offset).collect();
+        assert!(offsets.len() >= 6, "{offsets:?}");
+    }
+
+    #[test]
+    fn a_style_change_retessellates_even_at_the_same_version() {
         let a = object(1);
         let cache = TessellationCache::new();
         let flat = vec![fill(0.0, Some(a))];
         build(&flat, &[], &cache);
         assert!(cache.is_ready(a.id, 1, &flat));
-        let grained = vec![fill(0.0, Some(a)).with_grain(Some(ssmap_core::Grain::DEFAULT))];
-        assert!(!cache.is_ready(a.id, 1, &grained));
+        for style in [
+            FillStyle {
+                grain: Some(ssmap_core::Grain::DEFAULT),
+                mottle: None,
+            },
+            FillStyle {
+                grain: None,
+                mottle: Some(ssmap_core::Mottle::DEFAULT),
+            },
+        ] {
+            let styled = vec![fill(0.0, Some(a)).with_style(style)];
+            assert!(!cache.is_ready(a.id, 1, &styled));
+        }
     }
 
     #[test]
