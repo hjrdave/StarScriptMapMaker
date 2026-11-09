@@ -200,7 +200,28 @@ impl Editor {
     pub(super) fn execute_in_gesture(&mut self, command: &Command) -> Result<(), ExecuteError> {
         let result = self.history.execute(&mut self.map, command);
         if let Err(err) = &result {
-            self.refused(err);
+            // A drag repeats its move every frame and the coloured selection box already shows
+            // the Object is locked, so a lock refusal of a move says nothing. Other Commands
+            // in a gesture, and every other refusal, still toast.
+            let move_command = matches!(
+                command,
+                Command::Translate { .. }
+                    | Command::Transform { .. }
+                    | Command::SetLabel { .. }
+                    | Command::SetStamp { .. }
+            );
+            let lock_refusal = matches!(
+                err,
+                ExecuteError::Command(
+                    CommandError::Locked(_)
+                        | CommandError::InLockedLayer { .. }
+                        | CommandError::ContainsLocked { .. }
+                        | CommandError::LinkedLocked { .. }
+                )
+            );
+            if !(move_command && lock_refusal) {
+                self.refused(err);
+            }
         }
         result
     }
