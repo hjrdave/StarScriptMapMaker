@@ -904,6 +904,31 @@ fn one_opacity_drag_in_the_layer_area_is_one_undo_step() {
 }
 
 #[test]
+fn clicking_a_groups_chevron_hides_and_shows_its_contents() {
+    let (editor, ids) = editor_with_a_group();
+    let mut harness = harness(editor);
+    let map = harness.state().editor.map();
+    let child = ids
+        .iter()
+        .copied()
+        .find(|&id| map.parent(id).is_some())
+        .unwrap();
+    let name = node_name(map, child);
+    harness.run();
+    assert!(harness.query_by_label(&name).is_some());
+
+    harness.get_by_label("Collapse").click();
+    harness.run();
+    harness.run();
+    assert!(harness.query_by_label(&name).is_none());
+
+    harness.get_by_label("Expand").click();
+    harness.run();
+    harness.run();
+    assert!(harness.query_by_label(&name).is_some());
+}
+
+#[test]
 fn a_rename_request_expands_the_row_and_opens_its_rename_box() {
     let (editor, ids) = editor_with_a_group();
     let mut harness = harness(editor);

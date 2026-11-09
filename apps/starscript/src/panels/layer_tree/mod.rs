@@ -146,8 +146,10 @@ impl LayerTree {
         {
             self.start_rename_revealed(editor, id);
         }
+        // The generation the rows are built for; a Toggle later this frame bumps the live one.
+        let rows_generation = self.collapse_generation;
         let rows = match self.cache.take() {
-            Some((r, g, rows)) if r == revision && g == self.collapse_generation => rows,
+            Some((r, g, rows)) if r == revision && g == rows_generation => rows,
             _ => rows(editor.map(), &self.collapsed),
         };
         if !matches!(self.counts, Some((r, _)) if r == revision) {
@@ -283,7 +285,7 @@ impl LayerTree {
                 Action::CancelRename => self.renaming = None,
             }
         }
-        self.cache = Some((revision, self.collapse_generation, rows));
+        self.cache = Some((revision, rows_generation, rows));
         self.confirm_delete_dialog(ui.ctx(), editor);
     }
 
