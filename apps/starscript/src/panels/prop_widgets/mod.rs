@@ -9,6 +9,7 @@
 mod color;
 mod expr;
 mod number;
+mod picker;
 mod swatch;
 
 use eframe::egui::{self, Color32, Sense, Stroke, StrokeKind, Vec2};

@@ -1716,8 +1716,12 @@ fn the_shores_tab_lines_up_its_colours_and_pairs_its_numbers_at_every_width() {
 fn a_translucent_shore_colour_shows_its_opacity_after_the_hex() {
     let mut harness = map_harness(ocean_fixture());
     click(&mut harness, "Shores");
+    // The hex and opacity are painted inside the colour field, which reads them as its value.
     let shown: Vec<String> = harness
-        .query_all_by_label_contains("#")
+        .query_all(
+            egui_kittest::kittest::by()
+                .predicate(|node| node.value().is_some_and(|value| value.starts_with('#'))),
+        )
         .filter_map(|node| node.accesskit_node().value())
         .collect();
     // An opaque colour is the hex alone; a translucent one adds its percentage.

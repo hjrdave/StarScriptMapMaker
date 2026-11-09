@@ -1,5 +1,6 @@
 //! The colour swatch and its picker.
 
+use super::picker::{paint_chip, percent_text, picker};
 use super::*;
 
 /// What the swatch's value became.
@@ -16,7 +17,7 @@ pub struct SwatchResponse {
     pub change: Option<SwatchChange>,
 }
 
-/// A colour swatch that opens a popover with the picker, a hex field and opacity. With
+/// A colour field (swatch and hex in one box) that opens a popover with the picker. With
 /// `optional`, the popover also offers "None" and `colour` may be `None`. A picker drag is one
 /// gesture, finished when the pointer is released.
 pub fn swatch(
@@ -71,18 +72,6 @@ pub fn swatch_field(
     swatch_row(ui, label, label, Column::None, colour, optional, provenance)
 }
 
-/// The hex shown beside the chip, with the opacity after it when the colour is translucent
-/// ("#FFFFFF 60%"). The popover's hex field is the colour only.
-fn shown_hex(colour: Color) -> String {
-    let hex = hex_text(colour);
-    if colour.a < 255 {
-        let percent = (f32::from(colour.a) / 255.0 * 100.0).round();
-        format!("{hex} {percent}%")
-    } else {
-        hex
-    }
-}
-
 /// What the swatch row puts before the chip.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Column {
@@ -122,7 +111,6 @@ fn swatch_row(
     optional: bool,
     provenance: Provenance,
 ) -> SwatchResponse {
-    let palette = theme::palette(ui.ctx());
     let id = ui.make_persistent_id(("swatch", label));
     let mut edit = Edit::default();
     let enabled = ui.is_enabled();
@@ -137,8 +125,9 @@ fn swatch_row(
                     paint_label(ui, label_rect, shown, provenance);
                 }
             }
+            let room = (ui.available_width() - gap_before_trailing(ui, provenance)).max(40.0);
             let (rect, response) = ui.allocate_exact_size(
-                Vec2::new(44.0, metrics::FIELD[0]),
+                Vec2::new(room, metrics::FIELD[0]),
                 if enabled {
                     Sense::click()
                 } else {
@@ -146,46 +135,12 @@ fn swatch_row(
                 },
             );
             response.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::ColorButton, enabled, label)
+                let mut info =
+                    egui::WidgetInfo::labeled(egui::WidgetType::ColorButton, enabled, label);
+                info.current_text_value = Some(colour.map_or("None".to_owned(), spoken));
+                info
             });
-            let inner = rect.shrink(2.0);
-            match *colour {
-                Some(c) => {
-                    let c32 = Color32::from_rgba_unmultiplied(c.r, c.g, c.b, c.a);
-                    egui::color_picker::show_color_at(ui.painter(), c32, inner);
-                }
-                None => {
-                    let stroke = Stroke::new(1.0, palette.border_strong);
-                    ui.painter()
-                        .rect_stroke(inner, theme::RADIUS_CHIP, stroke, StrokeKind::Inside);
-                    ui.painter().line_segment(
-                        [inner.left_bottom(), inner.right_top()],
-                        Stroke::new(1.0, palette.danger),
-                    );
-                }
-            }
-            let outline = if response.hovered() {
-                palette.border_strong
-            } else {
-                palette.border_subtle
-            };
-            ui.painter().rect_stroke(
-                rect,
-                theme::RADIUS_CHIP,
-                Stroke::new(1.0, outline),
-                StrokeKind::Inside,
-            );
-            let full = colour.map_or("None".to_owned(), shown_hex);
-            let hex = egui::RichText::new(full.as_str())
-                .size(theme::CAPTION)
-                .color(palette.text_secondary);
-            // Leave room for the reset arrow, and cut the hex short rather than push the row
-            // out of the panel; the whole of it shows when the pointer rests on it.
-            let room = (ui.available_width() - gap_before_trailing(ui, provenance)).max(0.0);
-            ui.allocate_ui(Vec2::new(room, metrics::FIELD[0]), |ui| {
-                ui.add(egui::Label::new(hex).truncate().sense(Sense::hover()))
-                    .on_hover_text(&full);
-            });
+            paint_closed(ui, rect, *colour, enabled, response.hovered());
             if trailing(ui, label, provenance) {
                 edit.reset = true;
             }
@@ -195,54 +150,22 @@ fn swatch_row(
 
     let mut pending: Option<SwatchChange> = None;
     if enabled {
-        egui::Popup::from_toggle_button_response(&response)
+        let before_id = id.with("before");
+        // Esc closes the popover (egui's popup does that itself).
+        let popup = egui::Popup::from_toggle_button_response(&response)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
-                ui.set_min_width(220.0);
-                let base = colour.unwrap_or(Color::rgb(128, 128, 128));
-                let mut c32 = Color32::from_rgba_unmultiplied(base.r, base.g, base.b, base.a);
-                if egui::color_picker::color_picker_color32(
-                    ui,
-                    &mut c32,
-                    egui::color_picker::Alpha::OnlyBlend,
-                ) {
-                    let [r, g, b, a] = c32.to_srgba_unmultiplied();
-                    pending = Some(SwatchChange::Colour(Color::rgba(r, g, b, a)));
-                }
-                ui.horizontal(|ui| {
-                    ui.label("Hex");
-                    let hex_id = id.with("hex");
-                    let mut text: String = ui
-                        .data(|d| d.get_temp(hex_id))
-                        .unwrap_or_else(|| hex_text(base));
-                    let field = ui.add(
-                        egui::TextEdit::singleline(&mut text)
-                            .desired_width(80.0)
-                            .font(egui::TextStyle::Monospace),
-                    );
-                    if field.changed()
-                        && let Some(c) = parse_hex(&text, base.a)
-                    {
-                        pending = Some(SwatchChange::Colour(c));
-                    }
-                    if field.has_focus() {
-                        ui.data_mut(|d| d.insert_temp(hex_id, text));
-                    } else {
-                        ui.data_mut(|d| d.remove::<String>(hex_id));
-                    }
+                // What the value was when the popover opened, for the Before swatch.
+                let stored: Option<Option<Color>> = ui.data(|d| d.get_temp(before_id));
+                let before = stored.unwrap_or_else(|| {
+                    ui.data_mut(|d| d.insert_temp(before_id, *colour));
+                    *colour
                 });
-                let mut opacity = f64::from(base.a) / 255.0 * 100.0;
-                let spec = ScrubSpec::new("Opacity").unit("%").range(0.0, 100.0);
-                if slider(ui, &mut opacity, &spec).changed {
-                    let alpha = (opacity / 100.0 * 255.0).round() as u8;
-                    pending = Some(SwatchChange::Colour(Color::rgba(
-                        base.r, base.g, base.b, alpha,
-                    )));
-                }
-                if optional && ui.button("None").clicked() {
-                    pending = Some(SwatchChange::None);
-                }
+                pending = picker(ui, id, *colour, before, optional);
             });
+        if popup.is_none() {
+            ui.data_mut(|d| d.remove::<Option<Color>>(before_id));
+        }
     }
 
     let editing_id = id.with("editing");
@@ -265,4 +188,63 @@ fn swatch_row(
         edit,
         change: pending,
     }
+}
+
+/// What the closed field's accessible value says: the hex, then the opacity when translucent.
+fn spoken(colour: Color) -> String {
+    let hex = hex_text(colour);
+    if colour.a < 255 {
+        format!("{hex} {}", percent_text(colour.a))
+    } else {
+        hex
+    }
+}
+
+/// The closed field: the height, border and corners of the other fields, with the swatch and hex
+/// inside and a translucent colour's opacity muted at the right edge.
+fn paint_closed(ui: &egui::Ui, rect: egui::Rect, colour: Option<Color>, enabled: bool, hot: bool) {
+    let palette = theme::palette(ui.ctx());
+    let outline = if hot && enabled {
+        palette.border_strong
+    } else {
+        palette.border_subtle
+    };
+    ui.painter().rect(
+        rect,
+        theme::RADIUS_FIELD,
+        palette.bg_field,
+        Stroke::new(1.0, outline),
+        StrokeKind::Inside,
+    );
+    let side = rect.height() - 8.0;
+    let chip = egui::Rect::from_min_size(
+        egui::pos2(rect.left() + 4.0, rect.center().y - side / 2.0),
+        Vec2::splat(side),
+    );
+    paint_chip(ui, chip, colour, palette);
+    let mut right = rect.right() - 6.0;
+    if let Some(c) = colour.filter(|c| c.a < 255) {
+        let percent = ui.painter().text(
+            egui::pos2(right, rect.center().y),
+            egui::Align2::RIGHT_CENTER,
+            percent_text(c.a),
+            egui::FontId::proportional(theme::CAPTION),
+            palette.text_tertiary,
+        );
+        right = percent.left() - 6.0;
+    }
+    let (shown, tint) = match colour {
+        Some(c) if enabled => (hex_text(c), palette.text_primary),
+        Some(c) => (hex_text(c), palette.text_tertiary),
+        None => ("None".to_owned(), palette.text_tertiary),
+    };
+    let mut job = egui::text::LayoutJob::simple_singleline(
+        shown,
+        egui::FontId::new(theme::MONO, theme::mono_family()),
+        tint,
+    );
+    job.wrap = egui::text::TextWrapping::truncate_at_width((right - chip.right() - 6.0).max(0.0));
+    let galley = ui.painter().layout_job(job);
+    let at = egui::pos2(chip.right() + 6.0, rect.center().y - galley.size().y / 2.0);
+    ui.painter().galley(at, galley, tint);
 }
