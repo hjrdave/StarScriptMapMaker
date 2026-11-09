@@ -4,25 +4,6 @@ use ssmap_core::{Canvas, DistanceUnit, Id, Map, Node, ObjectKind};
 
 use crate::layer_tree::node_name;
 
-/// The Selection's names from its Layer down, for the rail. Empty when nothing is selected;
-/// several Objects show the count.
-pub fn selection_path(map: &Map, selection: &[Id]) -> Vec<String> {
-    match selection {
-        [] => Vec::new(),
-        [id] => {
-            let mut path = vec![node_name(map, *id)];
-            let mut node = *id;
-            while let Some(parent) = map.parent(node) {
-                path.push(node_name(map, parent));
-                node = parent;
-            }
-            path.reverse();
-            path
-        }
-        many => vec![format!("{} selected", many.len())],
-    }
-}
-
 fn kind_noun(map: &Map, id: Id, plural: bool) -> &'static str {
     match (map.node(id), plural) {
         (Some(Node::Layer(_)), false) => "Layer",
