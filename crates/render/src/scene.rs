@@ -10,14 +10,16 @@ use lyon::math::point;
 use lyon::path::Path;
 use ssmap_core::{
     ContentHash, Id, Landmass, Map, Membership, MultiPolygon, Node, ObjectKind, Polygon,
-    ResolvedLabel, RoughnessCache, ShoreStyle, Stamp,
+    ResolvedLabel, RoughnessCache, ShoreStyle, Stamp, land,
 };
 
 use crate::canvas::{ClipScope, Content};
 use crate::color::Color;
 use crate::color::ColorExt as _;
 use crate::profile::{self, Stage};
-use crate::shore_rings::{RingStore, SHADING_BANDS, ripple_distances, shading_distances};
+use crate::shore_rings::{
+    GLOW_BANDS, RingStore, SHADING_BANDS, glow_distances, ripple_distances, shading_distances,
+};
 use crate::stamp::{PlacedStamp, StampDraw};
 use crate::text::{Fonts, LabelLayout, LayoutKey};
 use crate::vector::{FillRule, ObjectRef, Paint, Placement, VectorGroup, VectorShape};
@@ -764,6 +766,18 @@ impl MapScene {
         };
         let first = groups.len();
         self.rings.prepare(sibling, &outline, shore, self.complete);
+        let opacity = layer_opacity(map, sibling);
+        // Only Landmasses have the glow and the water lines, and both lie beneath the ripples.
+        if matches!(map.node(sibling), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Landmass(_)))
+        {
+            glow_groups(
+                &mut |distance| self.rings.ring(sibling, distance),
+                shore,
+                opacity,
+                groups,
+            );
+            line_groups(&outline, shore, opacity, groups);
+        }
         ripple_groups(
             &mut |distance| self.rings.ring(sibling, distance),
             shore,
@@ -1049,6 +1063,80 @@ fn stroke(path: Path, color: Color, width: f32, opacity: f32) -> VectorGroup {
 fn faded(mut color: Color, factor: f64) -> Color {
     color.a = (f64::from(color.a) * factor.clamp(0.0, 1.0)).round() as u8;
     color
+}
+
+/// A tinted glow outward from the coast: bands along rings grown from it, each fainter than the
+/// last.
+fn glow_groups(
+    ring: &mut impl FnMut(f64) -> Option<Arc<MultiPolygon>>,
+    shore: &ShoreStyle,
+    opacity: f32,
+    groups: &mut Vec<VectorGroup>,
+) {
+    let glow = &shore.glow;
+    let band = glow.width / f64::from(GLOW_BANDS);
+    for distance in glow_distances(shore) {
+        // A ring still being computed with nothing to stand in for it is left out for now.
+        let Some(ring) = ring(distance) else {
+            continue;
+        };
+        // Fainter than linear near the far edge, so the glow melts into the water.
+        let middle = distance / glow.width;
+        let strength = (1.0 - middle).powf(1.5);
+        groups.push(
+            stroke(
+                region_path(&ring),
+                faded(glow.color, strength),
+                band as f32,
+                opacity,
+            )
+            .with_effect(),
+        );
+    }
+}
+
+/// How strong each stretch of a water line is, from the coast outward: a line is drawn in
+/// stretches, each fainter than the one before, as one stroke cannot fade along its length.
+const LINE_FADE: [f64; 3] = [1.0, 0.6, 0.25];
+
+/// The short horizontal lines beside the coast, fading as they run out over the water.
+fn line_groups(
+    outline: &MultiPolygon,
+    shore: &ShoreStyle,
+    opacity: f32,
+    groups: &mut Vec<VectorGroup>,
+) {
+    let lines = &shore.lines;
+    if lines.length <= 0.0 || lines.width <= 0.0 || lines.color.a == 0 {
+        return;
+    }
+    let found = land::shore_lines(outline, lines.spacing, lines.length);
+    let stretches = LINE_FADE.len();
+    for (k, strength) in LINE_FADE.into_iter().enumerate() {
+        let (from, to) = (
+            k as f64 / stretches as f64,
+            (k + 1) as f64 / stretches as f64,
+        );
+        let point = |line: &land::ShoreLine, t: f64| {
+            [line[0][0] + (line[1][0] - line[0][0]) * t, line[0][1]]
+        };
+        let pieces: Vec<Vec<[f64; 2]>> = found
+            .iter()
+            .map(|line| vec![point(line, from), point(line, to)])
+            .collect();
+        if pieces.is_empty() {
+            return;
+        }
+        groups.push(
+            stroke(
+                lines_path(&pieces),
+                faded(lines.color, strength),
+                lines.width as f32,
+                opacity,
+            )
+            .with_effect(),
+        );
+    }
 }
 
 /// Lines stepping outward from the coast, each fainter than the last.
@@ -1703,6 +1791,44 @@ mod tests {
                 .flat_map(|g| &g.shapes)
                 .all(|shape| shape.style.is_flat())
         );
+    }
+
+    #[test]
+    fn the_soft_glow_adds_its_bands_and_lines_beneath_the_land_and_nothing_else_changes() {
+        let (mut map, lands) = map_with_land();
+        let mut scene = MapScene::new(Fonts::bundled());
+        let before = scene.content(&map, &mut RoughnessCache::new());
+        let effects = |content: &Content, id: Id| {
+            content
+                .groups()
+                .iter()
+                .filter(|g| g.object.is_some_and(|o| o.id == id) && g.effect)
+                .count()
+        };
+        let style = ShoreStyle::soft_glow();
+        map.execute(&Command::SetShore {
+            ids: vec![lands[1]],
+            shore: Some(style.clone()),
+        })
+        .unwrap();
+        let mut scene = MapScene::new(Fonts::bundled());
+        let after = scene.content(&map, &mut RoughnessCache::new());
+        // Inner shade bands, glow bands and the stretches of the lines, and no ripples.
+        let expected =
+            shading_distances(&style).len() + glow_distances(&style).len() + LINE_FADE.len();
+        assert_eq!(effects(&after, lands[1]), expected);
+        // The others are as they were.
+        assert_eq!(effects(&after, lands[0]), effects(&before, lands[0]));
+        assert_eq!(effects(&after, lands[2]), effects(&before, lands[2]));
+        // A glow band is as wide as its share of the glow.
+        let band = (style.glow.width / f64::from(GLOW_BANDS)) as f32;
+        assert!(after.groups().iter().any(|g| {
+            g.object.is_some_and(|o| o.id == lands[1])
+                && matches!(g.shapes[0].paint, Paint::Stroke { width } if (width - band).abs() < 1e-4)
+        }));
+        // The styles from before glow and lines draw neither.
+        let plain = ShoreStyle::landmass_default();
+        assert!(glow_distances(&plain).is_empty());
     }
 
     #[test]

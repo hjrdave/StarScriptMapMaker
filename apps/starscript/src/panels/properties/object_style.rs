@@ -2,8 +2,9 @@
 
 use eframe::egui;
 use ssmap_core::{
-    Color, Command, FillStyle, Grain, Id, MAX_GRAIN_SIZE, MAX_MOTTLE_SCALE, MAX_RIPPLES,
-    MIN_GRAIN_SIZE, MIN_MOTTLE_SCALE, Mottle, Node, ObjectKind, Roughness, ShoreStyle,
+    Color, Command, FillStyle, Grain, Id, MAX_GRAIN_SIZE, MAX_MOTTLE_SCALE, MAX_REACH, MAX_RIPPLES,
+    MIN_GRAIN_SIZE, MIN_LINE_SPACING, MIN_MOTTLE_SCALE, Mottle, Node, ObjectKind, Roughness,
+    ShoreStyle,
 };
 
 use super::{Inherit, PropertiesPanel, group_caption};
@@ -522,5 +523,97 @@ impl PropertiesPanel {
         self.edit(editor, edit, group, |s| s.shading.width = width);
         let (edit, colour) = colour_row(ui, "Shade colour", style.shading.color);
         self.edit(editor, edit, group, |s| s.shading.color = colour);
+
+        self.shore_water_fields(ui, editor, group, &mut style);
+        group_caption(ui, "Preset");
+        if ui.button("Soft glow").clicked() {
+            self.edit(editor, Edit::instant(), group, |s| {
+                *s = ShoreStyle::soft_glow();
+            });
+        }
+    }
+
+    /// The outer glow and water lines of a Shore style, the part of the Shores fields that
+    /// lies on the water.
+    fn shore_water_fields(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        group: &Inherit<'_, ShoreStyle>,
+        style: &mut ShoreStyle,
+    ) {
+        let provenance = group.provenance;
+        let spec = |label| ScrubSpec::new(label).provenance(provenance);
+        let length = |label, max: f64| spec(label).unit(" u").range(0.0, max).step(0.1).decimals(1);
+        let colour_row = |ui: &mut egui::Ui, label: &str, colour: Color| {
+            let mut value = Some(colour);
+            let edit =
+                prop_widgets::swatch_shown_as(ui, label, "Colour", &mut value, false, provenance)
+                    .edit;
+            (edit, value.unwrap_or(colour))
+        };
+
+        group_caption(ui, "Outer glow");
+        let (edit, ()) = prop_widgets::pair(
+            ui,
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut style.glow.width,
+                    &length("Glow width", MAX_REACH)
+                        .prefix("Width")
+                        .mixed(group.mixed(|s| s.glow.width)),
+                )
+            },
+            |_| {},
+        );
+        let width = style.glow.width;
+        self.edit(editor, edit, group, |s| s.glow.width = width);
+        let (edit, colour) = colour_row(ui, "Glow colour", style.glow.color);
+        self.edit(editor, edit, group, |s| s.glow.color = colour);
+
+        group_caption(ui, "Water lines");
+        let (length_edit, spacing_edit) = prop_widgets::pair(
+            ui,
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut style.lines.length,
+                    &length("Water line length", MAX_REACH)
+                        .prefix("Length")
+                        .mixed(group.mixed(|s| s.lines.length)),
+                )
+            },
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut style.lines.spacing,
+                    &length("Water line spacing", MAX_REACH)
+                        .prefix("Spacing")
+                        .range(MIN_LINE_SPACING, MAX_REACH)
+                        .mixed(group.mixed(|s| s.lines.spacing)),
+                )
+            },
+        );
+        let (line_length, spacing) = (style.lines.length, style.lines.spacing);
+        self.edit(editor, length_edit, group, |s| s.lines.length = line_length);
+        self.edit(editor, spacing_edit, group, |s| s.lines.spacing = spacing);
+        let (edit, ()) = prop_widgets::pair(
+            ui,
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut style.lines.width,
+                    &length("Water line width", 50.0)
+                        .prefix("Width")
+                        .mixed(group.mixed(|s| s.lines.width)),
+                )
+            },
+            |_| {},
+        );
+        let width = style.lines.width;
+        self.edit(editor, edit, group, |s| s.lines.width = width);
+        let (edit, colour) = colour_row(ui, "Water line colour", style.lines.color);
+        self.edit(editor, edit, group, |s| s.lines.color = colour);
     }
 }

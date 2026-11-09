@@ -26,6 +26,8 @@
 //!   inside it to the Canvas, as an Object's `move_locked` does. Older files have none.
 //!   Format 1.13 adds the optional `fill_style` to Landmass props: an optional `grain` and an
 //!   optional `mottle`. A Landmass without it is flat, so older files open unchanged (ADR 0015).
+//!   Format 1.14 adds the optional `glow` and `lines` to a Shore style (in a Landmass or Lake's
+//!   `shore` and in the Map defaults). A Shore style without them draws neither (ADR 0016).
 //!   Format 1.6 stores Groups: Layers nested inside Layers, with `parent` pointing at the
 //!   enclosing Layer. There is no compatibility with older files.
 //!
@@ -66,7 +68,7 @@ use crate::node::{Node, Object};
 /// anything else, and needs a migration.
 pub const FORMAT_VERSION: FormatVersion = FormatVersion {
     major: 1,
-    minor: 13,
+    minor: 14,
 };
 
 /// What the `boards` meta key holds.

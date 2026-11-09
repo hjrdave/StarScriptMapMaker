@@ -83,7 +83,7 @@ fn boards_harness(fixture: Fixture) -> Harness<'static, Fixture> {
 
 fn harness(fixture: Fixture) -> Harness<'static, Fixture> {
     let mut harness = Harness::builder()
-        .with_size(egui::vec2(320.0, 900.0))
+        .with_size(egui::vec2(320.0, 1500.0))
         .build_ui_state(
             |ui, fixture: &mut Fixture| {
                 theme::install(&ui.ctx().clone());
@@ -273,6 +273,33 @@ fn re_rolling_the_mottle_changes_only_its_seed() {
         (old.color, old.scale, old.contrast)
     );
     assert_eq!(editor.undo_label(), Some("Change Mottle"));
+}
+
+#[test]
+fn the_shore_style_has_glow_and_water_lines_and_a_soft_glow_preset() {
+    let (mut fixture, _, island) = fixture();
+    fixture.editor.select(vec![island]);
+    let mut harness = harness(fixture);
+    for label in [
+        "Glow width",
+        "Water line length",
+        "Water line spacing",
+        "Water line width",
+    ] {
+        harness.get_by_label(label);
+    }
+    // The default style has neither.
+    let default = ssmap_core::ShoreStyle::landmass_default();
+    assert_eq!(harness.state().editor.map().shore(island), Some(&default));
+
+    harness.get_by_label("Soft glow").click();
+    harness.run();
+    let editor = &harness.state().editor;
+    assert_eq!(
+        editor.map().shore(island),
+        Some(&ssmap_core::ShoreStyle::soft_glow())
+    );
+    assert_eq!(editor.undo_label(), Some("Change Shore Style"));
 }
 
 #[test]

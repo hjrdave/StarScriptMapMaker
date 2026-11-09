@@ -1,6 +1,6 @@
 //! Shore style: how a coastline is dressed (ADR 0002). Effects are drawn on the roughened
-//! outline: an outline, ripple lines stepping outward over the water, and shading inward from
-//! the coast. A Map-wide default exists for Landmasses and another for Lakes; either kind can
+//! outline: an outline, ripple lines stepping outward over the water, shading inward from
+//! the coast, and (ADR 0016) a glow outward over the water and short horizontal lines. A Map-wide default exists for Landmasses and another for Lakes; either kind can
 //! override its default.
 
 use schemars::JsonSchema;
@@ -11,6 +11,12 @@ use crate::extra::Extra;
 
 /// At most this many ripple lines, to bound the geometry they cost.
 pub const MAX_RIPPLES: u32 = 12;
+
+/// The least gap between rows of water lines, in Canvas units, to bound the geometry they cost.
+pub const MIN_LINE_SPACING: f64 = 1.0;
+
+/// The most a glow or a water line can reach out from the coast, in Canvas units.
+pub const MAX_REACH: f64 = 500.0;
 
 /// A line along the coast. A width of zero draws nothing.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
@@ -46,7 +52,54 @@ pub struct ShoreShading {
     pub color: Color,
 }
 
-/// How the coast of a Landmass or Lake is drawn: outline, ripples and inner shading.
+/// A tinted glow that fades outward from the coast over the water. A width of zero draws
+/// nothing.
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ShoreGlow {
+    /// How far out the glow reaches, in Canvas units.
+    pub width: f64,
+    /// The colour at the coast; its alpha is the strength there, fading to nothing outward.
+    pub color: Color,
+}
+
+impl Default for ShoreGlow {
+    /// Off, with the colour a switched-on glow starts with.
+    fn default() -> Self {
+        Self {
+            width: 0.0,
+            color: Color::rgba(0x9f, 0xd0, 0xcc, 0x78),
+        }
+    }
+}
+
+/// Short horizontal lines on the water beside the coast, in rows. Where the coast runs up and
+/// down they are long; where it runs along they hardly show. A length of zero draws nothing.
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ShoreLines {
+    /// The gap between rows, in Canvas units.
+    pub spacing: f64,
+    /// How far out a line runs from the coast, in Canvas units. It stops short of other land.
+    pub length: f64,
+    /// The width of each line, in Canvas units.
+    pub width: f64,
+    /// The lines' colour; they fade out along their length.
+    pub color: Color,
+}
+
+impl Default for ShoreLines {
+    /// Off, with the values a switched-on set of lines starts with.
+    fn default() -> Self {
+        Self {
+            spacing: 5.0,
+            length: 0.0,
+            width: 1.0,
+            color: Color::rgba(0x86, 0xb8, 0xb4, 0xa0),
+        }
+    }
+}
+
+/// How the coast of a Landmass or Lake is drawn: outline, ripples, inner shading, and the
+/// outer glow and water lines.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ShoreStyle {
     /// The line along the coast.
@@ -55,9 +108,23 @@ pub struct ShoreStyle {
     pub ripples: ShoreRipples,
     /// The shading inward from the coast.
     pub shading: ShoreShading,
+    /// The glow outward over the water. Files saved before it existed have none.
+    #[serde(default, skip_serializing_if = "is_default_glow")]
+    pub glow: ShoreGlow,
+    /// The short horizontal lines on the water. Files saved before they existed have none.
+    #[serde(default, skip_serializing_if = "is_default_lines")]
+    pub lines: ShoreLines,
     /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+fn is_default_glow(glow: &ShoreGlow) -> bool {
+    *glow == ShoreGlow::default()
+}
+
+fn is_default_lines(lines: &ShoreLines) -> bool {
+    *lines == ShoreLines::default()
 }
 
 impl ShoreStyle {
@@ -80,6 +147,8 @@ impl ShoreStyle {
                 width: 18.0,
                 color: Color::rgba(0x8a, 0x6a, 0x38, 0x70),
             },
+            glow: ShoreGlow::default(),
+            lines: ShoreLines::default(),
             extra: Extra::new(),
         }
     }
@@ -99,6 +168,8 @@ impl ShoreStyle {
                 width: 8.0,
                 color: Color::rgba(0x2a, 0x5a, 0x7a, 0x60),
             },
+            glow: ShoreGlow::default(),
+            lines: ShoreLines::default(),
             extra: Extra::new(),
         }
     }
@@ -119,6 +190,37 @@ impl ShoreStyle {
                 width: 0.0,
                 ..none.shading
             },
+            glow: ShoreGlow::default(),
+            lines: ShoreLines::default(),
+            extra: Extra::new(),
+        }
+    }
+
+    /// A soft look for Landmasses: a thin dark outline, a pale glow over the water and short
+    /// horizontal lines beside the coast, with no ripples and a little inner shade.
+    pub fn soft_glow() -> Self {
+        let base = Self::landmass_default();
+        Self {
+            outline: ShoreOutline {
+                width: 1.0,
+                color: Color::rgb(0x4a, 0x3a, 0x2a),
+            },
+            ripples: ShoreRipples {
+                count: 0,
+                ..base.ripples
+            },
+            shading: ShoreShading {
+                width: 12.0,
+                color: Color::rgba(0x8a, 0x6a, 0x38, 0x50),
+            },
+            glow: ShoreGlow {
+                width: 26.0,
+                ..ShoreGlow::default()
+            },
+            lines: ShoreLines {
+                length: 44.0,
+                ..ShoreLines::default()
+            },
             extra: Extra::new(),
         }
     }
@@ -132,6 +234,16 @@ impl ShoreStyle {
         finite_from_zero("the outline width", self.outline.width)
             .or_else(|| finite_from_zero("the ripple width", self.ripples.width))
             .or_else(|| finite_from_zero("the shading width", self.shading.width))
+            .or_else(|| {
+                (!(self.glow.width.is_finite() && (0.0..=MAX_REACH).contains(&self.glow.width)))
+                    .then(|| {
+                        format!(
+                            "the glow width must be from 0 to {MAX_REACH}, not {}",
+                            self.glow.width
+                        )
+                    })
+            })
+            .or_else(|| self.lines.problem())
             .or_else(|| {
                 (self.ripples.count > MAX_RIPPLES)
                     .then(|| format!("there can be at most {MAX_RIPPLES} ripples"))
@@ -151,6 +263,28 @@ impl ShoreStyle {
                     format!(
                         "the ripple fade must be from 0 to 1, not {}",
                         self.ripples.fade
+                    )
+                })
+            })
+    }
+}
+
+impl ShoreLines {
+    /// Why these settings cannot be used, if they cannot.
+    pub fn problem(&self) -> Option<String> {
+        let reach = |name: &str, value: f64, max: f64| {
+            (!(value.is_finite() && (0.0..=max).contains(&value)))
+                .then(|| format!("the line {name} must be from 0 to {max}, not {value}"))
+        };
+        reach("length", self.length, MAX_REACH)
+            .or_else(|| reach("width", self.width, 50.0))
+            .or_else(|| {
+                (!(self.spacing.is_finite()
+                    && (MIN_LINE_SPACING..=MAX_REACH).contains(&self.spacing)))
+                .then(|| {
+                    format!(
+                        "the line spacing must be from {MIN_LINE_SPACING} to {MAX_REACH}, not {}",
+                        self.spacing
                     )
                 })
             })

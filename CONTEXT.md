@@ -79,7 +79,7 @@ How a Landmass's fill colour is drawn: flat, or with Grain (fine speckle with an
 _Avoid_: Texture, pattern
 
 **Shore style**:
-The set of effects drawn along a Coastline: outline, ripple lines and inner shading. A Map has a default, and each Landmass, Lake or River may override it. Rivers use the Lakes' default.
+The set of effects drawn along a Coastline: outline, ripple lines, inner shading, and for a Landmass an outer glow over the water and short horizontal water lines. A Map has a default, and each Landmass, Lake or River may override it. Rivers use the Lakes' default.
 _Avoid_: Coast effect, border style
 
 ### Assets
