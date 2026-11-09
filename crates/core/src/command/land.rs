@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 
 use crate::color::Color;
+use crate::fill::FillStyle;
 use crate::geometry::MultiPolygon;
 use crate::id::Id;
 use crate::land;
@@ -303,6 +304,33 @@ pub(super) fn set_roughness(
         .into_iter()
         .map(|id| set(id, Property::Roughness(roughness.clone())))
         .collect())
+}
+
+/// Sets how the fill colour of Landmasses is drawn.
+pub(super) fn set_fill_style(
+    map: &Map,
+    ids: &[Id],
+    style: &FillStyle,
+) -> Result<Vec<Op>, CommandError> {
+    if let Some(problem) = style.problem() {
+        return Err(CommandError::InvalidFillStyle(problem));
+    }
+    Ok(landmasses(map, ids)?
+        .into_iter()
+        .map(|id| set(id, Property::FillStyle(*style)))
+        .collect())
+}
+
+/// Checks that every id is an unlocked Landmass, and drops repeats.
+fn landmasses(map: &Map, ids: &[Id]) -> Result<Vec<Id>, CommandError> {
+    let ids = outlined(map, ids)?;
+    for &id in &ids {
+        match map.node(id) {
+            Some(Node::Object(object)) if matches!(object.kind, ObjectKind::Landmass(_)) => {}
+            _ => return Err(CommandError::NotALandmass(id)),
+        }
+    }
+    Ok(ids)
 }
 
 /// Sets the Shore style of Landmasses and Lakes, or with `None` returns them to the Map-wide

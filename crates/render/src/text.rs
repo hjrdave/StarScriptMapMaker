@@ -494,6 +494,7 @@ impl LabelLayout {
             color: label.fill.faded(opacity),
             // Variable fonts overlap their contours, which even-odd would punch holes in.
             paint: Paint::Fill(FillRule::NonZero),
+            grain: None,
         }];
         if label.halo.width > 0.0 {
             // The stroke is centred on the outline, and the fill hides its inner half.
@@ -503,6 +504,7 @@ impl LabelLayout {
                 paint: Paint::Stroke {
                     width: (2.0 * label.halo.width) as f32,
                 },
+                grain: None,
             });
         }
         VectorGroup {

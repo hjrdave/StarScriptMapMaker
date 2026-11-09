@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::background::Background;
 use crate::color::Color;
 use crate::embedded::{EmbedAsset, EmbedFont};
+use crate::fill::FillStyle;
 use crate::geometry::{Affine, MultiPolygon, NodeRef, Point};
 use crate::id::Id;
 use crate::label::{Label, LabelStyle};
@@ -418,6 +419,13 @@ pub enum Command {
         /// The new Map-wide Roughness.
         roughness: Roughness,
     },
+    /// Sets how the fill colour of Landmasses is drawn: flat or with grain.
+    SetFillStyle {
+        /// The Landmasses to change.
+        ids: Vec<Id>,
+        /// Their Fill style.
+        style: FillStyle,
+    },
     /// Sets the Shore style of Landmasses and Lakes, or with `None` returns them to the
     /// Map-wide default for their kind.
     SetShore {
@@ -623,6 +631,7 @@ impl Command {
             Command::SetPrimaryBoard { .. } => "Change Canvas",
             Command::SetMembership { .. } => "Move On or Off Canvas",
             Command::SetFill { .. } => "Change Fill",
+            Command::SetFillStyle { .. } => "Change Fill Style",
             Command::SetRoughness { .. } => "Change Roughness",
             Command::SetBackground { .. } => "Change Background",
             Command::SetDefaultRoughness { .. } => "Change Default Roughness",
@@ -761,6 +770,7 @@ impl Command {
             }
             Command::SetFill { ids, fill } => land::set_fill(map, ids, *fill),
             Command::SetRoughness { ids, roughness } => land::set_roughness(map, ids, roughness),
+            Command::SetFillStyle { ids, style } => land::set_fill_style(map, ids, style),
             Command::SetShore { ids, shore } => land::set_shore(map, ids, shore),
             Command::SetDefaultShore { kind, shore } => {
                 defaults::set_default_shore(map, *kind, shore)

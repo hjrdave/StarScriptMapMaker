@@ -74,6 +74,10 @@ _Avoid_: Noise, jitter, fractalisation
 How far the Land Brush pushes a stroke's outline out and in, at the scale of the brush, so strokes paint lobed, natural shapes instead of round ones. Unlike Roughness it is stored in the outline, as points that can be edited; Roughness then adds its finer detail on top. Zero paints round strokes.
 _Avoid_: Wobble, raise, lower
 
+**Fill style**:
+How a Landmass's fill colour is drawn: Flat (the colour as it is) or Grain (fine speckle over it, with an amount and a size). It is separate from the colour, so switching it keeps the colour. Lakes and Rivers have none.
+_Avoid_: Texture, pattern
+
 **Shore style**:
 The set of effects drawn along a Coastline: outline, ripple lines and inner shading. A Map has a default, and each Landmass, Lake or River may override it. Rivers use the Lakes' default.
 _Avoid_: Coast effect, border style

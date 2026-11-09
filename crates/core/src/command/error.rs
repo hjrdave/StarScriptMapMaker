@@ -123,6 +123,9 @@ pub enum CommandError {
     /// The Landmass is already a single part.
     #[error("{0} is already one part")]
     NothingToSplit(Id),
+    /// The Fill style has a value out of range.
+    #[error("the Fill style is invalid: {0}")]
+    InvalidFillStyle(String),
     /// The Shore style has a value out of range.
     #[error("the Shore style is invalid: {0}")]
     InvalidShore(String),

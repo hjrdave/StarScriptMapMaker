@@ -21,6 +21,8 @@ use crate::profile::{self, Stage};
 pub(super) struct Vertex {
     position: [f32; 2],
     color: [f32; 4],
+    /// Grain strength and speck width in Canvas units; a strength of 0 is no grain.
+    grain: [f32; 2],
 }
 
 /// A run of indices: either several groups that can't overlap themselves, drawn plainly,
@@ -66,6 +68,10 @@ fn tessellate(
     stroke: &mut StrokeTessellator,
 ) {
     let color = shape.color.to_linear_premultiplied();
+    let grain = match (shape.paint, shape.grain) {
+        (Paint::Fill(_), Some(grain)) => [grain.amount as f32, grain.size as f32],
+        _ => [0.0, 1.0],
+    };
     match shape.paint {
         Paint::Fill(rule) => {
             let options = FillOptions::tolerance(TOLERANCE).with_fill_rule(rule);
@@ -75,6 +81,7 @@ fn tessellate(
                 &mut BuffersBuilder::new(geometry, |vertex: FillVertex| Vertex {
                     position: vertex.position().to_array(),
                     color,
+                    grain,
                 }),
             );
         }
@@ -89,6 +96,7 @@ fn tessellate(
                 &mut BuffersBuilder::new(geometry, |vertex: StrokeVertex| Vertex {
                     position: vertex.position().to_array(),
                     color,
+                    grain,
                 }),
             );
         }
@@ -479,6 +487,7 @@ mod tests {
                 path: Arc::new(square(x)),
                 color: Color::rgb(200, 0, 0),
                 paint: Paint::Stroke { width: 2.0 },
+                grain: None,
             }],
             effect: false,
             object: Some(object),
@@ -768,6 +777,36 @@ mod tests {
         cache.rebuild(&after).run(|| {});
         assert!(cache.is_ready(id, 2, &after));
         assert!(!cache.is_ready(id, 1, &before));
+    }
+
+    #[test]
+    fn grain_reaches_the_fill_vertices_and_only_those() {
+        let grain = ssmap_core::Grain {
+            amount: 0.5,
+            size: 3.0,
+        };
+        let object = object(1);
+        let grained = fill(0.0, Some(object)).with_grain(Some(grain));
+        let plain = fill(20.0, Some(object));
+        let mut stroked = stroke(40.0, object);
+        stroked.shapes[0].grain = Some(grain);
+        let built = batched(&[grained, plain, stroked]);
+        let (with, without): (Vec<&Vertex>, Vec<&Vertex>) =
+            built.vertices.iter().partition(|v| v.position[0] < 15.0);
+        assert!(with.iter().all(|v| v.grain == [0.5, 3.0]));
+        // Plain fills and strokes carry no strength, even if a stroke was given grain.
+        assert!(without.iter().all(|v| v.grain[0] == 0.0));
+    }
+
+    #[test]
+    fn a_grain_change_retessellates_even_at_the_same_version() {
+        let a = object(1);
+        let cache = TessellationCache::new();
+        let flat = vec![fill(0.0, Some(a))];
+        build(&flat, &[], &cache);
+        assert!(cache.is_ready(a.id, 1, &flat));
+        let grained = vec![fill(0.0, Some(a)).with_grain(Some(ssmap_core::Grain::DEFAULT))];
+        assert!(!cache.is_ready(a.id, 1, &grained));
     }
 
     #[test]

@@ -849,8 +849,10 @@ impl MapScene {
                 // holes stay open. Parts are separate groups so overlapping parts never
                 // cancel out.
                 let color = fill.faded(opacity);
+                let grain = kind.fill_style().grain();
                 groups.extend(outline.0.iter().map(|polygon| {
                     VectorGroup::fill(polygon_path(polygon), color, FillRule::EvenOdd)
+                        .with_grain(grain)
                 }));
                 if let Some(shore) = map.shore(id) {
                     self.rings.prepare(id, &outline, shore, self.complete);
@@ -1035,6 +1037,7 @@ fn stroke(path: Path, color: Color, width: f32, opacity: f32) -> VectorGroup {
             path: Arc::new(path),
             color: color.faded(opacity),
             paint: Paint::Stroke { width },
+            grain: None,
         }],
         effect: false,
         object: None,
@@ -1655,6 +1658,48 @@ mod tests {
         };
         assert!(shared(lands[0]) && shared(lands[2]));
         assert!(!shared(lands[1]));
+    }
+
+    #[test]
+    fn a_landmass_fill_carries_its_grain_and_nothing_else_does() {
+        let (mut map, lands) = map_with_land();
+        let grain = ssmap_core::Grain {
+            amount: 0.3,
+            size: 2.5,
+        };
+        map.execute(&Command::SetFillStyle {
+            ids: vec![lands[1]],
+            style: ssmap_core::FillStyle::Grain(grain),
+        })
+        .unwrap();
+        let mut scene = MapScene::new(Fonts::bundled());
+        let content = scene.content(&map, &mut RoughnessCache::new());
+        let grains = |id: Id| -> Vec<Option<ssmap_core::Grain>> {
+            content
+                .groups()
+                .iter()
+                .filter(|g| g.object.is_some_and(|o| o.id == id))
+                .flat_map(|g| g.shapes.iter().map(|shape| shape.grain))
+                .collect()
+        };
+        let grained = grains(lands[1]);
+        // Its fill has grain; its outline and shore effects do not.
+        assert!(grained.contains(&Some(grain)));
+        assert!(grained.contains(&None));
+        assert!(grains(lands[0]).iter().all(Option::is_none));
+        // Switching back to flat draws the same as a Map that never had grain.
+        map.execute(&Command::SetFillStyle {
+            ids: vec![lands[1]],
+            style: ssmap_core::FillStyle::Flat,
+        })
+        .unwrap();
+        let flat = scene.content(&map, &mut RoughnessCache::new());
+        assert!(
+            flat.groups()
+                .iter()
+                .flat_map(|g| &g.shapes)
+                .all(|shape| shape.grain.is_none())
+        );
     }
 
     #[test]
