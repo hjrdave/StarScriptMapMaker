@@ -1095,7 +1095,7 @@ fn pinning_the_selection_is_one_named_undo_step_and_a_lock_refuses_it() {
 }
 
 #[test]
-fn a_refused_move_says_the_object_is_pinned() {
+fn a_refused_move_of_a_pinned_object_shows_no_toast() {
     let (mut editor, land) = editor_with_square();
     editor
         .run(Command::SetMoveLocked {
@@ -1114,6 +1114,31 @@ fn a_refused_move_says_the_object_is_pinned() {
         ExecuteError::Command(CommandError::MoveLocked(_))
     ));
     assert!(err.to_string().contains("is pinned to the Canvas"));
+    assert!(editor.toasts.items().is_empty());
+}
+
+#[test]
+fn a_refused_drag_of_a_locked_object_shows_no_toast() {
+    let (mut editor, land) = editor_with_square();
+    editor
+        .run(Command::SetLocked {
+            id: land,
+            locked: true,
+        })
+        .unwrap();
+    let gesture = editor.begin_gesture("Move");
+    for step in 1..=3 {
+        let offset = [f64::from(step); 2];
+        assert!(!editor.gesture(
+            &gesture,
+            Command::Translate {
+                ids: vec![land],
+                offset,
+            },
+        ));
+    }
+    editor.cancel_gesture(gesture);
+    assert!(editor.toasts.items().is_empty());
 }
 
 #[test]
