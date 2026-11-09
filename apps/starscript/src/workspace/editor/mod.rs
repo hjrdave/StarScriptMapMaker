@@ -654,10 +654,9 @@ impl Editor {
         let name = |id: Id| format!("“{}”", node_name(&self.map, id));
         let text = match err {
             ExecuteError::Command(CommandError::Locked(id)) => format!("{} is locked", name(*id)),
-            ExecuteError::Command(CommandError::MoveLocked(id)) => format!(
-                "{} is pinned to the Canvas. Unpin it from Properties or the right-click menu to move it",
-                name(*id)
-            ),
+            // The coloured selection box already shows the Object is pinned, and a drag repeats
+            // the attempt, so a toast would only stack up. The Object just stays put.
+            ExecuteError::Command(CommandError::MoveLocked(_)) => return,
             ExecuteError::Command(CommandError::InLockedLayer { target, layer }) => {
                 format!("{} is inside locked Layer {}", name(*target), name(*layer))
             }

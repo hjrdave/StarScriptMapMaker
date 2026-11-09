@@ -1095,7 +1095,7 @@ fn pinning_the_selection_is_one_named_undo_step_and_a_lock_refuses_it() {
 }
 
 #[test]
-fn a_refused_move_says_the_object_is_pinned() {
+fn a_refused_move_of_a_pinned_object_shows_no_toast() {
     let (mut editor, land) = editor_with_square();
     editor
         .run(Command::SetMoveLocked {
@@ -1114,6 +1114,7 @@ fn a_refused_move_says_the_object_is_pinned() {
         ExecuteError::Command(CommandError::MoveLocked(_))
     ));
     assert!(err.to_string().contains("is pinned to the Canvas"));
+    assert!(editor.toasts.items().is_empty());
 }
 
 #[test]
