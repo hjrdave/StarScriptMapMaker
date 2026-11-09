@@ -196,3 +196,49 @@ fn the_gallery_shows_every_widget() {
         let _ = harness.get_by_label(label);
     }
 }
+
+/// The closed colour field opens a popover with labelled hex and R/G/B inputs and no stock
+/// "U8" button; typing a hex value changes the colour.
+#[test]
+fn the_colour_popover_has_labelled_inputs_and_a_typed_hex_sets_the_colour() {
+    use ssmap_app::prop_widgets::swatch;
+    use ssmap_core::Color;
+
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(320.0, 520.0))
+        .build_ui_state(
+            |ui, colour: &mut Option<Color>| {
+                swatch(ui, "Fill", colour, true, Provenance::Plain);
+            },
+            Some(Color::rgba(200, 160, 60, 128)),
+        );
+    harness.run();
+    harness.get_by_label("Fill").click();
+    harness.run();
+    for name in [
+        "Hex colour",
+        "Red",
+        "Green",
+        "Blue",
+        "Opacity",
+        "Opacity percentage",
+        "Before",
+        "Now",
+        "Colour field",
+        "Hue",
+        "None",
+    ] {
+        let _ = harness.get_by_label(name);
+    }
+    assert!(harness.query_by_label("U8").is_none());
+    harness.get_by_label("Hex colour").click();
+    harness.run();
+    harness.key_combination_modifiers(egui::Modifiers::COMMAND, &[egui::Key::A]);
+    harness.run();
+    harness.get_by_label("Hex colour").type_text("#112233");
+    harness.run();
+    assert_eq!(
+        harness.state().map(|c| (c.r, c.g, c.b)),
+        Some((0x11, 0x22, 0x33))
+    );
+}
