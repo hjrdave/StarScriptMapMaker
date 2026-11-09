@@ -35,32 +35,29 @@ fn app() -> Harness<'static, MapMakerApp> {
 #[test]
 fn launches_and_creates_a_layer() {
     let mut harness = app();
-    // A new Map starts with the template's one Layer.
-    assert_eq!(harness.state().editor().map().children(None).len(), 1);
+    // A new Map starts with no Layer.
+    assert!(harness.state().editor().map().children(None).is_empty());
 
     common::new_layer(&mut harness);
     let map = &harness.state().editor().map();
-    assert_eq!(map.children(None).len(), 2);
+    assert_eq!(map.children(None).len(), 1);
     // The new Layer shows in the tree (and in the Properties breadcrumb) and is selected.
-    assert!(harness.query_all_by_label("Layer 002").next().is_some());
-    assert_eq!(
-        harness.state().editor().selection(),
-        &map.children(None)[1..]
-    );
+    assert!(harness.query_all_by_label("Layer 001").next().is_some());
+    assert_eq!(harness.state().editor().selection(), map.children(None));
 
     harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Z);
     harness.run();
-    assert_eq!(harness.state().editor().map().children(None).len(), 1);
+    assert!(harness.state().editor().map().children(None).is_empty());
     harness.key_press_modifiers(
         egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
         egui::Key::Z,
     );
     harness.run();
-    assert_eq!(harness.state().editor().map().children(None).len(), 2);
+    assert_eq!(harness.state().editor().map().children(None).len(), 1);
 }
 
 #[test]
-fn a_new_map_opens_with_one_plain_layer_and_label_styles() {
+fn a_new_map_opens_with_no_layer_and_label_styles() {
     let harness = app();
     let map = &harness.state().editor().map();
     let layers: Vec<String> = map
@@ -71,7 +68,7 @@ fn a_new_map_opens_with_one_plain_layer_and_label_styles() {
             _ => panic!("an Object at the top level"),
         })
         .collect();
-    assert_eq!(layers, ["Layer 001"]);
+    assert!(layers.is_empty());
     assert_eq!(map.label_styles().len(), 5);
 }
 
@@ -107,7 +104,7 @@ fn a_locked_layer_refuses_edits_with_a_visible_message() {
     let mut harness = app();
     common::new_layer(&mut harness);
     // Lock and eye show on hover; the Layers panel lists the new, topmost Layer first.
-    layers_row(&harness, "Layer 002").hover();
+    layers_row(&harness, "Layer 001").hover();
     harness.run();
     harness.query_all_by_label("Lock").next().unwrap().click();
     harness.run();
@@ -121,12 +118,12 @@ fn a_locked_layer_refuses_edits_with_a_visible_message() {
     assert!(harness.state().editor().map().node(layer).unwrap().locked());
 
     // The hide toggle is refused, and the reason shows as a toast.
-    layers_row(&harness, "Layer 002").hover();
+    layers_row(&harness, "Layer 001").hover();
     harness.run();
     harness.query_all_by_label("Hide").next().unwrap().click();
     harness.run();
     let editor = harness.state().editor();
-    let message = "“Layer 002” is locked";
+    let message = "“Layer 001” is locked";
     assert_eq!(editor.notice().map(|n| n.text.as_str()), Some(message));
     harness.get_by_label(&format!("Error: {message}"));
     assert!(matches!(
@@ -229,7 +226,7 @@ fn save_as_then_open_round_trips_the_map() {
         "world.ssmap — StarScript Map Maker"
     );
     let (_, reopened) = ssmap_core::file::MapFile::open(&saved).unwrap();
-    assert_eq!(reopened.children(None).len(), 3);
+    assert_eq!(reopened.children(None).len(), 2);
 }
 
 #[test]
@@ -296,7 +293,7 @@ fn the_label_tool_places_a_label_and_types_its_text_in_one_undo_step() {
     let id = *id;
     assert_eq!(editor.label(id).map(|l| l.text.as_str()), Some("Ærendál"));
     assert_eq!(editor.undo_label(), Some("Add Label"));
-    // With no Layer chosen, it went into the template's Layer.
+    // The Map had no Layer, so one was made for it.
     let parent = editor.map().parent(id).unwrap();
     assert!(matches!(
         editor.map().node(parent),
