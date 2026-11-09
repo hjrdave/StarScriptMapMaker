@@ -70,7 +70,12 @@ fn both() -> FillStyle {
     }
 }
 
+/// The Fill style the Object is drawn with: its own, or the Map default.
 fn style_of(map: &Map, id: Id) -> FillStyle {
+    map.fill_style(id)
+}
+
+fn own_style_of(map: &Map, id: Id) -> Option<FillStyle> {
     match map.node(id) {
         Some(Node::Object(object)) => object.kind.fill_style(),
         _ => panic!("not an Object"),
@@ -78,7 +83,109 @@ fn style_of(map: &Map, id: Id) -> FillStyle {
 }
 
 fn set(map: &mut Map, ids: Vec<Id>, style: FillStyle) -> Result<Vec<ssmap_core::Op>, CommandError> {
-    map.execute(&Command::SetFillStyle { ids, style })
+    map.execute(&Command::SetFillStyle {
+        ids,
+        style: Some(style),
+    })
+}
+
+fn set_default(map: &mut Map, style: FillStyle) -> Result<Vec<ssmap_core::Op>, CommandError> {
+    map.execute(&Command::SetDefaultFillStyle { style })
+}
+
+#[test]
+fn the_map_default_is_flat_and_new_landmasses_follow_it() {
+    let (mut map, land, lake) = map_with_land_and_lake();
+    assert_eq!(map.defaults().fill_style, FillStyle::FLAT);
+    assert_eq!(own_style_of(&map, land), None);
+    set_default(&mut map, both()).unwrap();
+    assert_eq!(style_of(&map, land), both());
+    // A Landmass created afterwards follows it too, with no override of its own.
+    let later = Id::new();
+    let layer = map.children(None)[0];
+    map.execute(&Command::CreateLandmass {
+        id: later,
+        parent: layer,
+        index: None,
+        geometry: square(),
+        fill: None,
+    })
+    .unwrap();
+    assert_eq!(own_style_of(&map, later), None);
+    assert_eq!(style_of(&map, later), both());
+    // Lakes have none.
+    assert_eq!(style_of(&map, lake), FillStyle::FLAT);
+}
+
+#[test]
+fn an_override_wins_over_the_default_and_none_returns_to_it() {
+    let (mut map, land, _) = map_with_land_and_lake();
+    set_default(&mut map, grained()).unwrap();
+    // An explicit flat override is not the same as following the default.
+    set(&mut map, vec![land], FillStyle::FLAT).unwrap();
+    assert_eq!(own_style_of(&map, land), Some(FillStyle::FLAT));
+    assert_eq!(style_of(&map, land), FillStyle::FLAT);
+    set(&mut map, vec![land], mottled()).unwrap();
+    assert_eq!(style_of(&map, land), mottled());
+    let inverses = map
+        .execute(&Command::SetFillStyle {
+            ids: vec![land],
+            style: None,
+        })
+        .unwrap();
+    assert_eq!(own_style_of(&map, land), None);
+    assert_eq!(style_of(&map, land), grained());
+    map.revert(inverses);
+    assert_eq!(style_of(&map, land), mottled());
+}
+
+#[test]
+fn the_default_can_be_undone_and_refuses_bad_values() {
+    let (mut map, land, _) = map_with_land_and_lake();
+    let inverses = set_default(&mut map, mottled()).unwrap();
+    assert_eq!(style_of(&map, land), mottled());
+    map.revert(inverses);
+    assert_eq!(map.defaults().fill_style, FillStyle::FLAT);
+    let bad = FillStyle {
+        grain: Some(Grain {
+            amount: 2.0,
+            size: 2.0,
+        }),
+        mottle: None,
+    };
+    assert!(matches!(
+        set_default(&mut map, bad),
+        Err(CommandError::InvalidFillStyle(_))
+    ));
+    assert!(matches!(
+        map.execute(&Command::SetFillStyle {
+            ids: vec![land],
+            style: Some(bad),
+        }),
+        Err(CommandError::InvalidFillStyle(_))
+    ));
+}
+
+#[test]
+fn the_default_is_left_out_of_the_file_when_flat_and_survives_saving() {
+    let (mut map, land, _) = map_with_land_and_lake();
+    let defaults_json = |map: &Map| serde_json::to_value(map.defaults()).unwrap();
+    assert!(defaults_json(&map).get("fill_style").is_none());
+    set_default(&mut map, both()).unwrap();
+    assert!(defaults_json(&map).get("fill_style").is_some());
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = dir.path().join("map.ssmap");
+    MapFile::create(&file_path, &map, None).unwrap();
+    let (_, reopened) = MapFile::open(&file_path).unwrap();
+    assert_eq!(reopened.defaults().fill_style, both());
+    assert_eq!(own_style_of(&reopened, land), None);
+    assert_eq!(style_of(&reopened, land), both());
+}
+
+#[test]
+fn defaults_from_before_the_fill_style_default_read_as_flat() {
+    let defaults: ssmap_core::MapDefaults = serde_json::from_value(serde_json::json!({})).unwrap();
+    assert_eq!(defaults.fill_style, FillStyle::FLAT);
 }
 
 #[test]
@@ -138,7 +245,7 @@ fn it_is_left_out_of_the_file_when_flat_and_each_part_when_off() {
     assert!(json(&map)["fill_style"].get("mottle").is_none());
     set(&mut map, vec![land], both()).unwrap();
     let back: ObjectKind = serde_json::from_value(json(&map)).unwrap();
-    assert_eq!(back.fill_style(), both());
+    assert_eq!(back.fill_style(), Some(both()));
 }
 
 #[test]
@@ -148,7 +255,7 @@ fn a_file_from_before_fill_styles_reads_as_flat() {
         "geometry": [{"exterior": [[0, 0], [10, 0], [10, 10], [0, 10]]}]
     }))
     .unwrap();
-    assert_eq!(kind.fill_style(), FillStyle::FLAT);
+    assert_eq!(kind.fill_style(), None);
 }
 
 #[test]
@@ -216,7 +323,7 @@ fn a_layer_has_no_fill_style() {
     let layer = map.children(None)[0];
     let result = map.apply(ssmap_core::Op::SetProperty {
         id: layer,
-        property: Property::FillStyle(FillStyle::FLAT),
+        property: Property::FillStyle(Some(FillStyle::FLAT)),
     });
     assert!(result.is_err());
 }

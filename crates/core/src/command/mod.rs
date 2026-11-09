@@ -419,11 +419,17 @@ pub enum Command {
         /// The new Map-wide Roughness.
         roughness: Roughness,
     },
-    /// Sets how the fill colour of Landmasses is drawn: flat or with grain.
+    /// Sets how the fill colour of Landmasses is drawn, or with `None` returns them to the
+    /// Map-wide default.
     SetFillStyle {
         /// The Landmasses to change.
         ids: Vec<Id>,
-        /// Their Fill style.
+        /// Their Fill style, or `None` to follow the Map-wide default.
+        style: Option<FillStyle>,
+    },
+    /// Sets the Map-wide Fill style of every Landmass without its own.
+    SetDefaultFillStyle {
+        /// The new default Fill style.
         style: FillStyle,
     },
     /// Sets the Shore style of Landmasses and Lakes, or with `None` returns them to the
@@ -632,6 +638,7 @@ impl Command {
             Command::SetMembership { .. } => "Move On or Off Canvas",
             Command::SetFill { .. } => "Change Fill",
             Command::SetFillStyle { .. } => "Change Fill Style",
+            Command::SetDefaultFillStyle { .. } => "Change Default Fill Style",
             Command::SetRoughness { .. } => "Change Roughness",
             Command::SetBackground { .. } => "Change Background",
             Command::SetDefaultRoughness { .. } => "Change Default Roughness",
@@ -771,6 +778,7 @@ impl Command {
             Command::SetFill { ids, fill } => land::set_fill(map, ids, *fill),
             Command::SetRoughness { ids, roughness } => land::set_roughness(map, ids, roughness),
             Command::SetFillStyle { ids, style } => land::set_fill_style(map, ids, style),
+            Command::SetDefaultFillStyle { style } => defaults::set_default_fill_style(map, style),
             Command::SetShore { ids, shore } => land::set_shore(map, ids, shore),
             Command::SetDefaultShore { kind, shore } => {
                 defaults::set_default_shore(map, *kind, shore)

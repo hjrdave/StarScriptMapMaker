@@ -75,7 +75,7 @@ How far the Land Brush pushes a stroke's outline out and in, at the scale of the
 _Avoid_: Wobble, raise, lower
 
 **Fill style**:
-How a Landmass's fill colour is drawn: flat, or with Grain (fine speckle with an amount and a size), Mottle (large soft patches of a second colour, with a scale, a contrast and a seed), or both. It is separate from the colour, so switching it keeps the colour. Lakes and Rivers have none.
+How a Landmass's fill colour is drawn: flat, or with Grain (fine speckle with an amount and a size), Mottle (large soft patches of a second colour, with a scale, a contrast and a seed), or both. It is separate from the colour, so switching it keeps the colour. The Map has a default (flat unless changed) that a Landmass follows until it sets its own. Lakes and Rivers have none.
 _Avoid_: Texture, pattern
 
 **Shore style**:

@@ -12,6 +12,28 @@ use crate::editor::Editor;
 use crate::icons::{self, Icon};
 use crate::prop_widgets::{self, Edit, Provenance, ScrubSpec, SectionHeader};
 
+/// What the Fill style fields change: one Landmass's override, or the Map-wide default.
+#[derive(Clone, Copy)]
+pub(super) enum FillTarget {
+    /// A Landmass's own Fill style.
+    Landmass(Id),
+    /// The Fill style of every Landmass without its own.
+    MapDefault,
+}
+
+impl FillTarget {
+    /// The Command that sets `style` on this target.
+    fn set(self, style: FillStyle) -> Command {
+        match self {
+            FillTarget::Landmass(id) => Command::SetFillStyle {
+                ids: vec![id],
+                style: Some(style),
+            },
+            FillTarget::MapDefault => Command::SetDefaultFillStyle { style },
+        }
+    }
+}
+
 impl PropertiesPanel {
     /// Applies what a field did. A reset goes back to the default; anything else is an edit of
     /// `value`, one Undo step per scrub.
@@ -33,18 +55,30 @@ impl PropertiesPanel {
     }
 
     /// How a Landmass's fill is drawn: Grain and Mottled switches, and the settings of each
-    /// one that is on. Each scrub of a value is one Undo step.
+    /// one that is on. Each scrub of a value is one Undo step. A Landmass with an override of
+    /// its own also gets a button that returns it to the Map default.
     pub(super) fn fill_style(
         &mut self,
         ui: &mut egui::Ui,
         editor: &mut Editor,
-        id: Id,
+        target: FillTarget,
         style: FillStyle,
     ) {
-        let set = |next: FillStyle| Command::SetFillStyle {
-            ids: vec![id],
-            style: next,
-        };
+        if let FillTarget::Landmass(id) = target {
+            let own = matches!(
+                editor.map().node(id),
+                Some(Node::Object(o)) if o.kind.fill_style().is_some()
+            );
+            if own && ui.button("Use Map default").clicked() {
+                let clear = Command::SetFillStyle {
+                    ids: vec![id],
+                    style: None,
+                };
+                self.live
+                    .apply(editor, Edit::instant(), "Change Fill Style", || clear);
+            }
+        }
+        let set = |next: FillStyle| target.set(next);
         let mut grain_on = style.grain.is_some();
         if prop_widgets::checkbox_row(ui, "Grain", &mut grain_on) {
             let next = FillStyle {
@@ -55,7 +89,7 @@ impl PropertiesPanel {
                 .apply(editor, Edit::instant(), "Change Fill Style", || set(next));
         }
         if let Some(grain) = style.grain {
-            self.grain_fields(ui, editor, id, style, grain);
+            self.grain_fields(ui, editor, target, style, grain);
         }
         let mut mottle_on = style.mottle.is_some();
         if prop_widgets::checkbox_row(ui, "Mottled", &mut mottle_on) {
@@ -67,7 +101,7 @@ impl PropertiesPanel {
                 .apply(editor, Edit::instant(), "Change Fill Style", || set(next));
         }
         if let Some(mottle) = style.mottle {
-            self.mottle_fields(ui, editor, id, style, mottle);
+            self.mottle_fields(ui, editor, target, style, mottle);
         }
     }
 
@@ -76,7 +110,7 @@ impl PropertiesPanel {
         &mut self,
         ui: &mut egui::Ui,
         editor: &mut Editor,
-        id: Id,
+        target: FillTarget,
         style: FillStyle,
         grain: Grain,
     ) {
@@ -109,15 +143,14 @@ impl PropertiesPanel {
                 )
             },
         );
-        let grained = |amount: f64, size: f64| Command::SetFillStyle {
-            ids: vec![id],
-            style: FillStyle {
+        let grained = |amount: f64, size: f64| {
+            target.set(FillStyle {
                 grain: Some(Grain {
                     amount: amount / 100.0,
                     size,
                 }),
                 ..style
-            },
+            })
         };
         self.live.apply(editor, amount_edit, "Change Grain", || {
             grained(amount, size)
@@ -131,16 +164,15 @@ impl PropertiesPanel {
         &mut self,
         ui: &mut egui::Ui,
         editor: &mut Editor,
-        id: Id,
+        target: FillTarget,
         style: FillStyle,
         mottle: Mottle,
     ) {
-        let with = move |mottle: Mottle| Command::SetFillStyle {
-            ids: vec![id],
-            style: FillStyle {
+        let with = move |mottle: Mottle| {
+            target.set(FillStyle {
                 mottle: Some(mottle),
                 ..style
-            },
+            })
         };
         // The patch colour; its popover changes it live, as the fill's does.
         let mut colour = Some(mottle.color);

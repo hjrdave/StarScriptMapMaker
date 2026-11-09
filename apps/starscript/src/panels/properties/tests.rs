@@ -177,10 +177,41 @@ fn re_rolling_overrides_the_roughness_with_another_seed() {
 }
 
 fn fill_style_of(editor: &Editor, id: Id) -> ssmap_core::FillStyle {
-    let Some(Node::Object(object)) = editor.map().node(id) else {
-        panic!("an Object")
+    editor.map().fill_style(id)
+}
+
+#[test]
+fn a_landmass_override_can_be_cleared_back_to_the_map_default() {
+    let (mut fixture, _, island) = fixture();
+    let grained = ssmap_core::FillStyle {
+        grain: Some(ssmap_core::Grain::DEFAULT),
+        mottle: None,
     };
-    object.kind.fill_style()
+    assert!(
+        fixture
+            .editor
+            .run(Command::SetDefaultFillStyle { style: grained })
+            .is_ok()
+    );
+    fixture.editor.select(vec![island]);
+    let mut harness = harness(fixture);
+    // Following the default: the default's grain shows, and there is nothing to clear.
+    harness.get_by_label("Grain amount");
+    assert!(harness.query_by_label("Use Map default").is_none());
+
+    // Switching grain off is an override (flat), not a change to the default.
+    harness.get_by_label("Grain").click();
+    harness.run();
+    let editor = &harness.state().editor;
+    assert!(fill_style_of(editor, island).is_flat());
+    assert_eq!(editor.map().defaults().fill_style, grained);
+
+    harness.get_by_label("Use Map default").click();
+    harness.run();
+    let editor = &harness.state().editor;
+    assert_eq!(fill_style_of(editor, island), grained);
+    assert_eq!(editor.undo_label(), Some("Change Fill Style"));
+    assert!(harness.query_by_label("Use Map default").is_none());
 }
 
 #[test]
@@ -255,7 +286,7 @@ fn re_rolling_the_mottle_changes_only_its_seed() {
             .editor
             .run(Command::SetFillStyle {
                 ids: vec![island],
-                style: before,
+                style: Some(before),
             })
             .is_ok()
     );

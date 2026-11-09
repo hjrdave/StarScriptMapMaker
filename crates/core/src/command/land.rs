@@ -306,13 +306,13 @@ pub(super) fn set_roughness(
         .collect())
 }
 
-/// Sets how the fill colour of Landmasses is drawn.
+/// Sets how the fill colour of Landmasses is drawn, or returns them to the Map default.
 pub(super) fn set_fill_style(
     map: &Map,
     ids: &[Id],
-    style: &FillStyle,
+    style: &Option<FillStyle>,
 ) -> Result<Vec<Op>, CommandError> {
-    if let Some(problem) = style.problem() {
+    if let Some(problem) = style.as_ref().and_then(FillStyle::problem) {
         return Err(CommandError::InvalidFillStyle(problem));
     }
     Ok(landmasses(map, ids)?

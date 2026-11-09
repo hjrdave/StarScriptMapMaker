@@ -5,6 +5,7 @@ use ssmap_core::{Canvas, Color, Command, Id, MapTemplate, ShoreKind};
 
 use crate::icons::Icon;
 
+use super::object_style::FillTarget;
 use super::{Inherit, PropertiesPanel, caption, group_caption};
 use crate::editor::Editor;
 use crate::prop_widgets::{self, Edit, Handle, Provenance, ScrubSpec};
@@ -303,6 +304,18 @@ impl PropertiesPanel {
                     |_| {},
                     |ui| {
                         self.default_roughness(ui, editor);
+                    },
+                );
+                ui.add_space(crate::theme::SPACING[3]);
+                prop_widgets::divider_section(
+                    ui,
+                    "Landmass fill",
+                    |_| {},
+                    |ui| {
+                        let style = editor.map().defaults().fill_style;
+                        ui.push_id("default fill style", |ui| {
+                            self.fill_style(ui, editor, FillTarget::MapDefault, style);
+                        });
                     },
                 );
             }

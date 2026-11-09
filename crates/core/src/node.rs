@@ -238,15 +238,15 @@ impl ObjectKind {
         }
     }
 
-    /// How the fill colour is drawn. Only Landmasses have a fill style; the rest are flat.
-    pub fn fill_style(&self) -> FillStyle {
+    /// The Fill style override of a Landmass, if set. Lakes and the rest have none.
+    pub fn fill_style(&self) -> Option<FillStyle> {
         match self {
             ObjectKind::Landmass(landmass) => landmass.fill_style,
-            _ => FillStyle::FLAT,
+            _ => None,
         }
     }
 
-    pub(crate) fn fill_style_mut(&mut self) -> Option<&mut FillStyle> {
+    pub(crate) fn fill_style_mut(&mut self) -> Option<&mut Option<FillStyle>> {
         match self {
             ObjectKind::Landmass(landmass) => Some(&mut landmass.fill_style),
             _ => None,
@@ -351,9 +351,9 @@ pub struct Landmass {
     /// Files saved before fills existed get the default.
     #[serde(default = "default_landmass_fill")]
     pub fill: Color,
-    /// How the fill colour is drawn. Files saved before fill styles existed are flat.
-    #[serde(default, skip_serializing_if = "FillStyle::is_flat")]
-    pub fill_style: FillStyle,
+    /// Overrides the Map-wide default Fill style.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill_style: Option<FillStyle>,
     /// Overrides the Map-wide default Roughness.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub roughness: Option<Roughness>,
@@ -374,7 +374,7 @@ impl Landmass {
         Self {
             geometry,
             fill: Self::DEFAULT_FILL,
-            fill_style: FillStyle::FLAT,
+            fill_style: None,
             roughness: None,
             shore: None,
             extra: Extra::new(),
