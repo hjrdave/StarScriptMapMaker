@@ -432,11 +432,13 @@ impl PackPage {
                 }
                 ui.add_space(theme::SPACING[3]);
                 ui.horizontal(|ui| {
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.search)
-                            .hint_text("Search names and tags")
-                            .desired_width(240.0),
-                    );
+                    crate::search_box::SearchBox::new(
+                        &mut self.search,
+                        "Search names and tags",
+                        240.0,
+                        "pack page",
+                    )
+                    .show(ui);
                     let all = asset_browser::categories(std::iter::once(pack));
                     if self
                         .category

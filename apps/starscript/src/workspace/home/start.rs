@@ -141,11 +141,9 @@ impl Home {
         });
         ui.add_space(12.0);
 
-        let field = ui.add(
-            egui::TextEdit::singleline(&mut self.start_query)
-                .hint_text("Search maps")
-                .desired_width(width),
-        );
+        let field =
+            crate::search_box::SearchBox::new(&mut self.start_query, "Search maps", width, "start")
+                .show(ui);
         if field.gained_focus() || field.changed() {
             self.start_search_open = true;
         }

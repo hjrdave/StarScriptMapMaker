@@ -359,11 +359,13 @@ impl Home {
                                     ui.selectable_value(&mut self.sort, sort, sort.label());
                                 }
                             });
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.query)
-                                .hint_text("Search maps")
-                                .desired_width(200.0),
-                        );
+                        crate::search_box::SearchBox::new(
+                            &mut self.query,
+                            "Search maps",
+                            240.0,
+                            "home",
+                        )
+                        .show(ui);
                     });
                 });
             });
@@ -412,7 +414,13 @@ impl Home {
                             );
                         } else if entries.is_empty() {
                             ui.add_space(8.0);
-                            ui.label(egui::RichText::new("No Maps match.").color(p.text_secondary));
+                            let query = self.query.trim();
+                            let text = if query.is_empty() {
+                                "No Maps match.".to_owned()
+                            } else {
+                                format!("No Maps match “{query}”")
+                            };
+                            ui.label(egui::RichText::new(text).color(p.text_secondary));
                         }
                     });
             });

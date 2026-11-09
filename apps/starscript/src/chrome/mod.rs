@@ -2,6 +2,7 @@ pub(crate) mod icons;
 pub(crate) mod logo;
 pub mod menu;
 pub(crate) mod native_menu;
+pub(crate) mod search_box;
 pub(crate) mod tab;
 pub(crate) mod tab_strip;
 pub mod theme;
