@@ -268,13 +268,13 @@ fn paint_rail_tile(ui: &egui::Ui, slot: egui::Rect, open: bool, hovered: bool) {
 
 /// The rail of the left sidebar, always on screen: the section icons, with the open section's
 /// in the primary colour on a filled tile. Returns the section whose icon was clicked.
-pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<SidebarSection> {
+pub fn layers_rail(ui: &mut egui::Ui, shell: &Shell) -> Option<SidebarSection> {
     let current = shell.sidebar_section();
     let palette = theme::palette(ui.ctx());
     let rect = ui.max_rect();
     let mut clicked = None;
     let step = RAIL_SLOT_HEIGHT + theme::SPACING[1];
-    let mut layers_y = rect.top() + metrics::PANEL_HEADER / 2.0 + RAIL_SLOT_HEIGHT / 2.0 - 12.0;
+    let layers_y = rect.top() + metrics::PANEL_HEADER / 2.0 + RAIL_SLOT_HEIGHT / 2.0 - 12.0;
     let mut count = 0.0;
     for section in SidebarSection::ALL {
         let slot = egui::Rect::from_center_size(
@@ -305,24 +305,6 @@ pub fn layers_rail(ui: &mut egui::Ui, path: &[String], shell: &Shell) -> Option<
             clicked = Some(section);
         }
         count += 1.0;
-    }
-    layers_y += (count - 1.0).max(0.0) * step;
-    if !path.is_empty() {
-        let text = path.join(" › ");
-        let galley = ui.painter().layout_no_wrap(
-            text,
-            egui::FontId::proportional(theme::BODY),
-            palette.text_secondary,
-        );
-        // Turned a quarter clockwise about its top-left corner, so it reads top to bottom
-        // and sits in a column as wide as one line of text.
-        let origin = egui::pos2(
-            rect.center().x + galley.size().y / 2.0,
-            layers_y + RAIL_SLOT_HEIGHT / 2.0 + theme::SPACING[3],
-        );
-        let shape = egui::epaint::TextShape::new(origin, galley, palette.text_secondary)
-            .with_angle(std::f32::consts::FRAC_PI_2);
-        ui.painter().add(shape);
     }
     clicked
 }

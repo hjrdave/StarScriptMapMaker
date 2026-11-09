@@ -451,7 +451,7 @@ mod status;
 mod tests;
 mod widgets;
 
-pub use status::{cursor_text, selection_path, selection_summary};
+pub use status::{cursor_text, selection_summary};
 pub use widgets::{
     divider, history_list, icon_header, layers_rail, mode_chip, panel_header, properties_rail,
 };

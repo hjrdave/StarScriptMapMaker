@@ -54,8 +54,7 @@ impl MapMakerApp {
                 .resizable(false)
                 .exact_size(theme::metrics::LAYERS_PANEL_RAIL)
                 .show(ui, |ui| {
-                    let path = shell::selection_path(tab.editor.map(), tab.editor.selection());
-                    if let Some(section) = shell::layers_rail(ui, &path, &self.win.shell) {
+                    if let Some(section) = shell::layers_rail(ui, &self.win.shell) {
                         self.win.shell.click_layers_rail(section);
                     }
                 });
