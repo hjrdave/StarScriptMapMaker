@@ -13,6 +13,7 @@ use crate::color::Color;
 use crate::embedded::Embedded;
 use crate::export::ExportSettings;
 use crate::extra::Extra;
+use crate::fill::FillStyle;
 use crate::geometry::{Point, Rect};
 use crate::id::Id;
 use crate::label::{LabelStyles, ResolvedLabel};
@@ -145,6 +146,9 @@ pub struct MapDefaults {
     /// The Roughness of every Landmass and Lake without its own.
     #[serde(default)]
     pub roughness: Roughness,
+    /// The Fill style of every Landmass without its own. Flat by default.
+    #[serde(default, skip_serializing_if = "FillStyle::is_flat")]
+    pub fill_style: FillStyle,
     /// The Shore style of every Landmass without its own.
     #[serde(default = "ShoreStyle::landmass_default")]
     pub shore: ShoreStyle,
@@ -172,6 +176,7 @@ impl Default for MapDefaults {
         Self {
             land_fill: default_land_fill(),
             roughness: Roughness::default(),
+            fill_style: FillStyle::FLAT,
             shore: ShoreStyle::landmass_default(),
             lake_shore: ShoreStyle::lake_default(),
             label_styles: LabelStyles::default(),
@@ -443,6 +448,18 @@ impl Map {
             return Some(&SMOOTH);
         }
         Some(kind.roughness().unwrap_or(&self.defaults.roughness))
+    }
+
+    /// The Fill style an Object is drawn with: a Landmass's own, or the Map-wide default.
+    /// Flat for anything that is not a Landmass.
+    pub fn fill_style(&self, id: Id) -> FillStyle {
+        match self.node(id) {
+            Some(Node::Object(Object {
+                kind: ObjectKind::Landmass(landmass),
+                ..
+            })) => landmass.fill_style.unwrap_or(self.defaults.fill_style),
+            _ => FillStyle::FLAT,
+        }
     }
 
     /// The Shore style a Landmass or Lake is drawn with: its own, or the Map-wide default for

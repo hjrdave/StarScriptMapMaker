@@ -189,7 +189,7 @@ pub enum Property {
     /// Landmasses and Lakes only.
     Fill(Color),
     /// Landmasses only.
-    FillStyle(FillStyle),
+    FillStyle(Option<FillStyle>),
     /// Landmasses and Lakes only. `None` uses the Map-wide default.
     Roughness(Option<Roughness>),
     /// Landmasses and Lakes only.

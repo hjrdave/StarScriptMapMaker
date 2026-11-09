@@ -21,5 +21,15 @@ Status: accepted. Issue #605 (Landmass fill styles) asks for more than a flat co
 
 - The vertex grows from 24 to 32 bytes. Every vector fill and stroke pays for it, so a Map with a lot of geometry uses a third more vertex memory. Check this against the benches.
 - Golden images do not cover grain or mottle yet, because there is no GPU in the cloud session. Render one on a machine with a GPU, compare it by eye, then add a golden image.
-- Mottle has no Map-wide default and Lakes have none. Both could be added later without touching what is here.
+- Lakes have no Fill style. A Map-wide default was added afterwards (see below).
 - A later style (texture image, painted colour) can add a field to `FillStyle` without touching the ones here.
+
+## Amendment: a Map-wide default and an optional override (format 1.15)
+
+Like Shore styles (ADR 0016), a Fill style can be set for the whole Map and overridden per Landmass.
+
+- **`Map.defaults.fill_style`** is a `FillStyle`, flat by default and left out of the file while flat. New Landmasses start from it by having no override.
+- **`Landmass.fill_style`** is now `Option<FillStyle>`: `None` means "use the Map default". `Some(FillStyle::FLAT)` is a deliberate flat override, which differs from `None` once the default is not flat. `Map::fill_style(id)` gives the style an Object is drawn with, and `ObjectKind::fill_style()` gives only the override.
+- **File format.** Still only an optional field in the Map defaults, so it is a **minor** change (format 1.15) and needs no migration or `.bak`. A file from 1.13 or 1.14 reads as a flat Map default, and a Landmass with a stored `fill_style` keeps it as its override, so every existing Map looks the same. A Landmass without one reads as `None`, which is flat under the flat default.
+- **Commands.** `Command::SetFillStyle` takes `Option<FillStyle>` (`None` clears the override), and `Command::SetDefaultFillStyle` sets the Map default. Both refuse values out of range. `Property::FillStyle` carries the `Option`.
+- **UI.** The Map's Style tab has a "Landmass fill" section with the same Grain and Mottled fields. A Landmass shows the style it is drawn with, any edit makes it an override, and a "Use Map default" button clears the override.

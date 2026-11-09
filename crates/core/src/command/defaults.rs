@@ -1,6 +1,7 @@
 //! The Commands that change the Map-wide defaults and the Canvas background.
 
 use crate::background::Background;
+use crate::fill::FillStyle;
 use crate::map::{Map, MapDefaults};
 use crate::op::Op;
 use crate::roughness::Roughness;
@@ -24,6 +25,22 @@ pub(super) fn set_default_shore(
         ShoreKind::Lake => defaults.lake_shore = shore.clone(),
     }
     Ok(vec![Op::SetDefaults { defaults }])
+}
+
+/// Sets the Map-wide Fill style of every Landmass without its own.
+pub(super) fn set_default_fill_style(
+    map: &Map,
+    style: &FillStyle,
+) -> Result<Vec<Op>, CommandError> {
+    if let Some(problem) = style.problem() {
+        return Err(CommandError::InvalidFillStyle(problem));
+    }
+    Ok(vec![Op::SetDefaults {
+        defaults: MapDefaults {
+            fill_style: *style,
+            ..map.defaults().clone()
+        },
+    }])
 }
 
 /// Replaces the Canvas's background. The texture strength must be 0 to 1 and its scale above 0.

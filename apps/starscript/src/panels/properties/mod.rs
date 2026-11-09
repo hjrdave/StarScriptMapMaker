@@ -14,6 +14,7 @@ mod tests;
 use eframe::egui;
 use ssmap_core::{AssetRef, Color, Command, Id, Map, MapTemplate, Node, ObjectKind};
 
+use self::object_style::FillTarget;
 use crate::asset_browser::ThumbArt;
 use crate::editor::Editor;
 use crate::icons::Icon;
@@ -270,7 +271,8 @@ impl PropertiesPanel {
             prop_widgets::section(ui, header, |ui| {
                 self.fill(ui, editor, id, fill);
                 if matches!(object.kind, ObjectKind::Landmass(_)) {
-                    self.fill_style(ui, editor, id, object.kind.fill_style());
+                    let style = editor.map().fill_style(id);
+                    self.fill_style(ui, editor, FillTarget::Landmass(id), style);
                 }
             });
         }

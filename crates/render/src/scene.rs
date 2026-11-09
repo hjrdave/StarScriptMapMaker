@@ -863,7 +863,7 @@ impl MapScene {
                 // holes stay open. Parts are separate groups so overlapping parts never
                 // cancel out.
                 let color = fill.faded(opacity);
-                let style = kind.fill_style();
+                let style = map.fill_style(id);
                 groups.extend(outline.0.iter().map(|polygon| {
                     VectorGroup::fill(polygon_path(polygon), color, FillRule::EvenOdd)
                         .with_style(style)
@@ -1760,7 +1760,7 @@ mod tests {
         };
         map.execute(&Command::SetFillStyle {
             ids: vec![lands[1]],
-            style,
+            style: Some(style),
         })
         .unwrap();
         let mut scene = MapScene::new(Fonts::bundled());
@@ -1781,7 +1781,7 @@ mod tests {
         // Switching back to flat draws the same as a Map that never had a style.
         map.execute(&Command::SetFillStyle {
             ids: vec![lands[1]],
-            style: ssmap_core::FillStyle::FLAT,
+            style: Some(ssmap_core::FillStyle::FLAT),
         })
         .unwrap();
         let flat = scene.content(&map, &mut RoughnessCache::new());
