@@ -2,8 +2,8 @@
 
 use eframe::egui;
 use ssmap_core::{
-    Color, Command, FillStyle, Grain, Id, MAX_GRAIN_SIZE, MAX_RIPPLES, MIN_GRAIN_SIZE, Node,
-    ObjectKind, Roughness, ShoreStyle,
+    Color, Command, FillStyle, Grain, Id, MAX_GRAIN_SIZE, MAX_MOTTLE_SCALE, MAX_RIPPLES,
+    MIN_GRAIN_SIZE, MIN_MOTTLE_SCALE, Mottle, Node, ObjectKind, Roughness, ShoreStyle,
 };
 
 use super::{Inherit, PropertiesPanel, group_caption};
@@ -31,8 +31,8 @@ impl PropertiesPanel {
             .apply_all(editor, edit, group.label, || group.commands(apply));
     }
 
-    /// How a Landmass's fill is drawn: flat, or with grain and its amount and size. Each
-    /// scrub of a value is one Undo step.
+    /// How a Landmass's fill is drawn: Grain and Mottled switches, and the settings of each
+    /// one that is on. Each scrub of a value is one Undo step.
     pub(super) fn fill_style(
         &mut self,
         ui: &mut egui::Ui,
@@ -40,24 +40,45 @@ impl PropertiesPanel {
         id: Id,
         style: FillStyle,
     ) {
-        let mut mode = usize::from(!style.is_flat());
-        if prop_widgets::segmented(ui, &["Flat", "Grain"], &mut mode) {
-            let next = if mode == 0 {
-                FillStyle::Flat
-            } else {
-                FillStyle::Grain(Grain::DEFAULT)
+        let set = |next: FillStyle| Command::SetFillStyle {
+            ids: vec![id],
+            style: next,
+        };
+        let mut grain_on = style.grain.is_some();
+        if prop_widgets::checkbox_row(ui, "Grain", &mut grain_on) {
+            let next = FillStyle {
+                grain: grain_on.then_some(Grain::DEFAULT),
+                ..style
             };
             self.live
-                .apply(editor, Edit::instant(), "Change Fill Style", || {
-                    Command::SetFillStyle {
-                        ids: vec![id],
-                        style: next,
-                    }
-                });
+                .apply(editor, Edit::instant(), "Change Fill Style", || set(next));
         }
-        let Some(grain) = style.grain() else {
-            return;
-        };
+        if let Some(grain) = style.grain {
+            self.grain_fields(ui, editor, id, style, grain);
+        }
+        let mut mottle_on = style.mottle.is_some();
+        if prop_widgets::checkbox_row(ui, "Mottled", &mut mottle_on) {
+            let next = FillStyle {
+                mottle: mottle_on.then_some(Mottle::DEFAULT),
+                ..style
+            };
+            self.live
+                .apply(editor, Edit::instant(), "Change Fill Style", || set(next));
+        }
+        if let Some(mottle) = style.mottle {
+            self.mottle_fields(ui, editor, id, style, mottle);
+        }
+    }
+
+    /// Amount and size of the grain of `style`.
+    fn grain_fields(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        id: Id,
+        style: FillStyle,
+        grain: Grain,
+    ) {
         // The amount is shown as a percentage and stored as a fraction.
         let (mut amount, mut size) = (grain.amount * 100.0, grain.size);
         let (amount_edit, size_edit) = prop_widgets::pair(
@@ -89,16 +110,113 @@ impl PropertiesPanel {
         );
         let grained = |amount: f64, size: f64| Command::SetFillStyle {
             ids: vec![id],
-            style: FillStyle::Grain(Grain {
-                amount: amount / 100.0,
-                size,
-            }),
+            style: FillStyle {
+                grain: Some(Grain {
+                    amount: amount / 100.0,
+                    size,
+                }),
+                ..style
+            },
         };
         self.live.apply(editor, amount_edit, "Change Grain", || {
             grained(amount, size)
         });
         self.live
             .apply(editor, size_edit, "Change Grain", || grained(amount, size));
+    }
+
+    /// Colour, scale, contrast and seed of the mottle of `style`.
+    fn mottle_fields(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        id: Id,
+        style: FillStyle,
+        mottle: Mottle,
+    ) {
+        let with = move |mottle: Mottle| Command::SetFillStyle {
+            ids: vec![id],
+            style: FillStyle {
+                mottle: Some(mottle),
+                ..style
+            },
+        };
+        // The patch colour; its popover changes it live, as the fill's does.
+        let mut colour = Some(mottle.color);
+        let response =
+            prop_widgets::swatch(ui, "Mottle colour", &mut colour, false, Provenance::Plain);
+        let color = colour.unwrap_or(mottle.color);
+        self.live.apply(editor, response.edit, "Change Mottle", || {
+            with(Mottle { color, ..mottle })
+        });
+        // Scale and contrast, the contrast as a percentage.
+        let (mut scale, mut contrast) = (mottle.scale, mottle.contrast * 100.0);
+        let (scale_edit, contrast_edit) = prop_widgets::pair(
+            ui,
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut scale,
+                    &ScrubSpec::new("Mottle scale")
+                        .prefix("Scale")
+                        .unit(" u")
+                        .range(MIN_MOTTLE_SCALE, MAX_MOTTLE_SCALE)
+                        .logarithmic()
+                        .step(5.0)
+                        .decimals(0),
+                )
+            },
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut contrast,
+                    &ScrubSpec::new("Mottle contrast")
+                        .prefix("Contrast")
+                        .unit("%")
+                        .range(0.0, 100.0)
+                        .step(1.0)
+                        .decimals(0),
+                )
+            },
+        );
+        self.live.apply(editor, scale_edit, "Change Mottle", || {
+            with(Mottle { scale, ..mottle })
+        });
+        self.live.apply(editor, contrast_edit, "Change Mottle", || {
+            with(Mottle {
+                contrast: contrast / 100.0,
+                ..mottle
+            })
+        });
+        // The seed is the same kind of field, half the row wide, with the dice beside it.
+        let mut seed = f64::from(mottle.seed);
+        let (seed_edit, reroll) = prop_widgets::pair(
+            ui,
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut seed,
+                    &ScrubSpec::new("Mottle seed")
+                        .prefix("Seed")
+                        .range(0.0, f64::from(u32::MAX)),
+                )
+            },
+            |ui| {
+                ui.horizontal(|ui| icons::icon_button(ui, Icon::ReRoll, "Re-roll mottle").clicked())
+                    .inner
+            },
+        );
+        let seed = seed as u32;
+        self.live.apply(editor, seed_edit, "Change Mottle", || {
+            with(Mottle { seed, ..mottle })
+        });
+        if reroll {
+            let seed = Id::new().as_uuid().as_u128() as u32;
+            self.live
+                .apply(editor, Edit::instant(), "Change Mottle", || {
+                    with(Mottle { seed, ..mottle })
+                });
+        }
     }
 
     /// The Roughness section of a Landmass or Lake: its own settings, or the Map default.

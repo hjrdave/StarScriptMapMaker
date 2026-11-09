@@ -849,10 +849,10 @@ impl MapScene {
                 // holes stay open. Parts are separate groups so overlapping parts never
                 // cancel out.
                 let color = fill.faded(opacity);
-                let grain = kind.fill_style().grain();
+                let style = kind.fill_style();
                 groups.extend(outline.0.iter().map(|polygon| {
                     VectorGroup::fill(polygon_path(polygon), color, FillRule::EvenOdd)
-                        .with_grain(grain)
+                        .with_style(style)
                 }));
                 if let Some(shore) = map.shore(id) {
                     self.rings.prepare(id, &outline, shore, self.complete);
@@ -1037,7 +1037,7 @@ fn stroke(path: Path, color: Color, width: f32, opacity: f32) -> VectorGroup {
             path: Arc::new(path),
             color: color.faded(opacity),
             paint: Paint::Stroke { width },
-            grain: None,
+            style: ssmap_core::FillStyle::FLAT,
         }],
         effect: false,
         object: None,
@@ -1661,36 +1661,39 @@ mod tests {
     }
 
     #[test]
-    fn a_landmass_fill_carries_its_grain_and_nothing_else_does() {
+    fn a_landmass_fill_carries_its_style_and_nothing_else_does() {
         let (mut map, lands) = map_with_land();
-        let grain = ssmap_core::Grain {
-            amount: 0.3,
-            size: 2.5,
+        let style = ssmap_core::FillStyle {
+            grain: Some(ssmap_core::Grain {
+                amount: 0.3,
+                size: 2.5,
+            }),
+            mottle: Some(ssmap_core::Mottle::DEFAULT),
         };
         map.execute(&Command::SetFillStyle {
             ids: vec![lands[1]],
-            style: ssmap_core::FillStyle::Grain(grain),
+            style,
         })
         .unwrap();
         let mut scene = MapScene::new(Fonts::bundled());
         let content = scene.content(&map, &mut RoughnessCache::new());
-        let grains = |id: Id| -> Vec<Option<ssmap_core::Grain>> {
+        let styles = |id: Id| -> Vec<ssmap_core::FillStyle> {
             content
                 .groups()
                 .iter()
                 .filter(|g| g.object.is_some_and(|o| o.id == id))
-                .flat_map(|g| g.shapes.iter().map(|shape| shape.grain))
+                .flat_map(|g| g.shapes.iter().map(|shape| shape.style))
                 .collect()
         };
-        let grained = grains(lands[1]);
-        // Its fill has grain; its outline and shore effects do not.
-        assert!(grained.contains(&Some(grain)));
-        assert!(grained.contains(&None));
-        assert!(grains(lands[0]).iter().all(Option::is_none));
-        // Switching back to flat draws the same as a Map that never had grain.
+        let styled = styles(lands[1]);
+        // Its fill has the style; its outline and shore effects do not.
+        assert!(styled.contains(&style));
+        assert!(styled.contains(&ssmap_core::FillStyle::FLAT));
+        assert!(styles(lands[0]).iter().all(|s| s.is_flat()));
+        // Switching back to flat draws the same as a Map that never had a style.
         map.execute(&Command::SetFillStyle {
             ids: vec![lands[1]],
-            style: ssmap_core::FillStyle::Flat,
+            style: ssmap_core::FillStyle::FLAT,
         })
         .unwrap();
         let flat = scene.content(&map, &mut RoughnessCache::new());
@@ -1698,7 +1701,7 @@ mod tests {
             flat.groups()
                 .iter()
                 .flat_map(|g| &g.shapes)
-                .all(|shape| shape.grain.is_none())
+                .all(|shape| shape.style.is_flat())
         );
     }
 

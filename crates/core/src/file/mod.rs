@@ -24,8 +24,8 @@
 //!   outline is generated from it on open, so they have no `geometry` blob.
 //!   Format 1.12 adds the optional `pinned` to Layer props: a pinned Layer pins everything
 //!   inside it to the Canvas, as an Object's `move_locked` does. Older files have none.
-//!   Format 1.13 adds the optional `fill_style` to Landmass props (`{"kind": "grain", ...}`).
-//!   A Landmass without it is flat, so older files open unchanged (ADR 0015).
+//!   Format 1.13 adds the optional `fill_style` to Landmass props: an optional `grain` and an
+//!   optional `mottle`. A Landmass without it is flat, so older files open unchanged (ADR 0015).
 //!   Format 1.6 stores Groups: Layers nested inside Layers, with `parent` pointing at the
 //!   enclosing Layer. There is no compatibility with older files.
 //!
