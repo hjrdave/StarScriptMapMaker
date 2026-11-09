@@ -13,6 +13,7 @@ use crate::background::Background;
 use crate::changes::Change;
 use crate::color::Color;
 use crate::embedded::{Blob, ContentHash, EmbeddedAsset, EmbeddedFont};
+use crate::fill::FillStyle;
 use crate::geometry::{MultiPolygon, Point};
 use crate::id::Id;
 use crate::label::Label;
@@ -187,6 +188,8 @@ pub enum Property {
     Membership(Membership),
     /// Landmasses and Lakes only.
     Fill(Color),
+    /// Landmasses only.
+    FillStyle(FillStyle),
     /// Landmasses and Lakes only. `None` uses the Map-wide default.
     Roughness(Option<Roughness>),
     /// Landmasses and Lakes only.
@@ -596,6 +599,12 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
         (Node::Layer(_), Property::Label(_)) => Err("label"),
         (Node::Layer(_), Property::Stamp(_)) => Err("stamp"),
         (Node::Layer(_), Property::River(_)) => Err("river"),
+        (Node::Layer(_), Property::FillStyle(_)) => Err("fill_style"),
+        (Node::Object(object), Property::FillStyle(_))
+            if !matches!(object.kind, ObjectKind::Landmass(_)) =>
+        {
+            Err("fill_style")
+        }
         (Node::Layer(_), Property::Roughness(_)) => Err("roughness"),
         (Node::Layer(_), Property::Shore(_)) => Err("shore"),
         (Node::Object(object), Property::Shore(_)) if object.kind.geometry().is_none() => {
@@ -626,6 +635,7 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
             | Property::MoveLocked(_)
             | Property::Link(_)
             | Property::Membership(_)
+            | Property::FillStyle(_)
             | Property::Roughness(_)
             | Property::Shore(_),
         ) => Ok(()),
@@ -641,7 +651,7 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
 /// Sets a property `check_property` accepted and returns its old value.
 #[allow(
     clippy::expect_used,
-    reason = "Map::check verified the Object has a fill; Map::check verified the Object has roughness; Map::check verified the Object has a shore"
+    reason = "Map::check verified the Object has a fill; Map::check verified the Object has a fill style; Map::check verified the Object has roughness; Map::check verified the Object has a shore"
 )]
 fn set_property(node: &mut Node, property: Property) -> Property {
     match (node, property) {
@@ -694,6 +704,13 @@ fn set_property(node: &mut Node, property: Property) -> Property {
                 .fill_mut()
                 .expect("Map::check verified the Object has a fill");
             Property::Fill(std::mem::replace(slot, fill))
+        }
+        (Node::Object(object), Property::FillStyle(style)) => {
+            let slot = object
+                .kind
+                .fill_style_mut()
+                .expect("Map::check verified the Object has a fill style");
+            Property::FillStyle(std::mem::replace(slot, style))
         }
         (Node::Object(object), Property::Roughness(roughness)) => {
             let slot = object

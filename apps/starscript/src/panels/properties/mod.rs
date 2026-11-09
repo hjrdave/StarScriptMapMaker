@@ -271,7 +271,12 @@ impl PropertiesPanel {
                 badge: None,
                 action: None,
             };
-            prop_widgets::section(ui, header, |ui| self.fill(ui, editor, id, fill));
+            prop_widgets::section(ui, header, |ui| {
+                self.fill(ui, editor, id, fill);
+                if matches!(object.kind, ObjectKind::Landmass(_)) {
+                    self.fill_style(ui, editor, id, object.kind.fill_style());
+                }
+            });
         }
         self.object_roughness(ui, editor, &[id]);
         self.object_shore(ui, editor, &[id]);

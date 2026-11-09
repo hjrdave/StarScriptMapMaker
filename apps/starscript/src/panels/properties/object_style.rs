@@ -1,7 +1,10 @@
 //! The Roughness and Shore style sections, for Landmasses and Lakes and for the Map defaults.
 
 use eframe::egui;
-use ssmap_core::{Color, Command, Id, MAX_RIPPLES, Node, ObjectKind, Roughness, ShoreStyle};
+use ssmap_core::{
+    Color, Command, FillStyle, Grain, Id, MAX_GRAIN_SIZE, MAX_RIPPLES, MIN_GRAIN_SIZE, Node,
+    ObjectKind, Roughness, ShoreStyle,
+};
 
 use super::{Inherit, PropertiesPanel, group_caption};
 use crate::editor::Editor;
@@ -26,6 +29,76 @@ impl PropertiesPanel {
         }
         self.live
             .apply_all(editor, edit, group.label, || group.commands(apply));
+    }
+
+    /// How a Landmass's fill is drawn: flat, or with grain and its amount and size. Each
+    /// scrub of a value is one Undo step.
+    pub(super) fn fill_style(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        id: Id,
+        style: FillStyle,
+    ) {
+        let mut mode = usize::from(!style.is_flat());
+        if prop_widgets::segmented(ui, &["Flat", "Grain"], &mut mode) {
+            let next = if mode == 0 {
+                FillStyle::Flat
+            } else {
+                FillStyle::Grain(Grain::DEFAULT)
+            };
+            self.live
+                .apply(editor, Edit::instant(), "Change Fill Style", || {
+                    Command::SetFillStyle {
+                        ids: vec![id],
+                        style: next,
+                    }
+                });
+        }
+        let Some(grain) = style.grain() else {
+            return;
+        };
+        // The amount is shown as a percentage and stored as a fraction.
+        let (mut amount, mut size) = (grain.amount * 100.0, grain.size);
+        let (amount_edit, size_edit) = prop_widgets::pair(
+            ui,
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut amount,
+                    &ScrubSpec::new("Grain amount")
+                        .prefix("Amount")
+                        .unit("%")
+                        .range(0.0, 100.0)
+                        .step(1.0)
+                        .decimals(0),
+                )
+            },
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut size,
+                    &ScrubSpec::new("Grain size")
+                        .prefix("Size")
+                        .unit(" u")
+                        .range(MIN_GRAIN_SIZE, MAX_GRAIN_SIZE)
+                        .step(0.25)
+                        .decimals(2),
+                )
+            },
+        );
+        let grained = |amount: f64, size: f64| Command::SetFillStyle {
+            ids: vec![id],
+            style: FillStyle::Grain(Grain {
+                amount: amount / 100.0,
+                size,
+            }),
+        };
+        self.live.apply(editor, amount_edit, "Change Grain", || {
+            grained(amount, size)
+        });
+        self.live
+            .apply(editor, size_edit, "Change Grain", || grained(amount, size));
     }
 
     /// The Roughness section of a Landmass or Lake: its own settings, or the Map default.

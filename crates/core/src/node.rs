@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::asset::AssetRef;
 use crate::color::Color;
 use crate::extra::Extra;
+use crate::fill::FillStyle;
 use crate::geometry::{MultiPolygon, Point};
 use crate::id::Id;
 use crate::label::Label;
@@ -237,6 +238,21 @@ impl ObjectKind {
         }
     }
 
+    /// How the fill colour is drawn. Only Landmasses have a fill style; the rest are flat.
+    pub fn fill_style(&self) -> FillStyle {
+        match self {
+            ObjectKind::Landmass(landmass) => landmass.fill_style,
+            _ => FillStyle::Flat,
+        }
+    }
+
+    pub(crate) fn fill_style_mut(&mut self) -> Option<&mut FillStyle> {
+        match self {
+            ObjectKind::Landmass(landmass) => Some(&mut landmass.fill_style),
+            _ => None,
+        }
+    }
+
     pub(crate) fn geometry_mut(&mut self) -> Option<&mut MultiPolygon> {
         match self {
             ObjectKind::Landmass(landmass) => Some(&mut landmass.geometry),
@@ -298,6 +314,7 @@ impl ObjectKind {
             ObjectKind::Landmass(landmass) => ObjectKind::Landmass(Landmass {
                 geometry: MultiPolygon::default(),
                 fill: landmass.fill,
+                fill_style: landmass.fill_style,
                 roughness: landmass.roughness.clone(),
                 shore: landmass.shore.clone(),
                 extra: landmass.extra.clone(),
@@ -334,6 +351,9 @@ pub struct Landmass {
     /// Files saved before fills existed get the default.
     #[serde(default = "default_landmass_fill")]
     pub fill: Color,
+    /// How the fill colour is drawn. Files saved before fill styles existed are flat.
+    #[serde(default, skip_serializing_if = "FillStyle::is_flat")]
+    pub fill_style: FillStyle,
     /// Overrides the Map-wide default Roughness.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub roughness: Option<Roughness>,
@@ -354,6 +374,7 @@ impl Landmass {
         Self {
             geometry,
             fill: Self::DEFAULT_FILL,
+            fill_style: FillStyle::Flat,
             roughness: None,
             shore: None,
             extra: Extra::new(),

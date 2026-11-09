@@ -176,6 +176,63 @@ fn re_rolling_overrides_the_roughness_with_another_seed() {
     assert_eq!(editor.undo_label(), Some("Change Roughness"));
 }
 
+fn fill_style_of(editor: &Editor, id: Id) -> ssmap_core::FillStyle {
+    let Some(Node::Object(object)) = editor.map().node(id) else {
+        panic!("an Object")
+    };
+    object.kind.fill_style()
+}
+
+#[test]
+fn a_landmass_fill_switches_between_flat_and_grain() {
+    let (mut fixture, _, island) = fixture();
+    fixture.editor.select(vec![island]);
+    let mut harness = harness(fixture);
+    // Flat to begin with: no grain fields.
+    harness.get_by_label("Flat");
+    assert!(harness.query_by_label("Grain amount").is_none());
+
+    harness.get_by_label("Grain").click();
+    harness.run();
+    let editor = &harness.state().editor;
+    assert_eq!(
+        fill_style_of(editor, island),
+        ssmap_core::FillStyle::Grain(ssmap_core::Grain::DEFAULT)
+    );
+    assert_eq!(editor.undo_label(), Some("Change Fill Style"));
+    harness.get_by_label("Grain amount");
+    harness.get_by_label("Grain size");
+
+    harness.get_by_label("Flat").click();
+    harness.run();
+    assert_eq!(
+        fill_style_of(&harness.state().editor, island),
+        ssmap_core::FillStyle::Flat
+    );
+    assert!(harness.query_by_label("Grain amount").is_none());
+}
+
+#[test]
+fn a_lake_has_no_fill_style() {
+    let (mut fixture, layer, _) = fixture();
+    let lake = Id::new();
+    assert!(
+        fixture
+            .editor
+            .run(Command::CreateLake {
+                id: lake,
+                parent: layer,
+                index: None,
+                geometry: square(50.0, 20.0),
+                fill: None,
+            })
+            .is_ok()
+    );
+    fixture.editor.select(vec![lake]);
+    let harness = harness(fixture);
+    assert!(harness.query_by_label("Grain").is_none());
+}
+
 #[test]
 fn combine_is_disabled_with_one_landmass() {
     let (mut fixture, _, island) = fixture();
