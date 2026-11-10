@@ -10,12 +10,14 @@ use lyon::tessellation::{
     StrokeTessellator, StrokeVertex, VertexBuffers,
 };
 use ssmap_core::{
-    FillStyle, Id, MAX_GRAIN_SIZE, MAX_MOTTLE_SCALE, MIN_GRAIN_SIZE, MIN_MOTTLE_SCALE,
+    FillStyle, Id, MAX_GRAIN_SIZE, MAX_MOTTLE_SCALE, MAX_TEXTURE_SCALE, MIN_GRAIN_SIZE,
+    MIN_MOTTLE_SCALE, MIN_TEXTURE_SCALE,
 };
 
 use super::cache::TessellationCache;
 use super::{ObjectRef, Paint, VectorGroup, VectorShape};
 use crate::color::ColorExt as _;
+use crate::fill_texture::slot_for;
 use crate::profile::{self, Stage};
 
 #[repr(C)]
@@ -27,6 +29,8 @@ pub(super) struct Vertex {
     look: [u8; 4],
     /// The mottle colour (sRGB) and the byte that offsets its patches.
     tint: [u8; 4],
+    /// The texture: its slot (0 for none), its amount and its scale (see [`pack_texture`]).
+    texture: [u8; 4],
 }
 
 /// A value on a log scale from `min` to `max`, as a byte. The shader undoes it with
@@ -61,6 +65,25 @@ pub(super) fn pack_style(style: &FillStyle) -> ([u8; 4], [u8; 4]) {
         tint = [mottle.color.r, mottle.color.g, mottle.color.b, offset as u8];
     }
     (look, tint)
+}
+
+/// Packs a fill's texture into a vertex attribute: the slot of its image (see
+/// `fill_texture::slot_for`; 0 means none), the amount, and the scale on a log scale, as the
+/// shader unpacks them. The fourth byte is unused.
+pub(super) fn pack_texture(style: &FillStyle) -> [u8; 4] {
+    let Some(texture) = &style.texture else {
+        return [0; 4];
+    };
+    let slot = slot_for(&texture.asset);
+    if slot == 0 || texture.amount <= 0.0 {
+        return [0; 4];
+    }
+    [
+        slot,
+        unit_byte(texture.amount),
+        log_byte(texture.scale, MIN_TEXTURE_SCALE, MAX_TEXTURE_SCALE),
+        0,
+    ]
 }
 
 /// A run of indices: either several groups that can't overlap themselves, drawn plainly,
@@ -106,9 +129,12 @@ fn tessellate(
     stroke: &mut StrokeTessellator,
 ) {
     let color = shape.color.to_linear_premultiplied();
-    let (look, tint) = match shape.paint {
-        Paint::Fill(_) => pack_style(&shape.style),
-        Paint::Stroke { .. } => ([0; 4], [0; 4]),
+    let (look, tint, texture) = match shape.paint {
+        Paint::Fill(_) => {
+            let (look, tint) = pack_style(&shape.style);
+            (look, tint, pack_texture(&shape.style))
+        }
+        Paint::Stroke { .. } => ([0; 4], [0; 4], [0; 4]),
     };
     match shape.paint {
         Paint::Fill(rule) => {
@@ -121,6 +147,7 @@ fn tessellate(
                     color,
                     look,
                     tint,
+                    texture,
                 }),
             );
         }
@@ -137,6 +164,7 @@ fn tessellate(
                     color,
                     look,
                     tint,
+                    texture,
                 }),
             );
         }

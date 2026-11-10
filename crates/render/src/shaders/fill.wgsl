@@ -1,18 +1,25 @@
 // Tessellated vector fills. Colours arrive linear and premultiplied.
 //
-// A fill can carry grain (fine speckle) and a mottle (large soft patches of a second colour).
-// Both are worked out from the Canvas position, so they stay put under pan and zoom and are
-// the same in every export tile. The settings arrive packed into two 4-byte attributes (see
-// `pack_style` in `vector/chunk.rs`, which this must agree with):
+// A fill can carry grain (fine speckle), a mottle (large soft patches of a second colour) and
+// a texture (a tiling image). All are worked out from the Canvas position, so they stay put
+// under pan and zoom and are the same in every export tile. The settings arrive packed into
+// three 4-byte attributes (see `pack_style` and `pack_texture` in `vector/chunk.rs`, which
+// this must agree with):
 //   look = (grain amount, grain size, mottle contrast, mottle scale), each 0..1;
-//   tint = (mottle colour in sRGB, a byte that moves the patches about).
-// The size and the scale are on log scales: min * pow(max / min, value).
+//   tint = (mottle colour in sRGB, a byte that moves the patches about);
+//   tex = (texture slot, texture amount, texture scale, unused). The slot is 0 for no texture,
+//         else slot * 255 is one more than its layer in the texture array.
+// The sizes and the scales are on log scales: min * pow(max / min, value).
+
+@group(1) @binding(0) var fill_textures: texture_2d_array<f32>;
+@group(1) @binding(1) var fill_sampler: sampler;
 
 struct VertexIn {
     @location(0) position: vec2<f32>,
     @location(1) color: vec4<f32>,
     @location(2) look: vec4<f32>,
     @location(3) tint: vec4<f32>,
+    @location(4) tex: vec4<f32>,
 };
 
 struct VertexOut {
@@ -21,6 +28,7 @@ struct VertexOut {
     @location(1) @interpolate(flat) look: vec4<f32>,
     @location(2) @interpolate(flat) tint: vec4<f32>,
     @location(3) canvas: vec2<f32>,
+    @location(4) @interpolate(flat) tex: vec4<f32>,
 };
 
 @vertex
@@ -30,6 +38,7 @@ fn vs_main(in: VertexIn) -> VertexOut {
     out.color = in.color;
     out.look = in.look;
     out.tint = in.tint;
+    out.tex = in.tex;
     out.canvas = in.position;
     return out;
 }
@@ -65,10 +74,29 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     let pixel = max((abs(dpdx(in.canvas.x)) + abs(dpdy(in.canvas.y))) * 0.5, 0.000001);
     let grain_amount = in.look.x;
     let contrast = in.look.z;
-    if (grain_amount <= 0.0 && contrast <= 0.0) {
+    // The texture's coordinates and their slopes are also taken before any branch. One tile is
+    // `tex_scale` Canvas units wide, and the sampler repeats it.
+    let tex_scale = 8.0 * pow(625.0, in.tex.z);
+    let tex_uv = in.canvas / tex_scale;
+    let tex_dx = dpdx(tex_uv);
+    let tex_dy = dpdy(tex_uv);
+    let layer = i32(round(in.tex.x * 255.0)) - 1;
+    if (grain_amount <= 0.0 && contrast <= 0.0 && layer < 0) {
         return in.color;
     }
     var color = in.color;
+
+    if (layer >= 0) {
+        // Mid-grey leaves the fill as it is, lighter and darker parts of the image lighten and
+        // darken it, and a coloured image tints it. The image is not a replacement for the
+        // colour: `amount` only says how far the fill moves towards the image's effect. The
+        // gradient is explicit because this branch is not uniform across a quad, and it makes
+        // the mip level follow the zoom.
+        let layers = i32(textureNumLayers(fill_textures));
+        let texel = textureSampleGrad(fill_textures, fill_sampler, tex_uv, min(layer, layers - 1), tex_dx, tex_dy).rgb;
+        let factor = mix(vec3<f32>(1.0), texel * 2.0, in.tex.y);
+        color = vec4<f32>(min(color.rgb * factor, vec3<f32>(color.a)), color.a);
+    }
 
     if (contrast > 0.0) {
         // Wide soft patches: two sizes of smooth noise, shifted by the seed byte, pushed

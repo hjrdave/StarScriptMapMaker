@@ -1,0 +1,38 @@
+# The built-in texture pack: seamless textures for a Landmass's Fill style (ADR 0015).
+# Every PNG is generated from seeded noise by `cargo run -p ssmap-render --bin textures`
+# (crates/render/src/bin/textures.rs), run from the repository root. Edit the tool, not the
+# images. No art was downloaded or copied, so the pack is the project's own work under CC0.
+[pack]
+id = "textures"
+name = "Textures"
+licence = "CC0-1.0"
+licence_url = "https://creativecommons.org/publicdomain/zero/1.0/"
+credits = "Generated from noise by the StarScript Map Maker texture tool, CC0."
+attribution_required = false
+author = "StarScript Map Maker"
+source_url = "https://github.com/hjrdave/StarScriptMapMaker"
+modified = "2026-11-10"
+
+[[texture]]
+id = "parchment"
+name = "Parchment"
+tags = ["paper", "warm"]
+file = "textures/parchment.png"
+
+[[texture]]
+id = "grass"
+name = "Grass"
+tags = ["grass", "green", "plains"]
+file = "textures/grass.png"
+
+[[texture]]
+id = "sand"
+name = "Sand"
+tags = ["sand", "desert", "beach"]
+file = "textures/sand.png"
+
+[[texture]]
+id = "stone"
+name = "Stone"
+tags = ["stone", "rock", "flagstone"]
+file = "textures/stone.png"
