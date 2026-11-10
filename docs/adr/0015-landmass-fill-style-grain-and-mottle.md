@@ -33,3 +33,14 @@ Like Shore styles (ADR 0016), a Fill style can be set for the whole Map and over
 - **File format.** Still only an optional field in the Map defaults, so it is a **minor** change (format 1.15) and needs no migration or `.bak`. A file from 1.13 or 1.14 reads as a flat Map default, and a Landmass with a stored `fill_style` keeps it as its override, so every existing Map looks the same. A Landmass without one reads as `None`, which is flat under the flat default.
 - **Commands.** `Command::SetFillStyle` takes `Option<FillStyle>` (`None` clears the override), and `Command::SetDefaultFillStyle` sets the Map default. Both refuse values out of range. `Property::FillStyle` carries the `Option`.
 - **UI.** The Map's Style tab has a "Landmass fill" section with the same Grain and Mottled fields. A Landmass shows the style it is drawn with, any edit makes it an override, and a "Use Map default" button clears the override.
+
+## Amendment: texture images from Asset packs (format 1.18)
+
+Issue #615 asks for a texture image under the fill colour. This is part 1 (core only); drawing and UI follow.
+
+- **Textures are Assets in packs.** A pack's `pack.toml` can hold `[[texture]]` tables: `id`, `name`, `file` (a PNG, relative to the pack folder, meant to tile seamlessly), optional `tags`, and the credit fields (`author`, `source_url`, `licence`, `modified`) that fall back to the `[pack]` values like an Asset's. Texture ids are separate from Asset ids. The same code reads and validates them, and a missing file is reported the same way (`texture <id>`, field `file`). Users can include their own textures by putting them in their own packs. `Pack::textures` and `Pack::texture(id)` expose them.
+- **`FillStyle.texture`** is an optional `FillTexture { asset, amount, scale }`: the texture's `pack-id/texture-id` (an `AssetRef`), how strongly it blends over the fill colour (0 to 1; it does not replace the colour), and how wide one tile is in Canvas units (8 to 5000). `FillStyle::problem` checks the ranges, so `SetFillStyle` and `SetDefaultFillStyle` refuse bad values with no new Command. A style with a texture is not flat.
+- **`FillStyle` is no longer `Copy`**, because `AssetRef` holds strings. Callers clone it.
+- **File format.** Only an optional field in a Fill style (in a Landmass's override and in the Map defaults), left out while there is no texture. A **minor** bump (format 1.18), no migration or `.bak`. Older files have no texture and look the same. An older app reads the style without the texture and drops the field the next time that style is saved.
+- **A texture that is not installed** is not a validation error: the reference is only an id, and a Map can be opened without the pack. The renderer and UI (parts 2 and 3) decide what to show then.
+- **Not decided here:** how the image is sampled and blended in `fill.wgsl`, and the picker.

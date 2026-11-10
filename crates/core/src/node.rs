@@ -241,7 +241,7 @@ impl ObjectKind {
     /// The Fill style override of a Landmass, if set. Lakes and the rest have none.
     pub fn fill_style(&self) -> Option<FillStyle> {
         match self {
-            ObjectKind::Landmass(landmass) => landmass.fill_style,
+            ObjectKind::Landmass(landmass) => landmass.fill_style.clone(),
             _ => None,
         }
     }
@@ -314,7 +314,7 @@ impl ObjectKind {
             ObjectKind::Landmass(landmass) => ObjectKind::Landmass(Landmass {
                 geometry: MultiPolygon::default(),
                 fill: landmass.fill,
-                fill_style: landmass.fill_style,
+                fill_style: landmass.fill_style.clone(),
                 roughness: landmass.roughness.clone(),
                 shore: landmass.shore.clone(),
                 extra: landmass.extra.clone(),

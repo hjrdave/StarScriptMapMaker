@@ -59,3 +59,11 @@ width = 12.0
 licence = "CC0-1.0"
 modified = 2026-10-12
 silhouette = "silhouettes/well.png"
+
+# A texture is a seamless tiling PNG. This one reuses a small existing PNG as a stand-in.
+[[texture]]
+id = "parchment"
+name = "Parchment"
+tags = ["paper"]
+file = "art/well.png"
+source_url = "https://github.com/hjrdave/StarScriptMapMaker"

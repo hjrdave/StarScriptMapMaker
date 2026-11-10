@@ -83,25 +83,25 @@ impl PropertiesPanel {
         if prop_widgets::checkbox_row(ui, "Grain", &mut grain_on) {
             let next = FillStyle {
                 grain: grain_on.then_some(Grain::DEFAULT),
-                ..style
+                ..style.clone()
             };
             self.live
                 .apply(editor, Edit::instant(), "Change Fill Style", || set(next));
         }
         if let Some(grain) = style.grain {
-            self.grain_fields(ui, editor, target, style, grain);
+            self.grain_fields(ui, editor, target, style.clone(), grain);
         }
         let mut mottle_on = style.mottle.is_some();
         if prop_widgets::checkbox_row(ui, "Mottled", &mut mottle_on) {
             let next = FillStyle {
                 mottle: mottle_on.then_some(Mottle::DEFAULT),
-                ..style
+                ..style.clone()
             };
             self.live
                 .apply(editor, Edit::instant(), "Change Fill Style", || set(next));
         }
         if let Some(mottle) = style.mottle {
-            self.mottle_fields(ui, editor, target, style, mottle);
+            self.mottle_fields(ui, editor, target, style.clone(), mottle);
         }
     }
 
@@ -149,7 +149,7 @@ impl PropertiesPanel {
                     amount: amount / 100.0,
                     size,
                 }),
-                ..style
+                ..style.clone()
             })
         };
         self.live.apply(editor, amount_edit, "Change Grain", || {
@@ -168,10 +168,10 @@ impl PropertiesPanel {
         style: FillStyle,
         mottle: Mottle,
     ) {
-        let with = move |mottle: Mottle| {
+        let with = |mottle: Mottle| {
             target.set(FillStyle {
                 mottle: Some(mottle),
-                ..style
+                ..style.clone()
             })
         };
         // The patch colour; its popover changes it live, as the fill's does.

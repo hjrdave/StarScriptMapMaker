@@ -30,7 +30,7 @@ mod shore;
 mod stamp_pick;
 mod template;
 
-pub use asset::AssetRef;
+pub use asset::{AssetRef, Texture};
 pub use background::{Background, BackgroundTexture};
 pub use changes::Changes;
 pub use color::{Color, ParseColorError};
@@ -44,8 +44,8 @@ pub use export::{
 };
 pub use extra::Extra;
 pub use fill::{
-    FillStyle, Grain, MAX_GRAIN_AMOUNT, MAX_GRAIN_SIZE, MAX_MOTTLE_SCALE, MIN_GRAIN_SIZE,
-    MIN_MOTTLE_SCALE, Mottle,
+    FillStyle, FillTexture, Grain, MAX_GRAIN_AMOUNT, MAX_GRAIN_SIZE, MAX_MOTTLE_SCALE,
+    MAX_TEXTURE_SCALE, MIN_GRAIN_SIZE, MIN_MOTTLE_SCALE, MIN_TEXTURE_SCALE, Mottle,
 };
 pub use geometry::{Affine, MultiPolygon, NodeRef, Point, Polygon, Rect};
 pub use history::{DEFAULT_BUDGET_BYTES, ExecuteError, History, HistoryError, Selection, UndoStep};

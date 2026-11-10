@@ -457,7 +457,10 @@ impl Map {
             Some(Node::Object(Object {
                 kind: ObjectKind::Landmass(landmass),
                 ..
-            })) => landmass.fill_style.unwrap_or(self.defaults.fill_style),
+            })) => landmass
+                .fill_style
+                .clone()
+                .unwrap_or_else(|| self.defaults.fill_style.clone()),
             _ => FillStyle::FLAT,
         }
     }

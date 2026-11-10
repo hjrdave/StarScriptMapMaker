@@ -10,7 +10,7 @@ use thiserror::Error;
 use toml::{Table, Value};
 
 use super::install::PACK_MANIFEST;
-use super::{ArtFormat, Asset, Pack, PackSource, is_valid_id};
+use super::{ArtFormat, Asset, Pack, PackSource, Texture, is_valid_id};
 
 /// One problem with a pack manifest.
 #[derive(Clone, PartialEq, Eq, Debug, Error)]
@@ -51,6 +51,19 @@ pub fn read_pack(dir: &Path, source: PackSource) -> Result<Pack, ManifestErrors>
     let pack = parse_manifest(&file, &text, source)?;
 
     let mut errors = Vec::new();
+    for texture in &pack.textures {
+        if !dir.join(&texture.file).is_file() {
+            errors.push(ManifestError {
+                file: file.clone(),
+                asset: Some(format!("texture {}", texture.id)),
+                field: Some("file".into()),
+                message: format!(
+                    "`{}` does not exist in the pack folder",
+                    texture.file.display()
+                ),
+            });
+        }
+    }
     for asset in &pack.assets {
         let files = std::iter::once(("file", &asset.file))
             .chain(asset.silhouette.iter().map(|path| ("silhouette", path)));
@@ -91,11 +104,11 @@ pub fn parse_manifest(file: &Path, text: &str, source: PackSource) -> Result<Pac
         }
     };
     for key in root.keys() {
-        if key != "pack" && key != "asset" {
+        if key != "pack" && key != "asset" && key != "texture" {
             errors.push(
                 None,
                 Some(key),
-                "unknown field; expected `[pack]` and `[[asset]]`",
+                "unknown field; expected `[pack]`, `[[asset]]` and `[[texture]]`",
             );
         }
     }
@@ -144,32 +157,7 @@ pub fn parse_manifest(file: &Path, text: &str, source: PackSource) -> Result<Pac
         modified: section.optional(&mut errors, "modified", Section::date),
     };
 
-    let asset_tables: Vec<(usize, &Table)> = match root.get("asset") {
-        None => Vec::new(),
-        Some(Value::Array(items)) => items
-            .iter()
-            .enumerate()
-            .filter_map(|(i, item)| match item {
-                Value::Table(table) => Some((i, table)),
-                _ => {
-                    errors.push(
-                        Some(&format!("#{}", i + 1)),
-                        None,
-                        "must be a table, written `[[asset]]`",
-                    );
-                    None
-                }
-            })
-            .collect(),
-        Some(_) => {
-            errors.push(
-                None,
-                Some("asset"),
-                "must be a list of tables, written `[[asset]]`",
-            );
-            Vec::new()
-        }
-    };
+    let asset_tables = table_list(&mut errors, &root, "asset", "#");
 
     let mut seen = HashSet::new();
     let mut assets = Vec::with_capacity(asset_tables.len());
@@ -183,6 +171,21 @@ pub fn parse_manifest(file: &Path, text: &str, source: PackSource) -> Result<Pac
             &mut seen,
         );
         assets.extend(asset);
+    }
+
+    let texture_tables = table_list(&mut errors, &root, "texture", "texture #");
+    let mut seen = HashSet::new();
+    let mut textures = Vec::with_capacity(texture_tables.len());
+    for (i, table) in texture_tables {
+        let texture = read_texture(
+            &mut errors,
+            i,
+            table,
+            &defaults,
+            licence.as_deref(),
+            &mut seen,
+        );
+        textures.extend(texture);
     }
 
     // Each of these is `None` only if an error says why.
@@ -202,7 +205,44 @@ pub fn parse_manifest(file: &Path, text: &str, source: PackSource) -> Result<Pac
         default,
         source,
         assets,
+        textures,
     })
+}
+
+/// The tables of `[[key]]`, each with its index. A bad entry is reported under `position` and its
+/// number, such as `#3`.
+fn table_list<'a>(
+    errors: &mut Errors<'_>,
+    root: &'a Table,
+    key: &str,
+    position: &str,
+) -> Vec<(usize, &'a Table)> {
+    match root.get(key) {
+        None => Vec::new(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| match item {
+                Value::Table(table) => Some((i, table)),
+                _ => {
+                    errors.push(
+                        Some(&format!("{position}{}", i + 1)),
+                        None,
+                        format!("must be a table, written `[[{key}]]`"),
+                    );
+                    None
+                }
+            })
+            .collect(),
+        Some(_) => {
+            errors.push(
+                None,
+                Some(key),
+                format!("must be a list of tables, written `[[{key}]]`"),
+            );
+            Vec::new()
+        }
+    }
 }
 
 const PACK_FIELDS: &[&str] = &[
@@ -228,6 +268,17 @@ const ASSET_FIELDS: &[&str] = &[
     "width",
     "silhouette",
     "variant_group",
+    "author",
+    "source_url",
+    "licence",
+    "modified",
+];
+
+const TEXTURE_FIELDS: &[&str] = &[
+    "id",
+    "name",
+    "tags",
+    "file",
     "author",
     "source_url",
     "licence",
@@ -318,6 +369,75 @@ fn read_asset(
         width: width?,
         silhouette: silhouette.map(|(path, _)| path),
         variant_group,
+        author: author?,
+        source_url,
+        licence: licence?,
+        modified: modified?,
+    })
+}
+
+fn read_texture(
+    errors: &mut Errors<'_>,
+    index: usize,
+    table: &Table,
+    defaults: &Defaults,
+    pack_licence: Option<&str>,
+    seen: &mut HashSet<String>,
+) -> Option<Texture> {
+    let before = errors.list.len();
+    let id = match table.get("id") {
+        Some(Value::String(id)) if is_valid_id(id) => Some(id.clone()),
+        _ => None,
+    };
+    let position = format!("texture #{}", index + 1);
+    let label = match &id {
+        Some(id) if seen.contains(id) => format!("texture {id} ({position})"),
+        Some(id) => format!("texture {id}"),
+        None => position,
+    };
+    let section = Section {
+        table,
+        asset: Some(&label),
+        prefix: "",
+    };
+    section.unknown_fields(errors, TEXTURE_FIELDS);
+    match table.get("id") {
+        None => section.push(errors, "id", "is missing"),
+        Some(Value::String(_)) if id.is_some() => {}
+        Some(Value::String(_)) => section.push(errors, "id", INVALID_ID),
+        Some(_) => section.push(errors, "id", "must be a string"),
+    }
+    if let Some(id) = &id
+        && !seen.insert(id.clone())
+    {
+        section.push(errors, "id", "is used by an earlier texture in this pack");
+    }
+
+    let name = section.required(errors, "name", Section::string);
+    let tags = section
+        .optional(errors, "tags", Section::strings)
+        .unwrap_or_default();
+    let file = section.required(errors, "file", Section::texture_path);
+    let author = section.inherited(errors, "author", Section::string, &defaults.author);
+    let source_url = section
+        .optional(errors, "source_url", Section::url)
+        .or_else(|| defaults.source_url.clone());
+    let licence = section.inherited(
+        errors,
+        "licence",
+        Section::string,
+        &pack_licence.map(str::to_owned),
+    );
+    let modified = section.inherited(errors, "modified", Section::date, &defaults.modified);
+
+    if errors.list.len() > before {
+        return None;
+    }
+    Some(Texture {
+        id: id?,
+        name: name?,
+        tags,
+        file: file?,
         author: author?,
         source_url,
         licence: licence?,
@@ -498,6 +618,16 @@ impl Section<'_> {
         let format = ArtFormat::from_path(&path)
             .ok_or_else(|| format!("`{text}` must be an `.svg` or `.png` file"))?;
         Ok((path, format))
+    }
+
+    /// A relative path inside the pack folder to a PNG file.
+    fn texture_path(value: &Value) -> Result<PathBuf, String> {
+        let (path, format) = Self::art_path(value)?;
+        if format == ArtFormat::Png {
+            Ok(path)
+        } else {
+            Err(format!("`{}` must be a `.png` file", path.display()))
+        }
     }
 
     fn url(value: &Value) -> Result<String, String> {

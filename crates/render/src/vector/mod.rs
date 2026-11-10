@@ -109,7 +109,7 @@ impl VectorGroup {
     /// Draws the group's fills with `style`.
     pub fn with_style(mut self, style: FillStyle) -> Self {
         for shape in &mut self.shapes {
-            shape.style = style;
+            shape.style = style.clone();
         }
         self
     }

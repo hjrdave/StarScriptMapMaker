@@ -34,6 +34,8 @@
 //!   Lines without them are even, whole and full width, as before (ADR 0016).
 //!   Format 1.17 adds the optional `waves` (wave marks over open water) to a Shore style. A Shore
 //!   style without it draws none (ADR 0016).
+//!   Format 1.18 adds the optional `texture` (an Asset id, `amount` and `scale`) to a Fill style.
+//!   A Fill style without it has no texture (ADR 0015).
 //!   Format 1.6 stores Groups: Layers nested inside Layers, with `parent` pointing at the
 //!   enclosing Layer. There is no compatibility with older files.
 //!
@@ -74,7 +76,7 @@ use crate::node::{Node, Object};
 /// anything else, and needs a migration.
 pub const FORMAT_VERSION: FormatVersion = FormatVersion {
     major: 1,
-    minor: 17,
+    minor: 18,
 };
 
 /// What the `boards` meta key holds.

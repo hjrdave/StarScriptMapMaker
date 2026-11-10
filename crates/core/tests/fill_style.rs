@@ -7,8 +7,8 @@
 
 use ssmap_core::file::MapFile;
 use ssmap_core::{
-    Canvas, Color, Command, CommandError, DistanceUnit, FillStyle, Grain, Id, Map, Mottle,
-    MultiPolygon, Node, ObjectKind, Polygon, Property, Scale,
+    Canvas, Color, Command, CommandError, DistanceUnit, FillStyle, FillTexture, Grain, Id, Map,
+    Mottle, MultiPolygon, Node, ObjectKind, Polygon, Property, Scale,
 };
 
 fn square() -> MultiPolygon {
@@ -52,14 +52,14 @@ fn map_with_land_and_lake() -> (Map, Id, Id) {
 fn grained() -> FillStyle {
     FillStyle {
         grain: Some(Grain::DEFAULT),
-        mottle: None,
+        ..FillStyle::FLAT
     }
 }
 
 fn mottled() -> FillStyle {
     FillStyle {
-        grain: None,
         mottle: Some(Mottle::DEFAULT),
+        ..FillStyle::FLAT
     }
 }
 
@@ -67,6 +67,18 @@ fn both() -> FillStyle {
     FillStyle {
         grain: Some(Grain::DEFAULT),
         mottle: Some(Mottle::DEFAULT),
+        ..FillStyle::FLAT
+    }
+}
+
+fn textured() -> FillStyle {
+    FillStyle {
+        texture: Some(FillTexture {
+            asset: "test-pack/parchment".parse().unwrap(),
+            amount: 0.7,
+            scale: 200.0,
+        }),
+        ..both()
     }
 }
 
@@ -151,10 +163,10 @@ fn the_default_can_be_undone_and_refuses_bad_values() {
             amount: 2.0,
             size: 2.0,
         }),
-        mottle: None,
+        ..FillStyle::FLAT
     };
     assert!(matches!(
-        set_default(&mut map, bad),
+        set_default(&mut map, bad.clone()),
         Err(CommandError::InvalidFillStyle(_))
     ));
     assert!(matches!(
@@ -212,10 +224,12 @@ fn each_style_can_be_set_and_undone() {
                 contrast: 0.8,
                 seed: 77,
             }),
+            texture: None,
         },
+        textured(),
     ] {
         let (mut map, land, _) = map_with_land_and_lake();
-        let inverses = set(&mut map, vec![land], style).unwrap();
+        let inverses = set(&mut map, vec![land], style.clone()).unwrap();
         assert_eq!(style_of(&map, land), style);
         map.revert(inverses);
         assert_eq!(style_of(&map, land), FillStyle::FLAT);
@@ -275,15 +289,23 @@ fn values_out_of_range_are_refused() {
     let (mut map, land, _) = map_with_land_and_lake();
     let bad_grain = |amount, size| FillStyle {
         grain: Some(Grain { amount, size }),
-        mottle: None,
+        ..FillStyle::FLAT
     };
     let bad_mottle = |scale, contrast| FillStyle {
-        grain: None,
         mottle: Some(Mottle {
             scale,
             contrast,
             ..Mottle::DEFAULT
         }),
+        ..FillStyle::FLAT
+    };
+    let bad_texture = |amount, scale| FillStyle {
+        texture: Some(FillTexture {
+            amount,
+            scale,
+            ..FillTexture::new("test-pack/parchment".parse().unwrap())
+        }),
+        ..FillStyle::FLAT
     };
     for style in [
         bad_grain(-0.1, 2.0),
@@ -295,8 +317,13 @@ fn values_out_of_range_are_refused() {
         bad_mottle(99_999.0, 0.5),
         bad_mottle(150.0, 1.5),
         bad_mottle(f64::NAN, 0.5),
+        bad_texture(-0.1, 128.0),
+        bad_texture(1.5, 128.0),
+        bad_texture(0.5, 1.0),
+        bad_texture(0.5, 99_999.0),
+        bad_texture(f64::NAN, 128.0),
     ] {
-        let result = set(&mut map, vec![land], style);
+        let result = set(&mut map, vec![land], style.clone());
         assert!(
             matches!(result, Err(CommandError::InvalidFillStyle(_))),
             "{style:?}"
@@ -342,11 +369,61 @@ fn it_survives_saving_and_opening_the_file() {
             contrast: 0.25,
             seed: 4_000_000_000,
         }),
+        texture: None,
     };
-    set(&mut map, vec![land], style).unwrap();
+    set(&mut map, vec![land], style.clone()).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let file_path = dir.path().join("map.ssmap");
     MapFile::create(&file_path, &map, None).unwrap();
     let (_, reopened) = MapFile::open(&file_path).unwrap();
     assert_eq!(style_of(&reopened, land), style);
+}
+
+#[test]
+fn a_texture_survives_saving_and_opening_as_an_override_and_as_the_default() {
+    let (mut map, land, _) = map_with_land_and_lake();
+    set(&mut map, vec![land], textured()).unwrap();
+    set_default(&mut map, textured()).unwrap();
+    let json = serde_json::to_value(map.defaults()).unwrap();
+    assert_eq!(
+        json["fill_style"]["texture"]["asset"],
+        "test-pack/parchment"
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let file_path = dir.path().join("map.ssmap");
+    MapFile::create(&file_path, &map, None).unwrap();
+    let (_, reopened) = MapFile::open(&file_path).unwrap();
+    assert_eq!(reopened.defaults().fill_style, textured());
+    assert_eq!(own_style_of(&reopened, land), Some(textured()));
+}
+
+#[test]
+fn a_style_without_a_texture_reads_as_having_none() {
+    // A style stored by a 1.13 to 1.17 app has no `texture` and reads unchanged.
+    let style: FillStyle = serde_json::from_value(serde_json::json!({
+        "grain": {"amount": 0.25, "size": 2.0}
+    }))
+    .unwrap();
+    assert_eq!(style.texture, None);
+    assert_eq!(style, grained());
+    let kind: ObjectKind = serde_json::from_value(serde_json::json!({
+        "kind": "landmass",
+        "geometry": [{"exterior": [[0, 0], [10, 0], [10, 10], [0, 10]]}],
+        "fill_style": {"mottle": {"color": "#b09a62", "scale": 150.0, "contrast": 0.5, "seed": 1}}
+    }))
+    .unwrap();
+    assert_eq!(kind.fill_style(), Some(mottled()));
+}
+
+#[test]
+fn setting_a_textured_style_is_one_undoable_command() {
+    let (mut map, land, _) = map_with_land_and_lake();
+    set(&mut map, vec![land], grained()).unwrap();
+    let inverses = set(&mut map, vec![land], textured()).unwrap();
+    assert_eq!(style_of(&map, land), textured());
+    map.revert(inverses);
+    assert_eq!(style_of(&map, land), grained());
+    let inverses = set_default(&mut map, textured()).unwrap();
+    map.revert(inverses);
+    assert_eq!(map.defaults().fill_style, FillStyle::FLAT);
 }

@@ -37,7 +37,7 @@ pub(super) fn set_default_fill_style(
     }
     Ok(vec![Op::SetDefaults {
         defaults: MapDefaults {
-            fill_style: *style,
+            fill_style: style.clone(),
             ..map.defaults().clone()
         },
     }])

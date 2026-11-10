@@ -166,6 +166,143 @@ modified = \"2026-01-01\"
 }
 
 #[test]
+fn the_test_pack_has_a_texture() {
+    let pack = read_pack(&test_packs().join("test-pack"), PackSource::BuiltIn).unwrap();
+    let ids: Vec<&str> = pack.textures.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, ["parchment"]);
+    let texture = pack.texture("parchment").unwrap();
+    assert_eq!(texture.name, "Parchment");
+    assert_eq!(texture.tags, ["paper"]);
+    assert!(pack.path(&texture.file).is_file());
+    // Inherited from [pack].
+    assert_eq!(texture.author, "StarScript Map Maker contributors");
+    assert_eq!(texture.licence, "CC0-1.0");
+    assert_eq!(texture.modified, "2026-10-13");
+    assert!(pack.texture("nope").is_none());
+    // Textures are not Assets: the Asset list is unchanged.
+    assert!(pack.asset("parchment").is_none());
+    // The Fill style refers to it as `pack-id/texture-id`.
+    let reference: AssetRef = "test-pack/parchment".parse().unwrap();
+    assert_eq!(reference.pack, pack.id);
+    assert!(pack.texture(&reference.asset).is_some());
+}
+
+#[test]
+fn a_pack_without_textures_has_none() {
+    let pack = parse_manifest(Path::new("p/pack.toml"), VALID_PACK, PackSource::User).unwrap();
+    assert!(pack.textures.is_empty());
+}
+
+#[test]
+fn a_missing_texture_file_is_named() {
+    let dir = tempfile::tempdir().unwrap();
+    let manifest = format!(
+        "{VALID_PACK}
+[[texture]]
+id = \"ghost\"
+name = \"Ghost\"
+file = \"textures/ghost.png\"
+author = \"Me\"
+modified = \"2026-01-01\"
+"
+    );
+    std::fs::write(dir.path().join("pack.toml"), manifest).unwrap();
+    let errors = read_pack(dir.path(), PackSource::User).unwrap_err();
+    let fields: Vec<_> = errors
+        .0
+        .iter()
+        .map(|e| (e.asset.as_deref(), e.field.as_deref()))
+        .collect();
+    assert_eq!(fields, [(Some("texture ghost"), Some("file"))]);
+    assert!(
+        errors
+            .to_string()
+            .contains("does not exist in the pack folder")
+    );
+}
+
+#[test]
+fn texture_errors() {
+    let message = errors(&format!(
+        r#"{VALID_PACK}
+[[texture]]
+id = "ok"
+name = "Fine"
+file = "ok.png"
+author = "Me"
+modified = "2026-01-01"
+
+[[texture]]
+name = "No id"
+file = "../outside.png"
+author = "Me"
+modified = "2026-13-01"
+
+[[texture]]
+id = "ok"
+name = "Duplicate"
+file = "tile.svg"
+author = "Me"
+modified = "2026-01-01"
+tags = ["a", 2]
+source_url = "ftp://example.com"
+anchor = [0, 0]
+
+[[texture]]
+id = "gif"
+name = "Gif"
+file = "tile.gif"
+author = "Me"
+modified = "2026-01-01"
+"#
+    ));
+    for expected in [
+        "`texture #2`: field `id`: is missing",
+        "`texture #2`: field `file`: `../outside.png` must be a relative path",
+        "`texture #2`: field `modified`",
+        "`texture ok (texture #3)`: field `id`: is used by an earlier texture in this pack",
+        "`texture ok (texture #3)`: field `file`: `tile.svg` must be a `.png` file",
+        "`texture ok (texture #3)`: field `tags`",
+        "`texture ok (texture #3)`: field `source_url`",
+        "`texture ok (texture #3)`: field `anchor`: unknown field",
+        "`texture gif`: field `file`: `tile.gif` must be an `.svg` or `.png` file",
+    ] {
+        assert!(
+            message.contains(expected),
+            "missing {expected:?} in:\n{message}"
+        );
+    }
+}
+
+#[test]
+fn a_texture_needs_its_credit_fields_like_an_asset() {
+    let message = errors(
+        r#"
+[pack]
+id = "p"
+name = "P"
+licence = "CC0-1.0"
+credits = "Nobody."
+
+[[texture]]
+id = "t"
+name = "T"
+file = "t.png"
+"#,
+    );
+    assert!(message.contains("field `author`: is missing"), "{message}");
+    assert!(
+        message.contains("field `modified`: is missing"),
+        "{message}"
+    );
+    assert!(!message.contains("licence"), "{message}");
+    let message = errors(&format!("{VALID_PACK}\n[[texture]]\nid = 3\n"));
+    assert!(message.contains("must be a string"), "{message}");
+    let message = errors(&format!("texture = 3\n{VALID_PACK}"));
+    assert!(message.contains("must be a list of tables"), "{message}");
+}
+
+#[test]
 fn syntax_errors() {
     insta::assert_snapshot!(errors("[pack\nid = 1"));
 }
