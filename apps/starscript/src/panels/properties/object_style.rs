@@ -2,9 +2,10 @@
 
 use eframe::egui;
 use ssmap_core::{
-    Color, Command, FillStyle, Grain, Id, MAX_GRAIN_SIZE, MAX_MOTTLE_SCALE, MAX_REACH, MAX_RIPPLES,
-    MAX_WAVE_DENSITY, MAX_WAVE_SIZE, MIN_GRAIN_SIZE, MIN_LINE_SPACING, MIN_MOTTLE_SCALE, Mottle,
-    Node, ObjectKind, Roughness, ShoreKind, ShoreStyle,
+    AssetRef, Color, Command, FillStyle, FillTexture, Grain, Id, MAX_GRAIN_SIZE, MAX_MOTTLE_SCALE,
+    MAX_REACH, MAX_RIPPLES, MAX_TEXTURE_SCALE, MAX_WAVE_DENSITY, MAX_WAVE_SIZE, MIN_GRAIN_SIZE,
+    MIN_LINE_SPACING, MIN_MOTTLE_SCALE, MIN_TEXTURE_SCALE, Mottle, Node, ObjectKind, Roughness,
+    ShoreKind, ShoreStyle,
 };
 
 use super::{Inherit, PropertiesPanel, group_caption};
@@ -103,6 +104,128 @@ impl PropertiesPanel {
         if let Some(mottle) = style.mottle {
             self.mottle_fields(ui, editor, target, style.clone(), mottle);
         }
+        self.texture_fields(ui, editor, target, style);
+    }
+
+    /// The texture picker (None, or a texture Asset of an installed pack) and, with one
+    /// picked, its Amount and Scale.
+    fn texture_fields(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        target: FillTarget,
+        style: FillStyle,
+    ) {
+        let textures: Vec<(AssetRef, String)> = editor
+            .sprites()
+            .map(|sprites| {
+                let library = sprites.library();
+                library
+                    .packs()
+                    .iter()
+                    .flat_map(|pack| {
+                        pack.textures.iter().filter_map(|texture| {
+                            let reference = AssetRef::new(&pack.id, &texture.id).ok()?;
+                            Some((reference, texture.name.clone()))
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let current = style.texture.clone();
+        if textures.is_empty() && current.is_none() {
+            return;
+        }
+        let selected = current.as_ref().map_or_else(
+            || "None".to_owned(),
+            |t| {
+                textures
+                    .iter()
+                    .find(|(reference, _)| *reference == t.asset)
+                    .map_or_else(|| t.asset.to_string(), |(_, name)| name.clone())
+            },
+        );
+        let mut picked: Option<Option<AssetRef>> = None;
+        ui.horizontal(|ui| {
+            ui.label("Texture");
+            egui::ComboBox::from_id_salt("fill texture")
+                .selected_text(selected)
+                .show_ui(ui, |ui| {
+                    if ui.selectable_label(current.is_none(), "None").clicked() {
+                        picked = Some(None);
+                    }
+                    for (reference, name) in &textures {
+                        let on = current.as_ref().is_some_and(|t| t.asset == *reference);
+                        if ui.selectable_label(on, name).clicked() {
+                            picked = Some(Some(reference.clone()));
+                        }
+                    }
+                });
+        });
+        if let Some(pick) = picked {
+            // Changing the texture keeps the Amount and Scale already set.
+            let texture = pick.map(|asset| match &current {
+                Some(t) => FillTexture { asset, ..t.clone() },
+                None => FillTexture::new(asset),
+            });
+            let next = FillStyle {
+                texture,
+                ..style.clone()
+            };
+            self.live
+                .apply(editor, Edit::instant(), "Change Fill Style", || {
+                    target.set(next)
+                });
+        }
+        let Some(texture) = current else {
+            return;
+        };
+        // The amount is shown as a percentage and stored as a fraction.
+        let (mut amount, mut scale) = (texture.amount * 100.0, texture.scale);
+        let (amount_edit, scale_edit) = prop_widgets::pair(
+            ui,
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut amount,
+                    &ScrubSpec::new("Texture amount")
+                        .prefix("Amount")
+                        .unit("%")
+                        .range(0.0, 100.0)
+                        .step(1.0)
+                        .decimals(0),
+                )
+            },
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut scale,
+                    &ScrubSpec::new("Texture scale")
+                        .prefix("Scale")
+                        .unit(" u")
+                        .range(MIN_TEXTURE_SCALE, MAX_TEXTURE_SCALE)
+                        .logarithmic()
+                        .step(5.0)
+                        .decimals(0),
+                )
+            },
+        );
+        let textured = |amount: f64, scale: f64| {
+            target.set(FillStyle {
+                texture: Some(FillTexture {
+                    amount: amount / 100.0,
+                    scale,
+                    ..texture.clone()
+                }),
+                ..style.clone()
+            })
+        };
+        self.live.apply(editor, amount_edit, "Change Texture", || {
+            textured(amount, scale)
+        });
+        self.live.apply(editor, scale_edit, "Change Texture", || {
+            textured(amount, scale)
+        });
     }
 
     /// Amount and size of the grain of `style`.
