@@ -1111,6 +1111,11 @@ fn line_groups(
         return;
     }
     let found = land::shore_lines(outline, lines.spacing, lines.length);
+    if lines.taper > 0.0 || lines.variation > 0.0 {
+        let drawn = land::hand_drawn(&found, lines.variation, lines.seed);
+        hand_drawn_groups(&drawn, lines, opacity, groups);
+        return;
+    }
     let stretches = LINE_FADE.len();
     for (k, strength) in LINE_FADE.into_iter().enumerate() {
         let (from, to) = (
@@ -1133,6 +1138,55 @@ fn line_groups(
                 faded(lines.color, strength),
                 lines.width as f32,
                 opacity,
+            )
+            .with_effect(),
+        );
+    }
+}
+
+/// Water lines that taper and differ in weight: each is filled, in the same fading stretches
+/// as a plain line, thickest at the coast and thinning by `taper` towards its far end.
+fn hand_drawn_groups(
+    drawn: &[land::DrawnLine],
+    lines: &ssmap_core::ShoreLines,
+    opacity: f32,
+    groups: &mut Vec<VectorGroup>,
+) {
+    let taper = lines.taper.clamp(0.0, 1.0);
+    let stretches = LINE_FADE.len();
+    for (k, strength) in LINE_FADE.into_iter().enumerate() {
+        let (from, to) = (
+            k as f64 / stretches as f64,
+            (k + 1) as f64 / stretches as f64,
+        );
+        let mut builder = Path::builder();
+        let mut any = false;
+        for line in drawn {
+            let half = |t: f64| lines.width * line.weight * 0.5 * (1.0 - taper * t);
+            let x = |t: f64| line.from[0] + (line.to[0] - line.from[0]) * t;
+            let y = line.from[1];
+            let (a, b) = (half(from), half(to));
+            let quad = [
+                [x(from), y - a],
+                [x(to), y - b],
+                [x(to), y + b],
+                [x(from), y + a],
+            ];
+            builder.begin(point(quad[0][0] as f32, quad[0][1] as f32));
+            for q in &quad[1..] {
+                builder.line_to(point(q[0] as f32, q[1] as f32));
+            }
+            builder.close();
+            any = true;
+        }
+        if !any {
+            return;
+        }
+        groups.push(
+            VectorGroup::fill(
+                builder.build(),
+                faded(lines.color, strength).faded(opacity),
+                FillRule::NonZero,
             )
             .with_effect(),
         );
@@ -1829,6 +1883,39 @@ mod tests {
         // The styles from before glow and lines draw neither.
         let plain = ShoreStyle::landmass_default();
         assert!(glow_distances(&plain).is_empty());
+    }
+
+    #[test]
+    fn tapered_irregular_water_lines_are_filled_and_follow_the_seed() {
+        let (mut map, lands) = map_with_land();
+        let mut style = ShoreStyle::soft_glow();
+        let mut effect_shapes = |style: &ShoreStyle| {
+            map.execute(&Command::SetShore {
+                ids: vec![lands[1]],
+                shore: Some(style.clone()),
+            })
+            .unwrap();
+            let content = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
+            content
+                .groups()
+                .iter()
+                .filter(|g| g.object.is_some_and(|o| o.id == lands[1]) && g.effect)
+                .flat_map(|g| g.shapes.iter())
+                .filter(|s| matches!(s.paint, Paint::Fill(_)))
+                .map(|s| format!("{:?}", s.path))
+                .collect::<Vec<_>>()
+        };
+        // Plain lines are strokes: nothing is filled by an effect.
+        assert!(effect_shapes(&style).is_empty());
+        style.lines.taper = 1.0;
+        style.lines.variation = 0.5;
+        style.lines.seed = 1;
+        let first = effect_shapes(&style);
+        // One filled shape for each fading stretch.
+        assert_eq!(first.len(), LINE_FADE.len());
+        assert_eq!(effect_shapes(&style), first);
+        style.lines.seed = 2;
+        assert_ne!(effect_shapes(&style), first);
     }
 
     #[test]

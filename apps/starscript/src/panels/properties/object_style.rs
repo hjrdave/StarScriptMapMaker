@@ -645,7 +645,71 @@ impl PropertiesPanel {
         );
         let width = style.lines.width;
         self.edit(editor, edit, group, |s| s.lines.width = width);
+        self.hand_drawn_fields(ui, editor, group, style);
         let (edit, colour) = colour_row(ui, "Water line colour", style.lines.color);
         self.edit(editor, edit, group, |s| s.lines.color = colour);
+    }
+
+    /// Taper, variation and seed of the water lines: how hand drawn they look.
+    fn hand_drawn_fields(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        group: &Inherit<'_, ShoreStyle>,
+        style: &mut ShoreStyle,
+    ) {
+        let provenance = group.provenance;
+        let percent = |label| {
+            ScrubSpec::new(label)
+                .provenance(provenance)
+                .unit("%")
+                .range(0.0, 100.0)
+                .step(1.0)
+                .decimals(0)
+        };
+        let (mut taper, mut variation) = (style.lines.taper * 100.0, style.lines.variation * 100.0);
+        let (taper_edit, variation_edit) = prop_widgets::pair(
+            ui,
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut taper,
+                    &percent("Water line taper")
+                        .prefix("Taper")
+                        .mixed(group.mixed(|s| s.lines.taper)),
+                )
+            },
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut variation,
+                    &percent("Water line variation")
+                        .prefix("Variation")
+                        .mixed(group.mixed(|s| s.lines.variation)),
+                )
+            },
+        );
+        self.edit(editor, taper_edit, group, |s| s.lines.taper = taper / 100.0);
+        self.edit(editor, variation_edit, group, |s| {
+            s.lines.variation = variation / 100.0;
+        });
+        let mut seed = f64::from(style.lines.seed);
+        let (seed_edit, ()) = prop_widgets::pair(
+            ui,
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut seed,
+                    &ScrubSpec::new("Water line seed")
+                        .provenance(provenance)
+                        .prefix("Seed")
+                        .range(0.0, f64::from(u32::MAX))
+                        .mixed(group.mixed(|s| f64::from(s.lines.seed))),
+                )
+            },
+            |_| {},
+        );
+        let seed = seed as u32;
+        self.edit(editor, seed_edit, group, |s| s.lines.seed = seed);
     }
 }

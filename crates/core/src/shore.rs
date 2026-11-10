@@ -84,6 +84,25 @@ pub struct ShoreLines {
     pub width: f64,
     /// The lines' colour; they fade out along their length.
     pub color: Color,
+    /// How much each line thins towards its far end, from 0 (even width) to 1 (a point).
+    /// Files saved before it existed have 0.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub taper: f64,
+    /// How uneven the lines are in length, weight and gaps, from 0 (evenly spaced, all the
+    /// same) to 1 (very hand-drawn). Files saved before it existed have 0.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub variation: f64,
+    /// Picks which lines are uneven and how. The same seed gives the same lines.
+    #[serde(default, skip_serializing_if = "is_zero_seed")]
+    pub seed: u32,
+}
+
+fn is_zero(value: &f64) -> bool {
+    *value == 0.0
+}
+
+fn is_zero_seed(value: &u32) -> bool {
+    *value == 0
 }
 
 impl Default for ShoreLines {
@@ -94,6 +113,9 @@ impl Default for ShoreLines {
             length: 0.0,
             width: 1.0,
             color: Color::rgba(0x86, 0xb8, 0xb4, 0xa0),
+            taper: 0.0,
+            variation: 0.0,
+            seed: 0,
         }
     }
 }
@@ -276,8 +298,14 @@ impl ShoreLines {
             (!(value.is_finite() && (0.0..=max).contains(&value)))
                 .then(|| format!("the line {name} must be from 0 to {max}, not {value}"))
         };
+        let unit = |name: &str, value: f64| {
+            (!(value.is_finite() && (0.0..=1.0).contains(&value)))
+                .then(|| format!("the line {name} must be from 0 to 1, not {value}"))
+        };
         reach("length", self.length, MAX_REACH)
             .or_else(|| reach("width", self.width, 50.0))
+            .or_else(|| unit("taper", self.taper))
+            .or_else(|| unit("variation", self.variation))
             .or_else(|| {
                 (!(self.spacing.is_finite()
                     && (MIN_LINE_SPACING..=MAX_REACH).contains(&self.spacing)))
