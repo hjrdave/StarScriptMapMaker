@@ -170,3 +170,35 @@ fn the_map_wide_default_and_a_landmass_override_survive_the_file() {
         &ShoreStyle::soft_glow()
     );
 }
+
+#[test]
+fn every_preset_is_valid_and_named_once_and_lakes_have_no_water_lines() {
+    for kind in [ShoreKind::Landmass, ShoreKind::Lake] {
+        let presets = ShoreStyle::presets(kind);
+        assert!(!presets.is_empty());
+        for (i, (name, style)) in presets.iter().enumerate() {
+            assert_eq!(style.problem(), None, "{name}");
+            assert_eq!(style.preset_name(kind), Some(*name));
+            assert!(presets[..i].iter().all(|(n, s)| n != name && s != style));
+        }
+    }
+    assert!(
+        ShoreStyle::presets(ShoreKind::Lake)
+            .iter()
+            .all(|(_, s)| s.lines.length == 0.0)
+    );
+    let names: Vec<_> = ShoreStyle::presets(ShoreKind::Landmass)
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect();
+    assert_eq!(names, ["Default", "Soft glow"]);
+}
+
+#[test]
+fn a_style_matching_no_preset_has_no_name() {
+    let mut style = ShoreStyle::soft_glow();
+    assert_eq!(style.preset_name(ShoreKind::Landmass), Some("Soft glow"));
+    assert_eq!(style.preset_name(ShoreKind::Lake), None);
+    style.outline.width += 1.0;
+    assert_eq!(style.preset_name(ShoreKind::Landmass), None);
+}

@@ -225,6 +225,28 @@ impl ShoreStyle {
         }
     }
 
+    /// The named presets offered for a kind of Object, in the order a picker lists them.
+    /// Landmass-only looks (those with water lines) are not offered for Lakes.
+    pub fn presets(kind: ShoreKind) -> Vec<(&'static str, Self)> {
+        match kind {
+            ShoreKind::Landmass => vec![
+                ("Default", Self::landmass_default()),
+                ("Soft glow", Self::soft_glow()),
+            ],
+            ShoreKind::Lake => vec![("Default", Self::lake_default())],
+        }
+    }
+
+    /// The name of the preset for `kind` whose fields equal this style's, if any. Fields from
+    /// a newer file format are not compared.
+    pub fn preset_name(&self, kind: ShoreKind) -> Option<&'static str> {
+        let mut plain = self.clone();
+        plain.extra = Extra::new();
+        Self::presets(kind)
+            .into_iter()
+            .find_map(|(name, preset)| (preset == plain).then_some(name))
+    }
+
     /// Why these settings cannot be used, if they cannot.
     pub fn problem(&self) -> Option<String> {
         let finite_from_zero = |name: &str, value: f64| {

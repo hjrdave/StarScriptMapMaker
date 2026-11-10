@@ -4,7 +4,7 @@ use eframe::egui;
 use ssmap_core::{
     Color, Command, FillStyle, Grain, Id, MAX_GRAIN_SIZE, MAX_MOTTLE_SCALE, MAX_REACH, MAX_RIPPLES,
     MIN_GRAIN_SIZE, MIN_LINE_SPACING, MIN_MOTTLE_SCALE, Mottle, Node, ObjectKind, Roughness,
-    ShoreStyle,
+    ShoreKind, ShoreStyle,
 };
 
 use super::{Inherit, PropertiesPanel, group_caption};
@@ -385,6 +385,7 @@ impl PropertiesPanel {
     /// The Shore style section of a Landmass or Lake: its own settings, or the Map default.
     pub(super) fn object_shore(&mut self, ui: &mut egui::Ui, editor: &mut Editor, ids: &[Id]) {
         let mut shored = Vec::new();
+        let mut shore_kind = ShoreKind::Landmass;
         let mut members = Vec::new();
         let mut any_own = false;
         for &id in ids {
@@ -394,6 +395,9 @@ impl PropertiesPanel {
             let Some(kind) = object.kind.shore_kind() else {
                 continue;
             };
+            if shored.is_empty() {
+                shore_kind = kind;
+            }
             shored.push(id);
             members.push(match object.kind.shore() {
                 Some(own) => {
@@ -433,7 +437,7 @@ impl PropertiesPanel {
         };
         prop_widgets::section(ui, header, |ui| {
             ui.push_id(("shore", &shored), |ui| {
-                self.shore_fields(ui, editor, &group);
+                self.shore_fields(ui, editor, shore_kind, &group);
             });
         });
     }
@@ -445,6 +449,7 @@ impl PropertiesPanel {
         &mut self,
         ui: &mut egui::Ui,
         editor: &mut Editor,
+        kind: ShoreKind,
         group: &Inherit<'_, ShoreStyle>,
     ) {
         let provenance = group.provenance;
@@ -459,6 +464,7 @@ impl PropertiesPanel {
             (edit, value.unwrap_or(colour))
         };
 
+        self.shore_preset_picker(ui, editor, kind, group);
         group_caption(ui, "Outline");
         let (edit, ()) = prop_widgets::pair(
             ui,
@@ -557,11 +563,39 @@ impl PropertiesPanel {
         self.edit(editor, edit, group, |s| s.shading.color = colour);
 
         self.shore_water_fields(ui, editor, group, &mut style);
-        group_caption(ui, "Preset");
-        if ui.button("Soft glow").clicked() {
-            self.edit(editor, Edit::instant(), group, |s| {
-                *s = ShoreStyle::soft_glow();
-            });
+    }
+
+    /// A dropdown of the named Shore presets for `kind`. It shows the preset every selected
+    /// style matches, or "Custom". Choosing one sets the whole Shore style (an override, on a
+    /// Landmass or Lake); the fields below stay editable.
+    fn shore_preset_picker(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        kind: ShoreKind,
+        group: &Inherit<'_, ShoreStyle>,
+    ) {
+        let mut names = group.members.iter().map(|s| s.preset_name(kind));
+        let shown = names
+            .next()
+            .flatten()
+            .filter(|first| names.all(|n| n == Some(*first)))
+            .unwrap_or("Custom");
+        let mut picked = None;
+        ui.horizontal(|ui| {
+            ui.label("Preset");
+            egui::ComboBox::from_id_salt("shore preset")
+                .selected_text(shown)
+                .show_ui(ui, |ui| {
+                    for (name, style) in ShoreStyle::presets(kind) {
+                        if ui.selectable_label(shown == name, name).clicked() {
+                            picked = Some(style);
+                        }
+                    }
+                });
+        });
+        if let Some(style) = picked {
+            self.edit(editor, Edit::instant(), group, |s| *s = style.clone());
         }
     }
 
