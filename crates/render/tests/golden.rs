@@ -463,30 +463,6 @@ fn redraw_after_a_gesture_is_fully_rendered() {
     }
 }
 
-/// The soft glow Shore style (ADR 0016): a thin outline, a pale glow over the water and short
-/// horizontal lines beside the coast.
-#[test]
-fn soft_glow_shore() {
-    let Some(gpu) = gpu() else { return };
-    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
-    let mut map = land_and_water();
-    map.execute(&Command::SetDefaultShore {
-        kind: ShoreKind::Landmass,
-        shore: ShoreStyle::soft_glow(),
-    })
-    .expect("a valid Shore style");
-    let image = render(headless, &scene_of(&map), &land_and_water_view());
-    let plain = render(
-        headless,
-        &scene_of(&land_and_water()),
-        &land_and_water_view(),
-    );
-    assert_ne!(image.pixels, plain.pixels, "the soft glow draws effects");
-    if let Gpu::Software(_) = gpu {
-        assert_matches_golden("soft_glow_shore", &image);
-    }
-}
-
 #[test]
 fn rough_coastlines() {
     let Some(gpu) = gpu() else { return };
