@@ -207,13 +207,11 @@ mod tests {
         for (name, colour) in TEXTURES {
             let pixels = render(colour);
             // The step across the wrap is no bigger than the steps inside the image.
-            let inside = (0..SIZE)
-                .flat_map(|i| {
-                    [
-                        step(&pixels, (100, i), (101, i)),
-                        step(&pixels, (i, 100), (i, 101)),
-                    ]
+            let inside = (0..SIZE - 1)
+                .flat_map(|j| {
+                    (0..SIZE).flat_map(move |i| [((j, i), (j + 1, i)), ((i, j), (i, j + 1))])
                 })
+                .map(|(a, b)| step(&pixels, a, b))
                 .max()
                 .unwrap_or(0);
             let across = (0..SIZE)

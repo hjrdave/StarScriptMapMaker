@@ -314,7 +314,12 @@ mod tests {
         let stripes = [0, 0, 0, 255, 255, 255, 255, 255];
         let out = resample(&stripes, 2, 1);
         let at = |x: u32| out[(x * 4) as usize];
-        assert!(at(TEXTURE_SIZE - 1) > 200 && at(0) < 56);
+        // The source pixel centres land near output x = 64 (black) and 192 (white).
+        assert!(at(TEXTURE_SIZE / 4) < 8 && at(TEXTURE_SIZE * 3 / 4) > 247);
+        // Across the wrap the two edge pixels sit either side of the midpoint, with no seam.
+        let (last, first) = (i32::from(at(TEXTURE_SIZE - 1)), i32::from(at(0)));
+        assert!((100..=156).contains(&last) && (100..=156).contains(&first));
+        assert!((last - first).abs() <= 8);
         assert!(at(TEXTURE_SIZE / 2 - 1) < at(TEXTURE_SIZE / 2 + 8));
     }
 
