@@ -101,6 +101,32 @@ impl Editor {
         }
     }
 
+    /// What a paint stroke started now would be called in the undo history.
+    pub fn paint_label(erase: bool) -> &'static str {
+        if erase { "Erase Paint" } else { "Paint" }
+    }
+
+    /// Finishes the paint stroke whose gesture `id` opened: one `AddPaintStroke` Command with the
+    /// brush's settings, committed as the gesture's Undo step. A stroke the Command refuses
+    /// leaves no Undo step, and the status bar says why.
+    pub fn finish_paint_stroke(&mut self, id: GestureId, points: Vec<Point>, erase: bool) {
+        let brush = self.paint;
+        let stroke = PaintStroke {
+            id: Id::new(),
+            points,
+            color: brush.color,
+            size: brush.size,
+            softness: brush.softness as f32,
+            opacity: brush.opacity as f32,
+            erase,
+        };
+        if self.gesture(&id, Command::AddPaintStroke { stroke }) {
+            self.end_gesture(id);
+        } else {
+            self.cancel_gesture(id);
+        }
+    }
+
     /// What a water brush stroke would be called in the undo history.
     pub fn water_label(erase: bool) -> &'static str {
         if erase { "Erase Water" } else { "Paint Water" }

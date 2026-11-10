@@ -25,9 +25,9 @@ use ssmap_core::file::Recovered;
 use ssmap_core::land::{self, BrushStroke};
 use ssmap_core::scatter::{self, ScatterBrush, ScatterStroke, Terrain};
 use ssmap_core::{
-    Align, Blob, Command, CommandError, DefaultLayers, EmbedAsset, EmbedFont, ExecuteError,
+    Align, Blob, Color, Command, CommandError, DefaultLayers, EmbedAsset, EmbedFont, ExecuteError,
     ExportSettings, History, Id, Label, Map, MultiPolygon, Node, NodeRef, ObjectKind, Op, OpError,
-    PasteGaps, Point, Rect, ResolvedLabel, Selection, Stamp, Subtree,
+    PaintStroke, PasteGaps, Point, Rect, ResolvedLabel, Selection, Stamp, Subtree,
 };
 use ssmap_fonts::FALLBACK_FAMILY;
 use ssmap_render::wgpu;
@@ -52,6 +52,33 @@ pub const DEFAULT_BRUSH_SIZE: f64 = 48.0;
 
 /// The land brush's starting Irregularity: enough that strokes look natural, not round.
 pub const DEFAULT_BRUSH_IRREGULARITY: f64 = 0.15;
+
+/// The Paint tool's brush: the settings every new paint stroke takes (ADR 0017).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct PaintBrush {
+    /// The paint colour. An eraser ignores it.
+    pub color: Color,
+    /// The brush diameter, in Canvas units.
+    pub size: f64,
+    /// How soft the brush edge is, from 0 (hard) to 1.
+    pub softness: f64,
+    /// How strong a stroke is, from 0 to 1.
+    pub opacity: f64,
+    /// Whether the brush erases by default; holding the erase modifier gives the other.
+    pub erase: bool,
+}
+
+impl Default for PaintBrush {
+    fn default() -> Self {
+        Self {
+            color: Color::rgb(0xc2, 0x4d, 0x3a),
+            size: DEFAULT_BRUSH_SIZE,
+            softness: 0.3,
+            opacity: 1.0,
+            erase: false,
+        }
+    }
+}
 
 /// How the Land Brush draws: a stroke, or a closed shape that fills with land.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -103,6 +130,8 @@ pub struct Editor {
     /// Whether strokes erased the last time the Land Brush was in a stroke mode, which `B`
     /// goes back to after the lasso.
     stroke_erase: bool,
+    /// The Paint tool's brush.
+    pub paint: PaintBrush,
     /// The width the River tool gives the next point it places, in Canvas units.
     pub river_width: f64,
     /// How much the River tool's new Rivers bend, from 0 to 1.
@@ -240,6 +269,7 @@ impl Editor {
             draw_mode: DrawMode::default(),
             erase_default: false,
             stroke_erase: false,
+            paint: PaintBrush::default(),
             river_width: DEFAULT_RIVER_WIDTH,
             river_meander: ssmap_core::River::DEFAULT_MEANDER,
             node_edit: None,
