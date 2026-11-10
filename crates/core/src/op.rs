@@ -19,6 +19,7 @@ use crate::id::Id;
 use crate::label::Label;
 use crate::map::{Board, InvariantError, Map, MapDefaults, Subtree};
 use crate::node::{Membership, Node, ObjectKind, Stamp};
+use crate::paint::PaintStroke;
 use crate::river::River;
 use crate::roughness::Roughness;
 use crate::shore::ShoreStyle;
@@ -126,6 +127,18 @@ pub enum Op {
         /// The new primary board.
         id: Id,
     },
+    /// Inserts a paint stroke at `index` among the strokes. Its id must be new.
+    InsertStroke {
+        /// Where to insert among the strokes, which draw first to last.
+        index: usize,
+        /// The stroke.
+        stroke: PaintStroke,
+    },
+    /// Removes a paint stroke.
+    RemoveStroke {
+        /// The stroke to remove.
+        id: Id,
+    },
     /// Replaces the Canvas's background.
     SetBackground {
         /// The new background.
@@ -225,6 +238,9 @@ pub enum OpError {
     /// No board has this id.
     #[error("no board has id {0}")]
     NoSuchBoard(Id),
+    /// No paint stroke has this id.
+    #[error("no paint stroke has id {0}")]
+    NoSuchStroke(Id),
     /// The primary board, the Canvas, cannot be removed.
     #[error("the primary board {0} cannot be removed")]
     RemovePrimaryBoard(Id),
@@ -369,6 +385,7 @@ impl Map {
             | Op::SetBoardBackground { .. }
             | Op::MoveBoard { .. }
             | Op::SetPrimary { .. }) => self.apply_board_op(op),
+            op @ (Op::InsertStroke { .. } | Op::RemoveStroke { .. }) => self.apply_stroke_op(op),
             Op::SetBackground { background } => Op::SetBackground {
                 background: std::mem::replace(&mut self.canvas_mut().background, background),
             },
@@ -476,6 +493,26 @@ impl Map {
         }
     }
 
+    /// Applies one of the paint stroke Ops, which `check` has already passed, and returns its
+    /// inverse.
+    fn apply_stroke_op(&mut self, op: Op) -> Op {
+        match op {
+            Op::InsertStroke { index, stroke } => {
+                let id = stroke.id;
+                self.strokes.insert(index, stroke);
+                Op::RemoveStroke { id }
+            }
+            Op::RemoveStroke { id } => {
+                let index = stroke_position(&self.strokes, id);
+                Op::InsertStroke {
+                    index,
+                    stroke: self.strokes.remove(index),
+                }
+            }
+            other => unreachable!("{other:?} is not a paint stroke Op"),
+        }
+    }
+
     /// Checks everything that could make `op` fail, so `apply` never changes the Map halfway.
     fn check(&self, op: &Op) -> Result<(), OpError> {
         match op {
@@ -540,6 +577,17 @@ impl Map {
                 self.existing_board(*id)?;
                 check_index(*index, self.boards.len() - 1)?;
             }
+            Op::InsertStroke { index, stroke } => {
+                if self.paint_stroke(stroke.id).is_some() {
+                    return Err(InvariantError::DuplicateStroke(stroke.id).into());
+                }
+                check_index(*index, self.strokes.len())?;
+            }
+            Op::RemoveStroke { id } => {
+                if self.paint_stroke(*id).is_none() {
+                    return Err(OpError::NoSuchStroke(*id));
+                }
+            }
             Op::SetDefaults { .. }
             | Op::SetBackground { .. }
             | Op::ResizeCanvas { .. }
@@ -582,6 +630,14 @@ fn board_position(boards: &[Board], id: Id) -> usize {
         .iter()
         .position(|board| board.id == id)
         .expect("Map::check verified the board exists")
+}
+
+#[allow(clippy::expect_used, reason = "Map::check verified the stroke exists")]
+fn stroke_position(strokes: &[PaintStroke], id: Id) -> usize {
+    strokes
+        .iter()
+        .position(|stroke| stroke.id == id)
+        .expect("Map::check verified the stroke exists")
 }
 
 fn check_index(index: usize, len: usize) -> Result<(), OpError> {

@@ -152,6 +152,7 @@ fn map() -> impl Strategy<Value = Map> {
                 roughness,
                 ..Default::default()
             },
+            strokes: Vec::new(),
             layers,
             embedded: Default::default(),
             export_settings: Default::default(),

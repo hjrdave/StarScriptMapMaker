@@ -3,6 +3,7 @@ use thiserror::Error;
 use crate::geometry::Point;
 use crate::id::Id;
 use crate::op::OpError;
+use crate::paint::StrokeError;
 
 /// Why a Command was refused. The Map is left unchanged.
 #[derive(Clone, PartialEq, Debug, Error)]
@@ -204,6 +205,18 @@ pub enum CommandError {
         /// How many were given.
         got: usize,
     },
+    /// No paint stroke has this id.
+    #[error("no paint stroke has id {0}")]
+    NoSuchStroke(Id),
+    /// A paint stroke with this id exists already.
+    #[error("paint stroke id {0} is already in use")]
+    StrokeIdInUse(Id),
+    /// The Map already has the most paint strokes it may have.
+    #[error("the Map already has the most paint strokes, {0}")]
+    TooManyStrokes(usize),
+    /// The paint stroke is not valid.
+    #[error("invalid paint stroke: {0}")]
+    InvalidStroke(#[from] StrokeError),
     /// An Op the Command compiled to did not apply.
     #[error(transparent)]
     Op(#[from] OpError),
