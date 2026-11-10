@@ -323,14 +323,45 @@ fn the_shore_style_has_glow_and_water_lines_and_a_soft_glow_preset() {
     let default = ssmap_core::ShoreStyle::landmass_default();
     assert_eq!(harness.state().editor.map().shore(island), Some(&default));
 
-    harness.get_by_label("Soft glow").click();
-    harness.run();
+    open_shore_presets(&mut harness);
+    click(&mut harness, "Soft glow");
     let editor = &harness.state().editor;
     assert_eq!(
         editor.map().shore(island),
         Some(&ssmap_core::ShoreStyle::soft_glow())
     );
     assert_eq!(editor.undo_label(), Some("Change Shore Style"));
+}
+
+#[test]
+fn the_shore_preset_picker_shows_custom_when_no_preset_matches() {
+    let (mut fixture, _, island) = fixture();
+    let mut custom = ssmap_core::ShoreStyle::landmass_default();
+    custom.outline.width = 7.0;
+    assert!(
+        fixture
+            .editor
+            .run(Command::SetShore {
+                ids: vec![island],
+                shore: Some(custom),
+            })
+            .is_ok()
+    );
+    fixture.editor.select(vec![island]);
+    let mut harness = harness(fixture);
+    open_shore_presets(&mut harness);
+    harness.get_by_label("Default");
+    click(&mut harness, "Soft glow");
+    assert_eq!(
+        harness.state().editor.map().shore(island),
+        Some(&ssmap_core::ShoreStyle::soft_glow())
+    );
+    // The picker now names the preset instead of "Custom".
+    assert!(
+        harness
+            .query_all_by_role(egui::accesskit::Role::ComboBox)
+            .any(|n| n.accesskit_node().value().as_deref() == Some("Soft glow"))
+    );
 }
 
 #[test]
@@ -743,7 +774,7 @@ fn the_board_row_moves_selected_objects_between_boards_in_one_undo_step() {
     let mut harness = harness(fixture);
     assert_eq!(member(harness.state()), Membership::Canvas);
     harness.get_by_label("Board");
-    harness.get_by_role(egui::accesskit::Role::ComboBox).click();
+    board_combo(&harness).click();
     harness.run();
     harness.get_by_label("Art board 1").click();
     harness.run();
@@ -753,7 +784,7 @@ fn the_board_row_moves_selected_objects_between_boards_in_one_undo_step() {
         Some("Move On or Off Canvas")
     );
 
-    harness.get_by_role(egui::accesskit::Role::ComboBox).click();
+    board_combo(&harness).click();
     harness.run();
     harness.get_by_label("Off the boards").click();
     harness.run();
@@ -788,7 +819,7 @@ fn the_board_row_says_mixed_for_objects_on_different_boards() {
     fixture.editor.select_board(None);
     fixture.editor.select(vec![island, lake]);
     let harness = harness(fixture);
-    let combo = harness.get_by_role(egui::accesskit::Role::ComboBox);
+    let combo = board_combo(&harness);
     assert_eq!(combo.accesskit_node().value().as_deref(), Some("Mixed"));
 }
 
@@ -934,6 +965,39 @@ fn the_summary_counts_each_kind() {
         "1 Layer + 1 Landmass"
     );
     assert_eq!(selection_summary(map, &[]), "");
+}
+
+/// The Board row's combo: the one that is not the Shore preset picker.
+fn board_combo<'a>(harness: &'a Harness<'static, Fixture>) -> egui_kittest::Node<'a> {
+    let mut boards = harness
+        .query_all_by_role(egui::accesskit::Role::ComboBox)
+        .filter(|node| {
+            !matches!(
+                node.accesskit_node().value().as_deref(),
+                Some("Default" | "Soft glow" | "Custom")
+            )
+        });
+    let (Some(combo), None) = (boards.next(), boards.next()) else {
+        panic!("one Board field")
+    };
+    combo
+}
+
+fn open_shore_presets(harness: &mut Harness<'static, Fixture>) {
+    let presets: Vec<_> = harness
+        .query_all_by_role(egui::accesskit::Role::ComboBox)
+        .filter(|node| {
+            matches!(
+                node.accesskit_node().value().as_deref(),
+                Some("Default" | "Soft glow" | "Custom")
+            )
+        })
+        .collect();
+    let [combo] = presets.as_slice() else {
+        panic!("one Preset picker, found {}", presets.len())
+    };
+    combo.click();
+    harness.run();
 }
 
 fn click(harness: &mut Harness<'static, Fixture>, label: &str) {

@@ -379,7 +379,7 @@ impl PropertiesPanel {
             set: &set,
             reset: None,
         };
-        ui.push_id(title, |ui| self.shore_fields(ui, editor, &group));
+        ui.push_id(title, |ui| self.shore_fields(ui, editor, kind, &group));
     }
 }
 
