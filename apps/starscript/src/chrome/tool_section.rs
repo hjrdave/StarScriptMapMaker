@@ -25,6 +25,7 @@ pub(crate) fn icon(tool: ToolId) -> Icon {
         ToolId::Pan => Icon::Pan,
         ToolId::LandBrush => Icon::LandBrush,
         ToolId::WaterBrush => Icon::LakeBrush,
+        ToolId::Paint => Icon::Paint,
         ToolId::River => Icon::River,
         ToolId::Label => Icon::Label,
         ToolId::Stamp => Icon::Stamp,
@@ -58,6 +59,11 @@ pub(crate) fn tool_header(editor: &Editor, alt: bool) -> ToolHeader {
         } else {
             ("Paint", false)
         }),
+        ToolId::Paint => Some(if alt != editor.paint.erase {
+            ("Erase", true)
+        } else {
+            ("Paint", false)
+        }),
         ToolId::Stamp => Some((
             match editor.scatter.placement {
                 Placement::Land => "Land",
@@ -80,6 +86,7 @@ pub(crate) fn has_settings(tool: ToolId) -> bool {
         tool,
         ToolId::LandBrush
             | ToolId::WaterBrush
+            | ToolId::Paint
             | ToolId::River
             | ToolId::Stamp
             | ToolId::StampEraser
@@ -174,6 +181,10 @@ pub(crate) fn tool_sections(ui: &mut egui::Ui, editor: &mut Editor) {
                 });
             }
         }
+        ToolId::Paint => {
+            paint_mode(ui, editor);
+            prop_widgets::section(ui, header("brush", "Brush"), |ui| paint_brush(ui, editor));
+        }
         ToolId::River => {
             prop_widgets::section(ui, header("river", "Shape"), |ui| river(ui, editor));
         }
@@ -237,6 +248,68 @@ fn mode_control(ui: &mut egui::Ui, editor: &mut Editor, land: bool) {
         );
     });
     ui.add_space(theme::SPACING[2]);
+}
+
+/// The Paint tool's mode as two icon buttons (Paint, Erase), with the hint for getting the
+/// other mode.
+fn paint_mode(ui: &mut egui::Ui, editor: &mut Editor) {
+    ui.add_space(theme::SPACING[2]);
+    ui.horizontal(|ui| {
+        ui.add_space(theme::SPACING[3]);
+        let options = [(Icon::Paint, "Paint", false), (Icon::Eraser, "Erase", true)];
+        let selected = usize::from(editor.paint.erase);
+        if let Some(index) = prop_widgets::mode_buttons(ui, &options, selected) {
+            editor.paint.erase = index == 1;
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.add_space(theme::SPACING[3]);
+        ui.label(
+            egui::RichText::new(format!(
+                "Hold {} to get the other mode.",
+                tools::ERASE_MODIFIER
+            ))
+            .size(theme::CAPTION)
+            .color(theme::palette(ui.ctx()).text_tertiary),
+        );
+    });
+    ui.add_space(theme::SPACING[2]);
+}
+
+/// The Paint brush's colour (not for an eraser, which ignores it), size, softness and opacity.
+fn paint_brush(ui: &mut egui::Ui, editor: &mut Editor) {
+    let brush = &mut editor.paint;
+    if !brush.erase {
+        let mut colour = Some(brush.color);
+        let response = prop_widgets::swatch(ui, "Colour", &mut colour, false, Provenance::Plain);
+        if response.edit.changed
+            && let Some(colour) = colour
+        {
+            brush.color = colour;
+        }
+    }
+    let size = ScrubSpec::new("Size")
+        .range(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end())
+        .slider_max(tools::BRUSH_SIZE_SLIDER_MAX)
+        .logarithmic()
+        .default_value(crate::editor::DEFAULT_BRUSH_SIZE);
+    prop_widgets::slider(ui, &mut brush.size, &size);
+    let mut softness = brush.softness * 100.0;
+    let spec = ScrubSpec::new("Softness")
+        .range(0.0, 100.0)
+        .unit("%")
+        .default_value(crate::editor::PaintBrush::default().softness * 100.0);
+    if prop_widgets::slider(ui, &mut softness, &spec).changed {
+        brush.softness = softness / 100.0;
+    }
+    let mut opacity = brush.opacity * 100.0;
+    let spec = ScrubSpec::new("Opacity")
+        .range(0.0, 100.0)
+        .unit("%")
+        .default_value(crate::editor::PaintBrush::default().opacity * 100.0);
+    if prop_widgets::slider(ui, &mut opacity, &spec).changed {
+        brush.opacity = opacity / 100.0;
+    }
 }
 
 /// Where the Stamp tool places: on Land, on Water or Anywhere. It sits under the header, above

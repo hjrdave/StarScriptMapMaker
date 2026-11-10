@@ -966,6 +966,30 @@ fn the_header_names_the_tool_and_a_chip_names_its_mode() {
 }
 
 #[test]
+fn the_paint_tool_shows_colour_size_softness_and_opacity_and_no_colour_when_erasing() {
+    let (mut fixture, _, _) = fixture();
+    fixture.editor.active_tool = ToolId::Paint;
+    let mut harness = harness(fixture);
+    harness.get_by_label("Mode: Paint");
+    for field in ["Colour", "Size", "Softness", "Opacity"] {
+        assert!(harness.query_by_label(field).is_some(), "{field}");
+    }
+    harness.get_by_label("Erase").click();
+    harness.run();
+    assert!(harness.state().editor.paint.erase);
+    harness.get_by_label("Mode: Erase");
+    assert!(harness.query_by_label("Colour").is_none());
+    for field in ["Size", "Softness", "Opacity"] {
+        assert!(harness.query_by_label(field).is_some(), "{field}");
+    }
+    harness
+        .get_by_role_and_label(eframe::egui::accesskit::Role::RadioButton, "Paint")
+        .click();
+    harness.run();
+    assert!(!harness.state().editor.paint.erase);
+}
+
+#[test]
 fn sections_do_not_collapse() {
     let (mut fixture, _, _) = fixture();
     fixture.editor.active_tool = ToolId::StampEraser;

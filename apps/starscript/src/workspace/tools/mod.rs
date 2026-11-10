@@ -10,6 +10,7 @@ mod input;
 mod label;
 mod lasso;
 mod node_edit;
+mod paint;
 mod pan;
 mod river;
 mod scatter;
@@ -29,6 +30,7 @@ use self::drag::Drag;
 use self::input::CanvasFrame;
 use self::lasso::Lasso;
 use self::node_edit::NodeDrag;
+use self::paint::PaintDrag;
 use self::river::RiverDraft;
 use self::select::SelectBox;
 
@@ -42,6 +44,8 @@ pub enum ToolId {
     Pan,
     LandBrush,
     WaterBrush,
+    /// Paints colour over the Map, or erases it (ADR 0017).
+    Paint,
     River,
     Label,
     Stamp,
@@ -52,11 +56,12 @@ pub enum ToolId {
 }
 
 impl ToolId {
-    pub const ALL: [ToolId; 9] = [
+    pub const ALL: [ToolId; 10] = [
         ToolId::Select,
         ToolId::Pan,
         ToolId::LandBrush,
         ToolId::WaterBrush,
+        ToolId::Paint,
         ToolId::River,
         ToolId::Label,
         ToolId::Stamp,
@@ -70,6 +75,7 @@ impl ToolId {
             ToolId::Pan => "Pan",
             ToolId::LandBrush => "Land Brush",
             ToolId::WaterBrush => "Lake Brush",
+            ToolId::Paint => "Paint",
             ToolId::River => "River",
             ToolId::Label => "Label",
             ToolId::Stamp => "Stamp",
@@ -87,6 +93,7 @@ impl ToolId {
             ToolId::Pan => (none, egui::Key::H),
             ToolId::LandBrush => (none, egui::Key::B),
             ToolId::WaterBrush => (none, egui::Key::W),
+            ToolId::Paint => (none, egui::Key::P),
             ToolId::River => (none, egui::Key::R),
             ToolId::Label => (none, egui::Key::T),
             ToolId::Stamp => (none, egui::Key::S),
@@ -124,7 +131,7 @@ fn lassoing(editor: &Editor) -> bool {
     editor.active_tool == ToolId::LandBrush && editor.draw_mode == DrawMode::Lasso
 }
 
-/// Whether the tool paints with the shared brush size.
+/// Whether the tool paints with the shared brush size. The Paint tool has its own.
 pub fn uses_brush_size(tool: ToolId) -> bool {
     matches!(
         tool,
@@ -141,6 +148,8 @@ const EDGE_GRAB: f64 = 6.0;
 pub struct ToolState {
     drag: Option<Drag>,
     stroke: Option<Stroke>,
+    /// A paint stroke being dragged with the Paint tool.
+    paint: Option<PaintDrag>,
     /// A River being placed with the River tool.
     river: Option<RiverDraft>,
     /// Wheel notches turned with Shift held that have not yet made a whole one.
@@ -254,6 +263,7 @@ impl ToolState {
             self.cancel_held(editor);
             self.drag = None;
             self.stroke = None;
+            self.paint = None;
             self.node_drag = None;
             self.canvas_drag = None;
             self.board_move = None;
@@ -335,6 +345,7 @@ pub fn canvas_input(
             let water = editor.active_tool == ToolId::WaterBrush;
             brush::land_brush(editor, view, state, &frame, water)
         }
+        ToolId::Paint => paint::paint_tool(editor, view, state, &frame),
         ToolId::River => river::river_tool(editor, view, state, &frame),
         ToolId::Pan => None,
         ToolId::Stamp | ToolId::StampEraser => {
@@ -363,6 +374,9 @@ pub fn canvas_input(
     let scattering = matches!(editor.active_tool, ToolId::Stamp | ToolId::StampEraser);
     if !scattering && !matches!(editor.active_tool, ToolId::LandBrush | ToolId::WaterBrush) {
         state.stroke = None;
+    }
+    if editor.active_tool != ToolId::Paint {
+        state.paint = None;
     }
     editor.tool_busy = state.lasso.is_some()
         || state.river.is_some()
@@ -394,6 +408,10 @@ pub fn paint_overlay(
     }
     if editor.active_tool == ToolId::River {
         river::paint_river(painter, editor, view, state, origin, hover, ppp);
+        return;
+    }
+    if editor.active_tool == ToolId::Paint {
+        paint::paint_paint_cursor(painter, editor, view, state, origin, hover, ppp);
         return;
     }
     if matches!(editor.active_tool, ToolId::Stamp | ToolId::StampEraser) {

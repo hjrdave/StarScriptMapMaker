@@ -545,6 +545,7 @@ fn edit_shortcuts(editor: &mut Editor, input: &mut egui::InputState, off: &HashS
     }
     let river_points = editor.node_edit().is_some() && editor.edited_is_path();
     if tools::uses_brush_size(editor.active_tool)
+        || editor.active_tool == ToolId::Paint
         || editor.active_tool == ToolId::River
         || river_points
     {
@@ -558,6 +559,9 @@ fn edit_shortcuts(editor: &mut Editor, input: &mut egui::InputState, off: &HashS
         if editor.active_tool == ToolId::River {
             editor.river_width = (editor.river_width * step)
                 .clamp(ssmap_core::MIN_RIVER_WIDTH, ssmap_core::MAX_RIVER_WIDTH);
+        } else if editor.active_tool == ToolId::Paint {
+            editor.paint.size = (editor.paint.size * step)
+                .clamp(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end());
         } else if river_points {
             // The selected points of a River being edited widen or narrow.
             if step != 1.0 {

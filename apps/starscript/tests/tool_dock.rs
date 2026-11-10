@@ -72,6 +72,15 @@ fn s_selects_stamp_and_c_does_not_select_a_tool() {
 }
 
 #[test]
+fn p_selects_the_paint_tool() {
+    let mut harness = app(egui::vec2(WIDTH, 800.0));
+    assert_eq!(button_label(ToolId::Paint), "Paint (P)");
+    harness.key_press(egui::Key::P);
+    harness.run();
+    assert_eq!(harness.state().editor().active_tool, ToolId::Paint);
+}
+
+#[test]
 fn the_crop_button_is_the_canvas_tool_on_a_and_export_region_is_not_in_the_dock() {
     let mut harness = app(egui::vec2(WIDTH, 800.0));
     assert_eq!(button_label(ToolId::Canvas), "Canvas (A)");
