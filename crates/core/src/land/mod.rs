@@ -14,6 +14,7 @@ mod nodes;
 mod shore_lines;
 #[cfg(test)]
 mod tests;
+mod wave_marks;
 
 pub use brush::{
     BrushError, BrushStroke, MAX_IRREGULARITY, brush_command, brush_region, irregular_region,
@@ -21,6 +22,7 @@ pub use brush::{
 };
 pub use nodes::{NodeEditError, delete_nodes, insert_node, move_nodes, signed_area};
 pub use shore_lines::{DrawnLine, MAX_LINE_ROWS, ShoreLine, hand_drawn, shore_lines};
+pub use wave_marks::{MAX_WAVE_MARKS, WaveMark, wave_marks};
 
 /// `outline` with `region` added.
 pub fn union(outline: &MultiPolygon, region: &MultiPolygon) -> MultiPolygon {

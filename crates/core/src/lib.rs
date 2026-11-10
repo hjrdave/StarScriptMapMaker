@@ -66,8 +66,8 @@ pub use river::{
 };
 pub use roughness::{Rebuild, Roughness, RoughnessCache, roughen};
 pub use shore::{
-    MAX_REACH, MAX_RIPPLES, MIN_LINE_SPACING, ShoreGlow, ShoreKind, ShoreLines, ShoreOutline,
-    ShoreRipples, ShoreShading, ShoreStyle,
+    MAX_REACH, MAX_RIPPLES, MAX_WAVE_DENSITY, MAX_WAVE_SIZE, MIN_LINE_SPACING, ShoreGlow,
+    ShoreKind, ShoreLines, ShoreOutline, ShoreRipples, ShoreShading, ShoreStyle, ShoreWaves,
 };
 pub use stamp_pick::{SpriteShape, StampIndex};
 pub use template::{DefaultLayers, MapTemplate, TemplateError};

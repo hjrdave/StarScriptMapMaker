@@ -194,7 +194,7 @@ fn every_preset_is_valid_and_named_once_and_lakes_have_no_water_lines() {
         .into_iter()
         .map(|(n, _)| n)
         .collect();
-    assert_eq!(names, ["Default", "Soft glow"]);
+    assert_eq!(names, ["Default", "Soft glow", "Hand drawn"]);
 }
 
 #[test]

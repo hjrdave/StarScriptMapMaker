@@ -485,6 +485,43 @@ fn rough_coastlines() {
     }
 }
 
+/// The Hand drawn Shore preset on every Landmass: a thick dark outline, tapered uneven water
+/// lines and wave marks over the open water, none of which may cover land.
+#[test]
+fn hand_drawn_shore() {
+    let Some(gpu) = gpu() else { return };
+    let (Gpu::Software(headless) | Gpu::Hardware(headless)) = &gpu;
+    let mut map = land_and_water();
+    map.execute(&Command::SetDefaultShore {
+        kind: ShoreKind::Landmass,
+        shore: ShoreStyle::hand_drawn(),
+    })
+    .expect("a valid Shore style");
+    let image = render(headless, &scene_of(&map), &land_and_water_view());
+    let plain = render(
+        headless,
+        &scene_of(&land_and_water()),
+        &land_and_water_view(),
+    );
+    assert_ne!(image.pixels, plain.pixels, "the preset draws something");
+    let at = |x: f64, y: f64| pixel(&image, (16.0 + x * 0.4) as u32, (16.0 + y * 0.4) as u32);
+    assert_eq!(
+        at(450.0, 650.0),
+        pixel(
+            &plain,
+            (16.0 + 450.0 * 0.4) as u32,
+            (16.0 + 650.0 * 0.4) as u32
+        ),
+        "the middle of the land is unchanged"
+    );
+    // The image is not committed until it has been rendered on a software GPU.
+    if let Gpu::Software(_) = gpu
+        && (env_flag("SSMAP_GOLDEN_UPDATE") || golden_path("hand_drawn_shore").exists())
+    {
+        assert_matches_golden("hand_drawn_shore", &image);
+    }
+}
+
 /// Two islands a few ripple-widths apart, in one Layer, with ripples but no outline or shading.
 /// Ripples draw beneath every fill of the Layer, so neither island's ripples may cover the
 /// other island: every pixel inside either island is the land colour.

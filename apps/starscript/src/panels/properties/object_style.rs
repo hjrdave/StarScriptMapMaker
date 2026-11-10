@@ -3,8 +3,8 @@
 use eframe::egui;
 use ssmap_core::{
     Color, Command, FillStyle, Grain, Id, MAX_GRAIN_SIZE, MAX_MOTTLE_SCALE, MAX_REACH, MAX_RIPPLES,
-    MIN_GRAIN_SIZE, MIN_LINE_SPACING, MIN_MOTTLE_SCALE, Mottle, Node, ObjectKind, Roughness,
-    ShoreKind, ShoreStyle,
+    MAX_WAVE_DENSITY, MAX_WAVE_SIZE, MIN_GRAIN_SIZE, MIN_LINE_SPACING, MIN_MOTTLE_SCALE, Mottle,
+    Node, ObjectKind, Roughness, ShoreKind, ShoreStyle,
 };
 
 use super::{Inherit, PropertiesPanel, group_caption};
@@ -682,6 +682,82 @@ impl PropertiesPanel {
         self.hand_drawn_fields(ui, editor, group, style);
         let (edit, colour) = colour_row(ui, "Water line colour", style.lines.color);
         self.edit(editor, edit, group, |s| s.lines.color = colour);
+        self.wave_fields(ui, editor, group, style);
+    }
+
+    /// Density, size, colour and seed of the wave marks scattered over open water.
+    fn wave_fields(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        group: &Inherit<'_, ShoreStyle>,
+        style: &mut ShoreStyle,
+    ) {
+        let provenance = group.provenance;
+        group_caption(ui, "Wave marks");
+        let (density_edit, size_edit) = prop_widgets::pair(
+            ui,
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut style.waves.density,
+                    &ScrubSpec::new("Wave mark density")
+                        .provenance(provenance)
+                        .prefix("Density")
+                        .range(0.0, MAX_WAVE_DENSITY)
+                        .step(0.1)
+                        .decimals(1)
+                        .mixed(group.mixed(|s| s.waves.density)),
+                )
+            },
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut style.waves.size,
+                    &ScrubSpec::new("Wave mark size")
+                        .provenance(provenance)
+                        .prefix("Size")
+                        .unit(" u")
+                        .range(1.0, MAX_WAVE_SIZE)
+                        .step(0.1)
+                        .decimals(1)
+                        .mixed(group.mixed(|s| s.waves.size)),
+                )
+            },
+        );
+        let (density, size) = (style.waves.density, style.waves.size);
+        self.edit(editor, density_edit, group, |s| s.waves.density = density);
+        self.edit(editor, size_edit, group, |s| s.waves.size = size);
+        let mut seed = f64::from(style.waves.seed);
+        let (seed_edit, ()) = prop_widgets::pair(
+            ui,
+            |ui| {
+                prop_widgets::scrub_field(
+                    ui,
+                    &mut seed,
+                    &ScrubSpec::new("Wave mark seed")
+                        .provenance(provenance)
+                        .prefix("Seed")
+                        .range(0.0, f64::from(u32::MAX))
+                        .mixed(group.mixed(|s| f64::from(s.waves.seed))),
+                )
+            },
+            |_| {},
+        );
+        let seed = seed as u32;
+        self.edit(editor, seed_edit, group, |s| s.waves.seed = seed);
+        let mut value = Some(style.waves.color);
+        let edit = prop_widgets::swatch_shown_as(
+            ui,
+            "Wave mark colour",
+            "Colour",
+            &mut value,
+            false,
+            provenance,
+        )
+        .edit;
+        let colour = value.unwrap_or(style.waves.color);
+        self.edit(editor, edit, group, |s| s.waves.color = colour);
     }
 
     /// Taper, variation and seed of the water lines: how hand drawn they look.

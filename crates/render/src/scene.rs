@@ -777,6 +777,7 @@ impl MapScene {
                 groups,
             );
             line_groups(&outline, shore, opacity, groups);
+            wave_groups(&outline, shore, opacity, groups);
         }
         ripple_groups(
             &mut |distance| self.rings.ring(sibling, distance),
@@ -1142,6 +1143,34 @@ fn line_groups(
             .with_effect(),
         );
     }
+}
+
+/// Small wavy marks scattered over the open water, past the end of the water lines.
+fn wave_groups(
+    outline: &MultiPolygon,
+    shore: &ShoreStyle,
+    opacity: f32,
+    groups: &mut Vec<VectorGroup>,
+) {
+    let waves = &shore.waves;
+    if waves.density <= 0.0 || waves.color.a == 0 {
+        return;
+    }
+    // Start beyond the water lines, which reach `length` out; the glow is soft and not avoided.
+    let clearance = shore.lines.length.max(0.0);
+    let marks = land::wave_marks(outline, waves.density, waves.size, waves.seed, clearance);
+    if marks.is_empty() {
+        return;
+    }
+    groups.push(
+        stroke(
+            lines_path(&marks),
+            waves.color,
+            (waves.size / 8.0).max(0.5) as f32,
+            opacity,
+        )
+        .with_effect(),
+    );
 }
 
 /// Water lines that taper and differ in weight: each is filled, in the same fading stretches
@@ -1916,6 +1945,35 @@ mod tests {
         assert_eq!(effect_shapes(&style), first);
         style.lines.seed = 2;
         assert_ne!(effect_shapes(&style), first);
+    }
+
+    #[test]
+    fn wave_marks_are_one_effect_stroke_that_follows_the_seed_and_density() {
+        let (mut map, lands) = map_with_land();
+        let mut style = ShoreStyle::hand_drawn();
+        let mut marks = |style: &ShoreStyle| {
+            map.execute(&Command::SetShore {
+                ids: vec![lands[1]],
+                shore: Some(style.clone()),
+            })
+            .unwrap();
+            let content = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
+            content
+                .groups()
+                .iter()
+                .filter(|g| g.object.is_some_and(|o| o.id == lands[1]) && g.effect)
+                .flat_map(|g| g.shapes.iter())
+                .filter(|s| matches!(s.paint, Paint::Stroke { .. }) && s.color == style.waves.color)
+                .map(|s| format!("{:?}", s.path))
+                .collect::<Vec<_>>()
+        };
+        let first = marks(&style);
+        assert_eq!(first.len(), 1);
+        assert_eq!(marks(&style), first);
+        style.waves.seed = 99;
+        assert_ne!(marks(&style), first);
+        style.waves.density = 0.0;
+        assert!(marks(&style).is_empty());
     }
 
     #[test]

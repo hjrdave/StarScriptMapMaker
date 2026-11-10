@@ -58,7 +58,7 @@ pub fn hand_drawn(lines: &[ShoreLine], variation: f64, seed: u32) -> Vec<DrawnLi
 
 /// A stream of numbers in `[0, 1)` fixed by `seed` and a Canvas position. The position is
 /// rounded to a tenth of a unit so the same line always lands on the same numbers.
-fn unit_stream(seed: u32, at: [f64; 2]) -> impl FnMut() -> f64 {
+pub(super) fn unit_stream(seed: u32, at: [f64; 2]) -> impl FnMut() -> f64 {
     let mut state = u64::from(seed)
         ^ ((at[0] * 10.0).round() as i64 as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
         ^ ((at[1] * 10.0).round() as i64 as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F);
