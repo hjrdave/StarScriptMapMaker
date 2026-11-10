@@ -16,6 +16,7 @@ mod fill_texture;
 mod gpu;
 mod ocean;
 mod offscreen;
+mod paint;
 mod png_writer;
 mod present;
 pub mod profile;

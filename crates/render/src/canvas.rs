@@ -13,6 +13,7 @@ use crate::color::{Color, ColorExt as _};
 use crate::fill_texture::FillTextures;
 use crate::gpu::GpuCapabilities;
 use crate::ocean::{OceanPass, OceanUniform};
+use crate::paint::PaintLayer;
 use crate::profile::{self, Stage};
 use crate::sprite::SpriteStore;
 use crate::stamp::{PlacedStamp, StampRenderer};
@@ -91,6 +92,8 @@ pub struct Content {
     groups: Arc<[VectorGroup]>,
     stamps: Arc<[PlacedStamp]>,
     clips: Arc<[ClipScope]>,
+    /// The Map's paint, drawn after `paint.after` of the groups.
+    paint: Option<Arc<PaintLayer>>,
 }
 
 /// A stretch of the content that shows only inside a shape, as a Layer clipped to a Landmass
@@ -140,7 +143,24 @@ impl Content {
             groups: groups.into(),
             stamps: stamps.into(),
             clips: clips.into(),
+            paint: None,
         }
+    }
+
+    /// This content with the Map's paint, which draws above the groups it names.
+    pub(crate) fn with_paint(mut self, paint: Option<Arc<PaintLayer>>) -> Self {
+        debug_assert!(
+            paint
+                .as_ref()
+                .is_none_or(|paint| paint.after <= self.groups.len())
+        );
+        self.paint = paint;
+        self
+    }
+
+    /// The Map's paint, if it has any to draw.
+    pub(crate) fn paint(&self) -> Option<&Arc<PaintLayer>> {
+        self.paint.as_ref()
     }
 
     /// This content with its groups and Stamps replaced by those given, where it shares the
@@ -158,6 +178,7 @@ impl Content {
             groups,
             stamps,
             clips: self.clips.clone(),
+            paint: self.paint.clone(),
         }
     }
 
@@ -187,8 +208,16 @@ impl PartialEq for Content {
     fn eq(&self, other: &Self) -> bool {
         (Arc::ptr_eq(&self.groups, &other.groups)
             && Arc::ptr_eq(&self.stamps, &other.stamps)
-            && Arc::ptr_eq(&self.clips, &other.clips))
-            || (self.is_empty() && other.is_empty())
+            && Arc::ptr_eq(&self.clips, &other.clips)
+            && match (&self.paint, &other.paint) {
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            })
+            || (self.is_empty()
+                && other.is_empty()
+                && self.paint.is_none()
+                && other.paint.is_none())
     }
 }
 
@@ -284,6 +313,13 @@ pub struct CanvasRenderer {
     fill_textures: FillTextures,
     /// The shapes of the content's Clips: for each scope, its land then its Lakes.
     masks: LyonRenderer,
+    /// The Map's paint strokes (ADR 0017): one run per step of the paint layer.
+    paint: LyonRenderer,
+    /// The shapes the paint is clipped to: run 0 is the land, run 1 the water over it, and run
+    /// `2 + i` the layer's eraser `i`.
+    paint_masks: LyonRenderer,
+    /// The paint `paint` and `paint_masks` were built from.
+    drawn_paint: Option<Arc<PaintLayer>>,
     drawn_backdrop: Option<BackdropKey>,
     drawn_content: Option<Content>,
     /// The generation of the content's tessellation cache when it was last drawn from.
@@ -336,6 +372,9 @@ impl CanvasRenderer {
             ocean: OceanPass::new(device, &view_layout, samples),
             content: LyonRenderer::new(device, &view_layout, &fill_textures, samples),
             masks: LyonRenderer::new(device, &view_layout, &fill_textures, samples),
+            paint: LyonRenderer::new(device, &view_layout, &fill_textures, samples),
+            paint_masks: LyonRenderer::new(device, &view_layout, &fill_textures, samples),
+            drawn_paint: None,
             fill_textures,
             stamps: StampRenderer::new(
                 device,
@@ -470,6 +509,7 @@ impl CanvasRenderer {
                     .stamps
                     .cuts()
                     .chain(clips.iter().flat_map(|c| [c.groups.start, c.groups.end]))
+                    .chain(scene.content.paint().map(|paint| paint.after))
                     .collect();
                 // Each board scissors its members, and Objects off the boards draw unscissored,
                 // so a run never mixes placements.
@@ -507,6 +547,7 @@ impl CanvasRenderer {
             if !same_groups {
                 self.masks.set_runs(device, &mask_groups, &mask_cuts);
             }
+            self.set_paint(device, scene.content.paint());
             self.content_cuts = cuts;
             self.drawn_content = Some(scene.content.clone());
         }
@@ -529,6 +570,8 @@ impl CanvasRenderer {
             self.backdrop.set_textures(textures);
             self.content.set_textures(textures);
             self.masks.set_textures(textures);
+            self.paint.set_textures(textures);
+            self.paint_masks.set_textures(textures);
         }
         self.ensure_target(device, view.size);
         queue.write_buffer(&self.view_uniform, 0, bytemuck::bytes_of(&view.uniform()));
@@ -588,6 +631,9 @@ impl CanvasRenderer {
             let Some(&cut) = self.content_cuts.get(run) else {
                 break;
             };
+            if let Some(paint) = scene.content.paint().filter(|paint| paint.after == cut) {
+                self.draw_paint(&mut pass, &mut scissor, &mut active, paint, &filter);
+            }
             for (clip, placement, batches) in self.stamps.runs_after(cut) {
                 self.enter(&mut pass, &mut scissor, &mut active, clip);
                 if scissor.set(&mut pass, placement) {
@@ -599,6 +645,73 @@ impl CanvasRenderer {
         }
         drop(pass);
         &target.resolved
+    }
+
+    /// Builds the geometry of the Map's paint: its strokes, one run per step, and the shapes it
+    /// is clipped to and erased by. Does nothing if `paint` is the layer already built.
+    fn set_paint(&mut self, device: &wgpu::Device, paint: Option<&Arc<PaintLayer>>) {
+        let same = match (&self.drawn_paint, paint) {
+            (Some(drawn), Some(paint)) => Arc::ptr_eq(drawn, paint),
+            (None, None) => true,
+            _ => false,
+        };
+        if same {
+            return;
+        }
+        self.drawn_paint = paint.cloned();
+        let layer = paint.map(|paint| &**paint);
+        let mut groups = Vec::new();
+        let mut cuts = Vec::new();
+        let mut masks = Vec::new();
+        let mut mask_cuts = Vec::new();
+        if let Some(layer) = layer {
+            for step in &layer.steps {
+                groups.extend_from_slice(&step.strokes);
+                cuts.push(groups.len());
+            }
+            let parts = [layer.land.as_slice(), layer.holes.as_slice()];
+            for part in parts.into_iter().chain(layer.erasers.chunks(1)) {
+                masks.extend_from_slice(part);
+                mask_cuts.push(masks.len());
+            }
+        }
+        // One more run than cuts, so the last boundary is the end.
+        cuts.pop();
+        mask_cuts.pop();
+        self.paint.set_runs(device, &groups, &cuts);
+        self.paint_masks.set_runs(device, &masks, &mask_cuts);
+    }
+
+    /// Draws the Map's paint over the Canvas, clipped to land. Each step of the paint is drawn
+    /// where the land is, less the Lakes and the erasers that come after its strokes. Leaves
+    /// no Clip active and the stencil at 0.
+    fn draw_paint(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        scissor: &mut Scissor,
+        active: &mut Option<usize>,
+        layer: &PaintLayer,
+        filter: &DrawFilter,
+    ) {
+        if !matches!(scissor.rect(Placement::Canvas), Some(Some(_))) {
+            return;
+        }
+        self.enter(pass, scissor, active, None);
+        let masks = &self.paint_masks;
+        for (run, step) in layer.steps.iter().enumerate() {
+            // The shapes are written across the whole target, like a Clip's.
+            scissor.set(pass, Placement::OffCanvas);
+            masks.draw_mask(pass, 0, CLIP_INSIDE);
+            masks.draw_mask(pass, 1, 0);
+            for eraser in step.first_eraser..layer.erasers.len() {
+                masks.draw_mask(pass, 2 + eraser, 0);
+            }
+            if scissor.set(pass, Placement::Canvas) {
+                self.paint.draw_run(pass, run, true, filter);
+            }
+            scissor.set(pass, Placement::OffCanvas);
+            masks.draw_mask(pass, 0, 0);
+        }
     }
 
     /// Makes `scope` the active Clip: removes the previous one's shape from the stencil and
