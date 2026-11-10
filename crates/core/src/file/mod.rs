@@ -32,6 +32,8 @@
 //!   `fill_style` becomes an override of it. A file without the default has a flat one (ADR 0015).
 //!   Format 1.16 adds the optional `taper`, `variation` and `seed` to a Shore style's `lines`.
 //!   Lines without them are even, whole and full width, as before (ADR 0016).
+//!   Format 1.17 adds the optional `waves` (wave marks over open water) to a Shore style. A Shore
+//!   style without it draws none (ADR 0016).
 //!   Format 1.6 stores Groups: Layers nested inside Layers, with `parent` pointing at the
 //!   enclosing Layer. There is no compatibility with older files.
 //!
@@ -72,7 +74,7 @@ use crate::node::{Node, Object};
 /// anything else, and needs a migration.
 pub const FORMAT_VERSION: FormatVersion = FormatVersion {
     major: 1,
-    minor: 16,
+    minor: 17,
 };
 
 /// What the `boards` meta key holds.

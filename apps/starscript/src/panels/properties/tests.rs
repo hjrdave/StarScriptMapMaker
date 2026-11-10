@@ -319,6 +319,10 @@ fn the_shore_style_has_glow_and_water_lines_and_a_soft_glow_preset() {
         "Water line taper",
         "Water line variation",
         "Water line seed",
+        "Wave mark density",
+        "Wave mark size",
+        "Wave mark seed",
+        "Wave mark colour",
     ] {
         harness.get_by_label(label);
     }
@@ -334,6 +338,13 @@ fn the_shore_style_has_glow_and_water_lines_and_a_soft_glow_preset() {
         Some(&ssmap_core::ShoreStyle::soft_glow())
     );
     assert_eq!(editor.undo_label(), Some("Change Shore Style"));
+
+    open_shore_presets(&mut harness);
+    click(&mut harness, "Hand drawn");
+    assert_eq!(
+        harness.state().editor.map().shore(island),
+        Some(&ssmap_core::ShoreStyle::hand_drawn())
+    );
 }
 
 #[test]
@@ -977,7 +988,7 @@ fn board_combo<'a>(harness: &'a Harness<'static, Fixture>) -> egui_kittest::Node
         .filter(|node| {
             !matches!(
                 node.accesskit_node().value().as_deref(),
-                Some("Default" | "Soft glow" | "Custom")
+                Some("Default" | "Soft glow" | "Hand drawn" | "Custom")
             )
         });
     let (Some(combo), None) = (boards.next(), boards.next()) else {
@@ -992,7 +1003,7 @@ fn open_shore_presets(harness: &mut Harness<'static, Fixture>) {
         .filter(|node| {
             matches!(
                 node.accesskit_node().value().as_deref(),
-                Some("Default" | "Soft glow" | "Custom")
+                Some("Default" | "Soft glow" | "Hand drawn" | "Custom")
             )
         })
         .collect();

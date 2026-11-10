@@ -120,8 +120,53 @@ impl Default for ShoreLines {
     }
 }
 
+/// The most wave marks per 10,000 square Canvas units of open water.
+pub const MAX_WAVE_DENSITY: f64 = 50.0;
+
+/// The longest a wave mark can be, in Canvas units.
+pub const MAX_WAVE_SIZE: f64 = 100.0;
+
+/// Small wavy marks scattered over the open water beyond the water lines. They are placed by
+/// Canvas position and `seed` (ADR 0007) and never over land. A density of zero draws nothing.
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ShoreWaves {
+    /// How many marks per 10,000 square Canvas units of water. Zero draws nothing.
+    pub density: f64,
+    /// How long each mark is, in Canvas units.
+    pub size: f64,
+    /// The marks' colour.
+    pub color: Color,
+    /// Picks where the marks fall and how each one looks.
+    #[serde(default, skip_serializing_if = "is_zero_seed")]
+    pub seed: u32,
+}
+
+impl Default for ShoreWaves {
+    /// Off, with the values a switched-on set of marks starts with.
+    fn default() -> Self {
+        Self {
+            density: 0.0,
+            size: 14.0,
+            color: Color::rgba(0x6c, 0x9a, 0x9c, 0xc0),
+            seed: 0,
+        }
+    }
+}
+
+impl ShoreWaves {
+    /// Why these settings cannot be used, if they cannot.
+    pub fn problem(&self) -> Option<String> {
+        let in_range = |name: &str, value: f64, min: f64, max: f64| {
+            (!(value.is_finite() && (min..=max).contains(&value)))
+                .then(|| format!("the wave mark {name} must be from {min} to {max}, not {value}"))
+        };
+        in_range("density", self.density, 0.0, MAX_WAVE_DENSITY)
+            .or_else(|| in_range("size", self.size, 1.0, MAX_WAVE_SIZE))
+    }
+}
+
 /// How the coast of a Landmass or Lake is drawn: outline, ripples, inner shading, and the
-/// outer glow and water lines.
+/// outer glow, water lines and wave marks.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ShoreStyle {
     /// The line along the coast.
@@ -136,6 +181,9 @@ pub struct ShoreStyle {
     /// The short horizontal lines on the water. Files saved before they existed have none.
     #[serde(default, skip_serializing_if = "is_default_lines")]
     pub lines: ShoreLines,
+    /// The wavy marks scattered over open water. Files saved before they existed have none.
+    #[serde(default, skip_serializing_if = "is_default_waves")]
+    pub waves: ShoreWaves,
     /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
@@ -147,6 +195,10 @@ fn is_default_glow(glow: &ShoreGlow) -> bool {
 
 fn is_default_lines(lines: &ShoreLines) -> bool {
     *lines == ShoreLines::default()
+}
+
+fn is_default_waves(waves: &ShoreWaves) -> bool {
+    *waves == ShoreWaves::default()
 }
 
 impl ShoreStyle {
@@ -171,6 +223,7 @@ impl ShoreStyle {
             },
             glow: ShoreGlow::default(),
             lines: ShoreLines::default(),
+            waves: ShoreWaves::default(),
             extra: Extra::new(),
         }
     }
@@ -192,6 +245,7 @@ impl ShoreStyle {
             },
             glow: ShoreGlow::default(),
             lines: ShoreLines::default(),
+            waves: ShoreWaves::default(),
             extra: Extra::new(),
         }
     }
@@ -214,6 +268,7 @@ impl ShoreStyle {
             },
             glow: ShoreGlow::default(),
             lines: ShoreLines::default(),
+            waves: ShoreWaves::default(),
             extra: Extra::new(),
         }
     }
@@ -243,6 +298,44 @@ impl ShoreStyle {
                 length: 44.0,
                 ..ShoreLines::default()
             },
+            waves: ShoreWaves::default(),
+            extra: Extra::new(),
+        }
+    }
+
+    /// A hand-drawn look for Landmasses: a thick dark outline, thick tapered and uneven water
+    /// lines, wave marks scattered over the open water, and no glow or ripples.
+    pub fn hand_drawn() -> Self {
+        let base = Self::landmass_default();
+        Self {
+            outline: ShoreOutline {
+                width: 3.0,
+                color: Color::rgb(0x2e, 0x24, 0x1a),
+            },
+            ripples: ShoreRipples {
+                count: 0,
+                ..base.ripples
+            },
+            shading: ShoreShading {
+                width: 0.0,
+                ..base.shading
+            },
+            glow: ShoreGlow::default(),
+            lines: ShoreLines {
+                spacing: 7.0,
+                length: 48.0,
+                width: 3.0,
+                color: Color::rgba(0x3a, 0x30, 0x24, 0xd0),
+                taper: 1.0,
+                variation: 0.6,
+                seed: 1,
+            },
+            waves: ShoreWaves {
+                density: 6.0,
+                size: 14.0,
+                color: Color::rgba(0x3a, 0x30, 0x24, 0xb0),
+                seed: 1,
+            },
             extra: Extra::new(),
         }
     }
@@ -254,6 +347,7 @@ impl ShoreStyle {
             ShoreKind::Landmass => vec![
                 ("Default", Self::landmass_default()),
                 ("Soft glow", Self::soft_glow()),
+                ("Hand drawn", Self::hand_drawn()),
             ],
             ShoreKind::Lake => vec![("Default", Self::lake_default())],
         }
@@ -288,6 +382,7 @@ impl ShoreStyle {
                     })
             })
             .or_else(|| self.lines.problem())
+            .or_else(|| self.waves.problem())
             .or_else(|| {
                 (self.ripples.count > MAX_RIPPLES)
                     .then(|| format!("there can be at most {MAX_RIPPLES} ripples"))
