@@ -147,6 +147,9 @@ fn the_map_wide_default_and_a_landmass_override_survive_the_file() {
             length: 30.0,
             width: 1.5,
             color: Color::rgba(9, 8, 7, 6),
+            taper: 0.8,
+            variation: 0.4,
+            seed: 11,
         },
         ..ShoreStyle::landmass_default()
     };

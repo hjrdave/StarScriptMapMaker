@@ -23,3 +23,15 @@ Status: accepted. Issue #604 asks for a Shore style like the soft one Wonderdraf
 - The glow adds ten bands per Landmass that has one, each a closed ring stroke. Rings are computed on the worker like the others, so a glow does not block editing.
 - Golden images do not cover the glow or the lines yet, because there is no GPU in the cloud session. Render one on a machine with a GPU, compare it by eye, then add a golden image.
 - The grainy fill the reference also shows is a separate setting (ADR 0015).
+
+## Addendum: hand-drawn water lines (issue #618)
+
+`ShoreLines` gets three optional fields so the lines can look hand drawn, like the Wonderdraft reference. The Soft glow preset is unchanged, and no new preset or wave marks are added here.
+
+- **`taper`** (0 to 1): how much each line thins from the coast to its far end. 0 is an even stroke, 1 tapers to a point.
+- **`variation`** (0 to 1): how uneven the lines are in gaps, length and weight. At 1, up to 40% of the lines are left out, and the rest are up to 70% shorter and 60% lighter by different amounts. 0 keeps every line whole.
+- **`seed`**: picks which lines are uneven and how. What happens to a line depends only on the seed and the line's position on the Canvas (rounded to a tenth of a unit), never on the viewport or tile, so Canvas, export and tiled export agree (ADR 0007). The geometry is `land::hand_drawn` in `crates/core`.
+- **File format.** All three are left out of the file at 0, and a file without them reads as 0, so existing Maps look the same. Optional fields only, so a **minor** bump (format 1.16). `ShoreStyle::problem` requires taper and variation from 0 to 1.
+- **Drawing.** With both at 0 the lines are strokes as before. Otherwise each stretch of the fade is one fill of thin quads (thickest at the coast), since a stroke cannot taper.
+- **Properties.** The "Water lines" group has Taper and Variation (as percentages) and Seed.
+- The golden image for this look is not added yet; it needs a software GPU.

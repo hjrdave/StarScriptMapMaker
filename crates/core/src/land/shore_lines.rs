@@ -9,6 +9,70 @@ pub const MAX_LINE_ROWS: usize = 4000;
 /// One water line: where it starts at the coast and where it ends out on the water.
 pub type ShoreLine = [[f64; 2]; 2];
 
+/// A water line after it has been made uneven: its two ends and how heavy it is.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct DrawnLine {
+    /// Where it starts at the coast.
+    pub from: [f64; 2],
+    /// Where it ends out on the water.
+    pub to: [f64; 2],
+    /// A factor on the line width, from 0 to 1.
+    pub weight: f64,
+}
+
+/// Makes `lines` look hand drawn: with `variation` above 0, some are left out, and the rest
+/// are shorter and lighter by different amounts. What happens to a line depends only on `seed`
+/// and where the line is on the Canvas, so Canvas, export and tiled export agree (ADR 0007).
+/// A variation of 0 returns every line whole at full weight.
+pub fn hand_drawn(lines: &[ShoreLine], variation: f64, seed: u32) -> Vec<DrawnLine> {
+    let variation = if variation.is_finite() {
+        variation.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    lines
+        .iter()
+        .filter_map(|&[from, to]| {
+            if variation == 0.0 {
+                return Some(DrawnLine {
+                    from,
+                    to,
+                    weight: 1.0,
+                });
+            }
+            let mut unit = unit_stream(seed, from);
+            // Gaps: up to 40% of the lines are missing at full variation.
+            if unit() < variation * 0.4 {
+                return None;
+            }
+            let length = 1.0 - variation * 0.7 * unit();
+            let weight = 1.0 - variation * 0.6 * unit();
+            Some(DrawnLine {
+                from,
+                to: [from[0] + (to[0] - from[0]) * length, to[1]],
+                weight,
+            })
+        })
+        .collect()
+}
+
+/// A stream of numbers in `[0, 1)` fixed by `seed` and a Canvas position. The position is
+/// rounded to a tenth of a unit so the same line always lands on the same numbers.
+fn unit_stream(seed: u32, at: [f64; 2]) -> impl FnMut() -> f64 {
+    let mut state = u64::from(seed)
+        ^ ((at[0] * 10.0).round() as i64 as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        ^ ((at[1] * 10.0).round() as i64 as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F);
+    move || {
+        // splitmix64
+        state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^= z >> 31;
+        (z >> 11) as f64 / (1u64 << 53) as f64
+    }
+}
+
 /// The water lines beside `outline`: in rows `spacing` apart, one line out from each side of
 /// every stretch of land that a row crosses, up to `length` long. A line stops short of other
 /// land, and where two coasts face each other across less than `2 * length` of water each
@@ -94,6 +158,52 @@ mod tests {
 
     fn region(parts: Vec<Polygon>) -> MultiPolygon {
         MultiPolygon(parts)
+    }
+
+    fn some_lines() -> Vec<ShoreLine> {
+        (0..200)
+            .map(|i| [[0.0, f64::from(i) * 5.0], [-30.0, f64::from(i) * 5.0]])
+            .collect()
+    }
+
+    #[test]
+    fn no_variation_keeps_every_line_whole() {
+        let lines = some_lines();
+        let drawn = hand_drawn(&lines, 0.0, 7);
+        assert_eq!(drawn.len(), lines.len());
+        assert!(drawn.iter().zip(&lines).all(|(d, l)| {
+            d.from == l[0] && d.to == l[1] && (d.weight - 1.0).abs() < f64::EPSILON
+        }));
+    }
+
+    #[test]
+    fn variation_leaves_gaps_and_shortens_and_lightens_lines() {
+        let lines = some_lines();
+        let drawn = hand_drawn(&lines, 0.8, 7);
+        assert!(drawn.len() < lines.len() && drawn.len() > lines.len() / 2);
+        assert!(
+            drawn.iter().all(|d| {
+                (d.to[0] - d.from[0]).abs() <= 30.0 && d.weight > 0.0 && d.weight <= 1.0
+            })
+        );
+        assert!(drawn.iter().any(|d| d.weight < 0.9));
+        assert!(drawn.iter().any(|d| (d.to[0] - d.from[0]).abs() < 25.0));
+        assert!(drawn.windows(2).any(|w| w[0].weight != w[1].weight));
+    }
+
+    #[test]
+    fn the_same_seed_gives_the_same_lines_and_another_seed_other_ones() {
+        let lines = some_lines();
+        assert_eq!(hand_drawn(&lines, 0.5, 3), hand_drawn(&lines, 0.5, 3));
+        assert_ne!(hand_drawn(&lines, 0.5, 3), hand_drawn(&lines, 0.5, 4));
+    }
+
+    #[test]
+    fn a_line_is_drawn_the_same_whatever_else_is_drawn_with_it() {
+        let lines = some_lines();
+        let whole = hand_drawn(&lines, 0.6, 9);
+        let part = hand_drawn(&lines[50..100], 0.6, 9);
+        assert!(part.iter().all(|d| whole.contains(d)));
     }
 
     #[test]

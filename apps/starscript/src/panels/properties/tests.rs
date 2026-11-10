@@ -316,6 +316,9 @@ fn the_shore_style_has_glow_and_water_lines_and_a_soft_glow_preset() {
         "Water line length",
         "Water line spacing",
         "Water line width",
+        "Water line taper",
+        "Water line variation",
+        "Water line seed",
     ] {
         harness.get_by_label(label);
     }
@@ -1755,7 +1758,8 @@ fn editing_the_lake_shore_leaves_the_landmass_shore_alone() {
         before(&harness, ShoreKind::Lake),
     );
     // Type a new Ripple count into the Lake shore.
-    type_into(&mut harness, &lake.ripples.count.to_string(), "7");
+    // (The water line seed is a plain number too, below the ripples.)
+    type_into_nth(&mut harness, &lake.ripples.count.to_string(), 0, "7");
     assert_eq!(before(&harness, ShoreKind::Landmass), landmass);
     assert_eq!(before(&harness, ShoreKind::Lake).ripples.count, 7);
     assert_ne!(before(&harness, ShoreKind::Lake), lake);
