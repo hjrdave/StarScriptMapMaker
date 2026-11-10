@@ -47,7 +47,21 @@ pub fn wave_marks(
         [bounds.max[0] + far, bounds.max[1] + far],
     );
     let area = (max[0] - min[0]) * (max[1] - min[1]);
-    let cell = (10_000.0 / density).sqrt().max((area / MAX_CELLS).sqrt());
+    let zones: Vec<Zone> = outline
+        .0
+        .iter()
+        .map(|p| Zone::of(&p.exterior, far))
+        .collect();
+    // The water in reach: about a band along every coast, and no more than the padded bounds.
+    let reach: f64 = zones
+        .iter()
+        .map(|z| (z.perimeter * (far - near)).min(z.area()))
+        .sum();
+    // Coarsen the grid so the count stays under the cap without dropping marks by position.
+    let cell = (10_000.0 / density)
+        .sqrt()
+        .max((area / MAX_CELLS).sqrt())
+        .max((reach / (MAX_WAVE_MARKS as f64 * 0.5)).sqrt());
     let columns = (min[0] / cell).floor() as i64..=(max[0] / cell).ceil() as i64;
     let rows = (min[1] / cell).floor() as i64..=(max[1] / cell).ceil() as i64;
     let mut marks = Vec::new();
@@ -56,13 +70,12 @@ pub fn wave_marks(
             let mut unit = unit_stream(seed, [i as f64, j as f64]);
             let centre = [(i as f64 + unit()) * cell, (j as f64 + unit()) * cell];
             let (length, flip, phase) = (size * (0.7 + 0.3 * unit()), unit() < 0.5, unit());
-            if !in_band(outline, centre, near, far) {
+            if !zones.iter().any(|z| z.contains(centre))
+                || !in_band(outline, &zones, centre, near, far)
+            {
                 continue;
             }
             marks.push(mark(centre, length, flip, phase));
-            if marks.len() >= MAX_WAVE_MARKS {
-                return marks;
-            }
         }
     }
     marks
@@ -80,10 +93,45 @@ fn mark(centre: [f64; 2], length: f64, flip: bool, phase: f64) -> WaveMark {
         .collect()
 }
 
+/// The bounds of one exterior ring, padded by the reach of the marks.
+struct Zone {
+    min: [f64; 2],
+    max: [f64; 2],
+    perimeter: f64,
+}
+
+impl Zone {
+    fn of(ring: &[[f64; 2]], pad: f64) -> Self {
+        let mut zone = Zone {
+            min: [f64::INFINITY; 2],
+            max: [f64::NEG_INFINITY; 2],
+            perimeter: 0.0,
+        };
+        for (a, b) in ring.iter().zip(ring.iter().cycle().skip(1)) {
+            zone.min = [zone.min[0].min(a[0] - pad), zone.min[1].min(a[1] - pad)];
+            zone.max = [zone.max[0].max(a[0] + pad), zone.max[1].max(a[1] + pad)];
+            zone.perimeter += (b[0] - a[0]).hypot(b[1] - a[1]);
+        }
+        zone
+    }
+
+    fn area(&self) -> f64 {
+        (self.max[0] - self.min[0]) * (self.max[1] - self.min[1])
+    }
+
+    fn contains(&self, p: [f64; 2]) -> bool {
+        (self.min[0]..=self.max[0]).contains(&p[0]) && (self.min[1]..=self.max[1]).contains(&p[1])
+    }
+}
+
 /// Whether `at` is in water, at least `near` and at most `far` from the coast.
-fn in_band(outline: &MultiPolygon, at: [f64; 2], near: f64, far: f64) -> bool {
+fn in_band(outline: &MultiPolygon, zones: &[Zone], at: [f64; 2], near: f64, far: f64) -> bool {
     let mut nearest = f64::INFINITY;
-    for polygon in &outline.0 {
+    for (polygon, zone) in outline.0.iter().zip(zones) {
+        // A polygon whose padded bounds miss `at` is neither under it nor within `far`.
+        if !zone.contains(at) {
+            continue;
+        }
         let ring = &polygon.exterior;
         let mut inside = false;
         for (a, b) in ring.iter().zip(ring.iter().cycle().skip(1)) {
@@ -91,6 +139,12 @@ fn in_band(outline: &MultiPolygon, at: [f64; 2], near: f64, far: f64) -> bool {
                 && at[0] < a[0] + (at[1] - a[1]) / (b[1] - a[1]) * (b[0] - a[0])
             {
                 inside = !inside;
+            }
+            // Skip the distance for an edge wholly beyond `far` along one axis.
+            let (lo, hi) = (a[0].min(b[0]), a[0].max(b[0]));
+            let (low, high) = (a[1].min(b[1]), a[1].max(b[1]));
+            if lo - at[0] > far || at[0] - hi > far || low - at[1] > far || at[1] - high > far {
+                continue;
             }
             nearest = nearest.min(distance_to_segment(at, *a, *b));
             if nearest < near {
@@ -215,5 +269,21 @@ mod tests {
         let marks = wave_marks(&outline, 50.0, 100.0, 1, 0.0);
         assert!(marks.len() <= MAX_WAVE_MARKS);
         assert!(!marks.is_empty());
+    }
+
+    #[test]
+    fn a_capped_outline_still_has_marks_across_its_whole_extent() {
+        let outline = MultiPolygon(vec![square([0.0, 0.0], [100_000.0, 100_000.0])]);
+        let marks = wave_marks(&outline, 50.0, 400.0, 1, 0.0);
+        assert!(marks.len() <= MAX_WAVE_MARKS);
+        let (mut top, mut bottom) = (0, 0);
+        for p in marks.iter().flatten() {
+            if p[1] < 50_000.0 {
+                top += 1;
+            } else {
+                bottom += 1;
+            }
+        }
+        assert!(top > 0 && bottom > 0, "{top} {bottom}");
     }
 }
