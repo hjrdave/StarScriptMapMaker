@@ -21,6 +21,7 @@ pub mod land;
 mod map;
 mod node;
 mod op;
+mod paint;
 mod paste_gaps;
 mod pick;
 mod river;
@@ -58,6 +59,10 @@ pub use node::{
     Align, FontFace, Halo, Lake, Landmass, Layer, Membership, Node, Object, ObjectKind, Stamp,
 };
 pub use op::{Op, OpError, Property};
+pub use paint::{
+    MAX_PAINT_STROKES, MAX_RAW_STROKE_POINTS, MAX_STROKE_POINTS, MAX_STROKE_SIZE, PaintStroke,
+    STROKE_TOLERANCE, StrokeError, simplify_path,
+};
 pub use paste_gaps::PasteGaps;
 pub use pick::PickIndex;
 pub use river::{

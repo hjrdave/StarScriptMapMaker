@@ -18,6 +18,7 @@ use crate::geometry::{Point, Rect};
 use crate::id::Id;
 use crate::label::{LabelStyles, ResolvedLabel};
 use crate::node::{Landmass, Membership, Node, Object, ObjectKind};
+use crate::paint::{MAX_PAINT_STROKES, PaintStroke, StrokeError};
 use crate::roughness::Roughness;
 use crate::shore::{ShoreKind, ShoreStyle};
 
@@ -226,6 +227,9 @@ pub struct MapView {
     /// The Map-wide defaults.
     #[serde(default)]
     pub defaults: MapDefaults,
+    /// The paint strokes, first drawn lowest. Left out when there are none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub strokes: Vec<PaintStroke>,
     /// The top-level Layers, first drawn lowest.
     pub layers: Vec<Subtree>,
     /// The Assets and fonts embedded in the Map.
@@ -253,6 +257,8 @@ pub struct Map {
     pub(crate) primary: Id,
     /// Changed only by [`Op::SetDefaults`](crate::Op::SetDefaults).
     pub(crate) defaults: MapDefaults,
+    /// The paint strokes, first drawn lowest. Changed only by the stroke Ops.
+    pub(crate) strokes: Vec<PaintStroke>,
     /// Changed only by the embed Ops.
     pub(crate) embedded: Embedded,
     /// The last PNG export settings. Not an Op: it is a preference, not map content.
@@ -278,6 +284,7 @@ impl Map {
             }],
             primary: Board::FIRST_ID,
             defaults: MapDefaults::default(),
+            strokes: Vec::new(),
             embedded: Embedded::default(),
             export_settings: ExportSettings::default(),
             root: Vec::new(),
@@ -312,6 +319,8 @@ impl Map {
         }
         map.primary = primary;
         map.defaults = view.defaults;
+        check_strokes(&view.strokes)?;
+        map.strokes = view.strokes;
         map.embedded = view.embedded;
         map.export_settings = view.export_settings;
         for subtree in view.layers {
@@ -331,10 +340,21 @@ impl Map {
             boards: self.boards.clone(),
             primary: Some(self.primary),
             defaults: self.defaults.clone(),
+            strokes: self.strokes.clone(),
             layers: self.root.iter().map(|&id| self.subtree(id)).collect(),
             embedded: self.embedded.clone(),
             export_settings: self.export_settings.clone(),
         }
+    }
+
+    /// The paint strokes in drawing order, the first drawn lowest.
+    pub fn paint_strokes(&self) -> &[PaintStroke] {
+        &self.strokes
+    }
+
+    /// The paint stroke with id `id`, if it exists.
+    pub fn paint_stroke(&self, id: Id) -> Option<&PaintStroke> {
+        self.strokes.iter().find(|stroke| stroke.id == id)
     }
 
     /// The Assets and fonts embedded in the Map.
@@ -955,8 +975,25 @@ impl Map {
     }
 }
 
+/// Checks the paint strokes of a Map being built: their count, their ids and each stroke.
+fn check_strokes(strokes: &[PaintStroke]) -> Result<(), InvariantError> {
+    if strokes.len() > MAX_PAINT_STROKES {
+        return Err(InvariantError::TooManyStrokes(strokes.len()));
+    }
+    let mut seen = HashSet::new();
+    for stroke in strokes {
+        if !seen.insert(stroke.id) {
+            return Err(InvariantError::DuplicateStroke(stroke.id));
+        }
+        stroke
+            .validate()
+            .map_err(|err| InvariantError::InvalidStroke(stroke.id, err))?;
+    }
+    Ok(())
+}
+
 /// A broken structural rule of the Map tree.
-#[derive(Clone, PartialEq, Eq, Debug, Error)]
+#[derive(Clone, PartialEq, Debug, Error)]
 pub enum InvariantError {
     /// The id belongs to more than one node.
     #[error("id {0} appears more than once")]
@@ -982,6 +1019,15 @@ pub enum InvariantError {
     /// The primary board is not one of the boards.
     #[error("the primary board {0} does not exist")]
     NoPrimaryBoard(Id),
+    /// Two paint strokes share an id.
+    #[error("paint stroke id {0} appears more than once")]
+    DuplicateStroke(Id),
+    /// The Map has more paint strokes than allowed.
+    #[error("the Map has {0} paint strokes; the most is {MAX_PAINT_STROKES}")]
+    TooManyStrokes(usize),
+    /// A paint stroke is not valid.
+    #[error("paint stroke {0} is not valid: {1}")]
+    InvalidStroke(Id, StrokeError),
 }
 
 /// `<prefix> NNN`: the prefix, a space and the number at least three digits wide.

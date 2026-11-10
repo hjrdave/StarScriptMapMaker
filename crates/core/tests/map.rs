@@ -224,6 +224,7 @@ fn from_view_rejects_duplicate_ids() {
         boards: Vec::new(),
         primary: None,
         defaults: Default::default(),
+        strokes: Vec::new(),
         layers: vec![layer.clone(), layer],
         embedded: Default::default(),
         export_settings: Default::default(),

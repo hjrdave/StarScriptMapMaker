@@ -322,6 +322,9 @@ fn op_bytes(op: &Op) -> usize {
             } => river_bytes(river),
             Op::ReplaceGeometry { geometry, .. } => geometry_bytes(geometry),
             Op::SetBlob { data, .. } => data.as_ref().map_or(0, |data| data.len()),
+            Op::InsertStroke { stroke, .. } => {
+                stroke.points.len() * std::mem::size_of::<crate::geometry::Point>()
+            }
             Op::Remove { .. }
             | Op::SetProperty { .. }
             | Op::Move { .. }
@@ -335,6 +338,7 @@ fn op_bytes(op: &Op) -> usize {
             | Op::SetBoardBackground { .. }
             | Op::MoveBoard { .. }
             | Op::SetPrimary { .. }
+            | Op::RemoveStroke { .. }
             | Op::SetEmbeddedAsset { .. }
             | Op::SetEmbeddedFont { .. } => 0,
         }

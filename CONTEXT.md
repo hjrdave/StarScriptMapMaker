@@ -82,6 +82,10 @@ _Avoid_: Texture, pattern
 The set of effects drawn along a Coastline: outline, ripple lines, inner shading, and for a Landmass an outer glow over the water and short horizontal water lines. A Map has a default, and each Landmass, Lake or River may override it. Rivers use the Lakes' default.
 _Avoid_: Coast effect, border style
 
+**Paint stroke**:
+One press-drag-release of the paint brush, stored in the Map as a path of points with a colour, a size, a softness and an opacity. Strokes belong to the Map, not to a Landmass, and draw in order, clipped to land. The eraser makes a stroke that removes paint where it passes. One stroke is one Undo step (ADR 0017).
+_Avoid_: Brush mark, daub, scribble
+
 ### Assets
 
 **Asset**:

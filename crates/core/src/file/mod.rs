@@ -36,6 +36,9 @@
 //!   style without it draws none (ADR 0016).
 //!   Format 1.18 adds the optional `texture` (an Asset id, `amount` and `scale`) to a Fill style.
 //!   A Fill style without it has no texture (ADR 0015).
+//!   Format 1.19 adds the optional `strokes` meta key (JSON): the paint strokes in drawing order,
+//!   each with its id, points, colour, size, softness, opacity and `erase`. It is left out while
+//!   there are none, so older files open with no paint (ADR 0017).
 //!   Format 1.6 stores Groups: Layers nested inside Layers, with `parent` pointing at the
 //!   enclosing Layer. There is no compatibility with older files.
 //!
@@ -71,12 +74,13 @@ use crate::export::ExportSettings;
 use crate::id::Id;
 use crate::map::{Board, Canvas, Map, MapDefaults, MapView, Subtree};
 use crate::node::{Node, Object};
+use crate::paint::PaintStroke;
 
 /// The format this version writes. A minor bump only adds optional fields; a major bump is
 /// anything else, and needs a migration.
 pub const FORMAT_VERSION: FormatVersion = FormatVersion {
     major: 1,
-    minor: 18,
+    minor: 19,
 };
 
 /// What the `boards` meta key holds.
@@ -240,6 +244,7 @@ pub struct MapFile {
     saved_canvas: Option<Canvas>,
     saved_boards: Option<BoardsMeta>,
     saved_defaults: Option<MapDefaults>,
+    saved_strokes: Vec<PaintStroke>,
     saved_export: Option<ExportSettings>,
     saved_embedded: embed::SavedEmbedded,
     saved_revision: u64,
@@ -267,6 +272,7 @@ impl MapFile {
                 saved_canvas: None,
                 saved_boards: None,
                 saved_defaults: None,
+                saved_strokes: Vec::new(),
                 saved_export: None,
                 saved_embedded: Default::default(),
                 saved_revision: 0,
@@ -315,6 +321,12 @@ impl MapFile {
                 .map_err(|err| FileError::Damaged(format!("the Map defaults: {err}")))?,
             None => MapDefaults::default(),
         };
+        // Absent from files saved before format 1.19, and from any Map without paint.
+        let strokes: Vec<PaintStroke> = match read_meta::<String>(&conn, "strokes")? {
+            Some(json) => serde_json::from_str(&json)
+                .map_err(|err| FileError::Damaged(format!("the paint strokes: {err}")))?,
+            None => Vec::new(),
+        };
         // Absent from files saved before format 1.3.
         let export_settings: ExportSettings = match read_meta::<String>(&conn, "export_settings")? {
             Some(json) => serde_json::from_str(&json)
@@ -331,6 +343,7 @@ impl MapFile {
             boards: boards.iter().flat_map(|b| b.boards.clone()).collect(),
             primary: boards.as_ref().map(|b| b.primary),
             defaults: defaults.clone(),
+            strokes: strokes.clone(),
             layers,
             embedded,
             export_settings: export_settings.clone(),
@@ -345,6 +358,7 @@ impl MapFile {
             saved_canvas: Some(canvas),
             saved_boards: boards,
             saved_defaults: Some(defaults),
+            saved_strokes: strokes,
             saved_export: Some(export_settings),
             saved_embedded,
             saved_revision: map.revision(),
@@ -357,7 +371,7 @@ impl MapFile {
     /// preview is removed.
     #[allow(
         clippy::expect_used,
-        reason = "a Canvas serialises; settings serialise; defaults serialise"
+        reason = "a Canvas serialises; settings serialise; defaults serialise; strokes serialise"
     )]
     pub fn save(&mut self, map: &Map, preview: Option<&[u8]>) -> Result<SaveStats, FileError> {
         let generation = Uuid::now_v7();
@@ -382,6 +396,14 @@ impl MapFile {
             let defaults = serde_json::to_string(map.defaults()).expect("defaults serialise");
             write_meta(&tx, "defaults", &defaults)?;
         }
+        if self.saved_strokes != map.paint_strokes() {
+            if map.paint_strokes().is_empty() {
+                tx.execute("DELETE FROM meta WHERE key = 'strokes'", [])?;
+            } else {
+                let json = serde_json::to_string(map.paint_strokes()).expect("strokes serialise");
+                write_meta(&tx, "strokes", &json)?;
+            }
+        }
         let saved_embedded = embed::write(&tx, map.embedded(), &self.saved_embedded)?;
         write_meta(&tx, "format_version", self.version.to_string())?;
         write_meta(&tx, "save_generation", generation.to_string())?;
@@ -397,6 +419,7 @@ impl MapFile {
         self.saved_canvas = Some(map.canvas().clone());
         self.saved_boards = Some(boards);
         self.saved_defaults = Some(map.defaults().clone());
+        self.saved_strokes = map.paint_strokes().to_vec();
         self.saved_export = Some(map.export_settings.clone());
         self.saved_embedded = saved_embedded;
         self.generation = generation;
@@ -431,6 +454,7 @@ impl MapFile {
                 saved_canvas: self.saved_canvas.clone(),
                 saved_boards: self.saved_boards.clone(),
                 saved_defaults: self.saved_defaults.clone(),
+                saved_strokes: self.saved_strokes.clone(),
                 saved_export: self.saved_export.clone(),
                 saved_embedded: self.saved_embedded.clone(),
                 saved_revision: self.saved_revision,
@@ -513,6 +537,7 @@ fn save_via_temp(
         saved_canvas,
         saved_boards,
         saved_defaults,
+        saved_strokes,
         saved_export,
         saved_embedded,
         saved_revision,
@@ -532,6 +557,7 @@ fn save_via_temp(
         saved_canvas,
         saved_boards,
         saved_defaults,
+        saved_strokes,
         saved_export,
         saved_embedded,
         saved_revision,

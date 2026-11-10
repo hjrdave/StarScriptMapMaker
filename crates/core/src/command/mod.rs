@@ -16,6 +16,7 @@ mod land;
 mod layer;
 mod link;
 mod object;
+mod paint;
 mod paste;
 mod river;
 mod stamp;
@@ -34,6 +35,7 @@ use crate::land as outlines;
 use crate::map::{Map, Subtree};
 use crate::node::{Membership, Stamp};
 use crate::op::Op;
+use crate::paint::PaintStroke;
 use crate::river::River;
 use crate::roughness::Roughness;
 use crate::shore::{ShoreKind, ShoreStyle};
@@ -385,6 +387,20 @@ pub enum Command {
         /// The new primary board.
         id: Id,
     },
+    /// Adds a paint stroke on top of the others: one press-drag-release of the brush. The path
+    /// is simplified to within a small tolerance first. An eraser stroke (`erase`) removes the
+    /// paint under it that was drawn before it, and its undo step is named "Erase Paint".
+    AddPaintStroke {
+        /// The stroke, with a new id.
+        stroke: PaintStroke,
+    },
+    /// Deletes paint strokes by id, including eraser strokes.
+    DeletePaintStrokes {
+        /// The strokes to delete.
+        ids: Vec<Id>,
+    },
+    /// Deletes every paint stroke. Nothing happens when there are none.
+    ClearPaint,
     /// Sets whether Objects belong to the Canvas or sit off it. Only a drag
     /// changes membership; resizing the Canvas never does.
     SetMembership {
@@ -635,6 +651,10 @@ impl Command {
             Command::DeleteBoard { .. } => "Delete Board",
             Command::ReorderBoard { .. } => "Reorder Boards",
             Command::SetPrimaryBoard { .. } => "Change Canvas",
+            Command::AddPaintStroke { stroke } if stroke.erase => "Erase Paint",
+            Command::AddPaintStroke { .. } => "Paint",
+            Command::DeletePaintStrokes { .. } => "Delete Paint",
+            Command::ClearPaint => "Clear Paint",
             Command::SetMembership { .. } => "Move On or Off Canvas",
             Command::SetFill { .. } => "Change Fill",
             Command::SetFillStyle { .. } => "Change Fill Style",
@@ -772,6 +792,9 @@ impl Command {
             Command::DeleteBoard { id } => board::delete_board(map, *id),
             Command::ReorderBoard { id, index } => board::reorder_board(map, *id, *index),
             Command::SetPrimaryBoard { id } => board::set_primary_board(map, *id),
+            Command::AddPaintStroke { stroke } => paint::add_stroke(map, stroke),
+            Command::DeletePaintStrokes { ids } => paint::delete_strokes(map, ids),
+            Command::ClearPaint => paint::clear(map),
             Command::SetMembership { ids, membership } => {
                 object::set_membership(map, ids, *membership)
             }
