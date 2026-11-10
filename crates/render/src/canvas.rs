@@ -10,6 +10,7 @@ use lyon::path::{Path, Winding};
 use wgpu::util::DeviceExt;
 
 use crate::color::{Color, ColorExt as _};
+use crate::fill_texture::FillTextures;
 use crate::gpu::GpuCapabilities;
 use crate::ocean::{OceanPass, OceanUniform};
 use crate::profile::{self, Stage};
@@ -279,6 +280,8 @@ pub struct CanvasRenderer {
     /// The Map's Objects, over the ocean.
     content: LyonRenderer,
     stamps: StampRenderer,
+    /// The images Fill styles draw (ADR 0015), shared by every fill pipeline.
+    fill_textures: FillTextures,
     /// The shapes of the content's Clips: for each scope, its land then its Lakes.
     masks: LyonRenderer,
     drawn_backdrop: Option<BackdropKey>,
@@ -327,11 +330,13 @@ impl CanvasRenderer {
                 resource: view_uniform.as_entire_binding(),
             }],
         });
+        let fill_textures = FillTextures::new(device);
         Self {
-            backdrop: LyonRenderer::new(device, &view_layout, samples),
+            backdrop: LyonRenderer::new(device, &view_layout, &fill_textures, samples),
             ocean: OceanPass::new(device, &view_layout, samples),
-            content: LyonRenderer::new(device, &view_layout, samples),
-            masks: LyonRenderer::new(device, &view_layout, samples),
+            content: LyonRenderer::new(device, &view_layout, &fill_textures, samples),
+            masks: LyonRenderer::new(device, &view_layout, &fill_textures, samples),
+            fill_textures,
             stamps: StampRenderer::new(
                 device,
                 &view_layout,
@@ -422,6 +427,7 @@ impl CanvasRenderer {
 
     /// Where Stamp art comes from. Without it, Stamps draw nothing.
     pub fn set_sprites(&mut self, sprites: SpriteStore) {
+        self.fill_textures.set_store(sprites.clone());
         self.stamps.set_store(sprites);
         // Force the content to be prepared again with the new art.
         self.drawn_content = None;
@@ -516,6 +522,13 @@ impl CanvasRenderer {
                 self.content
                     .set_runs(device, scene.content.groups(), &self.content_cuts);
             }
+        }
+        // After the chunks above are built, so every texture a vertex names is loaded.
+        if self.fill_textures.refresh(device, queue) {
+            let textures = self.fill_textures.bind_group();
+            self.backdrop.set_textures(textures);
+            self.content.set_textures(textures);
+            self.masks.set_textures(textures);
         }
         self.ensure_target(device, view.size);
         queue.write_buffer(&self.view_uniform, 0, bytemuck::bytes_of(&view.uniform()));

@@ -9,6 +9,7 @@ use super::cache::TessellationCache;
 use super::chunk::{Built, Chunked, Draw, EMPTY_BOUNDS, Vertex, build, union};
 use super::{DrawFilter, VectorGroup, overlaps};
 use crate::canvas::{CLIP_INSIDE, StencilUse};
+use crate::fill_texture::FillTextures;
 
 /// lyon tessellation drawn as plain triangles; antialiasing comes from the target's MSAA.
 pub(crate) struct LyonRenderer {
@@ -27,6 +28,8 @@ pub(crate) struct LyonRenderer {
     /// [`LyonRenderer::apply_chunks`]).
     chunked: Option<Chunked<ChunkMesh>>,
     cache: TessellationCache,
+    /// The texture array fills sample, as bind group 1.
+    textures: wgpu::BindGroup,
 }
 
 struct Mesh {
@@ -41,6 +44,7 @@ impl LyonRenderer {
     pub(crate) fn new(
         device: &wgpu::Device,
         view_layout: &wgpu::BindGroupLayout,
+        textures: &FillTextures,
         samples: u32,
     ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -55,7 +59,7 @@ impl LyonRenderer {
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("fill"),
-            bind_group_layouts: &[Some(view_layout)],
+            bind_group_layouts: &[Some(view_layout), Some(textures.layout())],
             immediate_size: 0,
         });
         let pipeline = |label, stencil| {
@@ -67,7 +71,7 @@ impl LyonRenderer {
                 &[Some(wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<Vertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4, 2 => Unorm8x4, 3 => Unorm8x4],
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4, 2 => Unorm8x4, 3 => Unorm8x4, 4 => Unorm8x4],
                 })],
                 samples,
                 stencil,
@@ -82,7 +86,13 @@ impl LyonRenderer {
             mesh: None,
             chunked: None,
             cache: TessellationCache::new(),
+            textures: textures.bind_group().clone(),
         }
+    }
+
+    /// Draws fills with the textures in `bind_group`, which uses the layout this was made with.
+    pub(crate) fn set_textures(&mut self, bind_group: &wgpu::BindGroup) {
+        self.textures = bind_group.clone();
     }
 
     /// The per-Object tessellation cache that [`LyonRenderer::set_runs`] draws from.
@@ -204,6 +214,7 @@ impl LyonRenderer {
         filter: &DrawFilter,
     ) {
         pass.set_stencil_reference(if clipped { CLIP_INSIDE } else { 0 });
+        pass.set_bind_group(1, &self.textures, &[]);
         let plain = if clipped { &self.clipped } else { &self.plain };
         let visible =
             |draw: &&Draw| (filter.effects || !draw.effect) && overlaps(draw.bounds, filter.bounds);
@@ -230,6 +241,7 @@ impl LyonRenderer {
         pass.set_vertex_buffer(0, mesh.vertices.slice(..));
         pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
         pass.set_stencil_reference(value);
+        pass.set_bind_group(1, &self.textures, &[]);
         pass.set_pipeline(&self.mask);
         for draw in &mesh.draws[range.clone()] {
             pass.draw_indexed(draw.indices.clone(), 0, 0..1);

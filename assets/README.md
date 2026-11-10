@@ -7,6 +7,15 @@ Default Asset packs and bundled fonts, shared by the app and the website.
 Installed builds ship this folder read-only beside the app. `ssmap_core::asset::assets_dir`
 is the one place that resolves it; set `SSMAP_ASSETS_DIR` to point the app elsewhere.
 
+`packs/textures/` holds seamless textures for Fill styles. Its PNGs are generated from noise, not
+drawn or downloaded. Regenerate them from the repository root with:
+
+```
+cargo run -p ssmap-render --bin textures
+```
+
+(edit `crates/render/src/bin/textures.rs` to change one, and `packs/textures/pack.toml` to add one).
+
 Generate Silhouettes for a pack's outline art with:
 
 ```

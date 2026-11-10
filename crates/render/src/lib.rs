@@ -12,6 +12,7 @@ pub mod atlas;
 mod canvas;
 mod color;
 mod export_job;
+mod fill_texture;
 mod gpu;
 mod ocean;
 mod offscreen;
