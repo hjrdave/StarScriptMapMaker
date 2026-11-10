@@ -16,6 +16,7 @@ use ssmap_core::{
 use crate::canvas::{ClipScope, Content};
 use crate::color::Color;
 use crate::color::ColorExt as _;
+use crate::paint::PaintLayer;
 use crate::profile::{self, Stage};
 use crate::shore_rings::{
     GLOW_BANDS, RingStore, SHADING_BANDS, glow_distances, ripple_distances, shading_distances,
@@ -58,6 +59,19 @@ pub struct MapScene {
     seen: HashSet<Id>,
     /// Counts builds, to tell the entries of `stamps` the last build used from the rest.
     build: u64,
+    /// The paint layer last built, and what it was built from.
+    paint: Option<BuiltPaint>,
+}
+
+/// The paint layer last built, and the state of everything it was built from.
+struct BuiltPaint {
+    /// The Map revision.
+    revision: u64,
+    /// The generation of the roughened outlines.
+    outlines: u64,
+    /// The content it was placed in.
+    base: Content,
+    layer: Option<Arc<PaintLayer>>,
 }
 
 /// The content last built, and the state of everything it was built from.
@@ -148,6 +162,7 @@ impl MapScene {
             objects: HashMap::new(),
             ends: HashMap::new(),
             build: 0,
+            paint: None,
         }
     }
 
@@ -157,6 +172,7 @@ impl MapScene {
         self.rings.clear();
         self.stamps.clear();
         self.built = None;
+        self.paint = None;
     }
 
     /// Computes the rings ripples and shading follow on a thread of their own from now on, so a
@@ -238,8 +254,89 @@ impl MapScene {
     }
 
     /// What the Canvas draws for `map`, rebuilt only when the Map has changed since.
-    /// Landmasses and Lakes use their roughened outlines from `roughness`.
+    /// Landmasses and Lakes use their roughened outlines from `roughness`, and the Map's paint
+    /// is clipped to them.
     pub fn content(&mut self, map: &Map, roughness: &mut RoughnessCache) -> Content {
+        let base = self.base_content(map, roughness);
+        let paint = self.paint_layer(map, roughness, &base);
+        base.with_paint(paint)
+    }
+
+    /// The Map's paint strokes as the Canvas draws them, above the last Landmass or Lake of the
+    /// Canvas. `None` when there is no paint or no land to paint on. The same layer is returned
+    /// for as long as nothing it is made of has changed.
+    fn paint_layer(
+        &mut self,
+        map: &Map,
+        roughness: &mut RoughnessCache,
+        base: &Content,
+    ) -> Option<Arc<PaintLayer>> {
+        if map.paint_strokes().is_empty() {
+            self.paint = None;
+            return None;
+        }
+        let (revision, outlines) = (map.revision(), roughness.generation());
+        if let Some(built) = &self.paint
+            && built.revision == revision
+            && built.outlines == outlines
+            && built.base == *base
+        {
+            return built.layer.clone();
+        }
+        let layer = Self::build_paint(map, roughness, base, self.paint.as_ref());
+        self.paint = Some(BuiltPaint {
+            revision,
+            outlines,
+            base: base.clone(),
+            layer: layer.clone(),
+        });
+        layer
+    }
+
+    /// The paint layer for `map`, which is `previous` if nothing in it changed.
+    fn build_paint(
+        map: &Map,
+        roughness: &mut RoughnessCache,
+        base: &Content,
+        previous: Option<&BuiltPaint>,
+    ) -> Option<Arc<PaintLayer>> {
+        let on_canvas = |id: Id| placement_of(map, id) == Placement::Canvas;
+        let order = map.draw_order();
+        let lands: Vec<Id> = order
+            .iter()
+            .copied()
+            .filter(|&id| {
+                matches!(map.node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Landmass(_)))
+                    && on_canvas(id)
+            })
+            .collect();
+        let after = base.groups().iter().rposition(|group| {
+            group.placement == Placement::Canvas
+                && group.object.is_some_and(|object| {
+                    matches!(
+                        map.node(object.id),
+                        Some(Node::Object(o)) if matches!(
+                            o.kind,
+                            ObjectKind::Landmass(_) | ObjectKind::Lake(_) | ObjectKind::River(_)
+                        )
+                    )
+                })
+        })? + 1;
+        if lands.is_empty() {
+            return None;
+        }
+        let scope = clip_scope(map, roughness, &lands, &order, 0);
+        let old = previous.and_then(|built| built.layer.as_deref());
+        let layer = PaintLayer::new(after, scope.land, scope.holes, map.paint_strokes(), old);
+        // Keep the Arc when nothing changed, so the renderer does not rebuild the paint.
+        match previous.and_then(|built| built.layer.as_ref()) {
+            Some(old) if **old == layer => Some(old.clone()),
+            _ => Some(Arc::new(layer)),
+        }
+    }
+
+    /// What the Canvas draws of the Map's Objects, without its paint.
+    fn base_content(&mut self, map: &Map, roughness: &mut RoughnessCache) -> Content {
         let _stage = profile::stage(Stage::Update);
         if let Some(content) = self.reuse(map, roughness) {
             return content;
@@ -2318,5 +2415,64 @@ mod tests {
             &first_path(&meanwhile, lands[1]),
             &first_path(&after, lands[1])
         ));
+    }
+
+    fn add_stroke(map: &mut Map, erase: bool) {
+        map.execute(&Command::AddPaintStroke {
+            stroke: ssmap_core::PaintStroke {
+                id: Id::new(),
+                points: vec![[100.0, 100.0], [300.0, 120.0]],
+                color: Color::rgb(200, 30, 30),
+                size: 20.0,
+                softness: 0.5,
+                opacity: 1.0,
+                erase,
+            },
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn paint_draws_above_the_land_and_below_what_comes_after_it() {
+        let (mut map, layer, _) = map_with_label();
+        let mut scene = MapScene::new(Fonts::bundled());
+        let mut roughness = RoughnessCache::new();
+        add_stroke(&mut map, false);
+        // Paint with no land to cover draws nothing.
+        assert!(scene.content(&map, &mut roughness).paint().is_none());
+        map.execute(&Command::CreateLandmass {
+            id: Id::new(),
+            parent: layer,
+            index: Some(0),
+            geometry: MultiPolygon(vec![Polygon {
+                exterior: vec![[0.0, 0.0], [400.0, 0.0], [400.0, 300.0], [0.0, 300.0]],
+                holes: Vec::new(),
+            }]),
+            fill: None,
+        })
+        .unwrap();
+        let first = scene.content(&map, &mut roughness);
+        let paint = first.paint().expect("there is land to paint").clone();
+        // The Label's text comes after the paint.
+        assert!(paint.after >= 1 && paint.after < first.groups().len());
+        assert_eq!(paint.land.len(), 1);
+        assert_eq!(paint.steps.len(), 1);
+        // The same layer comes back while nothing it is made of changes, though the Map does.
+        map.execute(&Command::SetOpacity {
+            id: layer,
+            opacity: 0.5,
+        })
+        .unwrap();
+        let again = scene.content(&map, &mut roughness);
+        assert!(Arc::ptr_eq(&paint, again.paint().unwrap()));
+        // A new stroke makes a new layer, and an eraser adds no step of its own.
+        add_stroke(&mut map, true);
+        let erased = scene.content(&map, &mut roughness);
+        let layer = erased.paint().unwrap();
+        assert!(!Arc::ptr_eq(&paint, layer));
+        assert_eq!((layer.steps.len(), layer.erasers.len()), (1, 1));
+        assert_eq!(layer.steps[0].first_eraser, 0);
+        map.execute(&Command::ClearPaint).unwrap();
+        assert!(scene.content(&map, &mut roughness).paint().is_none());
     }
 }

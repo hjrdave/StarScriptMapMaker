@@ -17,6 +17,13 @@ Status: accepted. Issue #616 asks for a brush that paints colour over a Map, wit
 - **Export (ADR 0007).** Paint is part of the picture, so export draws it, in the same pass as the Map, in tiles. Nothing for export is built in `core`.
 - **Not in this version.** No palette and no recent colours, and a stroke cannot be edited after it is added, only deleted.
 
+## Drawing (`crates/render`, issue #631)
+
+- **Where.** Paint draws above the last Landmass, Lake or River of the Canvas and below what follows it (Stamps, Labels). The Canvas, export and tiled export share this path, so they agree, tile edges included. Land on Art boards is not painted.
+- **Clip.** Paint is clipped with the stencil to the roughened Landmass outlines, less the Lakes and Rivers over them, so it stops at the same coast as the fill.
+- **Soft edge.** A stroke is one group of round-capped strokes of widening size and falling opacity (a solid core, then 6 bands), so the bands and the stroke's own overlaps never blend. Opacity scales every band.
+- **Eraser.** The strokes are split at the erasers into steps. A step draws only where no later eraser passes, which the stencil decides, so paint added after an eraser is untouched. An eraser's edge is hard (its softness is not used), and every step costs a pass over the land and its later erasers.
+
 ## Consequences
 
 - A stroke is data that grows with the drag, so a Map with much painting is bigger than one without. The caps and simplification bound this; check the save and open targets of ADR 0005 on a heavily painted Map once drawing exists.
