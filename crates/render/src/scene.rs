@@ -867,7 +867,7 @@ impl MapScene {
                 let style = map.fill_style(id);
                 groups.extend(outline.0.iter().map(|polygon| {
                     VectorGroup::fill(polygon_path(polygon), color, FillRule::EvenOdd)
-                        .with_style(style)
+                        .with_style(style.clone())
                 }));
                 if let Some(shore) = map.shore(id) {
                     self.rings.prepare(id, &outline, shore, self.complete);
@@ -1840,10 +1840,11 @@ mod tests {
                 size: 2.5,
             }),
             mottle: Some(ssmap_core::Mottle::DEFAULT),
+            texture: None,
         };
         map.execute(&Command::SetFillStyle {
             ids: vec![lands[1]],
-            style: Some(style),
+            style: Some(style.clone()),
         })
         .unwrap();
         let mut scene = MapScene::new(Fonts::bundled());
@@ -1853,7 +1854,7 @@ mod tests {
                 .groups()
                 .iter()
                 .filter(|g| g.object.is_some_and(|o| o.id == id))
-                .flat_map(|g| g.shapes.iter().map(|shape| shape.style))
+                .flat_map(|g| g.shapes.iter().map(|shape| shape.style.clone()))
                 .collect()
         };
         let styled = styles(lands[1]);

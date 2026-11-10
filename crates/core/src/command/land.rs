@@ -317,7 +317,7 @@ pub(super) fn set_fill_style(
     }
     Ok(landmasses(map, ids)?
         .into_iter()
-        .map(|id| set(id, Property::FillStyle(*style)))
+        .map(|id| set(id, Property::FillStyle(style.clone())))
         .collect())
 }
 

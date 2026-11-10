@@ -312,7 +312,7 @@ impl PropertiesPanel {
                     "Landmass fill",
                     |_| {},
                     |ui| {
-                        let style = editor.map().defaults().fill_style;
+                        let style = editor.map().defaults().fill_style.clone();
                         ui.push_id("default fill style", |ui| {
                             self.fill_style(ui, editor, FillTarget::MapDefault, style);
                         });

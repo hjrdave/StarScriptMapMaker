@@ -832,12 +832,13 @@ mod tests {
                 contrast: 1.0,
                 seed: 9,
             }),
+            texture: None,
         };
         let object = object(1);
-        let styled = fill(0.0, Some(object)).with_style(style);
+        let styled = fill(0.0, Some(object)).with_style(style.clone());
         let plain = fill(20.0, Some(object));
         let mut stroked = stroke(40.0, object);
-        stroked.shapes[0].style = style;
+        stroked.shapes[0].style = style.clone();
         let built = batched(&[styled, plain, stroked]);
         let (with, without): (Vec<&Vertex>, Vec<&Vertex>) =
             built.vertices.iter().partition(|v| v.position[0] < 15.0);
@@ -858,6 +859,7 @@ mod tests {
             let style = FillStyle {
                 grain: Some(ssmap_core::Grain { amount: 1.0, size }),
                 mottle: None,
+                texture: None,
             };
             let (look, _) = pack_style(&style);
             let back = decode(look[1], 0.25, 16.0);
@@ -873,6 +875,7 @@ mod tests {
                     scale,
                     ..ssmap_core::Mottle::DEFAULT
                 }),
+                texture: None,
             };
             let (look, _) = pack_style(&style);
             let back = decode(look[3], 10.0, 5000.0);
@@ -889,12 +892,14 @@ mod tests {
         let grain_only = FillStyle {
             grain: Some(ssmap_core::Grain::DEFAULT),
             mottle: None,
+            texture: None,
         };
         let (look, tint) = pack_style(&grain_only);
         assert_eq!((look[2], look[3], tint), (0, 0, [0; 4]));
         let mottle_only = FillStyle {
             grain: None,
             mottle: Some(ssmap_core::Mottle::DEFAULT),
+            texture: None,
         };
         let (look, _) = pack_style(&mottle_only);
         assert_eq!((look[0], look[1]), (0, 0));
@@ -909,6 +914,7 @@ mod tests {
                     seed,
                     ..ssmap_core::Mottle::DEFAULT
                 }),
+                texture: None,
             })
             .1[3]
         };
@@ -928,10 +934,12 @@ mod tests {
             FillStyle {
                 grain: Some(ssmap_core::Grain::DEFAULT),
                 mottle: None,
+                texture: None,
             },
             FillStyle {
                 grain: None,
                 mottle: Some(ssmap_core::Mottle::DEFAULT),
+                texture: None,
             },
         ] {
             let styled = vec![fill(0.0, Some(a)).with_style(style)];

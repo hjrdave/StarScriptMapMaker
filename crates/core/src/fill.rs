@@ -6,6 +6,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::asset::AssetRef;
 use crate::color::Color;
 
 /// The most grain strength there is: the fill's brightness varies by up to this fraction.
@@ -22,6 +23,12 @@ pub const MIN_MOTTLE_SCALE: f64 = 10.0;
 
 /// The largest mottle scale, in Canvas units.
 pub const MAX_MOTTLE_SCALE: f64 = 5000.0;
+
+/// The smallest texture scale, in Canvas units: how wide one tile of the image is.
+pub const MIN_TEXTURE_SCALE: f64 = 8.0;
+
+/// The largest texture scale, in Canvas units.
+pub const MAX_TEXTURE_SCALE: f64 = 5000.0;
 
 /// Fine speckle laid over a fill colour.
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
@@ -98,8 +105,49 @@ impl Mottle {
     }
 }
 
-/// How a Landmass's fill colour is drawn. With neither grain nor mottle it is flat.
-#[derive(Clone, Copy, PartialEq, Debug, Default, Serialize, Deserialize, JsonSchema)]
+/// A seamless tiling image (a texture Asset in a pack) blended over the fill colour.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct FillTexture {
+    /// The texture Asset, written `pack-id/texture-id`.
+    pub asset: AssetRef,
+    /// How strongly the image shows over the fill colour, from 0 (not at all) to 1 (fully).
+    pub amount: f64,
+    /// How wide one tile of the image is, in Canvas units.
+    pub scale: f64,
+}
+
+impl FillTexture {
+    /// A texture of `asset` at a middling strength and size.
+    pub fn new(asset: AssetRef) -> Self {
+        Self {
+            asset,
+            amount: 0.5,
+            scale: 128.0,
+        }
+    }
+
+    /// Why these settings cannot be used, if they cannot.
+    pub fn problem(&self) -> Option<String> {
+        if !(self.amount.is_finite() && (0.0..=1.0).contains(&self.amount)) {
+            return Some(format!(
+                "the texture amount must be from 0 to 1, not {}",
+                self.amount
+            ));
+        }
+        if !(self.scale.is_finite()
+            && (MIN_TEXTURE_SCALE..=MAX_TEXTURE_SCALE).contains(&self.scale))
+        {
+            return Some(format!(
+                "the texture scale must be from {MIN_TEXTURE_SCALE} to {MAX_TEXTURE_SCALE}, not {}",
+                self.scale
+            ));
+        }
+        None
+    }
+}
+
+/// How a Landmass's fill colour is drawn. With no grain, mottle or texture it is flat.
+#[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize, JsonSchema)]
 pub struct FillStyle {
     /// Fine speckle over the fill, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -107,6 +155,9 @@ pub struct FillStyle {
     /// Large soft patches of a second colour, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mottle: Option<Mottle>,
+    /// A tiling texture image blended over the fill colour, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub texture: Option<FillTexture>,
 }
 
 impl FillStyle {
@@ -114,11 +165,12 @@ impl FillStyle {
     pub const FLAT: FillStyle = FillStyle {
         grain: None,
         mottle: None,
+        texture: None,
     };
 
     /// Whether this is the plain colour. Flat is the default, so it is left out of the file.
     pub fn is_flat(&self) -> bool {
-        self.grain.is_none() && self.mottle.is_none()
+        self.grain.is_none() && self.mottle.is_none() && self.texture.is_none()
     }
 
     /// Why this style cannot be used, if it cannot.
@@ -127,6 +179,7 @@ impl FillStyle {
             .as_ref()
             .and_then(Grain::problem)
             .or_else(|| self.mottle.as_ref().and_then(Mottle::problem))
+            .or_else(|| self.texture.as_ref().and_then(FillTexture::problem))
     }
 }
 
@@ -146,15 +199,16 @@ mod tests {
     fn grain_or_mottle_or_both_is_not_flat() {
         let grain = FillStyle {
             grain: Some(Grain::DEFAULT),
-            mottle: None,
+            ..FillStyle::FLAT
         };
         let mottle = FillStyle {
-            grain: None,
             mottle: Some(Mottle::DEFAULT),
+            ..FillStyle::FLAT
         };
         let both = FillStyle {
             grain: Some(Grain::DEFAULT),
             mottle: Some(Mottle::DEFAULT),
+            ..FillStyle::FLAT
         };
         for style in [grain, mottle, both] {
             assert!(!style.is_flat());
@@ -204,8 +258,47 @@ mod tests {
         let style = FillStyle {
             grain: Some(bad_grain),
             mottle: Some(Mottle::DEFAULT),
+            ..FillStyle::FLAT
         };
         assert!(style.problem().is_some());
+    }
+
+    fn paper() -> FillTexture {
+        FillTexture::new("p/paper".parse().unwrap())
+    }
+
+    #[test]
+    fn a_texture_is_not_flat_and_is_checked() {
+        let texture = |amount, scale| {
+            FillTexture {
+                amount,
+                scale,
+                ..paper()
+            }
+            .problem()
+        };
+        assert_eq!(texture(0.0, MIN_TEXTURE_SCALE), None);
+        assert_eq!(texture(1.0, MAX_TEXTURE_SCALE), None);
+        assert!(texture(-0.1, 100.0).is_some());
+        assert!(texture(1.1, 100.0).is_some());
+        assert!(texture(f64::NAN, 100.0).is_some());
+        assert!(texture(0.5, 1.0).is_some());
+        assert!(texture(0.5, 1e6).is_some());
+        assert!(texture(0.5, f64::INFINITY).is_some());
+        let style = FillStyle {
+            texture: Some(paper()),
+            ..FillStyle::FLAT
+        };
+        assert!(!style.is_flat());
+        assert_eq!(style.problem(), None);
+        let bad = FillStyle {
+            texture: Some(FillTexture {
+                amount: 2.0,
+                ..paper()
+            }),
+            ..FillStyle::FLAT
+        };
+        assert!(bad.problem().is_some());
     }
 
     #[test]
@@ -213,17 +306,23 @@ mod tests {
         let both = FillStyle {
             grain: Some(Grain::DEFAULT),
             mottle: Some(Mottle::DEFAULT),
+            ..FillStyle::FLAT
         };
-        for style in [FillStyle::FLAT, both] {
+        let textured = FillStyle {
+            texture: Some(paper()),
+            ..both.clone()
+        };
+        for style in [FillStyle::FLAT, both, textured] {
             let json = serde_json::to_string(&style).unwrap();
             assert_eq!(serde_json::from_str::<FillStyle>(&json).unwrap(), style);
         }
         assert_eq!(serde_json::to_string(&FillStyle::FLAT).unwrap(), "{}");
         let grain_only = serde_json::to_value(FillStyle {
             grain: Some(Grain::DEFAULT),
-            mottle: None,
+            ..FillStyle::FLAT
         })
         .unwrap();
         assert!(grain_only.get("mottle").is_none());
+        assert!(grain_only.get("texture").is_none());
     }
 }

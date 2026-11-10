@@ -186,11 +186,14 @@ fn a_landmass_override_can_be_cleared_back_to_the_map_default() {
     let grained = ssmap_core::FillStyle {
         grain: Some(ssmap_core::Grain::DEFAULT),
         mottle: None,
+        texture: None,
     };
     assert!(
         fixture
             .editor
-            .run(Command::SetDefaultFillStyle { style: grained })
+            .run(Command::SetDefaultFillStyle {
+                style: grained.clone()
+            })
             .is_ok()
     );
     fixture.editor.select(vec![island]);
@@ -233,6 +236,7 @@ fn a_landmass_fill_switches_grain_and_mottle_on_and_off() {
         ssmap_core::FillStyle {
             grain: Some(ssmap_core::Grain::DEFAULT),
             mottle: None,
+            texture: None,
         }
     );
     assert_eq!(editor.undo_label(), Some("Change Fill Style"));
@@ -248,6 +252,7 @@ fn a_landmass_fill_switches_grain_and_mottle_on_and_off() {
         ssmap_core::FillStyle {
             grain: Some(ssmap_core::Grain::DEFAULT),
             mottle: Some(ssmap_core::Mottle::DEFAULT),
+            texture: None,
         }
     );
     harness.get_by_label("Grain amount");
@@ -264,6 +269,7 @@ fn a_landmass_fill_switches_grain_and_mottle_on_and_off() {
         ssmap_core::FillStyle {
             grain: None,
             mottle: Some(ssmap_core::Mottle::DEFAULT),
+            texture: None,
         }
     );
     assert!(harness.query_by_label("Grain amount").is_none());
@@ -280,13 +286,14 @@ fn re_rolling_the_mottle_changes_only_its_seed() {
     let before = ssmap_core::FillStyle {
         grain: Some(ssmap_core::Grain::DEFAULT),
         mottle: Some(ssmap_core::Mottle::DEFAULT),
+        texture: None,
     };
     assert!(
         fixture
             .editor
             .run(Command::SetFillStyle {
                 ids: vec![island],
-                style: Some(before),
+                style: Some(before.clone()),
             })
             .is_ok()
     );

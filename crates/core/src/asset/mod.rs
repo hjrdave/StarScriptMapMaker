@@ -33,7 +33,23 @@
 //! modified = "2024-05-01"
 //! ```
 //!
-//! Assets are referenced as `pack-id/asset-id` ([`AssetRef`]).
+//! A pack can also hold **textures**: seamless tiling PNG images that a Landmass's Fill style
+//! blends over its colour (ADR 0015). Each is a `[[texture]]` table:
+//!
+//! ```toml
+//! [[texture]]
+//! id = "parchment"
+//! name = "Parchment"
+//! file = "textures/parchment.png"    # a PNG that tiles seamlessly
+//! tags = ["paper"]                   # optional
+//! author = "Kenney"                  # these four fall back to the [pack] values
+//! source_url = "https://kenney.nl/"
+//! licence = "CC0-1.0"
+//! modified = "2024-05-01"
+//! ```
+//!
+//! Assets and textures are referenced as `pack-id/asset-id` ([`AssetRef`]); their ids are
+//! separate, so a texture and an Asset in one pack may share an id.
 
 mod credits;
 mod install;
@@ -77,12 +93,19 @@ pub struct Pack {
     pub source: PackSource,
     /// In manifest order.
     pub assets: Vec<Asset>,
+    /// The pack's textures, in manifest order.
+    pub textures: Vec<Texture>,
 }
 
 impl Pack {
     /// The Asset with id `id`, if the pack has it.
     pub fn asset(&self, id: &str) -> Option<&Asset> {
         self.assets.iter().find(|asset| asset.id == id)
+    }
+
+    /// The texture with id `id`, if the pack has it.
+    pub fn texture(&self, id: &str) -> Option<&Texture> {
+        self.textures.iter().find(|texture| texture.id == id)
     }
 
     /// The Assets in `group`, in manifest order.
@@ -135,6 +158,27 @@ pub struct Asset {
     /// Where the Asset came from, if it says.
     pub source_url: Option<String>,
     /// The Asset's licence.
+    pub licence: String,
+    /// `YYYY-MM-DD`.
+    pub modified: String,
+}
+
+/// One seamless tiling image, for a Fill style's texture.
+#[derive(Clone, PartialEq, Debug)]
+pub struct Texture {
+    /// The texture's id within its pack.
+    pub id: String,
+    /// The texture's display name.
+    pub name: String,
+    /// Search tags.
+    pub tags: Vec<String>,
+    /// A PNG, relative to the pack folder.
+    pub file: PathBuf,
+    /// Who made the texture.
+    pub author: String,
+    /// Where the texture came from, if it says.
+    pub source_url: Option<String>,
+    /// The texture's licence.
     pub licence: String,
     /// `YYYY-MM-DD`.
     pub modified: String,
