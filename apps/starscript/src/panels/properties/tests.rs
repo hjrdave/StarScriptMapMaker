@@ -995,7 +995,7 @@ fn board_combo<'a>(harness: &'a Harness<'static, Fixture>) -> egui_kittest::Node
         .filter(|node| {
             !matches!(
                 node.accesskit_node().value().as_deref(),
-                Some("Default" | "Soft glow" | "Hand drawn" | "Custom")
+                Some("Default" | "Soft glow" | "Hand drawn" | "Custom" | "None" | "Parchment")
             )
         });
     let (Some(combo), None) = (boards.next(), boards.next()) else {
@@ -2128,4 +2128,75 @@ fn the_map_panel_tabs_fit_down_to_the_sidebar_minimum() {
             assert!(out.is_empty(), "tab {tab} at {width}: {out:?}");
         }
     }
+}
+
+#[test]
+fn a_landmass_texture_is_picked_and_cleared() {
+    let (mut fixture, _, island) = fixture();
+    install_test_pack(&mut fixture.editor, false);
+    fixture.editor.select(vec![island]);
+    let mut harness = harness(fixture);
+    // No texture to begin with: the picker shows None and there are no fields.
+    assert!(harness.query_by_label("Texture amount").is_none());
+    harness
+        .query_all_by_role(egui::accesskit::Role::ComboBox)
+        .find(|node| node.accesskit_node().value().as_deref() == Some("None"))
+        .expect("the texture picker")
+        .click();
+    harness.run();
+    harness.get_by_label("Parchment").click();
+    harness.run();
+    let editor = &harness.state().editor;
+    let texture = fill_style_of(editor, island).texture.expect("a texture");
+    assert_eq!(texture.asset.to_string(), "test-pack/parchment");
+    assert_eq!(texture.amount, 0.5);
+    assert_eq!(editor.undo_label(), Some("Change Fill Style"));
+    harness.get_by_label("Texture amount");
+    harness.get_by_label("Texture scale");
+
+    // None goes back to a flat fill.
+    harness
+        .query_all_by_role(egui::accesskit::Role::ComboBox)
+        .find(|node| node.accesskit_node().value().as_deref() == Some("Parchment"))
+        .expect("the texture picker")
+        .click();
+    harness.run();
+    harness.get_by_label("None").click();
+    harness.run();
+    assert!(fill_style_of(&harness.state().editor, island).is_flat());
+}
+
+#[test]
+fn a_landmass_override_keeps_the_map_default_texture_until_reset() {
+    let (mut fixture, _, island) = fixture();
+    install_test_pack(&mut fixture.editor, false);
+    let asset: ssmap_core::AssetRef = "test-pack/parchment".parse().unwrap();
+    let textured = ssmap_core::FillStyle {
+        texture: Some(ssmap_core::FillTexture::new(asset)),
+        ..ssmap_core::FillStyle::FLAT
+    };
+    assert!(
+        fixture
+            .editor
+            .run(Command::SetDefaultFillStyle {
+                style: textured.clone()
+            })
+            .is_ok()
+    );
+    fixture.editor.select(vec![island]);
+    let mut harness = harness(fixture);
+    // Following the default: its texture shows and there is nothing to clear.
+    harness.get_by_label("Texture amount");
+    assert!(harness.query_by_label("Use Map default").is_none());
+
+    // Grain is an override that keeps the default's texture.
+    harness.get_by_label("Grain").click();
+    harness.run();
+    let own = fill_style_of(&harness.state().editor, island);
+    assert!(own.grain.is_some());
+    assert_eq!(own.texture, textured.texture);
+
+    harness.get_by_label("Use Map default").click();
+    harness.run();
+    assert_eq!(fill_style_of(&harness.state().editor, island), textured);
 }
