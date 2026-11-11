@@ -108,8 +108,17 @@ impl Art {
         }
     }
 
+    /// Parses an SVG. An `<image>` that names a file is dropped, so art from a pack or a Map
+    /// file can't make the app read other files; images held in the SVG as `data:` URLs load.
     pub fn from_svg(data: &[u8]) -> Result<Self, ArtError> {
-        let tree = usvg::Tree::from_data(data, &usvg::Options::default())?;
+        let options = usvg::Options {
+            image_href_resolver: usvg::ImageHrefResolver {
+                resolve_data: usvg::ImageHrefResolver::default_data_resolver(),
+                resolve_string: Box::new(|_, _| None),
+            },
+            ..usvg::Options::default()
+        };
+        let tree = usvg::Tree::from_data(data, &options)?;
         Ok(Art::Svg(Box::new(tree)))
     }
 
@@ -204,6 +213,31 @@ mod tests {
         assert_eq!(raster.pixel(100, 50), [0, 0, 0, 0], "the inside is empty");
         let fitted = art.rasterise_fit(40);
         assert_eq!([fitted.width, fitted.height], [40, 20]);
+    }
+
+    #[test]
+    fn an_image_naming_a_file_is_not_loaded() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside.svg");
+        let red = r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="red"/></svg>"#;
+        std::fs::write(&outside, red).unwrap();
+        let svg = format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="10" height="10">
+                <image width="10" height="10" xlink:href="{}"/>
+            </svg>"#,
+            outside.display()
+        );
+        let raster = Art::from_svg(svg.as_bytes()).unwrap().rasterise(10);
+        assert_eq!(raster.pixel(5, 5), [0, 0, 0, 0], "the file was not read");
+    }
+
+    #[test]
+    fn an_image_held_in_the_svg_still_loads() {
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">
+            <image width="10" height="10" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Crect width='10' height='10' fill='red'/%3E%3C/svg%3E"/>
+        </svg>"#;
+        let raster = Art::from_svg(svg.as_bytes()).unwrap().rasterise(10);
+        assert_eq!(raster.pixel(5, 5), [255, 0, 0, 255]);
     }
 
     #[test]
