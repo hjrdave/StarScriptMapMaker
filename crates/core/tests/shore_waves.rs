@@ -69,7 +69,8 @@ fn the_hand_drawn_preset_has_the_look_and_is_valid() {
     assert_eq!(style.glow.width, 0.0);
     assert_eq!(style.ripples.count, 0);
     assert!(style.lines.taper > 0.0 && style.lines.variation > 0.0);
-    assert!(style.waves.density > 0.0);
+    assert_eq!(style.waves.density, 0.0, "no wave marks");
+    assert_ne!(style.waves.color, ShoreWaves::default().color);
     // It is offered for Landmasses after Soft glow, not for Lakes, and Soft glow is unchanged.
     let names: Vec<_> = ShoreStyle::presets(ShoreKind::Landmass)
         .into_iter()

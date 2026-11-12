@@ -2049,6 +2049,7 @@ mod tests {
     fn wave_marks_are_one_effect_stroke_that_follows_the_seed_and_density() {
         let (mut map, lands) = map_with_land();
         let mut style = ShoreStyle::hand_drawn();
+        style.waves.density = 6.0;
         let mut marks = |style: &ShoreStyle| {
             map.execute(&Command::SetShore {
                 ids: vec![lands[1]],

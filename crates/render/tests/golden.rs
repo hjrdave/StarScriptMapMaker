@@ -486,7 +486,7 @@ fn rough_coastlines() {
 }
 
 /// The Hand drawn Shore preset on every Landmass: a thick dark outline, tapered uneven water
-/// lines and wave marks over the open water, none of which may cover land.
+/// lines and no wave marks, none of which may cover land.
 #[test]
 fn hand_drawn_shore() {
     let Some(gpu) = gpu() else { return };
