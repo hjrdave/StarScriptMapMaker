@@ -67,7 +67,11 @@ impl Gesture<'_> {
             Ok(layer) => Some(layer),
             Err(create) => {
                 let (id, command) = *create;
-                self.run(command).then_some(id)
+                let created = self.run(command);
+                if created {
+                    self.editor.active_layer = Some(id);
+                }
+                created.then_some(id)
             }
         }
     }
