@@ -304,7 +304,8 @@ impl ShoreStyle {
     }
 
     /// A hand-drawn look for Landmasses: a thick dark outline, thick tapered and uneven water
-    /// lines, wave marks scattered over the open water, and no glow or ripples.
+    /// lines, and no glow, ripples or wave marks. Its wave marks are off but keep a matching
+    /// colour and size, for when someone turns them on.
     pub fn hand_drawn() -> Self {
         let base = Self::landmass_default();
         Self {
@@ -331,7 +332,7 @@ impl ShoreStyle {
                 seed: 1,
             },
             waves: ShoreWaves {
-                density: 6.0,
+                density: 0.0,
                 size: 14.0,
                 color: Color::rgba(0x3a, 0x30, 0x24, 0xb0),
                 seed: 1,
