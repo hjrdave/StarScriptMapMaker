@@ -47,6 +47,7 @@ impl Editor {
                     if !created {
                         return Err(());
                     }
+                    g.editor.active_layer = Some(layer);
                     layer
                 }
             };

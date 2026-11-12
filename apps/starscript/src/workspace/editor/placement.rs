@@ -316,7 +316,11 @@ impl Editor {
             Ok(layer) => Some(layer),
             Err(create) => {
                 let (id, command) = *create;
-                self.gesture(gesture, command).then_some(id)
+                let created = self.gesture(gesture, command);
+                if created {
+                    self.active_layer = Some(id);
+                }
+                created.then_some(id)
             }
         }
     }

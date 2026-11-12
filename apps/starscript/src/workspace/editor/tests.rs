@@ -314,6 +314,62 @@ fn a_duplicate_with_nothing_selected_does_nothing() {
 }
 
 #[test]
+fn a_land_stroke_on_a_map_with_no_layer_makes_one_in_the_same_undo_step() {
+    let mut editor = editor();
+    assert!(editor.map.children(None).is_empty());
+    let stroke = BrushStroke {
+        region: land::stroke_region(&[[10.0, 10.0], [60.0, 10.0]], 5.0),
+        start: [10.0, 10.0],
+        erase: false,
+    };
+    let gesture = editor.begin_gesture(editor.brush_label(false));
+    editor.finish_brush_stroke(gesture, stroke);
+    assert_eq!(editor.undo_label(), Some("Paint Land"));
+    let layers = editor.map.children(None).to_vec();
+    assert_eq!(layers.len(), 1);
+    assert_eq!(editor.active_layer(), Some(layers[0]));
+    assert_eq!(editor.map.children(Some(layers[0])).len(), 1);
+
+    editor.undo();
+    assert!(editor.map.children(None).is_empty());
+}
+
+#[test]
+fn a_land_stroke_goes_into_the_top_layer_when_none_is_active() {
+    let mut editor = editor();
+    let layer = editor.new_layer().unwrap();
+    editor.deselect();
+    editor.active_layer = None;
+    let gesture = editor.begin_gesture("Paint Land");
+    editor.finish_brush_stroke(
+        gesture,
+        BrushStroke {
+            region: land::stroke_region(&[[10.0, 10.0], [60.0, 10.0]], 5.0),
+            start: [10.0, 10.0],
+            erase: false,
+        },
+    );
+    assert_eq!(editor.map.children(None), &[layer]);
+    assert_eq!(editor.map.children(Some(layer)).len(), 1);
+}
+
+#[test]
+fn a_river_on_a_map_with_no_layer_makes_one_and_it_becomes_active() {
+    use ssmap_core::RiverPoint;
+    let mut editor = editor();
+    let path = [
+        RiverPoint::new([10.0, 10.0], 6.0),
+        RiverPoint::new([90.0, 90.0], 6.0),
+    ];
+    assert!(editor.finish_river(&path, 1));
+    let layers = editor.map.children(None).to_vec();
+    assert_eq!(layers.len(), 1);
+    assert_eq!(editor.active_layer(), Some(layers[0]));
+    editor.undo();
+    assert!(editor.map.children(None).is_empty());
+}
+
+#[test]
 fn a_water_stroke_makes_a_lake_in_a_plain_layer_in_one_undo_step() {
     let mut editor = editor();
     let stroke = |erase| BrushStroke {

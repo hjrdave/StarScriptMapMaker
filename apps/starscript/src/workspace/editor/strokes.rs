@@ -21,15 +21,29 @@ impl Editor {
     /// nothing, or is refused, leaves no Undo step.
     pub fn finish_brush_stroke(&mut self, id: GestureId, stroke: BrushStroke) {
         let new_id = Id::new();
-        let layer = self.target_layer(Placing::Land);
-        let planned = land::brush_command(
+        let existing = self.water_layer();
+        let mut planned = land::brush_command(
             &self.map,
             self.caches.roughness(),
             &self.selection,
-            layer,
-            stroke,
+            existing,
+            stroke.clone(),
             new_id,
         );
+        if planned == Err(land::BrushError::NoLayer) {
+            let Some(layer) = self.create_stroke_layer(&id) else {
+                self.cancel_gesture(id);
+                return;
+            };
+            planned = land::brush_command(
+                &self.map,
+                self.caches.roughness(),
+                &self.selection,
+                Some(layer),
+                stroke,
+                new_id,
+            );
+        }
         match planned {
             Ok(Some(command)) => {
                 let creates = matches!(command, Command::CreateLandmass { .. });
@@ -73,7 +87,7 @@ impl Editor {
                 new_id,
             )
         } else {
-            let layer = self.target_layer(Placing::Land);
+            let layer = self.water_layer();
             land::brush_command(
                 &self.map,
                 self.caches.roughness(),
@@ -132,7 +146,24 @@ impl Editor {
         if erase { "Erase Water" } else { "Paint Water" }
     }
 
-    /// The Layer the water brush paints into: where new Objects go, if the Map has a Layer.
+    /// Creates a plain Layer inside the gesture `id` for the first stroke on a Map with none,
+    /// and makes it the active Layer.
+    fn create_stroke_layer(&mut self, id: &GestureId) -> Option<Id> {
+        let layer = Id::new();
+        let command = Command::CreateLayer {
+            id: layer,
+            parent: None,
+            index: None,
+            name: self.map.next_name("Layer"),
+        };
+        let created = self.gesture(id, command);
+        if created {
+            self.active_layer = Some(layer);
+        }
+        created.then_some(layer)
+    }
+
+    /// The Layer the brushes paint into: where new Objects go, if the Map has a Layer.
     pub(super) fn water_layer(&self) -> Option<Id> {
         self.placement_layer_or_new(Placing::Land).ok()
     }
@@ -154,20 +185,10 @@ impl Editor {
             new_id,
         );
         if planned == Err(land::BrushError::NoLayer) {
-            let layer = Id::new();
-            let created = self.gesture(
-                &id,
-                Command::CreateLayer {
-                    id: layer,
-                    parent: None,
-                    index: None,
-                    name: self.map.next_name("Layer"),
-                },
-            );
-            if !created {
+            let Some(layer) = self.create_stroke_layer(&id) else {
                 self.cancel_gesture(id);
                 return;
-            }
+            };
             planned = land::water_command(
                 &self.map,
                 self.caches.roughness(),
