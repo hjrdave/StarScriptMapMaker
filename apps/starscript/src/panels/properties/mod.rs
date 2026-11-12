@@ -111,7 +111,7 @@ impl PropertiesPanel {
 
     /// The panel's header: the active tool's icon and name with its mode chip, while the tool
     /// has settings, is not Select or nothing is selected; with Select and a selection, the
-    /// "Select" beside the Properties icon (the breadcrumb below names the selection).
+    /// "Select" beside the Select tool's icon (the breadcrumb below names the selection).
     fn header(&self, ui: &mut egui::Ui, editor: &Editor) {
         let tool = editor.active_tool;
         let nothing = editor.selection().is_empty() && editor.selected_board().is_none();
@@ -129,7 +129,8 @@ impl PropertiesPanel {
                 return;
             }
             // The breadcrumb under the header says which item is selected.
-            crate::shell::icon_header(ui, Icon::Shape, tint, "Select", |_| {});
+            let icon = crate::tool_section::icon(crate::tools::ToolId::Select);
+            crate::shell::icon_header(ui, icon, tint, "Select", |_| {});
             return;
         }
         let alt = ui.input(|i| i.modifiers.alt);
