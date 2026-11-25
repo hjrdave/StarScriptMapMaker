@@ -225,52 +225,96 @@ pub fn divider(ui: &mut egui::Ui, shell: &mut Shell, side: Side, panel: egui::Re
 
 /// The size a rail icon is drawn at; it has its own crisp atlas.
 const RAIL_ICON: f32 = icons::RAIL_GRID;
-/// Height of the tile around a rail icon and its caption.
-const RAIL_SLOT_HEIGHT: f32 = RAIL_ICON + 26.0;
-/// The tile: the rail less a margin each side, wide enough for the longest caption.
+/// Size of the rounded tile behind a rail icon.
+const RAIL_TILE: egui::Vec2 = egui::vec2(40.0, 32.0);
+/// Gap above the tile, inside the slot.
+const RAIL_TILE_TOP: f32 = 2.0;
+/// Height of a rail slot: the tile and the caption below it.
+const RAIL_SLOT_HEIGHT: f32 = RAIL_TILE_TOP + RAIL_TILE.y + 18.0;
+/// The click area: the rail less a margin each side, wide enough for the longest caption.
 const RAIL_SLOT: egui::Vec2 = egui::vec2(metrics::LAYERS_PANEL_RAIL - 8.0, RAIL_SLOT_HEIGHT);
 
-/// A rail slot's icon, near the top of the tile, and its caption centred under it, both in `tint`.
-fn paint_rail_content(
-    ui: &egui::Ui,
-    slot: egui::Rect,
-    icon: Icon,
-    caption: &str,
-    tint: egui::Color32,
-) {
-    let icon_area = egui::Rect::from_center_size(
-        egui::pos2(slot.center().x, slot.top() + 6.0 + RAIL_ICON / 2.0),
-        egui::Vec2::splat(RAIL_ICON),
-    );
-    icons::paint(ui, icon_area, icon, RAIL_ICON, tint);
-    ui.painter().text(
-        egui::pos2(slot.center().x, slot.bottom() - 5.0),
-        egui::Align2::CENTER_BOTTOM,
-        caption,
-        egui::FontId::proportional(theme::CAPTION),
-        tint,
-    );
+/// How a rail slot looks.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum RailState {
+    Active,
+    Hover,
+    Idle,
 }
 
-/// The rounded tile behind a rail icon: filled for the open section, lighter on hover.
-fn paint_rail_tile(ui: &egui::Ui, slot: egui::Rect, open: bool, hovered: bool) {
+impl RailState {
+    fn new(active: bool, hovered: bool) -> Self {
+        if active {
+            Self::Active
+        } else if hovered {
+            Self::Hover
+        } else {
+            Self::Idle
+        }
+    }
+}
+
+/// The tile behind a slot's icon.
+fn rail_tile_rect(slot: egui::Rect) -> egui::Rect {
+    egui::Rect::from_center_size(
+        egui::pos2(
+            slot.center().x,
+            slot.top() + RAIL_TILE_TOP + RAIL_TILE.y / 2.0,
+        ),
+        RAIL_TILE,
+    )
+}
+
+/// A rail slot: the tile (gold when active, grey on hover) with the icon on it, and the caption
+/// below the tile.
+fn paint_rail_slot(ui: &egui::Ui, slot: egui::Rect, icon: Icon, caption: &str, state: RailState) {
     let palette = theme::palette(ui.ctx());
-    let fill = if open {
-        palette.hover_fill
-    } else if hovered {
-        palette.bg_raised
-    } else {
-        return;
+    let tile = rail_tile_rect(slot);
+    let radius = egui::CornerRadius::same(8);
+    let (icon_tint, caption_tint, caption_font) = match state {
+        RailState::Active => {
+            ui.painter().rect_filled(tile, radius, palette.gold_subtle);
+            ui.painter().rect_stroke(
+                tile,
+                radius,
+                egui::Stroke::new(1.0, palette.gold_ring),
+                egui::StrokeKind::Inside,
+            );
+            (
+                palette.gold_text,
+                palette.text_primary,
+                egui::FontId::proportional(theme::CAPTION), // no bold face is bundled
+            )
+        }
+        RailState::Hover => {
+            ui.painter().rect_filled(tile, radius, palette.hover_fill);
+            (
+                palette.text_primary,
+                palette.text_primary,
+                egui::FontId::proportional(theme::CAPTION),
+            )
+        }
+        RailState::Idle => (
+            palette.text_secondary,
+            palette.text_tertiary,
+            egui::FontId::proportional(theme::CAPTION),
+        ),
     };
-    ui.painter()
-        .rect_filled(slot, egui::CornerRadius::same(theme::RADIUS_BUTTON), fill);
+    let icon_area = egui::Rect::from_center_size(tile.center(), egui::Vec2::splat(RAIL_ICON));
+    icons::paint(ui, icon_area, icon, RAIL_ICON, icon_tint);
+    ui.painter().text(
+        egui::pos2(slot.center().x, slot.bottom() - 2.0),
+        egui::Align2::CENTER_BOTTOM,
+        caption,
+        caption_font,
+        caption_tint,
+    );
 }
 
 /// The rail of the left sidebar, always on screen: the section icons, with the open section's
-/// in the primary colour on a filled tile. Returns the section whose icon was clicked.
+/// on a gold tile. Returns the section whose icon was clicked.
 pub fn layers_rail(ui: &mut egui::Ui, shell: &Shell) -> Option<SidebarSection> {
     let current = shell.sidebar_section();
-    let palette = theme::palette(ui.ctx());
     let rect = ui.max_rect();
     let mut clicked = None;
     let step = RAIL_SLOT_HEIGHT + theme::SPACING[1];
@@ -290,13 +334,8 @@ pub fn layers_rail(ui: &mut egui::Ui, shell: &Shell) -> Option<SidebarSection> {
             egui::WidgetInfo::labeled(egui::WidgetType::Button, true, section.label())
         });
         let open = section == current && shell.panel_open();
-        paint_rail_tile(ui, slot, open, response.hovered());
-        let tint = if open || response.hovered() {
-            palette.text_primary
-        } else {
-            palette.text_secondary
-        };
-        paint_rail_content(ui, slot, section.icon(), section.title(), tint);
+        let state = RailState::new(open, response.hovered());
+        paint_rail_slot(ui, slot, section.icon(), section.title(), state);
         if response
             .on_hover_text(section.label())
             .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -312,7 +351,6 @@ pub fn layers_rail(ui: &mut egui::Ui, shell: &Shell) -> Option<SidebarSection> {
 /// The icon strip Properties narrows to at the smallest window: the Properties icon, which
 /// opens the floating inspector. Returns true when it is clicked.
 pub fn properties_rail(ui: &mut egui::Ui) -> bool {
-    let palette = theme::palette(ui.ctx());
     let rect = ui.max_rect();
     let mut clicked = false;
     let slot = egui::Rect::from_center_size(
@@ -323,13 +361,8 @@ pub fn properties_rail(ui: &mut egui::Ui) -> bool {
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Open Properties (⌘⌥2)")
     });
-    paint_rail_tile(ui, slot, false, response.hovered());
-    let tint = if response.hovered() {
-        palette.text_primary
-    } else {
-        palette.text_secondary
-    };
-    paint_rail_content(ui, slot, Icon::Shape, "Properties", tint);
+    let state = RailState::new(false, response.hovered());
+    paint_rail_slot(ui, slot, Icon::Shape, "Properties", state);
     if response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
@@ -337,4 +370,25 @@ pub fn properties_rail(ui: &mut egui::Ui) -> bool {
         clicked = true;
     }
     clicked
+}
+
+#[cfg(test)]
+mod rail_tests {
+    use super::*;
+
+    #[test]
+    fn state_prefers_active_over_hover() {
+        assert_eq!(RailState::new(true, true), RailState::Active);
+        assert_eq!(RailState::new(false, true), RailState::Hover);
+        assert_eq!(RailState::new(false, false), RailState::Idle);
+    }
+
+    #[test]
+    fn tile_sits_inside_the_slot_above_the_caption() {
+        let slot = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), RAIL_SLOT);
+        let tile = rail_tile_rect(slot);
+        assert!(slot.contains_rect(tile));
+        assert_eq!(tile.size(), RAIL_TILE);
+        assert!(slot.bottom() - tile.bottom() >= 14.0);
+    }
 }
