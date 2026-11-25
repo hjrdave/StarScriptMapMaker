@@ -25,8 +25,8 @@ pub(super) fn paint_tool(
     state: &mut ToolState,
     input: &CanvasFrame,
 ) -> Option<egui::CursorIcon> {
-    let radius = editor.paint.size / 2.0;
     let erase_held = input.alt != editor.paint.erase;
+    let radius = editor.paint.settings(erase_held).size / 2.0;
     let cursor = input.hovered.then_some(egui::CursorIcon::Crosshair);
 
     // A click is a stroke of one point: a single dab.
@@ -83,7 +83,8 @@ pub(super) fn paint_paint_cursor(
     let palette = crate::theme::palette(painter.ctx());
     let erase_held = painter.ctx().input(|i| i.modifiers.alt) != editor.paint.erase;
     let erasing = state.paint.as_ref().map_or(erase_held, |drag| drag.erase);
-    let radius = (editor.paint.size / 2.0 * view.zoom / ppp) as f32;
+    let settings = editor.paint.settings(erasing);
+    let radius = (settings.size / 2.0 * view.zoom / ppp) as f32;
     if let Some(drag) = &state.paint {
         let color = if erasing {
             palette.danger
@@ -91,7 +92,7 @@ pub(super) fn paint_paint_cursor(
             let c = editor.paint.color;
             egui::Color32::from_rgb(c.r, c.g, c.b)
         };
-        let color = color.gamma_multiply(0.6 * editor.paint.opacity as f32);
+        let color = color.gamma_multiply(0.6 * settings.opacity as f32);
         let points: Vec<egui::Pos2> = drag
             .points
             .iter()
@@ -110,7 +111,7 @@ pub(super) fn paint_paint_cursor(
     if let Some(pos) = hover {
         super::brush::brush_ring(painter, pos, radius);
         // The soft edge starts inside the ring, so a softer brush shows a smaller core.
-        let core = radius * (1.0 - editor.paint.softness as f32);
+        let core = radius * (1.0 - settings.softness as f32);
         if core >= 1.0 && core < radius {
             painter.circle_stroke(
                 pos,
@@ -173,9 +174,11 @@ mod tests {
     fn the_stroke_takes_the_brush_settings() {
         let (mut editor, mut state) = (paint_editor(), ToolState::default());
         editor.paint.color = Color::rgb(1, 2, 3);
-        editor.paint.size = 20.0;
-        editor.paint.softness = 0.5;
-        editor.paint.opacity = 0.25;
+        editor.paint.painting = crate::editor::PaintSettings {
+            size: 20.0,
+            softness: 0.5,
+            opacity: 0.25,
+        };
         drag(&mut editor, &mut state);
         let stroke = &editor.map().paint_strokes()[0];
         assert_eq!(stroke.color, Color::rgb(1, 2, 3));
@@ -186,6 +189,28 @@ mod tests {
         assert!(!stroke.erase);
         assert_eq!(stroke.points.first(), Some(&[100.0, 100.0]));
         assert_eq!(stroke.points.last(), Some(&[200.0, 150.0]));
+    }
+
+    #[test]
+    fn paint_and_erase_keep_their_own_settings_and_the_modifier_uses_the_other_modes() {
+        let (mut editor, mut state) = (paint_editor(), ToolState::default());
+        editor.paint.settings_mut(true).size = 33.0;
+        editor.paint.settings_mut(true).opacity = 0.5;
+        assert_eq!(
+            *editor.paint.settings(false),
+            crate::editor::PaintSettings::default()
+        );
+        editor.paint.painting.softness = 0.9;
+        assert_eq!(editor.paint.erasing.softness, 0.3);
+        let alt = |frame: CanvasFrame| CanvasFrame { alt: true, ..frame };
+        paint(
+            &mut editor,
+            &mut state,
+            &[alt(press(100.0, 100.0)), alt(release(120.0, 100.0))],
+        );
+        let stroke = &editor.map().paint_strokes()[0];
+        assert!(stroke.erase);
+        assert_eq!((stroke.size, stroke.opacity), (33.0, 0.5));
     }
 
     #[test]
@@ -249,7 +274,7 @@ mod tests {
     #[test]
     fn a_refused_stroke_leaves_no_undo_step() {
         let (mut editor, mut state) = (paint_editor(), ToolState::default());
-        editor.paint.size = 0.0;
+        editor.paint.painting.size = 0.0;
         drag(&mut editor, &mut state);
         assert!(!editor.gesture_open());
         assert!(editor.map().paint_strokes().is_empty());

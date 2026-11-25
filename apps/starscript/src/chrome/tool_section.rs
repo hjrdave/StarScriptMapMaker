@@ -160,7 +160,7 @@ impl ToolSection {
 
 /// The settings of the active tool, as sections that group them by what they do, like the
 /// Map section's. The Stamp's are the Scatter and Randomise sections.
-pub(crate) fn tool_sections(ui: &mut egui::Ui, editor: &mut Editor) {
+pub(crate) fn tool_sections(ui: &mut egui::Ui, editor: &mut Editor, alt: bool) {
     let header = |kind, title| SectionHeader {
         kind,
         title,
@@ -173,23 +173,27 @@ pub(crate) fn tool_sections(ui: &mut egui::Ui, editor: &mut Editor) {
             // The mode comes first, under the header.
             mode_control(ui, editor, land);
             if !(land && editor.land_mode() == LandMode::PaintLasso) {
+                let erase = alt != editor.erase_default;
                 prop_widgets::section(ui, header("brush", "Brush"), |ui| {
-                    size(ui, editor);
+                    size(ui, editor, erase);
                     if land {
-                        irregularity(ui, editor);
+                        irregularity(ui, editor, erase);
                     }
                 });
             }
         }
         ToolId::Paint => {
             paint_mode(ui, editor);
-            prop_widgets::section(ui, header("brush", "Brush"), |ui| paint_brush(ui, editor));
+            let erase = alt != editor.paint.erase;
+            prop_widgets::section(ui, header("brush", "Brush"), |ui| {
+                paint_brush(ui, editor, erase);
+            });
         }
         ToolId::River => {
             prop_widgets::section(ui, header("river", "Shape"), |ui| river(ui, editor));
         }
         ToolId::StampEraser => {
-            prop_widgets::section(ui, header("eraser", "Eraser"), |ui| size(ui, editor));
+            prop_widgets::section(ui, header("eraser", "Eraser"), |ui| size(ui, editor, false));
         }
         ToolId::Stamp => scatter_sections(ui, editor),
         _ => {}
@@ -198,13 +202,14 @@ pub(crate) fn tool_sections(ui: &mut egui::Ui, editor: &mut Editor) {
 
 /// The brush size of the Land Brush, Lake Brush and Stamp Eraser: a logarithmic slider,
 /// where dragging along the track is the point.
-fn size(ui: &mut egui::Ui, editor: &mut Editor) {
+fn size(ui: &mut egui::Ui, editor: &mut Editor, erase: bool) {
     let spec = ScrubSpec::new("Size")
         .range(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end())
         .slider_max(tools::BRUSH_SIZE_SLIDER_MAX)
         .logarithmic()
         .default_value(crate::editor::DEFAULT_BRUSH_SIZE);
-    prop_widgets::slider(ui, &mut editor.brush_size, &spec);
+    let tool = editor.active_tool;
+    prop_widgets::slider(ui, editor.brush_size_mut(tool, erase), &spec);
 }
 
 /// The Land Brush's mode as three icon buttons (Paint, Paint Lasso, Erase), or the Lake
@@ -277,9 +282,9 @@ fn paint_mode(ui: &mut egui::Ui, editor: &mut Editor) {
 }
 
 /// The Paint brush's colour (not for an eraser, which ignores it), size, softness and opacity.
-fn paint_brush(ui: &mut egui::Ui, editor: &mut Editor) {
+fn paint_brush(ui: &mut egui::Ui, editor: &mut Editor, erase: bool) {
     let brush = &mut editor.paint;
-    if !brush.erase {
+    if !erase {
         let mut colour = Some(brush.color);
         let response = prop_widgets::swatch(ui, "Colour", &mut colour, false, Provenance::Plain);
         if response.edit.changed
@@ -293,22 +298,23 @@ fn paint_brush(ui: &mut egui::Ui, editor: &mut Editor) {
         .slider_max(tools::BRUSH_SIZE_SLIDER_MAX)
         .logarithmic()
         .default_value(crate::editor::DEFAULT_BRUSH_SIZE);
-    prop_widgets::slider(ui, &mut brush.size, &size);
-    let mut softness = brush.softness * 100.0;
+    let settings = brush.settings_mut(erase);
+    prop_widgets::slider(ui, &mut settings.size, &size);
+    let mut softness = settings.softness * 100.0;
     let spec = ScrubSpec::new("Softness")
         .range(0.0, 100.0)
         .unit("%")
-        .default_value(crate::editor::PaintBrush::default().softness * 100.0);
+        .default_value(crate::editor::PaintSettings::default().softness * 100.0);
     if prop_widgets::slider(ui, &mut softness, &spec).changed {
-        brush.softness = softness / 100.0;
+        settings.softness = softness / 100.0;
     }
-    let mut opacity = brush.opacity * 100.0;
+    let mut opacity = settings.opacity * 100.0;
     let spec = ScrubSpec::new("Opacity")
         .range(0.0, 100.0)
         .unit("%")
-        .default_value(crate::editor::PaintBrush::default().opacity * 100.0);
+        .default_value(crate::editor::PaintSettings::default().opacity * 100.0);
     if prop_widgets::slider(ui, &mut opacity, &spec).changed {
-        brush.opacity = opacity / 100.0;
+        settings.opacity = opacity / 100.0;
     }
 }
 
@@ -330,14 +336,15 @@ pub(crate) fn place_on(ui: &mut egui::Ui, editor: &mut Editor) {
 
 /// How far the Land Brush pushes a stroke's outline out and in, as a percentage of its radius:
 /// 0 paints round strokes.
-fn irregularity(ui: &mut egui::Ui, editor: &mut Editor) {
-    let mut percent = editor.brush_irregularity * 100.0;
+fn irregularity(ui: &mut egui::Ui, editor: &mut Editor, erase: bool) {
+    let settings = editor.land_settings_mut(erase);
+    let mut percent = settings.irregularity * 100.0;
     let spec = ScrubSpec::new("Irregularity")
         .range(0.0, ssmap_core::land::MAX_IRREGULARITY * 100.0)
         .unit("%")
         .default_value(crate::editor::DEFAULT_BRUSH_IRREGULARITY * 100.0);
     if prop_widgets::slider(ui, &mut percent, &spec).changed {
-        editor.brush_irregularity = percent / 100.0;
+        settings.irregularity = percent / 100.0;
     }
 }
 
@@ -378,7 +385,7 @@ pub(crate) fn scatter_sections(ui: &mut egui::Ui, editor: &mut Editor) {
         action: None,
     };
     prop_widgets::section(ui, header("scatter", "Scatter"), |ui| {
-        size(ui, editor);
+        size(ui, editor, false);
         let brush = &mut editor.scatter;
         let density = ScrubSpec::new("Density")
             .range(0.5, 100.0)

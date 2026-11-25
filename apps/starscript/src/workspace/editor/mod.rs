@@ -53,29 +53,82 @@ pub const DEFAULT_BRUSH_SIZE: f64 = 48.0;
 /// The land brush's starting Irregularity: enough that strokes look natural, not round.
 pub const DEFAULT_BRUSH_IRREGULARITY: f64 = 0.15;
 
-/// The Paint tool's brush: the settings every new paint stroke takes (ADR 0017).
+/// What one Paint tool mode keeps: the settings a stroke in that mode takes.
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub struct PaintBrush {
-    /// The paint colour. An eraser ignores it.
-    pub color: Color,
+pub struct PaintSettings {
     /// The brush diameter, in Canvas units.
     pub size: f64,
     /// How soft the brush edge is, from 0 (hard) to 1.
     pub softness: f64,
     /// How strong a stroke is, from 0 to 1.
     pub opacity: f64,
+}
+
+impl Default for PaintSettings {
+    fn default() -> Self {
+        Self {
+            size: DEFAULT_BRUSH_SIZE,
+            softness: 0.3,
+            opacity: 1.0,
+        }
+    }
+}
+
+/// The Paint tool's brush: the settings every new paint stroke takes (ADR 0017). Painting and
+/// erasing each keep their own size, softness and opacity.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct PaintBrush {
+    /// The paint colour. An eraser ignores it.
+    pub color: Color,
     /// Whether the brush erases by default; holding the erase modifier gives the other.
     pub erase: bool,
+    /// The settings of the Paint mode.
+    pub painting: PaintSettings,
+    /// The settings of the Erase mode.
+    pub erasing: PaintSettings,
 }
 
 impl Default for PaintBrush {
     fn default() -> Self {
         Self {
             color: Color::rgb(0xc2, 0x4d, 0x3a),
-            size: DEFAULT_BRUSH_SIZE,
-            softness: 0.3,
-            opacity: 1.0,
             erase: false,
+            painting: PaintSettings::default(),
+            erasing: PaintSettings::default(),
+        }
+    }
+}
+
+impl PaintBrush {
+    /// The settings of the mode that paints (`erase` false) or erases.
+    pub fn settings(&self, erase: bool) -> &PaintSettings {
+        if erase { &self.erasing } else { &self.painting }
+    }
+
+    /// The settings of the mode that paints (`erase` false) or erases, to change.
+    pub fn settings_mut(&mut self, erase: bool) -> &mut PaintSettings {
+        if erase {
+            &mut self.erasing
+        } else {
+            &mut self.painting
+        }
+    }
+}
+
+/// What one Land Brush stroke mode keeps.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct LandSettings {
+    /// The brush diameter, in Canvas units.
+    pub size: f64,
+    /// How far the brush pushes a stroke's outline out and in, as a share of its radius.
+    pub irregularity: f64,
+}
+
+impl Default for LandSettings {
+    fn default() -> Self {
+        Self {
+            size: DEFAULT_BRUSH_SIZE,
+            irregularity: DEFAULT_BRUSH_IRREGULARITY,
         }
     }
 }
@@ -119,10 +172,17 @@ pub struct Editor {
     /// The Map revision [`Editor::rebuild_outlines_for_defaults`] last looked at.
     outlines_checked: u64,
     pub active_tool: ToolId,
-    /// The land brush's diameter, in Canvas units.
+    /// The Stamp and Stamp Eraser's brush diameter, in Canvas units (the scatter brush uses
+    /// half of it as its radius). The Land, Lake and Paint brushes keep their own per mode.
     pub brush_size: f64,
-    /// How far the land brush pushes a stroke's outline out and in, as a share of its radius.
-    pub brush_irregularity: f64,
+    /// The Land Brush's Paint mode settings.
+    pub land_paint: LandSettings,
+    /// The Land Brush's Erase mode settings.
+    pub land_erase: LandSettings,
+    /// The Lake Brush's Paint mode diameter, in Canvas units.
+    pub water_paint_size: f64,
+    /// The Lake Brush's Erase mode diameter, in Canvas units.
+    pub water_erase_size: f64,
     /// Whether the Land Brush draws strokes or closed shapes.
     pub draw_mode: DrawMode,
     /// Whether the land brush erases by default; holding the erase modifier gives the other.
@@ -152,7 +212,7 @@ pub struct Editor {
     caches: Caches,
     /// The Asset the Stamp tool places, chosen in the Asset browser.
     pub selected_asset: Option<AssetRef>,
-    /// The scatter brush's settings. Its radius is half the shared `brush_size`.
+    /// The scatter brush's settings. Its radius is half `brush_size`.
     pub scatter: ScatterBrush,
     /// What Copy or Cut last took. Paste reads it back.
     clipboard: ClipboardSlot,
@@ -214,6 +274,47 @@ pub struct NodeEdit {
 }
 
 impl Editor {
+    /// The Land Brush's settings in the mode that paints (`erase` false) or erases.
+    pub fn land_settings(&self, erase: bool) -> &LandSettings {
+        if erase {
+            &self.land_erase
+        } else {
+            &self.land_paint
+        }
+    }
+
+    /// The Land Brush's settings in the mode that paints (`erase` false) or erases, to change.
+    pub fn land_settings_mut(&mut self, erase: bool) -> &mut LandSettings {
+        if erase {
+            &mut self.land_erase
+        } else {
+            &mut self.land_paint
+        }
+    }
+
+    /// The brush diameter `tool` uses in the mode that paints (`erase` false) or erases. The
+    /// Stamp tools have one size for both.
+    pub fn brush_size_of(&self, tool: ToolId, erase: bool) -> f64 {
+        match tool {
+            ToolId::LandBrush => self.land_settings(erase).size,
+            ToolId::WaterBrush if erase => self.water_erase_size,
+            ToolId::WaterBrush => self.water_paint_size,
+            ToolId::Paint => self.paint.settings(erase).size,
+            _ => self.brush_size,
+        }
+    }
+
+    /// The brush diameter `tool` uses in that mode, to change.
+    pub fn brush_size_mut(&mut self, tool: ToolId, erase: bool) -> &mut f64 {
+        match tool {
+            ToolId::LandBrush => &mut self.land_settings_mut(erase).size,
+            ToolId::WaterBrush if erase => &mut self.water_erase_size,
+            ToolId::WaterBrush => &mut self.water_paint_size,
+            ToolId::Paint => &mut self.paint.settings_mut(erase).size,
+            _ => &mut self.brush_size,
+        }
+    }
+
     /// The Land Brush's mode: the draw mode and the erase default as one of three.
     pub fn land_mode(&self) -> LandMode {
         match (self.draw_mode, self.erase_default) {
@@ -265,7 +366,10 @@ impl Editor {
             clipboard: ClipboardSlot::default(),
             rename_request: None,
             brush_size: DEFAULT_BRUSH_SIZE,
-            brush_irregularity: DEFAULT_BRUSH_IRREGULARITY,
+            land_paint: LandSettings::default(),
+            land_erase: LandSettings::default(),
+            water_paint_size: DEFAULT_BRUSH_SIZE,
+            water_erase_size: DEFAULT_BRUSH_SIZE,
             draw_mode: DrawMode::default(),
             erase_default: false,
             stroke_erase: false,

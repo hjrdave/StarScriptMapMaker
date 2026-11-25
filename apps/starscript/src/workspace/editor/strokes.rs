@@ -125,13 +125,14 @@ impl Editor {
     /// leaves no Undo step, and the status bar says why.
     pub fn finish_paint_stroke(&mut self, id: GestureId, points: Vec<Point>, erase: bool) {
         let brush = self.paint;
+        let settings = *brush.settings(erase);
         let stroke = PaintStroke {
             id: Id::new(),
             points,
             color: brush.color,
-            size: brush.size,
-            softness: brush.softness as f32,
-            opacity: brush.opacity as f32,
+            size: settings.size,
+            softness: settings.softness as f32,
+            opacity: settings.opacity as f32,
             erase,
         };
         if self.gesture(&id, Command::AddPaintStroke { stroke }) {

@@ -560,16 +560,19 @@ fn edit_shortcuts(editor: &mut Editor, input: &mut egui::InputState, off: &HashS
             editor.river_width = (editor.river_width * step)
                 .clamp(ssmap_core::MIN_RIVER_WIDTH, ssmap_core::MAX_RIVER_WIDTH);
         } else if editor.active_tool == ToolId::Paint {
-            editor.paint.size = (editor.paint.size * step)
-                .clamp(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end());
+            let erase = editor.paint.erase;
+            let size = &mut editor.paint.settings_mut(erase).size;
+            *size = (*size * step).clamp(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end());
         } else if river_points {
             // The selected points of a River being edited widen or narrow.
             if step != 1.0 {
                 editor.scale_selected_river_widths(step);
             }
         } else {
-            editor.brush_size = (editor.brush_size * step)
-                .clamp(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end());
+            let erase = editor.erase_default;
+            let tool = editor.active_tool;
+            let size = editor.brush_size_mut(tool, erase);
+            *size = (*size * step).clamp(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end());
         }
     }
 }
