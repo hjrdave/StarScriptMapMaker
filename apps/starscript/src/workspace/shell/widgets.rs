@@ -270,7 +270,7 @@ fn rail_tile_rect(slot: egui::Rect) -> egui::Rect {
 fn paint_rail_slot(ui: &egui::Ui, slot: egui::Rect, icon: Icon, caption: &str, state: RailState) {
     let palette = theme::palette(ui.ctx());
     let tile = rail_tile_rect(slot);
-    let radius = egui::CornerRadius::same(8);
+    let radius = egui::CornerRadius::same(theme::RADIUS_POPOVER);
     let (icon_tint, caption_tint, caption_font) = match state {
         RailState::Active => {
             ui.painter().rect_filled(tile, radius, palette.gold_subtle);
@@ -283,7 +283,7 @@ fn paint_rail_slot(ui: &egui::Ui, slot: egui::Rect, icon: Icon, caption: &str, s
             (
                 palette.gold_text,
                 palette.text_primary,
-                egui::FontId::proportional(theme::CAPTION), // no bold face is bundled
+                theme::medium_font(ui.ctx(), theme::CAPTION),
             )
         }
         RailState::Hover => {
