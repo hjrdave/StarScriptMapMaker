@@ -116,11 +116,7 @@ impl LayerTree {
             }
         });
         ui.add_space(theme::SPACING[2]);
-        ui.painter().hline(
-            ui.max_rect().x_range(),
-            ui.cursor().top(),
-            egui::Stroke::new(1.0, palette.border_subtle),
-        );
+        theme::panel_rule(ui, ui.cursor().top());
 
         // Opacity is a drag: live updates, one Undo step.
         let opacity = (percent / 100.0).clamp(0.0, 1.0) as f32;

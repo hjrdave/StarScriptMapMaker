@@ -213,6 +213,30 @@ pub fn shadow_e3() -> Shadow {
     }
 }
 
+/// Records the outer x-range of the panel `ui` is the top-level content of, so that
+/// [`panel_rule`] can run flush to the panel's edges. Call it first in a panel's closure,
+/// before any scroll area narrows the clip rect.
+pub(crate) fn remember_panel_edges(ui: &egui::Ui) {
+    let edges = ui.clip_rect().x_range();
+    ui.ctx()
+        .data_mut(|data| data.insert_temp(egui::Id::new("panel edges"), edges));
+}
+
+/// A 1 pt divider line at `y` that spans the whole panel, past its inner margin. Outside a
+/// panel that recorded its edges it spans `ui`'s content width.
+pub(crate) fn panel_rule(ui: &egui::Ui, y: f32) {
+    let palette = palette(ui.ctx());
+    let edges = ui
+        .ctx()
+        .data(|data| data.get_temp::<egui::Rangef>(egui::Id::new("panel edges")))
+        .unwrap_or_else(|| ui.max_rect().x_range());
+    let clip = ui.clip_rect();
+    let clip = egui::Rect::from_x_y_ranges(edges, clip.y_range());
+    ui.painter()
+        .with_clip_rect(clip)
+        .hline(edges, y, Stroke::new(1.0, palette.border_subtle));
+}
+
 /// The flat modal scrim, rgba(8,9,11,0.55).
 pub const SCRIM: Color32 = Color32::from_rgba_unmultiplied_const(8, 9, 11, 140);
 
@@ -393,6 +417,24 @@ mod tests {
     use super::*;
 
     const TOKENS: &str = include_str!("../../../../docs/design/ui-handoff/tokens.json");
+
+    #[test]
+    fn a_panel_rule_runs_past_the_content_margin() {
+        let mut harness = egui_kittest::Harness::new_ui(|ui| {
+            egui::Frame::NONE
+                .inner_margin(Margin::same(8))
+                .show(ui, |ui| {
+                    remember_panel_edges(ui);
+                });
+        });
+        harness.run();
+        let edges = harness
+            .ctx
+            .data(|d| d.get_temp::<egui::Rangef>(egui::Id::new("panel edges")))
+            .expect("edges recorded");
+        let screen = harness.ctx.content_rect();
+        assert!(edges.min <= screen.left() + 0.5 && edges.max >= screen.right() - 0.5);
+    }
 
     fn parse(hex: &str) -> Color32 {
         let n = u32::from_str_radix(hex.trim_start_matches('#'), 16).unwrap();

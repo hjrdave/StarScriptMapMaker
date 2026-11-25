@@ -160,6 +160,7 @@ impl PropertiesPanel {
         self.live.apply(editor, Edit::default(), "", || {
             unreachable!("nothing changed")
         });
+        theme::remember_panel_edges(ui);
         self.header(ui, editor);
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])

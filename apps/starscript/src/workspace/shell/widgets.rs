@@ -79,11 +79,7 @@ fn header(
         },
     );
     let rect = header.response.rect;
-    ui.painter().hline(
-        rect.x_range(),
-        rect.bottom(),
-        egui::Stroke::new(1.0, palette.border_subtle),
-    );
+    theme::panel_rule(ui, rect.bottom());
 }
 
 /// Height of one history row.
