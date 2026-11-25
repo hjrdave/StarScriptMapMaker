@@ -5,7 +5,7 @@
 //! - `meta (key, value)`: `format_version` (`"major.minor"`), `save_generation` (a UUID), the
 //!   `canvas` and the Map-wide `defaults` as JSON, and a `preview` PNG at most [`PREVIEW_SIZE`] pixels on its longer side.
 //! - `nodes (id, parent, ord, kind, props, geometry)`: one row per Layer and Object. `id` and
-//!   `parent` are 16-byte UUIDs, and `parent` is NULL for a top-level Layer. `ord` is the
+//!   `parent` are 16-byte UUIDs, and `parent` is NULL for a top-level Layer or Object. `ord` is the
 //!   index among siblings, 0 drawing lowest. `kind` is `layer` or the Object kind. `props` is
 //!   the node as JSON without its outline, and `geometry` is the outline of a Landmass or Lake
 //!   as a binary blob (see `blob.rs`). A River has no blob.
@@ -39,6 +39,8 @@
 //!   Format 1.19 adds the optional `strokes` meta key (JSON): the paint strokes in drawing order,
 //!   each with its id, points, colour, size, softness, opacity and `erase`. It is left out while
 //!   there are none, so older files open with no paint (ADR 0017).
+//!   Format 1.20 allows an Object at the top level, with a NULL `parent` (ADR 0018). Older files
+//!   have none and open unchanged; an older app cannot open a Map that has one.
 //!   Format 1.6 stores Groups: Layers nested inside Layers, with `parent` pointing at the
 //!   enclosing Layer. There is no compatibility with older files.
 //!
@@ -80,7 +82,7 @@ use crate::paint::PaintStroke;
 /// anything else, and needs a migration.
 pub const FORMAT_VERSION: FormatVersion = FormatVersion {
     major: 1,
-    minor: 19,
+    minor: 20,
 };
 
 /// What the `boards` meta key holds.

@@ -4,7 +4,7 @@
     reason = "tests and benches may panic on failure"
 )]
 use ssmap_core::{
-    Canvas, DistanceUnit, Id, Landmass, Layer, Map, MapView, MultiPolygon, Node, Object,
+    Canvas, DistanceUnit, Id, Lake, Landmass, Layer, Map, MapView, MultiPolygon, Node, Object,
     ObjectKind, Op, OpError, Polygon, Property, Scale, Stamp, Subtree,
 };
 
@@ -50,16 +50,41 @@ fn ids_are_uuid_v7() {
 }
 
 #[test]
-fn objects_cannot_sit_at_the_top_level() {
+fn objects_can_sit_at_the_top_level() {
     let mut map = empty_map();
-    let err = map
-        .apply(Op::Insert {
-            parent: None,
-            index: 0,
-            subtree: object(ObjectKind::Stamp(Stamp::default())),
-        })
-        .unwrap_err();
-    assert_eq!(err, OpError::ObjectAtRoot);
+    let stamp = insert(&mut map, None, object(ObjectKind::Stamp(Stamp::default())));
+    let group = insert(&mut map, None, layer("Group"));
+    assert_eq!(map.children(None), [stamp, group]);
+    assert_eq!(map.parent(stamp), None);
+    assert_eq!(map.validate(), Ok(()));
+    let copy = Map::from_view(map.view()).unwrap();
+    assert_eq!(copy.view(), map.view());
+
+    // Into a Layer and back out, undone by the inverse Op.
+    let to = |parent, index| Op::Move {
+        id: stamp,
+        parent,
+        index,
+    };
+    map.apply(to(Some(group), 0)).unwrap();
+    let inverse = map.apply(to(None, 1)).unwrap();
+    assert_eq!(map.children(None), [group, stamp]);
+    map.apply(inverse).unwrap();
+    assert_eq!(map.children(Some(group)), [stamp]);
+    assert_eq!(map.validate(), Ok(()));
+}
+
+#[test]
+fn top_level_objects_and_layers_draw_in_one_order_with_water_above_its_run() {
+    let mut map = empty_map();
+    let mut add = |parent, kind| insert(&mut map, parent, object(kind));
+    let lake = add(None, ObjectKind::Lake(Lake::default()));
+    let land = add(None, ObjectKind::Landmass(Landmass::default()));
+    let group = insert(&mut map, None, layer("Group"));
+    let mut add = |parent, kind| insert(&mut map, parent, object(kind));
+    let inside = add(Some(group), ObjectKind::Stamp(Stamp::default()));
+    let top = add(None, ObjectKind::Stamp(Stamp::default()));
+    assert_eq!(map.draw_order(), [land, lake, inside, top]);
 }
 
 #[test]

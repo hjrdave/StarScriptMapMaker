@@ -351,3 +351,21 @@ fn a_big_tree_groups_and_ungroups() {
     map.execute(&Command::Ungroup { ids: vec![g] }).unwrap();
     assert_eq!(map.children(Some(root)), ids);
 }
+
+#[test]
+fn ungrouping_at_the_top_level_leaves_its_objects_there() {
+    let mut map = empty_map();
+    let below = layer(&mut map, None, "Below");
+    let holder = layer(&mut map, None, "Group");
+    let a = stamp(&mut map, holder);
+    let b = stamp(&mut map, holder);
+    map.execute(&Command::Ungroup { ids: vec![holder] })
+        .unwrap();
+    assert_eq!(map.children(None), [below, a, b]);
+    assert_eq!(map.draw_order(), [a, b]);
+    map.validate().unwrap();
+
+    let again = group(&mut map, &[a, b]);
+    assert_eq!(map.children(None), [below, again]);
+    assert_eq!(map.children(Some(again)), [a, b]);
+}

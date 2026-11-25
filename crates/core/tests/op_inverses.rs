@@ -142,8 +142,16 @@ fn leaf(node: Node) -> Subtree {
     }
 }
 
+/// A top-level node: a Layer with a branch beneath it, or an Object.
+fn root_subtree() -> impl Strategy<Value = Subtree> {
+    prop_oneof![
+        3 => layer_subtree(),
+        1 => object().prop_map(|object| leaf(Node::Object(object))),
+    ]
+}
+
 fn map() -> impl Strategy<Value = Map> {
-    (prop::collection::vec(layer_subtree(), 0..4), roughness()).prop_map(|(layers, roughness)| {
+    (prop::collection::vec(root_subtree(), 0..4), roughness()).prop_map(|(layers, roughness)| {
         Map::from_view(MapView {
             canvas: canvas(),
             boards: Vec::new(),

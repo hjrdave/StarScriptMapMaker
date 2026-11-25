@@ -29,7 +29,7 @@ use crate::shore::ShoreStyle;
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Op {
     /// Inserts a node and its descendants at `index` among `parent`'s children
-    /// (`None` is the top level, which holds only Layers).
+    /// (`None` is the top level).
     Insert {
         /// The Layer to insert into, or `None` for the top level.
         parent: Option<Id>,
@@ -224,9 +224,6 @@ pub enum OpError {
     /// The node is an Object, and only Layers hold children.
     #[error("{0} is an Object; only Layers hold children")]
     NotALayer(Id),
-    /// An Object was put at the top level, which holds only Layers.
-    #[error("only Layers can be at the top level")]
-    ObjectAtRoot,
     /// The index is past the end of the parent's children.
     #[error("index {index} is past the end of {len} children")]
     IndexOutOfRange {
@@ -521,7 +518,7 @@ impl Map {
                 index,
                 subtree,
             } => {
-                self.check_destination(*parent, subtree.node.is_layer())?;
+                self.check_destination(*parent)?;
                 check_index(*index, self.children(*parent).len())?;
                 self.check_insertable(subtree)?;
             }
@@ -538,8 +535,8 @@ impl Map {
                 _ => return Err(OpError::NoGeometry(*id)),
             },
             Op::Move { id, parent, index } => {
-                let node = self.existing(*id)?;
-                self.check_destination(*parent, node.is_layer())?;
+                self.existing(*id)?;
+                self.check_destination(*parent)?;
                 if let Some(parent) = *parent
                     && self.is_ancestor_or_self(*id, parent)
                 {
@@ -606,9 +603,8 @@ impl Map {
         self.node(id).ok_or(OpError::NotFound(id))
     }
 
-    fn check_destination(&self, parent: Option<Id>, is_layer: bool) -> Result<(), OpError> {
+    fn check_destination(&self, parent: Option<Id>) -> Result<(), OpError> {
         match parent {
-            None if !is_layer => Err(OpError::ObjectAtRoot),
             None => Ok(()),
             Some(parent) if self.existing(parent)?.is_layer() => Ok(()),
             Some(parent) => Err(OpError::NotALayer(parent)),

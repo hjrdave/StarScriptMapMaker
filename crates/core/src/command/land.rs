@@ -169,9 +169,9 @@ pub(super) fn split_apart(map: &Map, id: Id, new_ids: &[Id]) -> Result<Vec<Op>, 
             return Err(CommandError::IdInUse(new));
         }
     }
-    let parent = map.parent(id).ok_or(CommandError::NotFound(id))?;
+    let parent = map.parent(id);
     let position = map
-        .children(Some(parent))
+        .children(parent)
         .iter()
         .position(|&c| c == id)
         .ok_or(CommandError::NotFound(id))?;
@@ -185,7 +185,7 @@ pub(super) fn split_apart(map: &Map, id: Id, new_ids: &[Id]) -> Result<Vec<Op>, 
             l.geometry = MultiPolygon(vec![part.clone()]);
         }
         ops.push(Op::Insert {
-            parent: Some(parent),
+            parent,
             index: position + 1 + k,
             subtree: Subtree {
                 id: new,
