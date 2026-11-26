@@ -25,9 +25,9 @@ use ssmap_core::file::Recovered;
 use ssmap_core::land::{self, BrushStroke};
 use ssmap_core::scatter::{self, ScatterBrush, ScatterStroke, Terrain};
 use ssmap_core::{
-    Align, Blob, Color, Command, CommandError, DefaultLayers, EmbedAsset, EmbedFont, ExecuteError,
-    ExportSettings, History, Id, Label, Map, MultiPolygon, Node, NodeRef, ObjectKind, Op, OpError,
-    PaintStroke, PasteGaps, Point, Rect, ResolvedLabel, Selection, Stamp, Subtree,
+    Align, Blob, BrushSettings, Color, Command, CommandError, DefaultLayers, EmbedAsset, EmbedFont,
+    ExecuteError, ExportSettings, History, Id, Label, Map, MultiPolygon, Node, NodeRef, ObjectKind,
+    Op, OpError, PaintStroke, PasteGaps, Point, Rect, ResolvedLabel, Selection, Stamp, Subtree,
 };
 use ssmap_fonts::FALLBACK_FAMILY;
 use ssmap_render::wgpu;
@@ -47,90 +47,21 @@ use gesture::OpenGesture;
 pub use gesture::{Gesture, GestureId};
 pub use rivers::DEFAULT_RIVER_WIDTH;
 
-/// The land brush's starting diameter, in Canvas units.
-pub const DEFAULT_BRUSH_SIZE: f64 = 48.0;
+pub use ssmap_core::{DEFAULT_BRUSH_IRREGULARITY, DEFAULT_BRUSH_SIZE};
 
-/// The land brush's starting Irregularity: enough that strokes look natural, not round.
-pub const DEFAULT_BRUSH_IRREGULARITY: f64 = 0.15;
+/// What one Paint tool mode keeps: the settings a stroke in that mode takes. Saved with the
+/// Map (ADR 0020).
+pub type PaintSettings = ssmap_core::PaintBrushSettings;
 
-/// What one Paint tool mode keeps: the settings a stroke in that mode takes.
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub struct PaintSettings {
-    /// The brush diameter, in Canvas units.
-    pub size: f64,
-    /// How soft the brush edge is, from 0 (hard) to 1.
-    pub softness: f64,
-    /// How strong a stroke is, from 0 to 1.
-    pub opacity: f64,
-}
+/// What one Land Brush stroke mode keeps. Saved with the Map (ADR 0020).
+pub type LandSettings = ssmap_core::LandBrushSettings;
 
-impl Default for PaintSettings {
-    fn default() -> Self {
-        Self {
-            size: DEFAULT_BRUSH_SIZE,
-            softness: 0.3,
-            opacity: 1.0,
-        }
-    }
-}
-
-/// The Paint tool's brush: the settings every new paint stroke takes (ADR 0017). Painting and
-/// erasing each keep their own size, softness and opacity.
-#[derive(Clone, Copy, PartialEq, Debug)]
+/// The Paint tool's mode choice. The colour and each mode's size, softness and opacity are
+/// saved with the Map (ADR 0020); see [`Editor::paint_settings`] and [`Editor::paint_color`].
+#[derive(Clone, Copy, PartialEq, Default, Debug)]
 pub struct PaintBrush {
-    /// The paint colour. An eraser ignores it.
-    pub color: Color,
     /// Whether the brush erases by default; holding the erase modifier gives the other.
     pub erase: bool,
-    /// The settings of the Paint mode.
-    pub painting: PaintSettings,
-    /// The settings of the Erase mode.
-    pub erasing: PaintSettings,
-}
-
-impl Default for PaintBrush {
-    fn default() -> Self {
-        Self {
-            color: Color::rgb(0xc2, 0x4d, 0x3a),
-            erase: false,
-            painting: PaintSettings::default(),
-            erasing: PaintSettings::default(),
-        }
-    }
-}
-
-impl PaintBrush {
-    /// The settings of the mode that paints (`erase` false) or erases.
-    pub fn settings(&self, erase: bool) -> &PaintSettings {
-        if erase { &self.erasing } else { &self.painting }
-    }
-
-    /// The settings of the mode that paints (`erase` false) or erases, to change.
-    pub fn settings_mut(&mut self, erase: bool) -> &mut PaintSettings {
-        if erase {
-            &mut self.erasing
-        } else {
-            &mut self.painting
-        }
-    }
-}
-
-/// What one Land Brush stroke mode keeps.
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub struct LandSettings {
-    /// The brush diameter, in Canvas units.
-    pub size: f64,
-    /// How far the brush pushes a stroke's outline out and in, as a share of its radius.
-    pub irregularity: f64,
-}
-
-impl Default for LandSettings {
-    fn default() -> Self {
-        Self {
-            size: DEFAULT_BRUSH_SIZE,
-            irregularity: DEFAULT_BRUSH_IRREGULARITY,
-        }
-    }
 }
 
 /// How the Land Brush draws: a stroke, or a closed shape that fills with land.
@@ -175,14 +106,6 @@ pub struct Editor {
     /// The Stamp and Stamp Eraser's brush diameter, in Canvas units (the scatter brush uses
     /// half of it as its radius). The Land, Lake and Paint brushes keep their own per mode.
     pub brush_size: f64,
-    /// The Land Brush's Paint mode settings.
-    pub land_paint: LandSettings,
-    /// The Land Brush's Erase mode settings.
-    pub land_erase: LandSettings,
-    /// The Lake Brush's Paint mode diameter, in Canvas units.
-    pub water_paint_size: f64,
-    /// The Lake Brush's Erase mode diameter, in Canvas units.
-    pub water_erase_size: f64,
     /// Whether the Land Brush draws strokes or closed shapes.
     pub draw_mode: DrawMode,
     /// Whether the land brush erases by default; holding the erase modifier gives the other.
@@ -274,22 +197,60 @@ pub struct NodeEdit {
 }
 
 impl Editor {
+    /// The Map's brush settings, which the tool settings write outside Commands (ADR 0020).
+    /// A change marks the Tab unsaved; it makes no Undo step and no journal entry.
+    pub fn brush_settings_mut(&mut self) -> &mut BrushSettings {
+        &mut self.map.brush_settings
+    }
+
     /// The Land Brush's settings in the mode that paints (`erase` false) or erases.
     pub fn land_settings(&self, erase: bool) -> &LandSettings {
+        let brushes = &self.map.brush_settings;
         if erase {
-            &self.land_erase
+            &brushes.land_erase
         } else {
-            &self.land_paint
+            &brushes.land_paint
         }
     }
 
     /// The Land Brush's settings in the mode that paints (`erase` false) or erases, to change.
     pub fn land_settings_mut(&mut self, erase: bool) -> &mut LandSettings {
+        let brushes = self.brush_settings_mut();
         if erase {
-            &mut self.land_erase
+            &mut brushes.land_erase
         } else {
-            &mut self.land_paint
+            &mut brushes.land_paint
         }
+    }
+
+    /// The Paint tool's settings in the mode that paints (`erase` false) or erases.
+    pub fn paint_settings(&self, erase: bool) -> &PaintSettings {
+        let brushes = &self.map.brush_settings;
+        if erase {
+            &brushes.erasing
+        } else {
+            &brushes.painting
+        }
+    }
+
+    /// The Paint tool's settings in the mode that paints (`erase` false) or erases, to change.
+    pub fn paint_settings_mut(&mut self, erase: bool) -> &mut PaintSettings {
+        let brushes = self.brush_settings_mut();
+        if erase {
+            &mut brushes.erasing
+        } else {
+            &mut brushes.painting
+        }
+    }
+
+    /// The Paint tool's colour. The eraser ignores it.
+    pub fn paint_color(&self) -> Color {
+        self.map.brush_settings.paint_color
+    }
+
+    /// The Paint tool's colour, to change.
+    pub fn paint_color_mut(&mut self) -> &mut Color {
+        &mut self.brush_settings_mut().paint_color
     }
 
     /// The brush diameter `tool` uses in the mode that paints (`erase` false) or erases. The
@@ -297,9 +258,9 @@ impl Editor {
     pub fn brush_size_of(&self, tool: ToolId, erase: bool) -> f64 {
         match tool {
             ToolId::LandBrush => self.land_settings(erase).size,
-            ToolId::WaterBrush if erase => self.water_erase_size,
-            ToolId::WaterBrush => self.water_paint_size,
-            ToolId::Paint => self.paint.settings(erase).size,
+            ToolId::WaterBrush if erase => self.map.brush_settings.water_erase_size,
+            ToolId::WaterBrush => self.map.brush_settings.water_paint_size,
+            ToolId::Paint => self.paint_settings(erase).size,
             _ => self.brush_size,
         }
     }
@@ -308,9 +269,9 @@ impl Editor {
     pub fn brush_size_mut(&mut self, tool: ToolId, erase: bool) -> &mut f64 {
         match tool {
             ToolId::LandBrush => &mut self.land_settings_mut(erase).size,
-            ToolId::WaterBrush if erase => &mut self.water_erase_size,
-            ToolId::WaterBrush => &mut self.water_paint_size,
-            ToolId::Paint => &mut self.paint.settings_mut(erase).size,
+            ToolId::WaterBrush if erase => &mut self.brush_settings_mut().water_erase_size,
+            ToolId::WaterBrush => &mut self.brush_settings_mut().water_paint_size,
+            ToolId::Paint => &mut self.paint_settings_mut(erase).size,
             _ => &mut self.brush_size,
         }
     }
@@ -366,10 +327,6 @@ impl Editor {
             clipboard: ClipboardSlot::default(),
             rename_request: None,
             brush_size: DEFAULT_BRUSH_SIZE,
-            land_paint: LandSettings::default(),
-            land_erase: LandSettings::default(),
-            water_paint_size: DEFAULT_BRUSH_SIZE,
-            water_erase_size: DEFAULT_BRUSH_SIZE,
             draw_mode: DrawMode::default(),
             erase_default: false,
             stroke_erase: false,

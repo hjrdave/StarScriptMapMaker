@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::background::Background;
+use crate::brush_settings::BrushSettings;
 use crate::changes::{ChangeLog, Changes};
 use crate::color::Color;
 use crate::embedded::Embedded;
@@ -238,6 +239,9 @@ pub struct MapView {
     /// The last PNG export settings. Files saved before they existed get the defaults.
     #[serde(default, skip_serializing_if = "ExportSettings::is_default")]
     pub export_settings: ExportSettings,
+    /// The settings of each brush mode. Files saved before they existed get the defaults.
+    #[serde(default, skip_serializing_if = "BrushSettings::is_default")]
+    pub brush_settings: BrushSettings,
 }
 
 #[derive(Clone, Debug)]
@@ -263,6 +267,9 @@ pub struct Map {
     pub(crate) embedded: Embedded,
     /// The last PNG export settings. Not an Op: it is a preference, not map content.
     pub export_settings: ExportSettings,
+    /// The settings of each brush mode. Not an Op either: a preference, like the export
+    /// settings (ADR 0020).
+    pub brush_settings: BrushSettings,
     pub(crate) root: Vec<Id>,
     pub(crate) entries: HashMap<Id, Entry>,
     /// The members of each Link set, kept in step with the nodes' `link` fields.
@@ -287,6 +294,7 @@ impl Map {
             strokes: Vec::new(),
             embedded: Embedded::default(),
             export_settings: ExportSettings::default(),
+            brush_settings: BrushSettings::default(),
             root: Vec::new(),
             entries: HashMap::new(),
             links: HashMap::new(),
@@ -323,6 +331,7 @@ impl Map {
         map.strokes = view.strokes;
         map.embedded = view.embedded;
         map.export_settings = view.export_settings;
+        map.brush_settings = view.brush_settings;
         for subtree in view.layers {
             map.root.push(subtree.id);
             map.insert_subtree(None, subtree)?;
@@ -341,6 +350,7 @@ impl Map {
             layers: self.root.iter().map(|&id| self.subtree(id)).collect(),
             embedded: self.embedded.clone(),
             export_settings: self.export_settings.clone(),
+            brush_settings: self.brush_settings.clone(),
         }
     }
 

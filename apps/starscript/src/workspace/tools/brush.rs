@@ -286,7 +286,7 @@ mod tests {
     fn irregularity_shapes_land_strokes_and_zero_paints_them_round() {
         let outline = |irregularity: f64| {
             let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
-            editor.land_paint.irregularity = irregularity;
+            editor.land_settings_mut(false).irregularity = irregularity;
             paint_stroke(&mut editor, &view, &mut state, false);
             editor
                 .map()
@@ -345,7 +345,7 @@ mod tests {
         );
         let before = land_objects(&editor);
         // The Erase mode's brush is tiny, so Alt-clicking the dab leaves most of it.
-        editor.land_erase.size = 2.0;
+        editor.land_settings_mut(true).size = 2.0;
         let alt = CanvasFrame {
             alt: true,
             ..click_at(250.0, 250.0)

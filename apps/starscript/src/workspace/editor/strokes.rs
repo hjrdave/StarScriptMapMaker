@@ -116,12 +116,11 @@ impl Editor {
     /// brush's settings, committed as the gesture's Undo step. A stroke the Command refuses
     /// leaves no Undo step, and the status bar says why.
     pub fn finish_paint_stroke(&mut self, id: GestureId, points: Vec<Point>, erase: bool) {
-        let brush = self.paint;
-        let settings = *brush.settings(erase);
+        let settings = *self.paint_settings(erase);
         let stroke = PaintStroke {
             id: Id::new(),
             points,
-            color: brush.color,
+            color: self.paint_color(),
             size: settings.size,
             softness: settings.softness as f32,
             opacity: settings.opacity as f32,

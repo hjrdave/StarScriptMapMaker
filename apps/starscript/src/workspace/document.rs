@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use ssmap_core::file::{FileError, MapFile};
-use ssmap_core::{ExportSettings, Map};
+use ssmap_core::{BrushSettings, ExportSettings, Map};
 use uuid::Uuid;
 
 /// File extension of Map files.
@@ -18,6 +18,8 @@ pub struct Document {
     /// The export settings when last saved or opened. They are written outside Commands (ADR
     /// 0011) and so leave the revision alone, so they are compared separately.
     saved_export: ExportSettings,
+    /// The brush settings when last saved or opened, compared for the same reason (ADR 0020).
+    saved_brushes: BrushSettings,
 }
 
 impl Document {
@@ -27,6 +29,7 @@ impl Document {
         let document = Self {
             saved_revision: file.saved_revision(),
             saved_export: map.export_settings.clone(),
+            saved_brushes: map.brush_settings.clone(),
             file: Some(file),
         };
         Ok((document, map))
@@ -38,6 +41,7 @@ impl Document {
             file: None,
             saved_revision: u64::MAX,
             saved_export: ExportSettings::default(),
+            saved_brushes: BrushSettings::default(),
         }
     }
 
@@ -58,7 +62,9 @@ impl Document {
     }
 
     pub fn has_unsaved_changes(&self, map: &Map) -> bool {
-        map.revision() != self.saved_revision || map.export_settings != self.saved_export
+        map.revision() != self.saved_revision
+            || map.export_settings != self.saved_export
+            || map.brush_settings != self.saved_brushes
     }
 
     /// Saves to the open file. Fails with `None` before the first save, which needs a path.
@@ -67,6 +73,7 @@ impl Document {
         Some(file.save(map, preview).map(|_| {
             self.saved_revision = map.revision();
             self.saved_export = map.export_settings.clone();
+            self.saved_brushes = map.brush_settings.clone();
         }))
     }
 
@@ -87,6 +94,7 @@ impl Document {
         }
         self.saved_revision = map.revision();
         self.saved_export = map.export_settings.clone();
+        self.saved_brushes = map.brush_settings.clone();
         Ok(())
     }
 }
@@ -138,6 +146,33 @@ mod tests {
         map.export_settings.transparent_background = true;
         assert!(document.has_unsaved_changes(&map));
         map.export_settings = ExportSettings::default();
+        assert!(!document.has_unsaved_changes(&map));
+    }
+
+    #[test]
+    fn changing_a_brush_setting_marks_the_map_unsaved_and_saving_keeps_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.ssmap");
+        let mut map = map();
+        let mut document = Document::default();
+        document.save_as(&path, &map, None).unwrap();
+        assert!(!document.has_unsaved_changes(&map));
+
+        map.brush_settings.land_erase.size = 120.0;
+        assert!(document.has_unsaved_changes(&map));
+        // Not an Op: the revision is unchanged, so nothing reaches Undo or the journal.
+        assert_eq!(map.revision(), 0);
+
+        document.save(&map, None).unwrap().unwrap();
+        assert!(!document.has_unsaved_changes(&map));
+        let (reopened, loaded) = Document::open(&path).unwrap();
+        assert_eq!(loaded.brush_settings.land_erase.size, 120.0);
+        assert!(!reopened.has_unsaved_changes(&loaded));
+
+        // Setting it back to what was saved clears the mark again.
+        map.brush_settings.land_erase.size = 60.0;
+        assert!(document.has_unsaved_changes(&map));
+        map.brush_settings.land_erase.size = 120.0;
         assert!(!document.has_unsaved_changes(&map));
     }
 }

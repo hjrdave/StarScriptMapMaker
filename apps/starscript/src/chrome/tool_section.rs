@@ -283,14 +283,13 @@ fn paint_mode(ui: &mut egui::Ui, editor: &mut Editor) {
 
 /// The Paint brush's colour (not for an eraser, which ignores it), size, softness and opacity.
 fn paint_brush(ui: &mut egui::Ui, editor: &mut Editor, erase: bool) {
-    let brush = &mut editor.paint;
     if !erase {
-        let mut colour = Some(brush.color);
+        let mut colour = Some(editor.paint_color());
         let response = prop_widgets::swatch(ui, "Colour", &mut colour, false, Provenance::Plain);
         if response.edit.changed
             && let Some(colour) = colour
         {
-            brush.color = colour;
+            *editor.paint_color_mut() = colour;
         }
     }
     let size = ScrubSpec::new("Size")
@@ -298,7 +297,7 @@ fn paint_brush(ui: &mut egui::Ui, editor: &mut Editor, erase: bool) {
         .slider_max(tools::BRUSH_SIZE_SLIDER_MAX)
         .logarithmic()
         .default_value(crate::editor::DEFAULT_BRUSH_SIZE);
-    let settings = brush.settings_mut(erase);
+    let settings = editor.paint_settings_mut(erase);
     prop_widgets::slider(ui, &mut settings.size, &size);
     let mut softness = settings.softness * 100.0;
     let spec = ScrubSpec::new("Softness")

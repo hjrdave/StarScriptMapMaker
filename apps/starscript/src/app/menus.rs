@@ -571,7 +571,7 @@ fn edit_shortcuts(
                 .clamp(ssmap_core::MIN_RIVER_WIDTH, ssmap_core::MAX_RIVER_WIDTH);
         } else if editor.active_tool == ToolId::Paint {
             let erase = editor.paint.erase;
-            let size = &mut editor.paint.settings_mut(erase).size;
+            let size = &mut editor.paint_settings_mut(erase).size;
             *size = (*size * step).clamp(*tools::BRUSH_SIZES.start(), *tools::BRUSH_SIZES.end());
         } else if river_points {
             // The selected points of a River being edited widen or narrow.
