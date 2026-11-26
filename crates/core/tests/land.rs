@@ -354,7 +354,7 @@ fn the_land_brush_ignores_a_selected_lake() {
     .unwrap()
     .expect("a stroke makes land");
     assert!(
-        matches!(&command, Command::CreateLandmass { id, parent, .. } if *id == new_id && *parent == layer_id)
+        matches!(&command, Command::CreateLandmass { id, parent, .. } if *id == new_id && *parent == Some(layer_id))
     );
 
     // Erasing with only a Lake selected cuts land, never the Lake.
