@@ -6,7 +6,7 @@ use std::time::Duration;
 use wgpu::util::DeviceExt;
 
 use super::cache::TessellationCache;
-use super::chunk::{Built, Chunked, Draw, EMPTY_BOUNDS, Vertex, build, union};
+use super::chunk::{Built, Chunked, Draw, EMPTY_BOUNDS, Vertex, build, split, union};
 use super::{DrawFilter, VectorGroup, overlaps};
 use crate::canvas::{CLIP_INSIDE, StencilUse};
 use crate::fill_texture::FillTextures;
@@ -32,12 +32,47 @@ pub(crate) struct LyonRenderer {
     textures: wgpu::BindGroup,
 }
 
+/// The whole Map's triangles, in as many buffer pairs as the device's `max_buffer_size` needs.
 struct Mesh {
+    parts: Vec<Part>,
+}
+
+/// One vertex buffer and one index buffer, with the draws that use them.
+struct Part {
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
     draws: Vec<Draw>,
     /// Ranges of `draws`, one per run (see [`LyonRenderer::set_runs`]).
     runs: Vec<Range<usize>>,
+}
+
+impl Part {
+    fn bind(&self, pass: &mut wgpu::RenderPass<'_>) {
+        pass.set_vertex_buffer(0, self.vertices.slice(..));
+        pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
+    }
+}
+
+/// Uploads `built` as buffers that each fit the device's `max_buffer_size`.
+fn upload_parts(device: &wgpu::Device, built: Built, label: &str) -> Vec<Part> {
+    split(built, device.limits().max_buffer_size)
+        .into_iter()
+        .filter(|piece| !piece.geometry.indices.is_empty())
+        .map(|piece| Part {
+            vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents: bytemuck::cast_slice(&piece.geometry.vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            }),
+            indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents: bytemuck::cast_slice(&piece.geometry.indices),
+                usage: wgpu::BufferUsages::INDEX,
+            }),
+            draws: piece.draws,
+            runs: piece.runs,
+        })
+        .collect()
 }
 
 impl LyonRenderer {
@@ -119,26 +154,10 @@ impl LyonRenderer {
         groups: &[VectorGroup],
         cuts: &[usize],
     ) {
-        let Built {
-            geometry,
-            draws,
-            runs,
-        } = build(groups, cuts, &self.cache);
+        let built = build(groups, cuts, &self.cache);
         self.chunked = None;
-        self.mesh = (!geometry.indices.is_empty()).then(|| Mesh {
-            vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("vector vertices"),
-                contents: bytemuck::cast_slice(&geometry.vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            }),
-            indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("vector indices"),
-                contents: bytemuck::cast_slice(&geometry.indices),
-                usage: wgpu::BufferUsages::INDEX,
-            }),
-            draws,
-            runs,
-        });
+        let parts = upload_parts(device, built, "vector");
+        self.mesh = (!parts.is_empty()).then_some(Mesh { parts });
     }
 
     /// Whether the groups are drawn chunk by chunk (see [`LyonRenderer::start_chunks`]).
@@ -182,27 +201,26 @@ impl LyonRenderer {
             let Some(range) = chunked.runs.get(run) else {
                 return;
             };
-            for part in chunked.chunks[range.clone()]
+            for chunk in chunked.chunks[range.clone()]
                 .iter()
                 .filter_map(|chunk| chunk.part.as_ref())
                 .filter(|part| overlaps(part.bounds, filter.bounds))
             {
-                let Some((vertices, indices)) = &part.buffers else {
-                    continue;
-                };
-                pass.set_vertex_buffer(0, vertices.slice(..));
-                pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
-                self.draw_draws(pass, &part.draws, clipped, filter);
+                for part in &chunk.parts {
+                    part.bind(pass);
+                    self.draw_draws(pass, &part.draws, clipped, filter);
+                }
             }
             return;
         }
         let Some(mesh) = &self.mesh else { return };
-        let Some(range) = mesh.runs.get(run) else {
-            return;
-        };
-        pass.set_vertex_buffer(0, mesh.vertices.slice(..));
-        pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
-        self.draw_draws(pass, &mesh.draws[range.clone()], clipped, filter);
+        for part in &mesh.parts {
+            let Some(range) = part.runs.get(run) else {
+                continue;
+            };
+            part.bind(pass);
+            self.draw_draws(pass, &part.draws[range.clone()], clipped, filter);
+        }
     }
 
     /// Draws what `filter` lets through of `draws`, from the buffers already set on `pass`.
@@ -235,16 +253,17 @@ impl LyonRenderer {
     /// [`LyonRenderer::set_runs`], without drawing colour.
     pub(crate) fn draw_mask(&self, pass: &mut wgpu::RenderPass<'_>, run: usize, value: u32) {
         let Some(mesh) = &self.mesh else { return };
-        let Some(range) = mesh.runs.get(run) else {
-            return;
-        };
-        pass.set_vertex_buffer(0, mesh.vertices.slice(..));
-        pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
         pass.set_stencil_reference(value);
         pass.set_bind_group(1, &self.textures, &[]);
         pass.set_pipeline(&self.mask);
-        for draw in &mesh.draws[range.clone()] {
-            pass.draw_indexed(draw.indices.clone(), 0, 0..1);
+        for part in &mesh.parts {
+            let Some(range) = part.runs.get(run) else {
+                continue;
+            };
+            part.bind(pass);
+            for draw in &part.draws[range.clone()] {
+                pass.draw_indexed(draw.indices.clone(), 0, 0..1);
+            }
         }
     }
 }
@@ -264,36 +283,18 @@ impl LyonRenderer {
 
 /// A chunk's triangles on the GPU.
 struct ChunkMesh {
-    /// Vertex and index buffers; `None` for a chunk with nothing to draw.
-    buffers: Option<(wgpu::Buffer, wgpu::Buffer)>,
-    draws: Vec<Draw>,
+    /// Empty for a chunk with nothing to draw.
+    parts: Vec<Part>,
     bounds: [f32; 4],
 }
 
 fn upload(device: &wgpu::Device, built: Built) -> ChunkMesh {
-    let Built {
-        geometry, draws, ..
-    } = built;
-    let bounds = draws
+    let bounds = built
+        .draws
         .iter()
         .fold(EMPTY_BOUNDS, |all, d| union(all, d.bounds));
-    let buffers = (!geometry.indices.is_empty()).then(|| {
-        (
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("chunk vertices"),
-                contents: bytemuck::cast_slice(&geometry.vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            }),
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("chunk indices"),
-                contents: bytemuck::cast_slice(&geometry.indices),
-                usage: wgpu::BufferUsages::INDEX,
-            }),
-        )
-    });
     ChunkMesh {
-        buffers,
-        draws,
+        parts: upload_parts(device, built, "chunk"),
         bounds,
     }
 }

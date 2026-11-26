@@ -280,6 +280,91 @@ fn merge(meshes: &[Option<Arc<GroupMesh>>], cuts: &[usize]) -> Built {
     }
 }
 
+/// Splits `built` into pieces whose vertex and index data each fit in `max_bytes`, so each
+/// can be one GPU buffer (the device caps `max_buffer_size`). A piece has its own vertices,
+/// indices counted from its first vertex, draws, and one range of draws per run of `built`
+/// (empty if the piece has none of that run). A draw that alone is too big is left out.
+pub(super) fn split(built: Built, max_bytes: u64) -> Vec<Built> {
+    let max_vertices = (max_bytes / std::mem::size_of::<Vertex>() as u64).max(1);
+    let max_indices = max_bytes / std::mem::size_of::<u32>() as u64;
+    let fits = |vertices: usize, indices: usize| {
+        vertices as u64 <= max_vertices && indices as u64 <= max_indices
+    };
+    if fits(built.geometry.vertices.len(), built.geometry.indices.len()) {
+        return vec![built];
+    }
+    let Built {
+        geometry,
+        draws,
+        runs,
+    } = built;
+    let mut run_of = vec![0; draws.len()];
+    for (run, range) in runs.iter().enumerate() {
+        run_of[range.clone()].fill(run);
+    }
+    // The vertices a draw uses, then greedily the draws that share a piece.
+    let mut spans: Vec<(Range<usize>, Vec<usize>)> = Vec::new();
+    for (position, draw) in draws.iter().enumerate() {
+        let used = &geometry.indices[draw.indices.start as usize..draw.indices.end as usize];
+        let (Some(&low), Some(&high)) = (used.iter().min(), used.iter().max()) else {
+            continue;
+        };
+        let (low, high) = (low as usize, high as usize + 1);
+        if !fits(high - low, used.len()) {
+            continue;
+        }
+        if let Some((vertices, members)) = spans.last_mut() {
+            let first = &draws[members[0]];
+            if fits(
+                high - vertices.start,
+                (draw.indices.end - first.indices.start) as usize,
+            ) {
+                vertices.end = high;
+                members.push(position);
+                continue;
+            }
+        }
+        spans.push((low..high, vec![position]));
+    }
+    spans
+        .into_iter()
+        .map(|(vertices, members)| {
+            let first = draws[members[0]].indices.start;
+            let last = draws[members[members.len() - 1]].indices.end;
+            let mut piece_runs: Vec<Range<usize>> = vec![0..0; runs.len()];
+            let mut seen = vec![false; runs.len()];
+            let mut piece_draws = Vec::with_capacity(members.len());
+            for (local, &position) in members.iter().enumerate() {
+                let draw = &draws[position];
+                let run = run_of[position];
+                if !seen[run] {
+                    seen[run] = true;
+                    piece_runs[run].start = local;
+                }
+                piece_runs[run].end = local + 1;
+                piece_draws.push(Draw {
+                    indices: draw.indices.start - first..draw.indices.end - first,
+                    once: draw.once,
+                    effect: draw.effect,
+                    bounds: draw.bounds,
+                });
+            }
+            let base = vertices.start as u32;
+            Built {
+                geometry: VertexBuffers {
+                    vertices: geometry.vertices[vertices].to_vec(),
+                    indices: geometry.indices[first as usize..last as usize]
+                        .iter()
+                        .map(|&index| index - base)
+                        .collect(),
+                },
+                draws: piece_draws,
+                runs: piece_runs,
+            }
+        })
+        .collect()
+}
+
 /// What a frame may spend applying finished background results to the drawn geometry. Anything
 /// over carries to the next frame, so input is never held up for more than about one frame.
 pub(crate) const APPLY_BUDGET: Duration = Duration::from_millis(4);
@@ -526,6 +611,84 @@ mod tests {
     use crate::color::Color;
     use lyon::math::point;
     use lyon::path::Path;
+
+    fn built_of(count: usize) -> Built {
+        let mut tessellators = Tessellators::default();
+        let groups: Vec<VectorGroup> = (0..count).map(|i| fill(i as f32 * 20.0, None)).collect();
+        let meshes: Vec<_> = groups
+            .iter()
+            .map(|g| Some(Arc::new(mesh_group(g, &mut tessellators))))
+            .collect();
+        // A cut after every second group, and once-draws, so draws stay separate.
+        merge(&meshes, &[2, 4])
+    }
+
+    #[test]
+    fn split_keeps_everything_when_it_fits() {
+        let built = built_of(6);
+        let draws = built.draws.len();
+        let pieces = split(built, u64::MAX);
+        assert_eq!(pieces.len(), 1);
+        assert_eq!(pieces[0].draws.len(), draws);
+    }
+
+    #[test]
+    fn split_pieces_fit_and_draw_the_same_triangles() {
+        let whole = built_of(6);
+        let all_vertices = whole.geometry.vertices.len();
+        let all_indices = whole.geometry.indices.len();
+        // Room for about two groups' vertices per piece.
+        let max = (all_vertices / 3 * std::mem::size_of::<Vertex>()) as u64;
+        let positions: Vec<Vec<[f32; 2]>> = {
+            let g = &whole.geometry;
+            whole
+                .draws
+                .iter()
+                .map(|d| {
+                    g.indices[d.indices.start as usize..d.indices.end as usize]
+                        .iter()
+                        .map(|&i| g.vertices[i as usize].position)
+                        .collect()
+                })
+                .collect()
+        };
+        let runs = whole.runs.len();
+        let pieces = split(whole, max);
+        assert!(pieces.len() > 1);
+        let mut drawn = Vec::new();
+        let mut total_indices = 0;
+        for piece in &pieces {
+            assert!(piece.geometry.vertices.len() as u64 * 36 <= max);
+            assert_eq!(piece.runs.len(), runs);
+            total_indices += piece.geometry.indices.len();
+            assert!(
+                piece
+                    .geometry
+                    .indices
+                    .iter()
+                    .all(|&i| (i as usize) < piece.geometry.vertices.len())
+            );
+            for draw in &piece.draws {
+                drawn.push(
+                    piece.geometry.indices[draw.indices.start as usize..draw.indices.end as usize]
+                        .iter()
+                        .map(|&i| piece.geometry.vertices[i as usize].position)
+                        .collect::<Vec<_>>(),
+                );
+            }
+            // Every draw is in exactly one run.
+            let in_runs: usize = piece.runs.iter().map(Range::len).sum();
+            assert_eq!(in_runs, piece.draws.len());
+        }
+        assert_eq!(total_indices, all_indices);
+        assert_eq!(drawn, positions);
+    }
+
+    #[test]
+    fn split_leaves_out_a_draw_too_big_for_any_buffer() {
+        let pieces = split(built_of(3), 36);
+        assert!(pieces.is_empty());
+    }
 
     fn square(x: f32) -> Path {
         let mut builder = Path::builder();
