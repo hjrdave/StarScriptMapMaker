@@ -39,7 +39,7 @@ fn landmass(map: &mut Map, parent: Id, min: [f64; 2]) -> Id {
         map,
         Command::CreateLandmass {
             id,
-            parent,
+            parent: Some(parent),
             index: None,
             geometry: square(min, 40.0),
             fill: None,

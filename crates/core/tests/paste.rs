@@ -29,7 +29,7 @@ fn stamp(map: &mut Map, parent: Id, x: f64) -> Id {
     let id = Id::new();
     map.execute(&Command::CreateStamp {
         id,
-        parent,
+        parent: Some(parent),
         index: None,
         stamp: Box::new(Stamp::new("pack/asset".parse().unwrap(), [x, 0.0])),
     })

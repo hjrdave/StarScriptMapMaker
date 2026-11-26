@@ -230,7 +230,7 @@ pub struct MapView {
     /// The paint strokes, first drawn lowest. Left out when there are none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub strokes: Vec<PaintStroke>,
-    /// The top-level Layers, first drawn lowest.
+    /// The top-level Layers and Objects, first drawn lowest.
     pub layers: Vec<Subtree>,
     /// The Assets and fonts embedded in the Map.
     #[serde(default, skip_serializing_if = "Embedded::is_empty")]
@@ -324,9 +324,6 @@ impl Map {
         map.embedded = view.embedded;
         map.export_settings = view.export_settings;
         for subtree in view.layers {
-            if !subtree.node.is_layer() {
-                return Err(InvariantError::ObjectAtRoot(subtree.id));
-            }
             map.root.push(subtree.id);
             map.insert_subtree(None, subtree)?;
         }
@@ -535,12 +532,12 @@ impl Map {
         self.entries.get(&id).map(|entry| &entry.node)
     }
 
-    /// The parent Layer of `id`, or `None` for a top-level Layer or an unknown id.
+    /// The parent Layer of `id`, or `None` for a top-level node or an unknown id.
     pub fn parent(&self, id: Id) -> Option<Id> {
         self.entries.get(&id).and_then(|entry| entry.parent)
     }
 
-    /// The children of a Layer in Stacking order, or the top-level Layers for `None`.
+    /// The children of a Layer in Stacking order, or the top-level nodes for `None`.
     pub fn children(&self, parent: Option<Id>) -> &[Id] {
         match parent {
             None => &self.root,
@@ -622,13 +619,25 @@ impl Map {
     }
 
     /// The Objects that draw, first lowest: the tree in Stacking order, skipping hidden
-    /// Layers, except that a Layer's Lakes and Rivers draw above all its other content, so
-    /// water always lies over the land around it.
+    /// Layers and Objects, except that a Layer's Lakes and Rivers draw above all its other content, so
+    /// water always lies over the land around it. At the top level, water draws above the other
+    /// Objects of its run: the Objects with no Layer between them (ADR 0018).
     pub fn draw_order(&self) -> Vec<Id> {
         let mut out = Vec::new();
-        for &layer in &self.root {
-            self.collect_draw_order(layer, &mut out);
+        let mut lakes = Vec::new();
+        for &id in &self.root {
+            match self.node(id) {
+                Some(Node::Layer(_)) => {
+                    out.append(&mut lakes);
+                    self.collect_draw_order(id, &mut out);
+                }
+                Some(Node::Object(object)) if !object.visible => {}
+                Some(Node::Object(object)) if object.kind.is_water() => lakes.push(id),
+                Some(Node::Object(_)) => out.push(id),
+                None => {}
+            }
         }
+        out.extend(lakes);
         out
     }
 
@@ -640,6 +649,7 @@ impl Map {
         for child in self.ordered_children(layer) {
             match self.node(child) {
                 Some(Node::Layer(_)) => self.collect_draw_order(child, out),
+                Some(Node::Object(object)) if !object.visible => {}
                 Some(Node::Object(object)) if object.kind.is_water() => {
                     lakes.push(child);
                 }
@@ -837,8 +847,11 @@ impl Map {
 
     /// `id` is hidden itself or through a Layer above it, so it does not draw.
     pub fn is_hidden(&self, id: Id) -> bool {
-        std::iter::successors(Some(id), |&n| self.parent(n))
-            .any(|n| matches!(self.node(n), Some(Node::Layer(l)) if !l.visible))
+        std::iter::successors(Some(id), |&n| self.parent(n)).any(|n| match self.node(n) {
+            Some(Node::Layer(layer)) => !layer.visible,
+            Some(Node::Object(object)) => !object.visible,
+            None => false,
+        })
     }
 
     /// Whether Layers and Objects can be dragged into `id`: it must be a Layer that is not
@@ -852,14 +865,6 @@ impl Map {
     pub fn validate(&self) -> Result<(), InvariantError> {
         let mut seen = HashSet::new();
         let mut stack: Vec<(Option<Id>, Id)> = self.root.iter().map(|&id| (None, id)).collect();
-        for &id in &self.root {
-            match self.entries.get(&id) {
-                Some(entry) if !entry.node.is_layer() => {
-                    return Err(InvariantError::ObjectAtRoot(id));
-                }
-                _ => {}
-            }
-        }
         while let Some((parent, id)) = stack.pop() {
             if !seen.insert(id) {
                 return Err(InvariantError::DuplicateId(id));
@@ -998,9 +1003,6 @@ pub enum InvariantError {
     /// The id belongs to more than one node.
     #[error("id {0} appears more than once")]
     DuplicateId(Id),
-    /// The Object is at the top level, which holds only Layers.
-    #[error("Object {0} is at the top level; only Layers can be")]
-    ObjectAtRoot(Id),
     /// The Object has children, which only Layers can.
     #[error("Object {0} has children; only Layers can")]
     ObjectWithChildren(Id),

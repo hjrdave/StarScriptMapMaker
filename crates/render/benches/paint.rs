@@ -53,7 +53,7 @@ fn map_with(strokes: usize) -> Map {
     let side = f64::from(SIDE);
     map.execute(&Command::CreateLandmass {
         id: Id::new(),
-        parent: layer,
+        parent: Some(layer),
         index: None,
         geometry: MultiPolygon(vec![Polygon {
             exterior: vec![

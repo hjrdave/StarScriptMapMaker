@@ -38,7 +38,7 @@ fn place(map: &mut Map, layer: Id, label: Label) -> Id {
     let id = Id::new();
     map.execute(&Command::CreateLabel {
         id,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         label: Box::new(Label {
             text: "Name".into(),
@@ -257,7 +257,7 @@ fn a_label_must_name_a_known_style() {
     let (mut map, layer) = map_with_layer();
     let result = map.execute(&Command::CreateLabel {
         id: Id::new(),
-        parent: layer,
+        parent: Some(layer),
         index: None,
         label: Box::new(Label {
             text: "Lost".into(),

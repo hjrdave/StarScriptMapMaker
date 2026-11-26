@@ -59,7 +59,7 @@ fn add_landmass(map: &mut Map) -> Id {
     let id = Id::new();
     map.execute(&Command::CreateLandmass {
         id,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         geometry: square(10.0, 10.0, 20.0),
         fill: None,

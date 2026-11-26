@@ -82,7 +82,7 @@ fn map_with(style: Option<FillStyle>) -> Map {
         &mut map,
         Command::CreateLandmass {
             id: land,
-            parent: layer,
+            parent: Some(layer),
             index: None,
             geometry: MultiPolygon(vec![Polygon {
                 exterior: vec![

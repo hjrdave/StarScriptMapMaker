@@ -83,7 +83,7 @@ fn map_of(rough: bool) -> Map {
             if lake {
                 Command::CreateLake {
                     id,
-                    parent,
+                    parent: Some(parent),
                     index,
                     geometry,
                     fill,
@@ -91,7 +91,7 @@ fn map_of(rough: bool) -> Map {
             } else {
                 Command::CreateLandmass {
                     id,
-                    parent,
+                    parent: Some(parent),
                     index,
                     geometry,
                     fill,

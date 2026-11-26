@@ -10,7 +10,7 @@ use crate::node::{Lake, Landmass, Membership, Node, Object, ObjectKind};
 use crate::op::{Op, Property};
 
 use super::CommandError;
-use super::check::{collect_branch, existing, layer, set, unlocked, unlocked_branch};
+use super::check::{collect_branch, container, existing, set, unlocked, unlocked_branch};
 use super::land::{outline, outlined};
 
 pub(super) fn delete(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
@@ -51,22 +51,21 @@ pub(super) fn delete(map: &Map, ids: &[Id]) -> Result<Vec<Op>, CommandError> {
 pub(super) fn create_object(
     map: &Map,
     id: Id,
-    parent: Id,
+    parent: Option<Id>,
     index: Option<usize>,
     kind: ObjectKind,
 ) -> Result<Vec<Op>, CommandError> {
     if map.contains(id) {
         return Err(CommandError::IdInUse(id));
     }
-    layer(map, parent)?;
-    unlocked(map, parent)?;
+    container(map, parent)?;
     let geometry = kind.geometry().ok_or(CommandError::NoOutline(id))?;
     if let Some(problem) = geometry.problem() {
         return Err(CommandError::InvalidGeometry { id, problem });
     }
     Ok(vec![Op::Insert {
-        parent: Some(parent),
-        index: index.unwrap_or(map.children(Some(parent)).len()),
+        parent,
+        index: index.unwrap_or(map.children(parent).len()),
         subtree: Subtree {
             id,
             node: Node::Object({
@@ -129,11 +128,11 @@ pub(super) fn transform(
     Ok(ops)
 }
 
-/// Creates a Landmass in Layer `parent`. Without a `fill` it takes the Map's land colour.
+/// Creates a Landmass in Layer `parent`, or at the top level when `None`. Without a `fill` it takes the Map's land colour.
 pub(super) fn create_landmass(
     map: &Map,
     id: Id,
-    parent: Id,
+    parent: Option<Id>,
     index: Option<usize>,
     geometry: &MultiPolygon,
     fill: Option<Color>,
@@ -145,11 +144,11 @@ pub(super) fn create_landmass(
     create_object(map, id, parent, index, ObjectKind::Landmass(landmass))
 }
 
-/// Creates a Lake in Layer `parent`. Without a `fill` it takes the default water colour.
+/// Creates a Lake in Layer `parent`, or at the top level when `None`. Without a `fill` it takes the default water colour.
 pub(super) fn create_lake(
     map: &Map,
     id: Id,
-    parent: Id,
+    parent: Option<Id>,
     index: Option<usize>,
     geometry: &MultiPolygon,
     fill: Option<Color>,
