@@ -543,7 +543,8 @@ impl CanvasRenderer {
             if building || self.carry {
                 self.content.start_chunks(scene.content.groups(), &cuts);
             } else if !same_groups {
-                self.content.set_runs(device, scene.content.groups(), &cuts);
+                self.content
+                    .update_runs(device, queue, scene.content.groups(), &cuts);
             }
             // Run 2n of the masks is scope n's land and run 2n + 1 its Lakes.
             let mut mask_groups = Vec::new();
@@ -571,7 +572,7 @@ impl CanvasRenderer {
             } else if !content_changed {
                 // Results landed with no chunks to take them: merge everything.
                 self.content
-                    .set_runs(device, scene.content.groups(), &self.content_cuts);
+                    .update_runs(device, queue, scene.content.groups(), &self.content_cuts);
             }
         }
         // After the chunks above are built, so every texture a vertex names is loaded.

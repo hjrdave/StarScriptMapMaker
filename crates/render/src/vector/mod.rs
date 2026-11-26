@@ -3,6 +3,7 @@
 mod cache;
 mod chunk;
 mod renderer;
+mod resident;
 
 use std::sync::Arc;
 

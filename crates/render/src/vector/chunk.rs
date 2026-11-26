@@ -23,7 +23,7 @@ use crate::profile::{self, Stage};
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub(super) struct Vertex {
-    position: [f32; 2],
+    pub(super) position: [f32; 2],
     color: [f32; 4],
     /// Grain and mottle settings, packed as the shader unpacks them (see [`pack_style`]).
     look: [u8; 4],
@@ -97,7 +97,7 @@ pub(super) struct Draw {
 }
 
 /// Merged groups stop growing here, so one draw's bounds stay small enough to cull by.
-const MERGE_LIMIT: u32 = 30_000;
+pub(super) const MERGE_LIMIT: u32 = 30_000;
 
 pub(super) const EMPTY_BOUNDS: [f32; 4] = [f32::MAX, f32::MAX, f32::MIN, f32::MIN];
 
@@ -173,11 +173,11 @@ fn tessellate(
 
 /// One group's triangles, with indices counted from its own first vertex.
 pub(super) struct GroupMesh {
-    vertices: Vec<Vertex>,
-    indices: Vec<u32>,
-    once: bool,
-    effect: bool,
-    bounds: [f32; 4],
+    pub(super) vertices: Vec<Vertex>,
+    pub(super) indices: Vec<u32>,
+    pub(super) once: bool,
+    pub(super) effect: bool,
+    pub(super) bounds: [f32; 4],
 }
 
 #[derive(Default)]
@@ -223,7 +223,7 @@ pub(super) fn build(groups: &[VectorGroup], cuts: &[usize], cache: &Tessellation
 }
 
 /// Merges the triangles of resolved groups into draws, split into runs at `cuts`.
-fn merge(meshes: &[Option<Arc<GroupMesh>>], cuts: &[usize]) -> Built {
+pub(super) fn merge(meshes: &[Option<Arc<GroupMesh>>], cuts: &[usize]) -> Built {
     let mut geometry: VertexBuffers<Vertex, u32> = VertexBuffers::new();
     let mut draws: Vec<Draw> = Vec::new();
     let mut runs: Vec<Range<usize>> = Vec::new();
@@ -555,7 +555,7 @@ fn resolve_chunk(
 type ObjectMeshes = std::vec::IntoIter<Arc<GroupMesh>>;
 
 /// The mesh of each group, `None` for the groups of an Object left out of the frame.
-fn resolve(
+pub(super) fn resolve(
     groups: &[VectorGroup],
     cache: &TessellationCache,
     tessellators: &mut Tessellators,
