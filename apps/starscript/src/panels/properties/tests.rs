@@ -145,6 +145,7 @@ fn an_overridden_roughness_resets_to_the_map_default() {
     );
     fixture.editor.select(vec![island]);
     let mut harness = harness(fixture);
+    open_tab(&mut harness, "Shape");
 
     harness.get_by_label("Reset Amount").click();
     harness.run();
@@ -162,6 +163,7 @@ fn re_rolling_overrides_the_roughness_with_another_seed() {
     let (mut fixture, _, island) = fixture();
     fixture.editor.select(vec![island]);
     let mut harness = harness(fixture);
+    open_tab(&mut harness, "Shape");
 
     harness.get_by_label("Re-roll").click();
     harness.run();
@@ -198,12 +200,13 @@ fn a_landmass_override_can_be_cleared_back_to_the_map_default() {
     );
     fixture.editor.select(vec![island]);
     let mut harness = harness(fixture);
+    open_tab(&mut harness, "Fill");
     // Following the default: the default's grain shows, and there is nothing to clear.
     harness.get_by_label("Grain amount");
     assert!(harness.query_by_label("Use Map default").is_none());
 
-    // Switching grain off is an override (flat), not a change to the default.
-    harness.get_by_label("Grain").click();
+    // Switching to Flat is an override, not a change to the default.
+    harness.get_by_label("Flat").click();
     harness.run();
     let editor = &harness.state().editor;
     assert!(fill_style_of(editor, island).is_flat());
@@ -217,14 +220,23 @@ fn a_landmass_override_can_be_cleared_back_to_the_map_default() {
     assert!(harness.query_by_label("Use Map default").is_none());
 }
 
+/// Whether the finish switch shows `name` as the one picked.
+fn finish_picked(harness: &Harness<'static, Fixture>, name: &str) -> bool {
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::RadioButton, name)
+        .accesskit_node()
+        .toggled()
+        == Some(egui::accesskit::Toggled::True)
+}
+
 #[test]
-fn a_landmass_fill_switches_grain_and_mottle_on_and_off() {
+fn a_landmass_fill_finish_is_one_switch_of_flat_grain_and_mottled() {
     let (mut fixture, _, island) = fixture();
     fixture.editor.select(vec![island]);
     let mut harness = harness(fixture);
-    // Flat to begin with: both switches off and no fields.
-    harness.get_by_label("Grain");
-    harness.get_by_label("Mottled");
+    open_tab(&mut harness, "Fill");
+    // Flat to begin with, and no fields.
+    assert!(finish_picked(&harness, "Flat"));
     assert!(harness.query_by_label("Grain amount").is_none());
     assert!(harness.query_by_label("Mottle scale").is_none());
 
@@ -240,29 +252,13 @@ fn a_landmass_fill_switches_grain_and_mottle_on_and_off() {
         }
     );
     assert_eq!(editor.undo_label(), Some("Change Fill Style"));
+    assert!(finish_picked(&harness, "Grain"));
     harness.get_by_label("Grain amount");
     harness.get_by_label("Grain size");
     assert!(harness.query_by_label("Mottle scale").is_none());
 
-    // Mottled on top of grain: both fields show, and the grain is kept.
+    // Mottled turns the grain off.
     harness.get_by_label("Mottled").click();
-    harness.run();
-    assert_eq!(
-        fill_style_of(&harness.state().editor, island),
-        ssmap_core::FillStyle {
-            grain: Some(ssmap_core::Grain::DEFAULT),
-            mottle: Some(ssmap_core::Mottle::DEFAULT),
-            texture: None,
-        }
-    );
-    harness.get_by_label("Grain amount");
-    harness.get_by_label("Mottle scale");
-    harness.get_by_label("Mottle contrast");
-    harness.get_by_label("Mottle seed");
-    harness.get_by_label("Re-roll mottle");
-
-    // Grain off: the mottle stays.
-    harness.get_by_label("Grain").click();
     harness.run();
     assert_eq!(
         fill_style_of(&harness.state().editor, island),
@@ -272,12 +268,49 @@ fn a_landmass_fill_switches_grain_and_mottle_on_and_off() {
             texture: None,
         }
     );
+    assert!(finish_picked(&harness, "Mottled"));
     assert!(harness.query_by_label("Grain amount").is_none());
     harness.get_by_label("Mottle scale");
+    harness.get_by_label("Mottle contrast");
+    harness.get_by_label("Mottle seed");
+    harness.get_by_label("Re-roll mottle");
 
-    harness.get_by_label("Mottled").click();
+    harness.get_by_label("Flat").click();
     harness.run();
     assert!(fill_style_of(&harness.state().editor, island).is_flat());
+}
+
+#[test]
+fn a_fill_with_both_grain_and_mottle_shows_mottled_and_both_settings() {
+    let (mut fixture, _, island) = fixture();
+    let mut grain = ssmap_core::Grain::DEFAULT;
+    grain.amount = 0.3;
+    let both = ssmap_core::FillStyle {
+        grain: Some(grain),
+        mottle: Some(ssmap_core::Mottle::DEFAULT),
+        texture: None,
+    };
+    assert!(
+        fixture
+            .editor
+            .run(Command::SetFillStyle {
+                ids: vec![island],
+                style: Some(both),
+            })
+            .is_ok()
+    );
+    fixture.editor.select(vec![island]);
+    let mut harness = harness(fixture);
+    open_tab(&mut harness, "Fill");
+    assert!(finish_picked(&harness, "Mottled"));
+    harness.get_by_label("Grain amount");
+    harness.get_by_label("Mottle scale");
+
+    // Picking Grain keeps the grain as it was and turns the mottle off.
+    harness.get_by_label("Grain").click();
+    harness.run();
+    let style = fill_style_of(&harness.state().editor, island);
+    assert_eq!((style.grain, style.mottle), (Some(grain), None));
 }
 
 #[test]
@@ -299,6 +332,7 @@ fn re_rolling_the_mottle_changes_only_its_seed() {
     );
     fixture.editor.select(vec![island]);
     let mut harness = harness(fixture);
+    open_tab(&mut harness, "Fill");
     harness.get_by_label("Re-roll mottle").click();
     harness.run();
     let editor = &harness.state().editor;
@@ -402,16 +436,20 @@ fn a_lake_has_no_fill_style() {
             .is_ok()
     );
     fixture.editor.select(vec![lake]);
-    let harness = harness(fixture);
-    assert!(harness.query_by_label("Grain").is_none());
-    assert!(harness.query_by_label("Mottled").is_none());
+    let mut harness = harness(fixture);
+    open_tab(&mut harness, "Fill");
+    harness.get_by_label("Fill colour");
+    for label in ["Flat", "Grain", "Mottled"] {
+        assert!(harness.query_by_label(label).is_none(), "{label}");
+    }
 }
 
 #[test]
 fn combine_is_disabled_with_one_landmass() {
     let (mut fixture, _, island) = fixture();
     fixture.editor.select(vec![island]);
-    let harness = harness(fixture);
+    let mut harness = harness(fixture);
+    open_tab(&mut harness, "Shape");
     assert!(harness.get_by_label("Union").accesskit_node().is_disabled());
     assert!(
         harness
@@ -737,13 +775,13 @@ fn a_tool_with_settings_hides_the_selection_s_properties() {
             "{label}"
         );
     }
-    for label in ["Roughness", "Shore style", "Combine"] {
+    for label in ["Fill", "Shore", "Shape", "Outline width"] {
         assert!(harness.query_by_label(label).is_none(), "{label}");
     }
     // The Select tool shows the selection's, and not the brush's.
     harness.state_mut().editor.active_tool = ToolId::Select;
     harness.run();
-    for label in ["Roughness", "Shore style", "Combine"] {
+    for label in ["Fill", "Shore", "Shape", "Outline width"] {
         assert!(harness.query_by_label(label).is_some(), "{label}");
     }
     assert!(harness.query_by_label("Irregularity").is_none());
@@ -793,6 +831,7 @@ fn the_board_row_moves_selected_objects_between_boards_in_one_undo_step() {
         _ => panic!("an Object"),
     };
     let mut harness = harness(fixture);
+    open_tab(&mut harness, "Shape");
     assert_eq!(member(harness.state()), Membership::Canvas);
     harness.get_by_label("Board");
     board_combo(&harness).click();
@@ -1043,6 +1082,130 @@ fn open_shore_presets(harness: &mut Harness<'static, Fixture>) {
     };
     combo.click();
     harness.run();
+}
+
+/// Opens the tab of a Landmass or Lake named `name`.
+fn open_tab(harness: &mut Harness<'static, Fixture>, name: &str) {
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, name)
+        .click();
+    harness.run();
+}
+
+fn add_lake(fixture: &mut Fixture, layer: Id) -> Id {
+    let lake = Id::new();
+    assert!(
+        fixture
+            .editor
+            .run(Command::CreateLake {
+                id: lake,
+                parent: layer,
+                index: None,
+                geometry: square(50.0, 20.0),
+                fill: None,
+            })
+            .is_ok()
+    );
+    lake
+}
+
+#[test]
+fn a_landmass_opens_on_the_shore_tab_and_each_tab_holds_its_settings() {
+    let (mut fixture, _, island) = fixture();
+    fixture.editor.select(vec![island]);
+    let mut harness = harness(fixture);
+    for tab in ["Fill", "Shore", "Shape"] {
+        harness.get_by_role_and_label(egui::accesskit::Role::Button, tab);
+    }
+    // Shore: the preset and the Shore style fields, and nothing from the other tabs.
+    harness.get_by_label("Outline width");
+    for label in ["Fill colour", "Flat", "Roughness", "Union", "Board"] {
+        assert!(harness.query_by_label(label).is_none(), "{label}");
+    }
+
+    open_tab(&mut harness, "Fill");
+    for label in ["Fill colour", "Flat", "Grain", "Mottled"] {
+        harness.get_by_label(label);
+    }
+    assert!(harness.query_by_label("Outline width").is_none());
+
+    open_tab(&mut harness, "Shape");
+    for label in ["Roughness", "Amount", "Combine", "Union", "Board"] {
+        harness.get_by_label(label);
+    }
+    assert!(harness.query_by_label("Fill colour").is_none());
+    assert!(harness.query_by_label("Outline width").is_none());
+}
+
+#[test]
+fn the_chosen_tab_is_kept_when_another_landmass_or_lake_is_selected() {
+    let (mut fixture, layer, island) = fixture();
+    let lake = add_lake(&mut fixture, layer);
+    fixture.editor.select(vec![island]);
+    let mut harness = harness(fixture);
+    open_tab(&mut harness, "Shape");
+    harness.state_mut().editor.select(vec![lake]);
+    harness.run();
+    harness.get_by_label("Roughness");
+    harness.state_mut().editor.select(Vec::new());
+    harness.run();
+    harness.state_mut().editor.select(vec![island]);
+    harness.run();
+    harness.get_by_label("Roughness");
+    assert!(harness.query_by_label("Outline width").is_none());
+}
+
+#[test]
+fn a_lake_has_the_same_tabs_and_its_shape_tab_has_no_combine() {
+    let (mut fixture, layer, _) = fixture();
+    let lake = add_lake(&mut fixture, layer);
+    fixture.editor.select(vec![lake]);
+    let mut harness = harness(fixture);
+    assert!(harness.query_by_label("Lock Lake").is_some());
+    harness.get_by_label("Outline width");
+    open_tab(&mut harness, "Shape");
+    for label in ["Roughness", "Amount", "Board"] {
+        harness.get_by_label(label);
+    }
+    for label in ["Combine", "Union", "Subtract", "Split Apart"] {
+        assert!(harness.query_by_label(label).is_none(), "{label}");
+    }
+}
+
+#[test]
+fn a_multi_selection_and_a_river_have_no_tabs() {
+    let (mut fixture, layer, island) = fixture();
+    let lake = add_lake(&mut fixture, layer);
+    fixture.editor.select(vec![island, lake]);
+    let mut harness = harness(fixture);
+    for label in ["Roughness", "Shore style", "Combine", "Board"] {
+        harness.get_by_label(label);
+    }
+    assert!(harness.query_by_label("Shape").is_none());
+
+    let river = Id::new();
+    let points = vec![
+        ssmap_core::RiverPoint::new([0.0, 0.0], 6.0),
+        ssmap_core::RiverPoint::new([100.0, 0.0], 6.0),
+    ];
+    let state = harness.state_mut();
+    assert!(
+        state
+            .editor
+            .run(Command::CreateRiver {
+                id: river,
+                parent: layer,
+                index: None,
+                river: Box::new(ssmap_core::River::new(points)),
+            })
+            .is_ok()
+    );
+    state.editor.select(vec![river]);
+    harness.run();
+    for label in ["Appearance", "Shore style"] {
+        harness.get_by_label(label);
+    }
+    assert!(harness.query_by_label("Shape").is_none());
 }
 
 fn click(harness: &mut Harness<'static, Fixture>, label: &str) {
@@ -1501,14 +1664,11 @@ fn a_selected_landmass_has_a_lock_in_its_header_and_no_locked_checkbox() {
     let (mut fixture, _, island) = fixture();
     fixture.editor.select(vec![island]);
     let mut harness = harness(fixture);
-    for label in [
-        "Lock Landmass",
-        "Appearance",
-        "Fill",
-        "Roughness",
-        "Amount",
-        "Re-roll",
-    ] {
+    assert!(harness.query_by_label("Lock Landmass").is_some());
+    open_tab(&mut harness, "Fill");
+    assert!(harness.query_by_label("Fill colour").is_some());
+    open_tab(&mut harness, "Shape");
+    for label in ["Roughness", "Amount", "Re-roll"] {
         assert!(harness.query_by_label(label).is_some(), "{label}");
     }
     // Union, Subtract and Split Apart are icon buttons with their names.
@@ -1981,7 +2141,7 @@ fn properties_follow_the_select_tool_and_its_selection() {
     let layer_name = crate::layer_tree::node_name(fixture.editor.map(), layer);
     let mut harness = harness(fixture);
     assert!(harness.query_all_by_label(&name).next().is_some());
-    harness.get_by_label("Roughness");
+    harness.get_by_label("Outline width");
 
     // Picking the Layer in the Layers panel changes the title.
     harness.state_mut().editor.select(vec![layer]);
@@ -1995,7 +2155,10 @@ fn properties_follow_the_select_tool_and_its_selection() {
         harness.state_mut().editor.active_tool = tool;
         harness.run();
         assert!(harness.query_by_label(&name).is_none(), "{tool:?}");
-        assert!(harness.query_by_label("Roughness").is_none(), "{tool:?}");
+        assert!(
+            harness.query_by_label("Outline width").is_none(),
+            "{tool:?}"
+        );
         assert_eq!(harness.state().editor.selection(), [island], "{tool:?}");
     }
 
@@ -2003,7 +2166,7 @@ fn properties_follow_the_select_tool_and_its_selection() {
     harness.state_mut().editor.active_tool = ToolId::Select;
     harness.run();
     assert!(harness.query_all_by_label(&name).next().is_some());
-    harness.get_by_label("Roughness");
+    harness.get_by_label("Outline width");
 }
 
 /// Widgets of `harness` that reach outside a panel `width` wide.
@@ -2115,7 +2278,10 @@ fn narrow_harness(
 /// The Properties panel goes down to 260 pt (`PROPERTIES_PANEL_MIN`); 240 leaves some room.
 #[test]
 fn no_properties_state_reaches_outside_a_narrow_panel() {
-    for width in [260.0, 240.0] {
+    let sizes = [260.0, 240.0]
+        .into_iter()
+        .flat_map(|width| (0..3_usize).map(move |tab| (width, tab)));
+    for (width, tab) in sizes {
         for (name, setup) in properties_states() {
             let (mut fixture, layer, island) = fixture();
             let lake = Id::new();
@@ -2130,9 +2296,13 @@ fn no_properties_state_reaches_outside_a_narrow_panel() {
                 })
                 .unwrap();
             setup(&mut fixture, layer, island, lake);
-            let harness = narrow_harness(fixture, width, |ui, f| f.panel.show(ui, &mut f.editor));
+            // A Landmass or Lake on each of its tabs.
+            let harness = narrow_harness(fixture, width, move |ui, f| {
+                ui.ctx().data_mut(|d| d.insert_temp(object_tab_id(), tab));
+                f.panel.show(ui, &mut f.editor);
+            });
             let out = outside(&harness, width);
-            assert!(out.is_empty(), "{name} at {width}: {out:?}");
+            assert!(out.is_empty(), "{name} on tab {tab} at {width}: {out:?}");
         }
     }
 }
@@ -2160,6 +2330,7 @@ fn a_landmass_texture_is_picked_and_cleared() {
     install_test_pack(&mut fixture.editor, false);
     fixture.editor.select(vec![island]);
     let mut harness = harness(fixture);
+    open_tab(&mut harness, "Fill");
     // No texture to begin with: the picker shows None and there are no fields.
     assert!(harness.query_by_label("Texture amount").is_none());
     harness
@@ -2209,6 +2380,7 @@ fn a_landmass_override_keeps_the_map_default_texture_until_reset() {
     );
     fixture.editor.select(vec![island]);
     let mut harness = harness(fixture);
+    open_tab(&mut harness, "Fill");
     // Following the default: its texture shows and there is nothing to clear.
     harness.get_by_label("Texture amount");
     assert!(harness.query_by_label("Use Map default").is_none());

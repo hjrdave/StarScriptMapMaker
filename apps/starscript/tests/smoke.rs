@@ -619,7 +619,12 @@ fn a_landmass_gets_its_own_roughness_in_one_undo_step() {
     assert_eq!(harness.state().editor().selection(), [island]);
     assert_eq!(roughness(&harness), None);
 
-    // Re-rolling gives the island its own copy of the default, with another seed.
+    // Re-rolling, on the Shape tab, gives the island its own copy of the default, with
+    // another seed.
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, "Shape")
+        .click();
+    harness.run();
     harness.get_by_label("Re-roll").click();
     harness.run();
     let default = harness.state().editor().map().defaults().roughness.clone();

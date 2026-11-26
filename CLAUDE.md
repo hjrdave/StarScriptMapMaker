@@ -53,10 +53,12 @@ CI (`.github/workflows/ci.yml`) runs the same checks. Do not edit `.github/`.
 
 ### In a cloud session
 
-`.claude/hooks/session-start.sh` installs the pinned toolchain and fetches crates. All four checks above run there. The container has no GPU, so some tests pass without checking anything:
+`.claude/hooks/session-start.sh` installs the pinned toolchain and fetches crates. All five commands above run there. The container has no GPU. The hook also tries to install lavapipe (`mesa-vulkan-drivers`), a software Vulkan driver, and prints `lavapipe not installed (...)` if it can't. Check with `dpkg -s mesa-vulkan-drivers`.
 
-- The render tests that need an adapter return early and pass: `crates/render/tests/golden.rs` (it prints `skipping render test`), `tiled_export.rs` and `membership.rs`. Golden images are not compared.
-- `apps/starscript/tests/frame_time.rs` prints `skipping:` and passes.
+- If lavapipe is installed, the tests in `crates/render` that need an adapter should run on it, and `golden.rs` compares golden images. To be sure they ran, use `SSMAP_REQUIRE_SOFTWARE_GPU=1 cargo test -p ssmap-render --test golden`, which fails instead of skipping.
+- If it is not, they return early and pass without checking anything: `crates/render/tests/golden.rs` (it prints `skipping render test`), `tiled_export.rs`, `membership.rs` and others. Golden images are not compared.
+- Golden images depend on the Mesa version (`crates/render/tests/golden/README.md`). On a mismatch, check the version before suspecting the change, and don't rewrite goldens for a different Mesa.
+- `apps/starscript/tests/frame_time.rs` runs on the software adapter too. It checks the report's contents, not the timings. Without lavapipe it prints `skipping:` and passes.
 - macOS packaging and anything that opens a window can't be checked.
 
 Say which of these a change touches, so they get checked on a machine with a GPU.

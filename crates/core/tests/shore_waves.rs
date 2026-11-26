@@ -69,6 +69,12 @@ fn the_hand_drawn_preset_has_the_look_and_is_valid() {
     assert_eq!(style.glow.width, 0.0);
     assert_eq!(style.ripples.count, 0);
     assert!(style.lines.taper > 0.0 && style.lines.variation > 0.0);
+    // Thick ink strokes: opaque, at least as heavy as the outline, with tips that keep some
+    // width, and rows far enough apart that neighbouring lines don't run together.
+    assert_eq!(style.lines.color.a, 255);
+    assert!(style.lines.width >= style.outline.width);
+    assert!(style.lines.taper < 1.0);
+    assert!(style.lines.spacing > style.lines.width * 1.5);
     assert_eq!(style.waves.density, 0.0, "no wave marks");
     assert_ne!(style.waves.color, ShoreWaves::default().color);
     // It is offered for Landmasses after Soft glow, not for Lakes, and Soft glow is unchanged.
