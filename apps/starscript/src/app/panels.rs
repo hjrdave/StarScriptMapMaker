@@ -194,6 +194,7 @@ impl MapMakerApp {
 /// The sidebar's panel: the section the rail's open icon names (Layers, Map, Art boards, or
 /// History). It has no controls of its own for closing: the rail's icon does that.
 pub(super) fn layers_panel(ui: &mut egui::Ui, shell: &mut shell::Shell, tab: &mut MapTab) {
+    theme::remember_panel_edges(ui);
     let section = shell.sidebar_section();
     sidebar_section(ui, section, tab);
 }
