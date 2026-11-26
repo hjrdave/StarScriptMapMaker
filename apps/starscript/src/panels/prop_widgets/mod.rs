@@ -350,11 +350,7 @@ pub fn section(
         egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), header.title)
     });
     if !first {
-        ui.painter().hline(
-            rect.x_range(),
-            rect.top(),
-            Stroke::new(1.0, palette.border_subtle),
-        );
+        theme::panel_rule(ui, rect.top());
     }
     let mut clicked_action = false;
     let mut right = rect.right();
@@ -451,11 +447,7 @@ pub fn tab_bar(ui: &mut egui::Ui, tabs: &[&str], selected: &mut usize) -> bool {
             changed = true;
         }
     }
-    ui.painter().hline(
-        bar.x_range(),
-        bar.bottom(),
-        Stroke::new(1.0, palette.border_subtle),
-    );
+    theme::panel_rule(ui, bar.bottom());
     changed
 }
 
@@ -479,11 +471,7 @@ pub fn divider_section(
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), trailing);
     });
     let rect = ui.available_rect_before_wrap();
-    ui.painter().hline(
-        rect.x_range(),
-        rect.top(),
-        Stroke::new(1.0, palette.border_subtle),
-    );
+    theme::panel_rule(ui, rect.top());
     ui.add_space(theme::SPACING[2]);
     body(ui);
 }
