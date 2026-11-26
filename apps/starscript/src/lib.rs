@@ -10,6 +10,7 @@ mod packs;
 mod panels;
 mod workspace;
 
+pub use canvas::canvas_view::wgpu_options;
 pub use canvas::{frame_time, overlay};
 pub use chrome::{menu, theme};
 pub use dialogs::{new_map, paste_dialog};

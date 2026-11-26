@@ -266,6 +266,61 @@ fn tiles_fit_the_device_limits_not_the_adapters() {
     );
 }
 
+/// A device on the same adapter whose buffers may hold only `max_buffer_size` bytes, far less
+/// than a Map's merged vertices.
+fn small_buffers(headless: &Headless, max_buffer_size: u64) -> Headless {
+    let (device, queue) =
+        pollster::block_on(headless.adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("small buffers"),
+            required_limits: wgpu::Limits {
+                max_buffer_size,
+                ..wgpu::Limits::downlevel_defaults().using_resolution(headless.adapter.limits())
+            },
+            ..Default::default()
+        }))
+        .expect("the adapter opens a device with a smaller max_buffer_size");
+    Headless {
+        adapter: headless.adapter.clone(),
+        device,
+        queue,
+    }
+}
+
+/// Issue #678: a Map whose merged geometry is bigger than the device's `max_buffer_size` draws
+/// the same as on a device without that limit, instead of a validation error that panics.
+#[test]
+fn geometry_past_the_buffer_limit_exports_the_same() {
+    let Some(headless) = gpu() else { return };
+    // 128 px tiles read back through 64 KiB buffers, under the 256 KiB limit; the coast's
+    // vertices (36 bytes each) are several times that.
+    let small = small_buffers(&headless, 256 << 10);
+    let map = coastal_map();
+    let settings = settings(600);
+    let expected = Setup::new(&headless, SpriteStore::synchronous(library())).export(
+        &headless,
+        &map,
+        &settings,
+        Some(128),
+        |_| {},
+    );
+    let got = Setup::new(&small, SpriteStore::synchronous(library())).export(
+        &small,
+        &map,
+        &settings,
+        Some(128),
+        |_| {},
+    );
+    assert_eq!((got.width, got.height), (expected.width, expected.height));
+    let differing = (0..expected.height)
+        .flat_map(|y| (0..expected.width).map(move |x| (x, y)))
+        .filter(|&(x, y)| {
+            let (a, b) = (pixel(&expected, x, y), pixel(&got, x, y));
+            a.iter().zip(b).any(|(a, b)| a.abs_diff(b) > 3)
+        })
+        .count();
+    assert_eq!(differing, 0, "{differing} pixels differ");
+}
+
 #[test]
 fn hidden_layers_are_absent_and_locked_layers_present() {
     let Some(headless) = gpu() else { return };

@@ -24,6 +24,7 @@ fn main() -> eframe::Result {
                 .with_min_inner_size(ssmap_app::theme::metrics::MIN_WINDOW),
         ),
         renderer: eframe::Renderer::Wgpu,
+        wgpu_options: ssmap_app::wgpu_options(),
         ..Default::default()
     };
     eframe::run_native(
