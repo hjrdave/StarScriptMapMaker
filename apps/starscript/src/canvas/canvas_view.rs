@@ -30,6 +30,37 @@ struct CanvasResources {
     presenter: Presenter,
 }
 
+/// How eframe opens the GPU device: as eframe does by default (wgpu's default limits, with
+/// 2D textures up to 8192 px), but with the adapter's `max_buffer_size` instead of wgpu's
+/// 256 MiB, which the merged vertices of a large Map pass (issue #678).
+pub fn wgpu_options() -> egui_wgpu::WgpuConfiguration {
+    let device_descriptor = std::sync::Arc::new(|adapter: &wgpu::Adapter| {
+        let base = if adapter.get_info().backend == wgpu::Backend::Gl {
+            wgpu::Limits::downlevel_webgl2_defaults()
+        } else {
+            wgpu::Limits::default()
+        };
+        wgpu::DeviceDescriptor {
+            label: Some("egui wgpu device"),
+            required_limits: ssmap_render::device_limits(
+                adapter,
+                wgpu::Limits {
+                    max_texture_dimension_2d: 8192,
+                    ..base
+                },
+            ),
+            ..Default::default()
+        }
+    });
+    egui_wgpu::WgpuConfiguration {
+        wgpu_setup: egui_wgpu::WgpuSetup::CreateNew(egui_wgpu::WgpuSetupCreateNew {
+            device_descriptor,
+            ..egui_wgpu::WgpuSetupCreateNew::without_display_handle()
+        }),
+        ..Default::default()
+    }
+}
+
 /// Creates the Canvas renderer on egui's device, drawing Stamps from `sprites`, and hands it to
 /// egui's callback resources. Returns false, leaving the Canvas as a placeholder, when the
 /// adapter is below the hardware floor. Called once per run, so a software-adapter warning
@@ -905,6 +936,24 @@ mod tests {
     use super::*;
     use egui_kittest::Harness;
     use egui_kittest::kittest::Queryable;
+
+    /// Issue #678: the app's device asks for the adapter's `max_buffer_size` and keeps
+    /// eframe's 8192 px textures. Without an adapter there is nothing to check.
+    #[test]
+    fn the_app_device_takes_the_adapters_buffer_limit() {
+        let Ok(headless) = ssmap_render::Headless::new(false) else {
+            return;
+        };
+        let egui_wgpu::WgpuSetup::CreateNew(setup) = wgpu_options().wgpu_setup else {
+            panic!("the app creates its own device");
+        };
+        let limits = (setup.device_descriptor)(&headless.adapter).required_limits;
+        assert_eq!(
+            limits.max_buffer_size,
+            headless.adapter.limits().max_buffer_size
+        );
+        assert_eq!(limits.max_texture_dimension_2d, 8192);
+    }
     use ssmap_core::{Canvas, DistanceUnit, Id, Map, MultiPolygon, NodeRef, Polygon, Scale};
 
     fn centre(view: &View) -> [f64; 2] {
