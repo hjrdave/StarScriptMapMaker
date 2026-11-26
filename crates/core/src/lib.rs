@@ -5,6 +5,7 @@
 
 pub mod asset;
 mod background;
+mod brush_settings;
 mod changes;
 mod color;
 mod command;
@@ -33,6 +34,10 @@ mod template;
 
 pub use asset::{AssetRef, Texture};
 pub use background::{Background, BackgroundTexture};
+pub use brush_settings::{
+    BrushSettings, DEFAULT_BRUSH_IRREGULARITY, DEFAULT_BRUSH_SIZE, LandBrushSettings,
+    PaintBrushSettings,
+};
 pub use changes::Changes;
 pub use color::{Color, ParseColorError};
 pub use command::{Command, CommandError, PlacedStamp};

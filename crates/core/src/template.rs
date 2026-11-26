@@ -242,6 +242,7 @@ impl MapTemplate {
         view.canvas.template = None;
         view.embedded = Default::default();
         view.export_settings = Default::default();
+        view.brush_settings = Default::default();
         view.layers = view.layers.into_iter().map(layers_only).collect();
         let keep = |id: Option<Id>| id.filter(|&id| map.contains(id));
         Self {

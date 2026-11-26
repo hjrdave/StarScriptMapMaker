@@ -168,13 +168,14 @@ impl PropertiesPanel {
                 // the selection's properties don't sit above them. Select, Pan, Label
                 // and Canvas have none, and show the selection's.
                 let tool = editor.active_tool;
+                let alt = ui.input(|i| i.modifiers.alt);
                 if crate::tool_section::has_settings(tool) {
                     if tool == crate::tools::ToolId::Stamp {
                         crate::tool_section::place_on(ui, editor);
                         self.tool_section.stamp_asset(ui, editor);
                         ui.add_space(theme::SPACING[2]);
                     }
-                    crate::tool_section::tool_sections(ui, editor);
+                    crate::tool_section::tool_sections(ui, editor, alt);
                 } else if tool == crate::tools::ToolId::Select || editor.selection().is_empty() {
                     // Other tools hide a selection but keep it for the way back; with none,
                     // the hint or a selected board still shows.

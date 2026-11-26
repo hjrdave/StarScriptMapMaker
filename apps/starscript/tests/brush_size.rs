@@ -33,7 +33,8 @@ fn app(tool: ToolId) -> Harness<'static, MapMakerApp> {
 }
 
 fn size(harness: &Harness<'static, MapMakerApp>) -> f64 {
-    harness.state().editor().brush_size
+    let editor = harness.state().editor();
+    editor.brush_size_of(editor.active_tool, editor.erase_default)
 }
 
 fn undo_label(harness: &Harness<'static, MapMakerApp>) -> Option<String> {

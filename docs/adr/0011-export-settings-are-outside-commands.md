@@ -6,7 +6,7 @@ ADR 0004 says every change to a Map is a Command. `Map.export_settings`, the las
 
 ## Rules
 
-- **One field.** `Map.export_settings` is the only Map field written outside a Command. `Map.canvas` and everything else stay under ADR 0004 and change only through Commands.
+- **One field.** `Map.export_settings` is the only Map field written outside a Command. (ADR 0020 adds a second, `Map.brush_settings`, under the same rules.) `Map.canvas` and everything else stay under ADR 0004 and change only through Commands.
 - **Two writers.** Only the export dialog and the export-region tool write it. Render code never does; it reads the settings it is given.
 - **Edits mark the Tab unsaved.** Changing export settings sets the Tab's unsaved flag, so closing offers to save and the next save writes them. Today the settings are only compared at save time (`saved_export`), so a change on its own can be lost when the Tab closes.
 - **Not undoable, not journaled.** These edits create no Undo step and no Recovery journal entry. After a crash the settings come back as of the last save.

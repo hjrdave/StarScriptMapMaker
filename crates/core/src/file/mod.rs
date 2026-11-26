@@ -42,6 +42,9 @@
 //!   Format 1.20 allows an Object at the top level, with a NULL `parent` (ADR 0018), and adds
 //!   the optional `visible` and `opacity` to Object props. Older files have neither and open
 //!   unchanged; an older app cannot open a Map with a top-level Object.
+//!   Format 1.21 adds the optional `brush_settings` meta key (JSON): the settings of each mode
+//!   of the Land Brush, the Lake Brush and the Paint tool. Older files get the defaults
+//!   (ADR 0020).
 //!   Format 1.6 stores Groups: Layers nested inside Layers, with `parent` pointing at the
 //!   enclosing Layer. There is no compatibility with older files.
 //!
@@ -73,6 +76,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::brush_settings::BrushSettings;
 use crate::export::ExportSettings;
 use crate::id::Id;
 use crate::map::{Board, Canvas, Map, MapDefaults, MapView, Subtree};
@@ -83,7 +87,7 @@ use crate::paint::PaintStroke;
 /// anything else, and needs a migration.
 pub const FORMAT_VERSION: FormatVersion = FormatVersion {
     major: 1,
-    minor: 20,
+    minor: 21,
 };
 
 /// What the `boards` meta key holds.
@@ -249,6 +253,7 @@ pub struct MapFile {
     saved_defaults: Option<MapDefaults>,
     saved_strokes: Vec<PaintStroke>,
     saved_export: Option<ExportSettings>,
+    saved_brushes: Option<BrushSettings>,
     saved_embedded: embed::SavedEmbedded,
     saved_revision: u64,
 }
@@ -277,6 +282,7 @@ impl MapFile {
                 saved_defaults: None,
                 saved_strokes: Vec::new(),
                 saved_export: None,
+                saved_brushes: None,
                 saved_embedded: Default::default(),
                 saved_revision: 0,
             })
@@ -336,6 +342,12 @@ impl MapFile {
                 .map_err(|err| FileError::Damaged(format!("the export settings: {err}")))?,
             None => ExportSettings::default(),
         };
+        // Absent from files saved before format 1.21.
+        let brush_settings: BrushSettings = match read_meta::<String>(&conn, "brush_settings")? {
+            Some(json) => serde_json::from_str(&json)
+                .map_err(|err| FileError::Damaged(format!("the brush settings: {err}")))?,
+            None => BrushSettings::default(),
+        };
         let generation = read_meta::<String>(&conn, "save_generation")?
             .and_then(|text| Uuid::parse_str(&text).ok())
             .unwrap_or_else(Uuid::nil);
@@ -350,6 +362,7 @@ impl MapFile {
             layers,
             embedded,
             export_settings: export_settings.clone(),
+            brush_settings: brush_settings.clone(),
         })
         .map_err(|err| FileError::Damaged(err.to_string()))?;
         let file = Self {
@@ -363,6 +376,7 @@ impl MapFile {
             saved_defaults: Some(defaults),
             saved_strokes: strokes,
             saved_export: Some(export_settings),
+            saved_brushes: Some(brush_settings),
             saved_embedded,
             saved_revision: map.revision(),
         };
@@ -395,6 +409,10 @@ impl MapFile {
             let json = serde_json::to_string(&map.export_settings).expect("settings serialise");
             write_meta(&tx, "export_settings", &json)?;
         }
+        if self.saved_brushes.as_ref() != Some(&map.brush_settings) {
+            let json = serde_json::to_string(&map.brush_settings).expect("settings serialise");
+            write_meta(&tx, "brush_settings", &json)?;
+        }
         if self.saved_defaults.as_ref() != Some(map.defaults()) {
             let defaults = serde_json::to_string(map.defaults()).expect("defaults serialise");
             write_meta(&tx, "defaults", &defaults)?;
@@ -424,6 +442,7 @@ impl MapFile {
         self.saved_defaults = Some(map.defaults().clone());
         self.saved_strokes = map.paint_strokes().to_vec();
         self.saved_export = Some(map.export_settings.clone());
+        self.saved_brushes = Some(map.brush_settings.clone());
         self.saved_embedded = saved_embedded;
         self.generation = generation;
         self.saved_revision = map.revision();
@@ -459,6 +478,7 @@ impl MapFile {
                 saved_defaults: self.saved_defaults.clone(),
                 saved_strokes: self.saved_strokes.clone(),
                 saved_export: self.saved_export.clone(),
+                saved_brushes: self.saved_brushes.clone(),
                 saved_embedded: self.saved_embedded.clone(),
                 saved_revision: self.saved_revision,
             })
@@ -542,6 +562,7 @@ fn save_via_temp(
         saved_defaults,
         saved_strokes,
         saved_export,
+        saved_brushes,
         saved_embedded,
         saved_revision,
         ..
@@ -562,6 +583,7 @@ fn save_via_temp(
         saved_defaults,
         saved_strokes,
         saved_export,
+        saved_brushes,
         saved_embedded,
         saved_revision,
     };

@@ -34,8 +34,8 @@ pub(super) fn land_brush(
     input: &CanvasFrame,
     water: bool,
 ) -> Option<egui::CursorIcon> {
-    let radius = editor.brush_size / 2.0;
     let erase_held = input.alt != editor.erase_default;
+    let radius = editor.brush_size_of(editor.active_tool, erase_held) / 2.0;
     let cursor = input.hovered.then_some(egui::CursorIcon::Crosshair);
 
     // A click is a stroke of one point: a single dab.
@@ -83,7 +83,7 @@ pub(super) fn land_brush(
     let irregularity = if water {
         0.0
     } else {
-        editor.brush_irregularity
+        editor.land_settings(erase_held).irregularity
     };
     let finished = |stroke: &Stroke| {
         let start = stroke.points.first().copied().unwrap_or_default();
@@ -156,7 +156,7 @@ pub(super) fn paint_brush(
     } else {
         (palette.gold.gamma_multiply(0.25), palette.gold)
     };
-    let radius = editor.brush_size / 2.0;
+    let radius = editor.brush_size_of(editor.active_tool, erasing) / 2.0;
     if let Some(stroke) = &state.stroke
         && let Some((_, preview)) = &stroke.preview
     {
@@ -286,7 +286,7 @@ mod tests {
     fn irregularity_shapes_land_strokes_and_zero_paints_them_round() {
         let outline = |irregularity: f64| {
             let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
-            editor.brush_irregularity = irregularity;
+            editor.land_settings_mut(false).irregularity = irregularity;
             paint_stroke(&mut editor, &view, &mut state, false);
             editor
                 .map()
@@ -303,6 +303,56 @@ mod tests {
         let round = land::brush_region(&points, radius, land::simplify_tolerance(radius, 1.0));
         assert_eq!(outline(0.0), round);
         assert_ne!(outline(crate::editor::DEFAULT_BRUSH_IRREGULARITY), round);
+    }
+
+    fn land_objects(editor: &Editor) -> usize {
+        editor
+            .map()
+            .draw_order()
+            .into_iter()
+            .filter(|&id| matches!(editor.map().node(id), Some(ssmap_core::Node::Object(_))))
+            .count()
+    }
+
+    #[test]
+    fn each_land_mode_keeps_its_own_size_and_irregularity() {
+        let mut editor = land_editor();
+        let default = *editor.land_settings(false);
+        editor.land_settings_mut(true).size = 100.0;
+        editor.land_settings_mut(true).irregularity = 0.5;
+        assert_eq!(*editor.land_settings(false), default);
+        editor.land_settings_mut(false).size = 10.0;
+        assert_eq!(editor.land_settings(true).size, 100.0);
+        assert_eq!(editor.land_settings(true).irregularity, 0.5);
+        for (tool, erase) in [(ToolId::LandBrush, true), (ToolId::WaterBrush, true)] {
+            *editor.brush_size_mut(tool, erase) = 77.0;
+        }
+        assert_eq!(editor.brush_size_of(ToolId::LandBrush, false), 10.0);
+        assert_eq!(editor.brush_size_of(ToolId::WaterBrush, false), 48.0);
+        assert_eq!(editor.brush_size_of(ToolId::WaterBrush, true), 77.0);
+    }
+
+    #[test]
+    fn the_erase_modifier_uses_the_erase_modes_size() {
+        let (mut editor, view, mut state) = (land_editor(), view(), ToolState::default());
+        editor.active_tool = ToolId::LandBrush;
+        land_brush(
+            &mut editor,
+            &view,
+            &mut state,
+            &click_at(250.0, 250.0),
+            false,
+        );
+        let before = land_objects(&editor);
+        // The Erase mode's brush is tiny, so Alt-clicking the dab leaves most of it.
+        editor.land_settings_mut(true).size = 2.0;
+        let alt = CanvasFrame {
+            alt: true,
+            ..click_at(250.0, 250.0)
+        };
+        land_brush(&mut editor, &view, &mut state, &alt, false);
+        assert_eq!(editor.undo_label(), Some("Erase Land"));
+        assert_eq!(land_objects(&editor), before);
     }
 
     #[test]

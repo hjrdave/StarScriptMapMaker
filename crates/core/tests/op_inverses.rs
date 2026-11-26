@@ -164,6 +164,7 @@ fn map() -> impl Strategy<Value = Map> {
             layers,
             embedded: Default::default(),
             export_settings: Default::default(),
+            brush_settings: Default::default(),
         })
         .expect("generated trees are valid")
     })
