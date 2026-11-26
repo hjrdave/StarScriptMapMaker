@@ -14,7 +14,7 @@ use ssmap_core::{
     MIN_MOTTLE_SCALE, MIN_TEXTURE_SCALE,
 };
 
-use super::cache::TessellationCache;
+use super::cache::{TessellationCache, mesh_object};
 use super::{ObjectRef, Paint, VectorGroup, VectorShape};
 use crate::color::ColorExt as _;
 use crate::fill_texture::slot_for;
@@ -540,10 +540,8 @@ fn resolve_chunk(
                     missing.push(object);
                     return None;
                 }
-                let meshes: Vec<_> = sources
-                    .iter()
-                    .map(|group| Arc::new(mesh_group(group, tessellators)))
-                    .collect();
+                let previous = cache.previous(object.id);
+                let meshes = mesh_object(&sources, previous.as_ref(), tessellators);
                 cache.store(object, &sources, meshes.clone());
                 Some(meshes)
             });
@@ -588,10 +586,8 @@ fn resolve(
                     if building {
                         return None;
                     }
-                    let meshes: Vec<_> = sources
-                        .iter()
-                        .map(|group| Arc::new(mesh_group(group, tessellators)))
-                        .collect();
+                    let previous = cache.previous(object.id);
+                    let meshes = mesh_object(sources, previous.as_ref(), tessellators);
                     cache.store(object, sources, meshes.clone());
                     Some(meshes.into_iter())
                 })
@@ -1164,5 +1160,69 @@ mod tests {
         assert_eq!(cache.len(), 2);
         build(&[fill(0.0, Some(a))], &[], &cache);
         assert_eq!(cache.len(), 1);
+    }
+
+    /// The meshes the cache keeps for Object `object` with these groups.
+    fn kept(cache: &TessellationCache, groups: &[VectorGroup]) -> Vec<Arc<GroupMesh>> {
+        let object = groups[0].object.expect("an Object's groups");
+        let sources: Vec<&VectorGroup> = groups.iter().collect();
+        cache.lookup(object, &sources).expect("tessellated")
+    }
+
+    /// A Landmass's fill and outline, the outline `width` wide, at `version`.
+    fn landmass(id: Id, version: u64, x: f32, width: f32) -> Vec<VectorGroup> {
+        let object = ObjectRef { id, version };
+        let mut outline = stroke(0.0, object);
+        outline.shapes[0].paint = Paint::Stroke { width };
+        vec![fill(x, Some(object)), outline]
+    }
+
+    #[test]
+    fn a_shore_edit_keeps_the_mesh_of_the_unchanged_fill() {
+        let id = Id::new();
+        let cache = TessellationCache::new();
+        let before = landmass(id, 1, 0.0, 2.0);
+        build(&before, &[], &cache);
+        let old = kept(&cache, &before);
+        // A new outline width, and a new version, as a Shore edit gives.
+        let after = landmass(id, 2, 0.0, 6.0);
+        let built = build(&after, &[], &cache);
+        let new = kept(&cache, &after);
+        assert!(
+            Arc::ptr_eq(&old[0], &new[0]),
+            "the fill is not tessellated again"
+        );
+        assert!(!Arc::ptr_eq(&old[1], &new[1]), "the outline is");
+        assert_eq!(positions(&built.geometry), positions(&batched(&after)));
+    }
+
+    #[test]
+    fn a_moved_fill_is_tessellated_again() {
+        let id = Id::new();
+        let cache = TessellationCache::new();
+        let before = landmass(id, 1, 0.0, 2.0);
+        build(&before, &[], &cache);
+        let old = kept(&cache, &before);
+        let after = landmass(id, 2, 5.0, 2.0);
+        let built = build(&after, &[], &cache);
+        let new = kept(&cache, &after);
+        assert!(!Arc::ptr_eq(&old[0], &new[0]));
+        // The outline is unchanged, so it keeps its mesh.
+        assert!(Arc::ptr_eq(&old[1], &new[1]));
+        assert_eq!(positions(&built.geometry), positions(&batched(&after)));
+    }
+
+    #[test]
+    fn a_background_rebuild_also_keeps_unchanged_meshes() {
+        let id = Id::new();
+        let cache = TessellationCache::new();
+        let before = landmass(id, 1, 0.0, 2.0);
+        cache.rebuild(&before).run(|| {});
+        let old = kept(&cache, &before);
+        let after = landmass(id, 2, 0.0, 6.0);
+        cache.rebuild(&after).run(|| {});
+        let new = kept(&cache, &after);
+        assert!(Arc::ptr_eq(&old[0], &new[0]));
+        assert!(!Arc::ptr_eq(&old[1], &new[1]));
     }
 }

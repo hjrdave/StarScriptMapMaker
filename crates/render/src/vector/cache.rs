@@ -83,6 +83,15 @@ impl TessellationCache {
         .then(|| entry.meshes.clone())
     }
 
+    /// What Object `id` was last tessellated from, whatever its version, so a new
+    /// tessellation can keep the meshes of the groups that did not change.
+    pub(super) fn previous(&self, id: Id) -> Option<Previous> {
+        self.inner().entries.get(&id).map(|entry| Previous {
+            source: entry.source.clone(),
+            meshes: entry.meshes.clone(),
+        })
+    }
+
     /// Keeps the meshes unless a newer version of the Object has been seen since.
     pub(super) fn store(
         &self,
@@ -225,6 +234,44 @@ impl TessellationCache {
     }
 }
 
+/// An Object's last tessellation: its groups and their meshes, in the same order.
+pub(super) struct Previous {
+    source: Vec<VectorGroup>,
+    meshes: Vec<Arc<GroupMesh>>,
+}
+
+impl Previous {
+    /// The mesh made for a group that meshes like `group`, looking first at the same
+    /// `position`. A mesh depends only on a group's shapes and whether it is an effect, not on
+    /// the Object's version or placement, so it is the mesh `group` would get.
+    fn mesh(&self, position: usize, group: &VectorGroup) -> Option<Arc<GroupMesh>> {
+        let same = |old: &VectorGroup| old.effect == group.effect && old.shapes == group.shapes;
+        if self.source.get(position).is_some_and(same) {
+            return self.meshes.get(position).cloned();
+        }
+        let found = self.source.iter().position(same)?;
+        self.meshes.get(found).cloned()
+    }
+}
+
+/// Meshes an Object's groups, keeping from `previous` the mesh of every group that is
+/// unchanged. A Shore edit then tessellates the Shore again but keeps the fill (#662).
+pub(super) fn mesh_object(
+    groups: &[&VectorGroup],
+    previous: Option<&Previous>,
+    tessellators: &mut Tessellators,
+) -> Vec<Arc<GroupMesh>> {
+    groups
+        .iter()
+        .enumerate()
+        .map(|(position, &group)| {
+            previous
+                .and_then(|previous| previous.mesh(position, group))
+                .unwrap_or_else(|| Arc::new(mesh_group(group, tessellators)))
+        })
+        .collect()
+}
+
 struct TessellationJob {
     object: ObjectRef,
     groups: Vec<VectorGroup>,
@@ -254,12 +301,9 @@ impl TessellationRebuild {
     pub fn run(mut self, mut ready: impl FnMut()) {
         let mut tessellators = Tessellators::default();
         for job in std::mem::take(&mut self.jobs) {
-            let meshes = job
-                .groups
-                .iter()
-                .map(|group| Arc::new(mesh_group(group, &mut tessellators)))
-                .collect();
             let sources: Vec<&VectorGroup> = job.groups.iter().collect();
+            let previous = self.cache.previous(job.object.id);
+            let meshes = mesh_object(&sources, previous.as_ref(), &mut tessellators);
             if self.cache.store(job.object, &sources, meshes) {
                 self.cache.shared.generation.fetch_add(1, Ordering::SeqCst);
                 ready();
