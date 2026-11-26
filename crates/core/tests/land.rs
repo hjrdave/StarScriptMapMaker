@@ -325,3 +325,47 @@ fn the_water_brush_creates_a_lake_then_merges_and_erases() {
     );
     assert_eq!(painted, Err(BrushError::NoLayer));
 }
+
+#[test]
+fn the_land_brush_ignores_a_selected_lake() {
+    use ssmap_core::land::brush_command;
+
+    let mut map = empty_map();
+    let layer_id = layer(&mut map, "Land");
+    let lake_id = lake(
+        &mut map,
+        layer_id,
+        None,
+        region(square([0.0, 0.0], 20.0), vec![]),
+    );
+    let mut cache = RoughnessCache::default();
+    let new_id = Id::new();
+
+    // Painting with a Lake selected makes a Landmass and leaves the Lake alone.
+    let stroke = region(square([100.0, 100.0], 20.0), vec![]);
+    let command = brush_command(
+        &map,
+        &mut cache,
+        &[lake_id],
+        Some(layer_id),
+        water_stroke(stroke, [110.0, 110.0], false),
+        new_id,
+    )
+    .unwrap()
+    .expect("a stroke makes land");
+    assert!(
+        matches!(&command, Command::CreateLandmass { id, parent, .. } if *id == new_id && *parent == Some(layer_id))
+    );
+
+    // Erasing with only a Lake selected cuts land, never the Lake.
+    let cut = region(square([-5.0, -5.0], 60.0), vec![]);
+    let erased = brush_command(
+        &map,
+        &mut cache,
+        &[lake_id],
+        Some(layer_id),
+        water_stroke(cut, [0.0, 0.0], true),
+        Id::new(),
+    );
+    assert_eq!(erased, Ok(None));
+}

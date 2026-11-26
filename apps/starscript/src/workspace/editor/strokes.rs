@@ -1,18 +1,10 @@
 use super::*;
 
 impl Editor {
-    /// What a land brush stroke started now would be called in the undo history: it paints or
-    /// erases a selected Lake, and otherwise land.
+    /// What a land brush stroke would be called in the undo history. The land brush only
+    /// makes or changes Landmasses, so it is always land.
     pub fn brush_label(&self, erase: bool) -> &'static str {
-        let lake = self.selection.iter().any(|&id| {
-            matches!(self.map.node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Lake(_)))
-        });
-        match (erase, lake) {
-            (false, false) => "Paint Land",
-            (false, true) => "Paint Lake",
-            (true, false) => "Erase Land",
-            (true, true) => "Erase Lake",
-        }
+        if erase { "Erase Land" } else { "Paint Land" }
     }
 
     /// Finishes the land brush stroke whose gesture `id` opened: runs the one Command the brush
