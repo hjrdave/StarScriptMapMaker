@@ -6,7 +6,10 @@ use std::time::Duration;
 use wgpu::util::DeviceExt;
 
 use super::cache::TessellationCache;
-use super::chunk::{Built, Chunked, Draw, EMPTY_BOUNDS, Vertex, build, split, union};
+use super::chunk::{
+    Built, Chunked, Draw, EMPTY_BOUNDS, Tessellators, Vertex, build, resolve, split, union,
+};
+use super::resident::{Pages, Resident};
 use super::{DrawFilter, VectorGroup, overlaps};
 use crate::canvas::{CLIP_INSIDE, StencilUse};
 use crate::fill_texture::FillTextures;
@@ -27,6 +30,11 @@ pub(crate) struct LyonRenderer {
     /// Drawn instead of `mesh` while set: the groups applied chunk by chunk (see
     /// [`LyonRenderer::apply_chunks`]).
     chunked: Option<Chunked<ChunkMesh>>,
+    /// Drawn instead of `mesh` while `drawing_resident`: meshes kept on the GPU between
+    /// updates (see [`LyonRenderer::update_runs`]).
+    resident: Option<Resident>,
+    resident_pages: Vec<GpuPage>,
+    drawing_resident: bool,
     cache: TessellationCache,
     /// The texture array fills sample, as bind group 1.
     textures: wgpu::BindGroup,
@@ -120,6 +128,9 @@ impl LyonRenderer {
             mask: pipeline("fill mask", StencilUse::Mask),
             mesh: None,
             chunked: None,
+            resident: None,
+            resident_pages: Vec::new(),
+            drawing_resident: false,
             cache: TessellationCache::new(),
             textures: textures.bind_group().clone(),
         }
@@ -140,6 +151,9 @@ impl LyonRenderer {
         self.cache = cache;
         self.mesh = None;
         self.chunked = None;
+        self.resident = None;
+        self.resident_pages.clear();
+        self.drawing_resident = false;
     }
 }
 
@@ -156,8 +170,37 @@ impl LyonRenderer {
     ) {
         let built = build(groups, cuts, &self.cache);
         self.chunked = None;
+        self.drawing_resident = false;
         let parts = upload_parts(device, built, "vector");
         self.mesh = (!parts.is_empty()).then_some(Mesh { parts });
+    }
+
+    /// Like [`LyonRenderer::set_runs`], but keeps every mesh on the GPU between calls and writes
+    /// only the meshes that are not there yet, so an edit uploads only what it changed
+    /// (ADR 0019). The draw list is rebuilt in stacking order each time.
+    pub(crate) fn update_runs(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        groups: &[VectorGroup],
+        cuts: &[usize],
+    ) {
+        let meshes = resolve(groups, &self.cache, &mut Tessellators::default());
+        self.chunked = None;
+        self.mesh = None;
+        let resident = self
+            .resident
+            .get_or_insert_with(|| Resident::new(device.limits().max_buffer_size));
+        resident.update(
+            &meshes,
+            cuts,
+            &mut GpuPages {
+                device,
+                queue,
+                pages: &mut self.resident_pages,
+            },
+        );
+        self.drawing_resident = true;
     }
 
     /// Whether the groups are drawn chunk by chunk (see [`LyonRenderer::start_chunks`]).
@@ -170,6 +213,7 @@ impl LyonRenderer {
     /// replaced.
     pub(crate) fn start_chunks(&mut self, groups: &[VectorGroup], cuts: &[usize]) {
         self.mesh = None;
+        self.drawing_resident = false;
         let previous = self.chunked.take();
         self.chunked = Some(Chunked::new(previous, groups, cuts, &self.cache));
     }
@@ -213,6 +257,24 @@ impl LyonRenderer {
             }
             return;
         }
+        if let Some(resident) = self.drawn_resident() {
+            let Some(range) = resident.runs.get(run) else {
+                return;
+            };
+            for segment in &resident.segments[range.clone()] {
+                let Some(page) = self.resident_pages.get(segment.page) else {
+                    continue;
+                };
+                page.bind(pass);
+                self.draw_draws(
+                    pass,
+                    &resident.draws[segment.draws.clone()],
+                    clipped,
+                    filter,
+                );
+            }
+            return;
+        }
         let Some(mesh) = &self.mesh else { return };
         for part in &mesh.parts {
             let Some(range) = part.runs.get(run) else {
@@ -221,6 +283,10 @@ impl LyonRenderer {
             part.bind(pass);
             self.draw_draws(pass, &part.draws[range.clone()], clipped, filter);
         }
+    }
+
+    fn drawn_resident(&self) -> Option<&Resident> {
+        self.resident.as_ref().filter(|_| self.drawing_resident)
     }
 
     /// Draws what `filter` lets through of `draws`, from the buffers already set on `pass`.
@@ -252,10 +318,25 @@ impl LyonRenderer {
     /// Sets the stencil to `value` under run `run` of the groups last given to
     /// [`LyonRenderer::set_runs`], without drawing colour.
     pub(crate) fn draw_mask(&self, pass: &mut wgpu::RenderPass<'_>, run: usize, value: u32) {
-        let Some(mesh) = &self.mesh else { return };
         pass.set_stencil_reference(value);
         pass.set_bind_group(1, &self.textures, &[]);
         pass.set_pipeline(&self.mask);
+        if let Some(resident) = self.drawn_resident() {
+            let Some(range) = resident.runs.get(run) else {
+                return;
+            };
+            for segment in &resident.segments[range.clone()] {
+                let Some(page) = self.resident_pages.get(segment.page) else {
+                    continue;
+                };
+                page.bind(pass);
+                for draw in &resident.draws[segment.draws.clone()] {
+                    pass.draw_indexed(draw.indices.clone(), 0, 0..1);
+                }
+            }
+            return;
+        }
+        let Some(mesh) = &self.mesh else { return };
         for part in &mesh.parts {
             let Some(range) = part.runs.get(run) else {
                 continue;
@@ -296,5 +377,81 @@ fn upload(device: &wgpu::Device, built: Built) -> ChunkMesh {
     ChunkMesh {
         parts: upload_parts(device, built, "chunk"),
         bounds,
+    }
+}
+
+/// One page of [`Resident`]: a vertex buffer and an index buffer that meshes are written into.
+struct GpuPage {
+    vertices: wgpu::Buffer,
+    indices: wgpu::Buffer,
+}
+
+impl GpuPage {
+    fn bind(&self, pass: &mut wgpu::RenderPass<'_>) {
+        pass.set_vertex_buffer(0, self.vertices.slice(..));
+        pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
+    }
+}
+
+/// [`Resident`]'s pages on the GPU. Writes go through `queue.write_buffer`, which stages only
+/// the bytes written, so nothing else in the buffer is copied or cleared again.
+struct GpuPages<'a> {
+    device: &'a wgpu::Device,
+    queue: &'a wgpu::Queue,
+    pages: &'a mut Vec<GpuPage>,
+}
+
+impl Pages for GpuPages<'_> {
+    fn reset(&mut self, sizes: &[(u32, u32)]) {
+        let buffer = |count: u32, size: usize, usage: wgpu::BufferUsages| {
+            self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("vector page"),
+                size: u64::from(count) * size as u64,
+                usage: usage | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        };
+        *self.pages = sizes
+            .iter()
+            .map(|&(vertices, indices)| GpuPage {
+                vertices: buffer(
+                    vertices,
+                    std::mem::size_of::<Vertex>(),
+                    wgpu::BufferUsages::VERTEX,
+                ),
+                indices: buffer(
+                    indices,
+                    std::mem::size_of::<u32>(),
+                    wgpu::BufferUsages::INDEX,
+                ),
+            })
+            .collect();
+    }
+
+    fn write(
+        &mut self,
+        page: usize,
+        vertex_at: u32,
+        vertices: &[Vertex],
+        index_at: u32,
+        indices: &[u32],
+    ) {
+        let Some(target) = self.pages.get(page) else {
+            return;
+        };
+        if !vertices.is_empty() {
+            self.queue.write_buffer(
+                &target.vertices,
+                u64::from(vertex_at) * std::mem::size_of::<Vertex>() as u64,
+                bytemuck::cast_slice(vertices),
+            );
+        }
+        if !indices.is_empty() {
+            self.queue.write_buffer(
+                &target.indices,
+                u64::from(index_at) * std::mem::size_of::<u32>() as u64,
+                bytemuck::cast_slice(indices),
+            );
+        }
     }
 }

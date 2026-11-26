@@ -89,3 +89,11 @@ The editing scripts of `--frame-time` on the full-scale Map (#245) on the M1 Pro
 - The draw list has to be kept in stacking order separately from the buffer layout. A test compares it with what today's `merge` gives for the same groups.
 - Memory use is slightly higher at peak (spare room and holes), and there's no transient 223 MB copy on each edit.
 - `Chunked` goes away in step 2. Until then, there are two paths.
+
+## Amendments
+
+Made while building step 1 (`vector/resident.rs`), where the plan above did not hold up:
+
+- **Indices are rebased when written, not drawn with `base_vertex`.** A draw has one `base_vertex`, so two neighbouring groups whose indices each count from their own first vertex can't share a draw, and every group would need its own draw. That loses the merging this option was picked to keep (see "Why not A"). Instead each mesh's indices are counted from its page's first vertex when it is written, and draws use `base_vertex` 0. Neighbours that sit next to each other in a page then merge exactly as `merge` merges them. The rebase still costs only the bytes being written, not the whole Map.
+- **Growth and compaction lay the pages out again from the meshes on the CPU, not with `copy_buffer_to_buffer`.** The tessellation cache already holds every mesh, so making new pages and writing every mesh in stacking order handles growing, compacting and shrinking in one way. It also needs no encoder in `set_runs`. It costs one full write. It happens when an edit finds no room (pages are laid out with 50% spare room) or when the pages are less than a quarter full. It doesn't happen on every edit.
+- **Pages** are a vertex buffer and an index buffer, each under the device's `max_buffer_size`. A Map that fits in one page with spare room gets one. A bigger Map gets several, each filled to two-thirds. A mesh too big for any buffer is left out, as `split` did.
