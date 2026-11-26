@@ -35,7 +35,10 @@ struct CanvasResources {
 /// adapter is below the hardware floor. Called once per run, so a software-adapter warning
 /// shows once.
 pub(crate) fn install(render_state: &egui_wgpu::RenderState, sprites: SpriteStore) -> bool {
-    let capabilities = GpuCapabilities::query(&render_state.adapter);
+    let mut capabilities = GpuCapabilities::query(&render_state.adapter);
+    // eframe's device gets wgpu's default limits, below the adapter's (8192 against 16384 on
+    // many GPUs). Export plans its tiles from these, so they must be the device's.
+    capabilities.limits = render_state.device.limits();
     match capabilities.suitability() {
         Suitability::Ok => {}
         Suitability::SoftwareWarning(message) => eprintln!("Warning: {message}"),
