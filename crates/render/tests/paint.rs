@@ -127,7 +127,10 @@ fn scene_of(map: &Map) -> CanvasScene {
 }
 
 fn renderer(headless: &Headless) -> CanvasRenderer {
-    CanvasRenderer::new(&headless.device, GpuCapabilities::query(&headless.adapter))
+    CanvasRenderer::new(
+        &headless.device,
+        GpuCapabilities::query(&headless.adapter, &headless.device),
+    )
 }
 
 /// The Map at 1 pixel per Canvas unit, the view's top-left at `origin`.

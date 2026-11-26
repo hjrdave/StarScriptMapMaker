@@ -109,8 +109,10 @@ fn map_with(style: Option<FillStyle>) -> Map {
 }
 
 fn renderer(headless: &Headless) -> CanvasRenderer {
-    let mut renderer =
-        CanvasRenderer::new(&headless.device, GpuCapabilities::query(&headless.adapter));
+    let mut renderer = CanvasRenderer::new(
+        &headless.device,
+        GpuCapabilities::query(&headless.adapter, &headless.device),
+    );
     renderer.set_sprites(sprites());
     renderer
 }

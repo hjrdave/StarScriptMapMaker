@@ -119,7 +119,10 @@ fn frame(
 
 fn measure(gpu: &Headless, label: &str, strokes: usize) {
     let map = map_with(strokes);
-    let mut renderer = CanvasRenderer::new(&gpu.device, GpuCapabilities::query(&gpu.adapter));
+    let mut renderer = CanvasRenderer::new(
+        &gpu.device,
+        GpuCapabilities::query(&gpu.adapter, &gpu.device),
+    );
     let started = Instant::now();
     let content = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
     let built = started.elapsed();

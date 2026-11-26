@@ -220,7 +220,7 @@ fn main() {
             return;
         }
     };
-    let capabilities = GpuCapabilities::query(&gpu.adapter);
+    let capabilities = GpuCapabilities::query(&gpu.adapter, &gpu.device);
     println!(
         "adapter: {} ({:?}), MSAA {}x, scale {scale}",
         capabilities.info.name, capabilities.info.device_type, capabilities.msaa_samples

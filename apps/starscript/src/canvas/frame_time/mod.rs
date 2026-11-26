@@ -154,7 +154,7 @@ pub fn run(args: &[OsString]) -> i32 {
             return NO_ADAPTER;
         }
     };
-    let capabilities = GpuCapabilities::query(&gpu.adapter);
+    let capabilities = GpuCapabilities::query(&gpu.adapter, &gpu.device);
     let adapter = describe_adapter(&capabilities.info);
     let (library, problems) = PackLibrary::load(&PackRoots::installed());
     for problem in &problems {
@@ -181,7 +181,7 @@ pub fn run(args: &[OsString]) -> i32 {
     let take_stages = || None;
     let mut results = BTreeMap::new();
     for &script in &options.scripts {
-        let capabilities = GpuCapabilities::query(&gpu.adapter);
+        let capabilities = GpuCapabilities::query(&gpu.adapter, &gpu.device);
         let measured = measure(
             &gpu,
             capabilities,

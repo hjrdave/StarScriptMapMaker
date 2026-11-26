@@ -660,7 +660,7 @@ mod tests {
     }
 
     fn renderer(headless: &Headless) -> CanvasRenderer {
-        let capabilities = GpuCapabilities::query(&headless.adapter);
+        let capabilities = GpuCapabilities::query(&headless.adapter, &headless.device);
         let mut renderer = CanvasRenderer::new(&headless.device, capabilities);
         renderer.set_sprites(sprites());
         renderer

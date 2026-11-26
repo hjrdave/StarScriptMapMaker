@@ -83,8 +83,10 @@ fn map_with_block(
 fn render(headless: &Headless, map: &Map, view: &View) -> RgbaImage {
     let content = MapScene::new(Fonts::bundled()).content(map, &mut RoughnessCache::new());
     let scene = CanvasScene::new(map.canvas()).with_content(content);
-    let mut renderer =
-        CanvasRenderer::new(&headless.device, GpuCapabilities::query(&headless.adapter));
+    let mut renderer = CanvasRenderer::new(
+        &headless.device,
+        GpuCapabilities::query(&headless.adapter, &headless.device),
+    );
     render_to_image(
         &headless.device,
         &headless.queue,
@@ -172,8 +174,10 @@ fn a_canvas_with_an_origin_renders_where_it_sits() {
 }
 
 fn export(headless: &Headless, map: &Map, max_tile_side: Option<u32>) -> RgbaImage {
-    let mut renderer =
-        CanvasRenderer::new(&headless.device, GpuCapabilities::query(&headless.adapter));
+    let mut renderer = CanvasRenderer::new(
+        &headless.device,
+        GpuCapabilities::query(&headless.adapter, &headless.device),
+    );
     let settings = ExportSettings {
         size: SizeMode::Width { pixels: 200 },
         ..Default::default()
