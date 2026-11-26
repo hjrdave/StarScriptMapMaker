@@ -333,6 +333,7 @@ impl PropertiesPanel {
             label: "Change Default Roughness",
             set: &set,
             reset: None,
+            defaults: None,
         };
         ui.push_id("default roughness", |ui| {
             self.roughness_fields(ui, editor, &group);
@@ -378,6 +379,7 @@ impl PropertiesPanel {
             label,
             set: &set,
             reset: None,
+            defaults: None,
         };
         ui.push_id(title, |ui| self.shore_fields(ui, editor, kind, &group));
     }

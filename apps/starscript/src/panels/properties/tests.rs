@@ -349,43 +349,181 @@ fn re_rolling_the_mottle_changes_only_its_seed() {
 
 #[test]
 fn the_shore_style_has_glow_and_water_lines_and_a_soft_glow_preset() {
+    use ssmap_core::{ShoreKind, ShoreStyle};
     let (mut fixture, _, island) = fixture();
     fixture.editor.select(vec![island]);
     let mut harness = harness(fixture);
-    for label in [
-        "Glow width",
-        "Water line length",
-        "Water line spacing",
-        "Water line width",
-        "Water line taper",
-        "Water line variation",
-        "Water line seed",
-        "Wave mark density",
-        "Wave mark size",
-        "Wave mark seed",
-        "Wave mark colour",
-    ] {
-        harness.get_by_label(label);
-    }
-    // The default style has neither.
-    let default = ssmap_core::ShoreStyle::landmass_default();
+    // The default style has neither: their groups are one line each, with a box to turn
+    // them on.
+    let default = ShoreStyle::landmass_default();
     assert_eq!(harness.state().editor.map().shore(island), Some(&default));
+    for group in ["Outer glow", "Water lines", "Wave marks"] {
+        assert!(!is_on(&harness, group), "{group} is off");
+    }
+    for label in ["Glow width", "Water line length", "Wave mark density"] {
+        assert!(
+            harness.query_by_label(label).is_none(),
+            "{label} is folded away"
+        );
+    }
 
     open_shore_presets(&mut harness);
     click(&mut harness, "Soft glow");
     let editor = &harness.state().editor;
     assert_eq!(
         editor.map().shore(island),
-        Some(&ssmap_core::ShoreStyle::soft_glow())
+        ShoreStyle::picked(ShoreKind::Landmass, "Soft glow").as_ref()
     );
     assert_eq!(editor.undo_label(), Some("Change Shore Style"));
+    for label in [
+        "Glow width",
+        "Glow colour",
+        "Glow opacity",
+        "Water line length",
+        "Water line spacing",
+        "Water line width",
+        "Water line taper",
+        "Water line variation",
+        "Water line seed",
+        "Water line colour",
+        "Water line opacity",
+    ] {
+        harness.get_by_label(label);
+    }
 
     open_shore_presets(&mut harness);
     click(&mut harness, "Hand drawn");
     assert_eq!(
         harness.state().editor.map().shore(island),
-        Some(&ssmap_core::ShoreStyle::hand_drawn())
+        ShoreStyle::picked(ShoreKind::Landmass, "Hand drawn").as_ref()
     );
+}
+
+/// Runs `SetShore` for `id` with `shore`.
+fn set_shore(fixture: &mut Fixture, id: Id, shore: Option<ssmap_core::ShoreStyle>) {
+    assert!(
+        fixture
+            .editor
+            .run(Command::SetShore {
+                ids: vec![id],
+                shore,
+            })
+            .is_ok()
+    );
+}
+
+#[test]
+fn only_the_shore_fields_that_override_the_map_default_show_a_reset_arrow() {
+    let (mut fixture, _, island) = fixture();
+    fixture.editor.select(vec![island]);
+    let mut harness = harness(fixture);
+    // Following the default: no field shows a reset arrow.
+    harness.get_by_label("Outline width");
+    for label in [
+        "Reset Outline width",
+        "Reset Ripple count",
+        "Reset Shade colour",
+    ] {
+        assert!(harness.query_by_label(label).is_none(), "{label}");
+    }
+
+    let mut own = ssmap_core::ShoreStyle::landmass_default();
+    own.outline.width += 2.0;
+    set_shore(harness.state_mut(), island, Some(own));
+    harness.run();
+    // Only the changed field shows one.
+    harness.get_by_label("Reset Outline width");
+    for label in [
+        "Reset Ripple count",
+        "Reset Shade colour",
+        "Reset Outline colour",
+    ] {
+        assert!(harness.query_by_label(label).is_none(), "{label}");
+    }
+
+    // Resetting it leaves the style the same as the default, so it follows the default again.
+    click(&mut harness, "Reset Outline width");
+    let editor = &harness.state().editor;
+    let Some(Node::Object(object)) = editor.map().node(island) else {
+        panic!("an Object")
+    };
+    assert_eq!(object.kind.shore(), None);
+    assert_eq!(editor.undo_label(), Some("Change Shore Style"));
+    assert!(harness.query_by_label("Reset Outline width").is_none());
+}
+
+#[test]
+fn a_shore_group_turns_on_with_a_width_and_folds_to_one_line_when_off() {
+    let (mut fixture, _, island) = fixture();
+    fixture.editor.select(vec![island]);
+    let mut harness = harness(fixture);
+    let shore = |harness: &Harness<'static, Fixture>| {
+        harness
+            .state()
+            .editor
+            .map()
+            .shore(island)
+            .cloned()
+            .expect("a Shore style")
+    };
+    assert!(!is_on(&harness, "Outer glow"));
+
+    click(&mut harness, "Outer glow");
+    assert!(is_on(&harness, "Outer glow"));
+    assert!(shore(&harness).glow.width > 0.0);
+    for label in ["Glow width", "Glow colour", "Glow opacity"] {
+        harness.get_by_label(label);
+    }
+    assert_eq!(
+        harness.state().editor.undo_label(),
+        Some("Change Shore Style")
+    );
+
+    click(&mut harness, "Outer glow");
+    assert!(!is_on(&harness, "Outer glow"));
+    assert_eq!(shore(&harness).glow.width, 0.0);
+    assert!(harness.query_by_label("Glow width").is_none());
+    // Every other group kept its settings.
+    let mut expected = ssmap_core::ShoreStyle::landmass_default();
+    expected.glow.width = 0.0;
+    assert!(shore(&harness).same_look(&expected));
+}
+
+#[test]
+fn reset_to_preset_shows_after_an_edit_and_goes_back_to_the_preset_last_picked() {
+    use ssmap_core::{ShoreKind, ShoreStyle};
+    let (mut fixture, _, island) = fixture();
+    fixture.editor.select(vec![island]);
+    let mut harness = harness(fixture);
+    assert!(harness.query_by_label("Reset to preset").is_none());
+
+    open_shore_presets(&mut harness);
+    click(&mut harness, "Soft glow");
+    // Just picked: nothing to go back to.
+    assert!(harness.query_by_label("Reset to preset").is_none());
+
+    let mut edited = ShoreStyle::picked(ShoreKind::Landmass, "Soft glow").expect("a preset");
+    edited.outline.width += 3.0;
+    set_shore(harness.state_mut(), island, Some(edited));
+    harness.run();
+    assert!(
+        harness.query_by_value("Custom").is_some(),
+        "the picker says Custom after the edit"
+    );
+
+    click(&mut harness, "Reset to preset");
+    let editor = &harness.state().editor;
+    assert_eq!(
+        editor.map().shore(island),
+        ShoreStyle::picked(ShoreKind::Landmass, "Soft glow").as_ref()
+    );
+    assert_eq!(editor.undo_label(), Some("Change Shore Style"));
+    assert!(harness.query_by_label("Reset to preset").is_none());
+}
+
+/// Whether the group box named `group` is ticked.
+fn is_on(harness: &Harness<'static, Fixture>, group: &str) -> bool {
+    harness.get_by_label(group).accesskit_node().toggled() == Some(egui::accesskit::Toggled::True)
 }
 
 #[test]
@@ -409,7 +547,7 @@ fn the_shore_preset_picker_shows_custom_when_no_preset_matches() {
     click(&mut harness, "Soft glow");
     assert_eq!(
         harness.state().editor.map().shore(island),
-        Some(&ssmap_core::ShoreStyle::soft_glow())
+        ssmap_core::ShoreStyle::picked(ssmap_core::ShoreKind::Landmass, "Soft glow").as_ref()
     );
     // The picker now names the preset instead of "Custom".
     assert!(
@@ -1959,9 +2097,12 @@ fn editing_the_lake_shore_leaves_the_landmass_shore_alone() {
         before(&harness, ShoreKind::Landmass),
         before(&harness, ShoreKind::Lake),
     );
-    // Type a new Ripple count into the Lake shore.
-    // (The water line seed is a plain number too, below the ripples.)
-    type_into_nth(&mut harness, &lake.ripples.count.to_string(), 0, "7");
+    // The Lake shore has no ripples: turn them on, then type a new count.
+    assert_eq!(lake.ripples.count, 0);
+    click(&mut harness, "Ripples");
+    let on = before(&harness, ShoreKind::Lake).ripples.count;
+    assert!(on > 0, "turning Ripples on gives them a count");
+    type_into_nth(&mut harness, &on.to_string(), 0, "7");
     assert_eq!(before(&harness, ShoreKind::Landmass), landmass);
     assert_eq!(before(&harness, ShoreKind::Lake).ripples.count, 7);
     assert_ne!(before(&harness, ShoreKind::Lake), lake);

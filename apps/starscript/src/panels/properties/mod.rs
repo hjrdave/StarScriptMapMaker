@@ -7,6 +7,7 @@ mod label;
 mod map;
 mod object_style;
 mod river;
+mod shore;
 mod stamp;
 #[cfg(test)]
 mod tests;
@@ -65,6 +66,17 @@ struct Inherit<'a, T> {
     set: &'a dyn Fn(usize, T) -> Command,
     /// Goes back to the default. `None` where there is nothing to go back to.
     reset: Option<Command>,
+    /// What each member inherits, where the fields show one by one which override it. `None`:
+    /// every field shows `provenance`.
+    defaults: Option<Defaults<'a, T>>,
+}
+
+/// The defaults behind the members of an [`Inherit`], one per member.
+struct Defaults<'a, T> {
+    /// The default member `index` falls back to.
+    values: &'a [T],
+    /// The Command that makes member `index` follow its default again.
+    clear: &'a dyn Fn(usize) -> Command,
 }
 
 impl<T: Clone> Inherit<'_, T> {
@@ -79,6 +91,24 @@ impl<T: Clone> Inherit<'_, T> {
             return false;
         };
         self.members.iter().any(|m| field(m) != first)
+    }
+
+    /// How the setting `field` reads is shown: with defaults, overridden where it differs from
+    /// the default of any member and plain where it follows them all; else `provenance`.
+    fn provenance_of<V: PartialEq>(&self, field: impl Fn(&T) -> V) -> Provenance {
+        let Some(defaults) = &self.defaults else {
+            return self.provenance;
+        };
+        let differs = self
+            .members
+            .iter()
+            .zip(defaults.values)
+            .any(|(member, default)| field(member) != field(default));
+        if differs {
+            Provenance::Overridden
+        } else {
+            Provenance::Plain
+        }
     }
 
     /// One Command per member, each with `apply` done to its own value, so the other settings

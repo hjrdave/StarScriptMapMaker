@@ -192,7 +192,7 @@ impl LayerTree {
         {
             paint_drop_indicator(ui, palette, rect, target);
             if response.dnd_release_payload::<Id>().is_some() {
-                actions.push(Action::Run(command));
+                actions.push(Action::Run(Box::new(command)));
             }
         }
     }
@@ -365,10 +365,10 @@ fn pin_and_depth_sort_items(
         // Depth sort orders the Stamps directly inside; its icon shows on the row while on.
         let mut depth_sort = layer.depth_sort;
         if ui.checkbox(&mut depth_sort, "Depth sort").clicked() {
-            actions.push(Action::Run(Command::SetDepthSort {
+            actions.push(Action::Run(Box::new(Command::SetDepthSort {
                 id: row.id,
                 depth_sort,
-            }));
+            })));
             ui.close();
         }
     }
@@ -489,18 +489,18 @@ fn row_context_menu(
                 .on_disabled_hover_text("There is no Layer below this one")
                 .clicked()
             {
-                actions.push(Action::Run(Command::SetAttached {
+                actions.push(Action::Run(Box::new(Command::SetAttached {
                     id: row.id,
                     attached,
-                }));
+                })));
                 ui.close();
             }
             // A Clip to one Landmass from an older Map can still be cleared.
             if layer.clip.is_some() && ui.button("Clear Clip").clicked() {
-                actions.push(Action::Run(Command::SetClip {
+                actions.push(Action::Run(Box::new(Command::SetClip {
                     id: row.id,
                     target: None,
-                }));
+                })));
                 ui.close();
             }
         }

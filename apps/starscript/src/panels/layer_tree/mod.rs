@@ -80,7 +80,8 @@ enum Action {
     Select(Id, Pick),
     /// Pastes what Copy or Cut took.
     Paste,
-    Run(Command),
+    /// Boxed, since a Command is far larger than the other actions.
+    Run(Box<Command>),
     Toggle(Id),
     StartRename(Id),
     /// Duplicates the row, or the whole selection if the row is part of it.
@@ -218,7 +219,7 @@ impl LayerTree {
                 }
                 Action::Paste => self.paste_requested = true,
                 Action::Run(command) => {
-                    let _ = editor.run(command);
+                    let _ = editor.run(*command);
                 }
                 Action::Toggle(id) => {
                     if !self.collapsed.remove(&id) {
