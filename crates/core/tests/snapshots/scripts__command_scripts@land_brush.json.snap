@@ -428,7 +428,7 @@ input_file: crates/core/tests/scripts/land_brush.json
       "outcome": {
         "command": {
           "command": "add_region",
-          "id": "00000000-0000-7000-8000-000000000012",
+          "id": "00000000-0000-7000-8000-000000000011",
           "region": [
             {
               "exterior": [
@@ -457,7 +457,7 @@ input_file: crates/core/tests/scripts/land_brush.json
       "step": {
         "brush": {
           "active_layer": "00000000-0000-7000-8000-000000000010",
-          "new_id": "00000000-0000-7000-8000-000000000099",
+          "new_id": "00000000-0000-7000-8000-000000000013",
           "region": [
             {
               "exterior": [
@@ -773,34 +773,18 @@ input_file: crates/core/tests/scripts/land_brush.json
                         "exterior": [
                           [
                             120.0,
+                            120.0
+                          ],
+                          [
+                            140.0,
+                            120.0
+                          ],
+                          [
+                            140.0,
                             140.0
                           ],
                           [
                             120.0,
-                            120.0
-                          ],
-                          [
-                            140.0,
-                            120.0
-                          ],
-                          [
-                            140.0,
-                            125.0
-                          ],
-                          [
-                            150.0,
-                            125.0
-                          ],
-                          [
-                            150.0,
-                            135.0
-                          ],
-                          [
-                            140.0,
-                            135.0
-                          ],
-                          [
-                            140.0,
                             140.0
                           ]
                         ]
@@ -1001,37 +985,7 @@ input_file: crates/core/tests/scripts/land_brush.json
       }
     },
     {
-      "outcome": {
-        "command": {
-          "command": "subtract_region",
-          "ids": [
-            "00000000-0000-7000-8000-000000000012"
-          ],
-          "region": [
-            {
-              "exterior": [
-                [
-                  0.0,
-                  0.0
-                ],
-                [
-                  1000.0,
-                  0.0
-                ],
-                [
-                  1000.0,
-                  1000.0
-                ],
-                [
-                  0.0,
-                  1000.0
-                ]
-              ]
-            }
-          ]
-        },
-        "result": "ok"
-      },
+      "outcome": "nothing to do",
       "step": {
         "brush": {
           "active_layer": "00000000-0000-7000-8000-000000000010",
@@ -1041,20 +995,20 @@ input_file: crates/core/tests/scripts/land_brush.json
             {
               "exterior": [
                 [
-                  0,
-                  0
+                  850,
+                  850
                 ],
                 [
-                  1000,
-                  0
+                  950,
+                  850
                 ],
                 [
-                  1000,
-                  1000
+                  950,
+                  950
                 ],
                 [
-                  0,
-                  1000
+                  850,
+                  950
                 ]
               ]
             }
@@ -1063,8 +1017,8 @@ input_file: crates/core/tests/scripts/land_brush.json
             "00000000-0000-7000-8000-000000000012"
           ],
           "start": [
-            130,
-            130
+            900,
+            900
           ]
         }
       }
@@ -1506,6 +1460,38 @@ input_file: crates/core/tests/scripts/land_brush.json
                   "locked": true,
                   "name": "Landmass 001",
                   "type": "object"
+                },
+                {
+                  "id": "00000000-0000-7000-8000-000000000012",
+                  "kind": {
+                    "fill": "#6fa8c8",
+                    "geometry": [
+                      {
+                        "exterior": [
+                          [
+                            120.0,
+                            120.0
+                          ],
+                          [
+                            140.0,
+                            120.0
+                          ],
+                          [
+                            140.0,
+                            140.0
+                          ],
+                          [
+                            120.0,
+                            140.0
+                          ]
+                        ]
+                      }
+                    ],
+                    "kind": "lake"
+                  },
+                  "locked": false,
+                  "name": "Lake 001",
+                  "type": "object"
                 }
               ],
               "id": "00000000-0000-7000-8000-000000000010",
@@ -1565,7 +1551,7 @@ input_file: crates/core/tests/scripts/land_brush.json
     }
   ],
   "redo_steps": 0,
-  "undo_steps": 12,
+  "undo_steps": 11,
   "view": {
     "boards": [
       {
@@ -1718,6 +1704,38 @@ input_file: crates/core/tests/scripts/land_brush.json
             },
             "locked": true,
             "name": "Landmass 001",
+            "type": "object"
+          },
+          {
+            "id": "00000000-0000-7000-8000-000000000012",
+            "kind": {
+              "fill": "#6fa8c8",
+              "geometry": [
+                {
+                  "exterior": [
+                    [
+                      120.0,
+                      120.0
+                    ],
+                    [
+                      140.0,
+                      120.0
+                    ],
+                    [
+                      140.0,
+                      140.0
+                    ],
+                    [
+                      120.0,
+                      140.0
+                    ]
+                  ]
+                }
+              ],
+              "kind": "lake"
+            },
+            "locked": false,
+            "name": "Lake 001",
             "type": "object"
           }
         ],

@@ -37,8 +37,10 @@ fn every_template_renders_and_screen_and_export_match() {
     for template in &templates {
         let canvas = Canvas::new(SIDES[0], SIDES[1], Scale::new(1.0, DistanceUnit::Miles));
         let map = template.new_map(canvas);
-        let mut renderer =
-            CanvasRenderer::new(&headless.device, GpuCapabilities::query(&headless.adapter));
+        let mut renderer = CanvasRenderer::new(
+            &headless.device,
+            GpuCapabilities::query(&headless.adapter, &headless.device),
+        );
 
         let content = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
         let scene = CanvasScene::new(map.canvas()).with_content(content);

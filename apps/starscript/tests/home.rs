@@ -125,7 +125,7 @@ fn a_new_tab_shows_a_start_page_that_is_not_a_map() {
     assert!(harness.query_by_label("New Layer").is_none());
     // Nothing to save, so closing asks nothing.
     harness.state_mut().close_tab(0);
-    harness.run();
+    settle(&mut harness);
     assert!(harness.state().tabs().is_empty());
 }
 
@@ -287,7 +287,7 @@ fn delete_from_a_cards_menu_asks_first_and_cancel_keeps_the_map() {
     let mut harness = app();
     harness.state_mut().open_path(&path);
     harness.state_mut().close_tab(0);
-    harness.run();
+    settle(&mut harness);
 
     harness.get_by_label("Open Isle").click_secondary();
     harness.run();
@@ -310,7 +310,7 @@ fn the_card_menu_offers_show_in_the_file_manager() {
     let mut harness = app();
     harness.state_mut().open_path(&path);
     harness.state_mut().close_tab(0);
-    harness.run();
+    settle(&mut harness);
 
     harness.get_by_label("Open Isle").click_secondary();
     harness.run();

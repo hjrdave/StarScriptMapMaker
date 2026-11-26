@@ -230,11 +230,14 @@ pub struct BrushStroke {
 
 /// What a land brush stroke does, given the editor's Selection and active Layer:
 ///
-/// - **Add** merges into the selected Landmass or Lake (the last selected, if several). With
-///   none selected, it merges into the topmost Landmass under the stroke's start, or creates a
+/// The land brush only makes or changes Landmasses; a selected Lake or any other Object is
+/// ignored (the water brush, [`water_command`], is for Lakes).
+///
+/// - **Add** merges into the selected Landmass (the last selected, if several). With none
+///   selected, it merges into the topmost Landmass under the stroke's start, or creates a
 ///   Landmass with id `new_id` in the active Layer if the stroke starts on water.
-/// - **Erase** cuts the stroke out of the selected Lakes, or with none selected, out of every
-///   Landmass directly in the active Layer that it touches.
+/// - **Erase** cuts the stroke out of the selected Landmasses, or with none selected, out of
+///   every Landmass directly in the active Layer that it touches.
 ///
 /// Returns `None` when an erase touches nothing, and [`BrushError::NoLayer`] when a stroke
 /// needs the active Layer and there is none. Locked targets are kept, so the Command fails and
@@ -254,8 +257,6 @@ pub fn brush_command(
             .filter(|&id| matches!(map.node(id), Some(Node::Object(o)) if want(&o.kind)))
             .collect()
     };
-    let is_outline = |kind: &ObjectKind| kind.stored_geometry().is_some();
-    let is_lake = |kind: &ObjectKind| matches!(kind, ObjectKind::Lake(_));
     let is_landmass = |kind: &ObjectKind| matches!(kind, ObjectKind::Landmass(_));
     let layer = active_layer.filter(|&id| matches!(map.node(id), Some(Node::Layer(_))));
     let BrushStroke {
@@ -265,8 +266,8 @@ pub fn brush_command(
     } = stroke;
 
     if erase {
-        let lakes = selected(is_lake);
-        let ids = if lakes.is_empty() {
+        let selected_land = selected(is_landmass);
+        let ids = if selected_land.is_empty() {
             let layer = layer.ok_or(BrushError::NoLayer)?;
             map.children(Some(layer))
                 .iter()
@@ -280,12 +281,12 @@ pub fn brush_command(
                 })
                 .collect()
         } else {
-            lakes
+            selected_land
         };
         return Ok((!ids.is_empty()).then_some(Command::SubtractRegion { ids, region }));
     }
 
-    if let Some(&id) = selected(is_outline).last() {
+    if let Some(&id) = selected(is_landmass).last() {
         return Ok(Some(Command::AddRegion { id, region }));
     }
     let under_start = map.draw_order().into_iter().rev().find(|&id| {

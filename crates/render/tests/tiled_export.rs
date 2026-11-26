@@ -96,8 +96,10 @@ struct Setup {
 
 impl Setup {
     fn new(headless: &Headless, sprites: SpriteStore) -> Self {
-        let mut renderer =
-            CanvasRenderer::new(&headless.device, GpuCapabilities::query(&headless.adapter));
+        let mut renderer = CanvasRenderer::new(
+            &headless.device,
+            GpuCapabilities::query(&headless.adapter, &headless.device),
+        );
         renderer.set_sprites(sprites);
         Self {
             renderer,
@@ -208,6 +210,59 @@ fn tiles_leave_no_seams() {
         "{} pixels differ, first at {:?}",
         differing.len(),
         differing.first()
+    );
+}
+
+/// A device opened with the downlevel limits (2048 px textures) on the same adapter, as eframe
+/// opens its own with wgpu's defaults. `None` when the adapter allows no more than that, so a
+/// mismatch can't be shown.
+fn limited(headless: &Headless) -> Option<Headless> {
+    let limits = wgpu::Limits::downlevel_defaults();
+    if headless.adapter.limits().max_texture_dimension_2d <= limits.max_texture_dimension_2d {
+        return None;
+    }
+    let (device, queue) =
+        pollster::block_on(headless.adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("limited"),
+            required_limits: limits,
+            ..Default::default()
+        }))
+        .expect("the adapter opens a device with the downlevel limits");
+    Some(Headless {
+        adapter: headless.adapter.clone(),
+        device,
+        queue,
+    })
+}
+
+/// Issue #670: tiles follow the limits of the device the export renders on. They were sized
+/// from the adapter's limits, so an export wider than the device allows asked for a texture
+/// past them and wgpu panicked.
+#[test]
+fn tiles_fit_the_device_limits_not_the_adapters() {
+    let Some(headless) = gpu() else { return };
+    let Some(limited) = limited(&headless) else {
+        return;
+    };
+    let side = limited.device.limits().max_texture_dimension_2d;
+    let mut setup = Setup::new(&limited, SpriteStore::synchronous(library()));
+    assert_eq!(
+        setup
+            .renderer
+            .capabilities()
+            .limits
+            .max_texture_dimension_2d,
+        side
+    );
+    let width = side + side / 2;
+    let mut last = None;
+    let image = setup.export(&limited, &coastal_map(), &settings(width), None, |status| {
+        last = Some(status);
+    });
+    assert_eq!((image.width, image.height), (width, width * 2 / 3));
+    assert!(
+        matches!(last, Some(ExportStatus::Rendering { done, total }) if done == total && total > 1),
+        "{last:?}"
     );
 }
 
