@@ -32,7 +32,7 @@ fn map_with_landmass(geometry: MultiPolygon) -> (Map, Id) {
     let id = Id::new();
     map.execute(&Command::CreateLandmass {
         id,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         geometry,
         fill: None,

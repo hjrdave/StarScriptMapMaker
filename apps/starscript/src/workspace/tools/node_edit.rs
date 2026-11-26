@@ -473,7 +473,7 @@ mod tests {
             editor
                 .run(Command::CreateLandmass {
                     id,
-                    parent: layer.unwrap_or_else(Id::new),
+                    parent: Some(layer.unwrap_or_else(Id::new)),
                     index: None,
                     geometry: outline(),
                     fill: None,
@@ -582,7 +582,7 @@ mod tests {
             editor
                 .run(Command::CreateRiver {
                     id,
-                    parent: layer.unwrap_or_else(Id::new),
+                    parent: Some(layer.unwrap_or_else(Id::new)),
                     index: None,
                     river: Box::new(river),
                 })

@@ -24,6 +24,15 @@ pub(super) fn layer(map: &Map, id: Id) -> Result<&Layer, CommandError> {
     }
 }
 
+/// Fails unless new nodes can go into `parent`: an unlocked Layer, or the top level (`None`).
+pub(super) fn container(map: &Map, parent: Option<Id>) -> Result<(), CommandError> {
+    let Some(parent) = parent else {
+        return Ok(());
+    };
+    layer(map, parent)?;
+    unlocked(map, parent)
+}
+
 /// The nearest locked Layer above `id`.
 pub(super) fn locked_ancestor(map: &Map, id: Id) -> Option<Id> {
     map.locked_ancestor(id)

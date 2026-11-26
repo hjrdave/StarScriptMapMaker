@@ -107,7 +107,7 @@ fn fixture(scale: f64) -> Fixture {
         coast = insert(&mut map, Some(layer), Node::Object(object));
     }
     map.execute(&Command::PlaceStamps {
-        parent: layer,
+        parent: Some(layer),
         stamps: placed((STAMPS as f64 * scale) as usize),
     })
     .unwrap();
@@ -157,7 +157,7 @@ fn benches(c: &mut Criterion, Fixture { map, layer, coast }: &Fixture, path: &Pa
             |stamps| {
                 edited
                     .execute(&Command::PlaceStamps {
-                        parent: layer,
+                        parent: Some(layer),
                         stamps,
                     })
                     .unwrap()

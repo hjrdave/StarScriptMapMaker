@@ -45,7 +45,7 @@ fn rough_island() -> (Map, Id, Id) {
         },
         Command::CreateLandmass {
             id: island,
-            parent: land,
+            parent: Some(land),
             index: None,
             geometry: square([100.0, 100.0], 200.0),
             fill: None,

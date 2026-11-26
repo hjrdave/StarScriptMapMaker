@@ -29,7 +29,7 @@ use crate::shore::ShoreStyle;
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Op {
     /// Inserts a node and its descendants at `index` among `parent`'s children
-    /// (`None` is the top level, which holds only Layers).
+    /// (`None` is the top level).
     Insert {
         /// The Layer to insert into, or `None` for the top level.
         parent: Option<Id>,
@@ -224,9 +224,6 @@ pub enum OpError {
     /// The node is an Object, and only Layers hold children.
     #[error("{0} is an Object; only Layers hold children")]
     NotALayer(Id),
-    /// An Object was put at the top level, which holds only Layers.
-    #[error("only Layers can be at the top level")]
-    ObjectAtRoot,
     /// The index is past the end of the parent's children.
     #[error("index {index} is past the end of {len} children")]
     IndexOutOfRange {
@@ -277,14 +274,7 @@ impl Map {
     pub(crate) fn apply_op(&mut self, op: Op) -> Result<Op, OpError> {
         self.check(&op)?;
         self.revision += 1;
-        let change = match &op {
-            Op::SetProperty { id, .. } | Op::ReplaceGeometry { id, .. } => Change::Edited(*id),
-            Op::Insert { subtree, .. } if subtree.children.is_empty() => {
-                Change::Inserted(subtree.id)
-            }
-            Op::SetDefaults { .. } => Change::Defaults,
-            _ => Change::Other,
-        };
+        let change = change_of(&op);
         let inverse = match op {
             Op::Insert {
                 parent,
@@ -521,7 +511,7 @@ impl Map {
                 index,
                 subtree,
             } => {
-                self.check_destination(*parent, subtree.node.is_layer())?;
+                self.check_destination(*parent)?;
                 check_index(*index, self.children(*parent).len())?;
                 self.check_insertable(subtree)?;
             }
@@ -538,8 +528,8 @@ impl Map {
                 _ => return Err(OpError::NoGeometry(*id)),
             },
             Op::Move { id, parent, index } => {
-                let node = self.existing(*id)?;
-                self.check_destination(*parent, node.is_layer())?;
+                self.existing(*id)?;
+                self.check_destination(*parent)?;
                 if let Some(parent) = *parent
                     && self.is_ancestor_or_self(*id, parent)
                 {
@@ -606,9 +596,8 @@ impl Map {
         self.node(id).ok_or(OpError::NotFound(id))
     }
 
-    fn check_destination(&self, parent: Option<Id>, is_layer: bool) -> Result<(), OpError> {
+    fn check_destination(&self, parent: Option<Id>) -> Result<(), OpError> {
         match parent {
-            None if !is_layer => Err(OpError::ObjectAtRoot),
             None => Ok(()),
             Some(parent) if self.existing(parent)?.is_layer() => Ok(()),
             Some(parent) => Err(OpError::NotALayer(parent)),
@@ -688,6 +677,8 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
             Node::Object(_),
             Property::Name(_)
             | Property::Locked(_)
+            | Property::Visible(_)
+            | Property::Opacity(_)
             | Property::MoveLocked(_)
             | Property::Link(_)
             | Property::Membership(_)
@@ -695,12 +686,25 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
             | Property::Roughness(_)
             | Property::Shore(_),
         ) => Ok(()),
-        (Node::Object(_), Property::Visible(_)) => Err("visible"),
-        (Node::Object(_), Property::Opacity(_)) => Err("opacity"),
         (Node::Object(_), Property::Clip(_)) => Err("clip"),
         (Node::Object(_), Property::Attached(_)) => Err("attached"),
         (Node::Object(_), Property::DepthSort(_)) => Err("depth_sort"),
         (Node::Object(object), Property::Fill(_)) => object.kind.fill().map(|_| ()).ok_or("fill"),
+    }
+}
+
+/// What `op` does, as far as patching derived data is concerned.
+fn change_of(op: &Op) -> Change {
+    match op {
+        // Showing or hiding a node changes what draws, not how one node draws.
+        Op::SetProperty {
+            property: Property::Visible(_),
+            ..
+        } => Change::Other,
+        Op::SetProperty { id, .. } | Op::ReplaceGeometry { id, .. } => Change::Edited(*id),
+        Op::Insert { subtree, .. } if subtree.children.is_empty() => Change::Inserted(subtree.id),
+        Op::SetDefaults { .. } => Change::Defaults,
+        _ => Change::Other,
     }
 }
 
@@ -737,6 +741,12 @@ fn set_property(node: &mut Node, property: Property) -> Property {
         }
         (Node::Object(object), Property::Link(link)) => {
             Property::Link(std::mem::replace(&mut object.link, link))
+        }
+        (Node::Object(object), Property::Visible(visible)) => {
+            Property::Visible(std::mem::replace(&mut object.visible, visible))
+        }
+        (Node::Object(object), Property::Opacity(opacity)) => {
+            Property::Opacity(std::mem::replace(&mut object.opacity, opacity))
         }
         (Node::Object(object), Property::Name(name)) => {
             let new = (!name.is_empty()).then_some(name);

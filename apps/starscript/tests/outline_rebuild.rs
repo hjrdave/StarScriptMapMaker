@@ -45,7 +45,7 @@ fn editor() -> Editor {
         editor
             .run(Command::CreateLandmass {
                 id: Id::new(),
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 geometry: square(x),
                 fill: None,

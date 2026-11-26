@@ -721,7 +721,7 @@ mod tests {
         for (i, &id) in ids.iter().enumerate() {
             map.execute(&Command::CreateStamp {
                 id,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 stamp: Box::new(stamp(
                     assets[i % 3],
@@ -774,7 +774,7 @@ mod tests {
         for (i, &id) in ids.iter().enumerate() {
             map.execute(&Command::CreateStamp {
                 id,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 stamp: Box::new(stamp("test-pack/tree", 20.0 + i as f64 * 30.0, 60.0)),
             })
@@ -792,7 +792,7 @@ mod tests {
         // A Stamp added, then one removed.
         map.execute(&Command::CreateStamp {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: None,
             stamp: Box::new(stamp("test-pack/tree", 200.0, 100.0)),
         })

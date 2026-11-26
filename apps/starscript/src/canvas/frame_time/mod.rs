@@ -538,7 +538,7 @@ fn large_map(scale: f64, asset: AssetRef) -> (Map, Id) {
             &mut map,
             &Command::CreateLandmass {
                 id,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 geometry,
                 fill: None,
@@ -563,7 +563,7 @@ fn large_map(scale: f64, asset: AssetRef) -> (Map, Id) {
     scripts::run(
         &mut map,
         &Command::PlaceStamps {
-            parent: layer,
+            parent: Some(layer),
             stamps,
         },
         "the Layer was just created in this Map, so placing Stamps on it cannot fail",
