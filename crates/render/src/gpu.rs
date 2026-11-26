@@ -51,7 +51,10 @@ impl GpuCapabilities {
         Suitability::Ok
     }
 
-    pub fn query(adapter: &wgpu::Adapter) -> Self {
+    /// What `device`, opened on `adapter`, can do. The limits are the device's, not the
+    /// adapter's: a device may be opened with lower limits (eframe uses wgpu's defaults), and
+    /// a texture sized past them fails validation (issue #670).
+    pub fn query(adapter: &wgpu::Adapter, device: &wgpu::Device) -> Self {
         let flags = adapter
             .get_texture_format_features(crate::CANVAS_FORMAT)
             .flags;
@@ -59,7 +62,7 @@ impl GpuCapabilities {
             && flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE);
         Self {
             info: adapter.get_info(),
-            limits: adapter.limits(),
+            limits: device.limits(),
             downlevel: adapter.get_downlevel_capabilities(),
             msaa_samples: if msaa { 4 } else { 1 },
         }

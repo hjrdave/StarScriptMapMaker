@@ -64,7 +64,7 @@ fn env_flag(name: &str) -> bool {
 }
 
 fn render(headless: &Headless, scene: &CanvasScene, view: &View) -> RgbaImage {
-    let capabilities = GpuCapabilities::query(&headless.adapter);
+    let capabilities = GpuCapabilities::query(&headless.adapter, &headless.device);
     eprintln!(
         "adapter: {} ({:?}, {:?}), MSAA {}x",
         capabilities.info.name,
@@ -431,7 +431,7 @@ fn redraw_after_a_gesture_is_fully_rendered() {
     let gesture = full.clone().with_quality(Quality::Interactive);
     let mut view = land_and_water_view();
 
-    let capabilities = GpuCapabilities::query(&headless.adapter);
+    let capabilities = GpuCapabilities::query(&headless.adapter, &headless.device);
     let mut renderer = CanvasRenderer::new(&headless.device, capabilities);
     let mut draw = |scene: &CanvasScene, view: &View| {
         render_to_image(
@@ -932,7 +932,7 @@ fn render_stamps_sorted(
     }
     let canvas = scene_of(&map);
     let view = View::whole_canvas(canvas.canvas_size, 960);
-    let capabilities = GpuCapabilities::query(&headless.adapter);
+    let capabilities = GpuCapabilities::query(&headless.adapter, &headless.device);
     let mut renderer = CanvasRenderer::new(&headless.device, capabilities);
     renderer.set_sprites(test_sprites());
     render_to_image(
@@ -1076,8 +1076,10 @@ fn render_clipped(headless: &Headless, clip: bool, stamps: &[ssmap_core::Stamp])
     }
     let canvas = scene_of(&map);
     let view = View::whole_canvas(canvas.canvas_size, 960);
-    let mut renderer =
-        CanvasRenderer::new(&headless.device, GpuCapabilities::query(&headless.adapter));
+    let mut renderer = CanvasRenderer::new(
+        &headless.device,
+        GpuCapabilities::query(&headless.adapter, &headless.device),
+    );
     renderer.set_sprites(test_sprites());
     render_to_image(
         &headless.device,
@@ -1209,7 +1211,7 @@ fn ten_thousand_stamps() {
     let started = Instant::now();
     let canvas = scene_of(&map);
     eprintln!("10k Stamps: scene built in {:?}", started.elapsed());
-    let capabilities = GpuCapabilities::query(&headless.adapter);
+    let capabilities = GpuCapabilities::query(&headless.adapter, &headless.device);
     let mut renderer = CanvasRenderer::new(&headless.device, capabilities);
     renderer.set_sprites(test_sprites());
     let mut view = View::whole_canvas(canvas.canvas_size, 960);
@@ -1335,7 +1337,7 @@ fn progressive(headless: &Headless, map: &Map) -> Progressive {
 
     let scene = scene_of(map);
     let view = View::whole_canvas(scene.canvas_size, 600);
-    let capabilities = || GpuCapabilities::query(&headless.adapter);
+    let capabilities = || GpuCapabilities::query(&headless.adapter, &headless.device);
     let draw = |renderer: &mut CanvasRenderer| {
         render_to_image(&headless.device, &headless.queue, renderer, &scene, &view)
             .expect("the readback succeeds")
