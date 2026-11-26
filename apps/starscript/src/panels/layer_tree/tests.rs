@@ -390,7 +390,7 @@ fn the_footer_counts_objects_and_layers() {
         editor
             .run(Command::CreateLandmass {
                 id: Id::new(),
-                parent: a,
+                parent: Some(a),
                 index: None,
                 geometry: MultiPolygon(vec![Polygon {
                     exterior: vec![[0.0, 0.0], [50.0, 0.0], [50.0, 50.0], [0.0, 50.0]],
@@ -846,7 +846,7 @@ fn a_layers_pin_shows_on_the_row_and_what_is_inside_it_shows_a_dashed_pin() {
     editor
         .run(Command::CreateLandmass {
             id: island,
-            parent: a,
+            parent: Some(a),
             index: None,
             geometry: ssmap_core::MultiPolygon(vec![ssmap_core::Polygon {
                 exterior: vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],

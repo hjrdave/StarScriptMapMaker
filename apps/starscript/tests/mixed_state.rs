@@ -53,7 +53,7 @@ fn app() -> (Harness<'static, MapMakerApp>, [Id; 2]) {
         editor
             .run(Command::CreateLandmass {
                 id,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 geometry: square(min),
                 fill: None,

@@ -326,7 +326,7 @@ mod tests {
             &mut editor,
             Command::CreateLandmass {
                 id: Id::new(),
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 geometry: square(50.0, 450.0),
                 fill: None,
@@ -336,7 +336,7 @@ mod tests {
             &mut editor,
             Command::CreateLake {
                 id: Id::new(),
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 geometry: square(200.0, 300.0),
                 fill: None,

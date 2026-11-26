@@ -70,7 +70,7 @@ fn map_with_stamps(assets: &[&str]) -> Map {
     for asset in assets {
         map.execute(&Command::CreateStamp {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: None,
             stamp: Box::new(Stamp::new(
                 AssetRef::new("test-pack", *asset).unwrap(),
@@ -132,7 +132,7 @@ fn a_map_saved_with_a_user_pack_opens_identically_without_it() {
 
 #[test]
 fn files_are_written_with_format_1_8() {
-    assert_eq!((FORMAT_VERSION.major, FORMAT_VERSION.minor), (1, 19));
+    assert_eq!((FORMAT_VERSION.major, FORMAT_VERSION.minor), (1, 20));
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("world.ssmap");
     let (file, _) = MapFile::create(&path, &empty_map(), None).unwrap();

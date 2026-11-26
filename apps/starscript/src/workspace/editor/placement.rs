@@ -73,7 +73,7 @@ impl Editor {
             &gesture,
             Command::CreateLabel {
                 id,
-                parent,
+                parent: Some(parent),
                 index: None,
                 label: Box::new(label),
             },
@@ -125,7 +125,7 @@ impl Editor {
             let parent = g.placement_layer(Placing::Label).ok_or(())?;
             let created = g.run(Command::CreateLabel {
                 id,
-                parent,
+                parent: Some(parent),
                 index: None,
                 label: Box::new(label),
             });
@@ -150,7 +150,7 @@ impl Editor {
             let parent = g.placement_layer(Placing::Stamp).ok_or(())?;
             let created = g.run(Command::CreateStamp {
                 id,
-                parent,
+                parent: Some(parent),
                 index: None,
                 stamp: Box::new(Stamp::new(asset, position)),
             });

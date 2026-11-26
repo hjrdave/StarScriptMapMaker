@@ -23,7 +23,7 @@ fn map_with_land() -> (Map, Id) {
     let land = Id::new();
     map.execute(&Command::CreateLandmass {
         id: land,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         geometry: MultiPolygon(vec![Polygon {
             exterior: vec![[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]],

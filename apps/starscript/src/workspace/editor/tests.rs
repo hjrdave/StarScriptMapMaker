@@ -44,7 +44,7 @@ fn add_stamp(editor: &mut Editor, layer: Id, x: f64, y: f64) -> Id {
         editor
             .run(Command::CreateStamp {
                 id,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 stamp: Box::new(Stamp::new("pack/asset".parse().unwrap(), [x, y])),
             })
@@ -176,7 +176,7 @@ fn add_label(editor: &mut Editor, layer: Id, mut label: Label) -> Id {
         editor
             .run(Command::CreateLabel {
                 id,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 label: Box::new(label),
             })
@@ -532,7 +532,7 @@ fn editor_with_square() -> (Editor, Id) {
     editor
         .run(Command::CreateLandmass {
             id,
-            parent: layer,
+            parent: Some(layer),
             index: None,
             geometry: MultiPolygon(vec![ssmap_core::Polygon {
                 exterior: vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
@@ -654,7 +654,7 @@ fn union_and_split_apart_work_on_the_selection_in_one_undo_step() {
     editor
         .run(Command::CreateLandmass {
             id: b,
-            parent: layer,
+            parent: Some(layer),
             index: None,
             geometry: MultiPolygon(vec![ssmap_core::Polygon {
                 exterior: vec![[5.0, 5.0], [20.0, 5.0], [20.0, 20.0], [5.0, 20.0]],
@@ -856,7 +856,7 @@ fn editor_with_island() -> (Editor, Id) {
     editor
         .run(Command::CreateLandmass {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: None,
             geometry: square(0.0, 200.0),
             fill: None,
@@ -865,7 +865,7 @@ fn editor_with_island() -> (Editor, Id) {
     editor
         .run(Command::CreateLake {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: None,
             geometry: square(80.0, 120.0),
             fill: None,
@@ -976,7 +976,7 @@ fn create_stamp(layer: Id) -> (Id, Command) {
     let id = Id::new();
     let command = Command::CreateStamp {
         id,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         stamp: Box::new(Stamp::new("pack/asset".parse().unwrap(), [1.0, 2.0])),
     };

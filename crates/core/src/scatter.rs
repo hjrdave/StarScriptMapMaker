@@ -243,7 +243,7 @@ pub fn scatter_command(
         None
     } else {
         Some(Command::PlaceStamps {
-            parent,
+            parent: Some(parent),
             stamps: placed,
         })
     }

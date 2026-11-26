@@ -62,7 +62,7 @@ fn map_with_block(
         },
         Command::CreateLandmass {
             id: block,
-            parent: layer,
+            parent: Some(layer),
             index: None,
             geometry: MultiPolygon(vec![Polygon {
                 exterior: vec![[left, top], [right, top], [right, bottom], [left, bottom]],

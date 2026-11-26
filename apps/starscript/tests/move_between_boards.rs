@@ -41,7 +41,7 @@ fn map() -> (Map, Id, Id) {
         },
         Command::CreateLandmass {
             id: island,
-            parent: layer,
+            parent: Some(layer),
             index: None,
             geometry: MultiPolygon(vec![Polygon {
                 exterior: square(0.0, 400.0),

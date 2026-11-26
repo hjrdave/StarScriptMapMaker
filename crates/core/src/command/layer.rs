@@ -77,7 +77,7 @@ pub(super) fn move_node(
 }
 
 pub(super) fn set_visible(map: &Map, id: Id, visible: bool) -> Result<Vec<Op>, CommandError> {
-    layer(map, id)?;
+    existing(map, id)?;
     unlocked(map, id)?;
     Ok(vec![set(id, Property::Visible(visible))])
 }
@@ -99,7 +99,7 @@ pub(super) fn set_move_locked(map: &Map, id: Id, locked: bool) -> Result<Vec<Op>
 }
 
 pub(super) fn set_opacity(map: &Map, id: Id, opacity: f32) -> Result<Vec<Op>, CommandError> {
-    layer(map, id)?;
+    existing(map, id)?;
     unlocked(map, id)?;
     if !(0.0..=1.0).contains(&opacity) {
         return Err(CommandError::InvalidOpacity(opacity));

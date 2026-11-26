@@ -105,7 +105,7 @@ impl Editor {
                 self.caches.roughness(),
                 &Command::CreateLake {
                     id: new_id,
-                    parent: new_id,
+                    parent: Some(new_id),
                     index: None,
                     geometry: region,
                     fill: None,

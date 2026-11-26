@@ -31,7 +31,7 @@ fn land(map: &mut Map, parent: Id) -> Id {
     let id = Id::new();
     map.execute(&Command::CreateLandmass {
         id,
-        parent,
+        parent: Some(parent),
         index: None,
         geometry: MultiPolygon(vec![Polygon {
             exterior: vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
@@ -47,7 +47,7 @@ fn stamp(map: &mut Map, parent: Id) -> Id {
     let id = Id::new();
     map.execute(&Command::CreateStamp {
         id,
-        parent,
+        parent: Some(parent),
         index: None,
         stamp: Box::new(Stamp::default()),
     })

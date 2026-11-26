@@ -7,24 +7,23 @@ use crate::node::{Node, Object, ObjectKind};
 use crate::op::{Op, Property};
 
 use super::CommandError;
-use super::check::{existing, layer, set, unlocked};
+use super::check::{container, existing, set, unlocked};
 
 pub(super) fn create_label(
     map: &Map,
     id: Id,
-    parent: Id,
+    parent: Option<Id>,
     index: Option<usize>,
     label: &Label,
 ) -> Result<Vec<Op>, CommandError> {
     if map.contains(id) {
         return Err(CommandError::IdInUse(id));
     }
-    layer(map, parent)?;
-    unlocked(map, parent)?;
+    container(map, parent)?;
     check_label(map, label)?;
     Ok(vec![Op::Insert {
-        parent: Some(parent),
-        index: index.unwrap_or(map.children(Some(parent)).len()),
+        parent,
+        index: index.unwrap_or(map.children(parent).len()),
         subtree: Subtree {
             id,
             node: Node::Object(Object::new(ObjectKind::Label(Box::new(label.clone())))),

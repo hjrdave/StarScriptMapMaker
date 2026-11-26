@@ -77,7 +77,7 @@ fn map(art_origin: [f64; 2], [left, right]: [f64; 2], on_art_board: Option<bool>
         },
         Command::CreateLandmass {
             id: block,
-            parent: layer,
+            parent: Some(layer),
             index: None,
             geometry: MultiPolygon(vec![Polygon {
                 exterior: vec![[left, 50.0], [right, 50.0], [right, 150.0], [left, 150.0]],

@@ -32,7 +32,7 @@ fn map_with_land_and_lake() -> (Map, Id, Id) {
     let (land, lake) = (Id::new(), Id::new());
     map.execute(&Command::CreateLandmass {
         id: land,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         geometry: square(),
         fill: None,
@@ -40,7 +40,7 @@ fn map_with_land_and_lake() -> (Map, Id, Id) {
     .unwrap();
     map.execute(&Command::CreateLake {
         id: lake,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         geometry: square(),
         fill: None,
@@ -117,7 +117,7 @@ fn the_map_default_is_flat_and_new_landmasses_follow_it() {
     let layer = map.children(None)[0];
     map.execute(&Command::CreateLandmass {
         id: later,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         geometry: square(),
         fill: None,

@@ -11,14 +11,14 @@ const CAPACITY: usize = 16_384;
 /// What one Op did, as far as patching derived data is concerned.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Change {
-    /// This node was edited in place: a property set, or its outline replaced. It is not
-    /// moved, added or removed.
+    /// This node was edited in place: a property other than its visibility set, or its outline
+    /// replaced. It is not moved, added, removed, shown or hidden.
     Edited(Id),
     /// This node, with nothing below it, was added.
     Inserted(Id),
     /// The Map-wide defaults were replaced.
     Defaults,
-    /// Anything else: nodes removed or moved, boards, Canvas, files.
+    /// Anything else: nodes removed, moved, shown or hidden, boards, Canvas, files.
     Other,
 }
 

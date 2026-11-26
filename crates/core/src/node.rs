@@ -119,6 +119,12 @@ pub struct Object {
     pub name: Option<String>,
     /// Whether the Object refuses Commands.
     pub locked: bool,
+    /// Whether the Object is drawn. A hidden Layer above hides it as well.
+    #[serde(default = "shown", skip_serializing_if = "is_shown")]
+    pub visible: bool,
+    /// From 0 (transparent) to 1 (opaque), multiplied by the opacity of every Layer above.
+    #[serde(default = "opaque", skip_serializing_if = "is_opaque")]
+    pub opacity: f32,
     /// Whether the Object refuses to be moved or transformed, while its shape and settings
     /// stay editable. New Objects start with this off.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -138,11 +144,14 @@ pub struct Object {
 }
 
 impl Object {
-    /// An unnamed Object of `kind` that belongs to the Canvas. It starts unlocked and unpinned.
+    /// An unnamed Object of `kind` that belongs to the Canvas. It starts visible, opaque,
+    /// unlocked and unpinned.
     pub fn new(kind: ObjectKind) -> Self {
         Self {
             name: None,
             locked: false,
+            visible: true,
+            opacity: 1.0,
             move_locked: false,
             membership: Membership::default(),
             kind,
@@ -150,6 +159,31 @@ impl Object {
             extra: Extra::new(),
         }
     }
+}
+
+fn shown() -> bool {
+    true
+}
+
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes a reference"
+)]
+fn is_shown(visible: &bool) -> bool {
+    *visible
+}
+
+fn opaque() -> f32 {
+    1.0
+}
+
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde passes a reference"
+)]
+#[allow(clippy::float_cmp, reason = "only exactly opaque is left out")]
+fn is_opaque(opacity: &f32) -> bool {
+    *opacity == 1.0
 }
 
 /// Which board an Object belongs to, or none. A member is clipped at its board's edge; an

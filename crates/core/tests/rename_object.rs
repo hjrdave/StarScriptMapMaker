@@ -27,7 +27,7 @@ fn map_with_stamp() -> (Map, Id, Id) {
     let stamp = Id::new();
     map.execute(&Command::CreateStamp {
         id: stamp,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         stamp: Box::new(Stamp::default()),
     })

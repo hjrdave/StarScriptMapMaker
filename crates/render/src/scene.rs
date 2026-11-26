@@ -53,8 +53,10 @@ pub struct MapScene {
     slots: Option<HashMap<Id, usize>>,
     /// Where each Object that draws vector groups has them among the groups of `built`.
     objects: HashMap<Id, ObjectGroups>,
-    /// Where the Layers whose Objects are direct children end.
+    /// Where each run of Objects ends, by the run's key (see [`run_keys`]).
     ends: HashMap<Id, LayerEnd>,
+    /// The run each top-level Object of `built` draws in, by its key (see [`run_keys`]).
+    runs: HashMap<Id, Id>,
     /// The Labels the build in progress has drawn, to forget the layouts of the rest.
     seen: HashSet<Id>,
     /// Counts builds, to tell the entries of `stamps` the last build used from the rest.
@@ -113,8 +115,8 @@ struct ObjectGroups {
     serial: u64,
 }
 
-/// Where a Layer's output ends before its Lakes, which is where Stamps added to the top of the
-/// Layer go.
+/// Where a run of Objects (a Layer's, or one at the top level) ends before its Lakes, which is
+/// where Stamps added to the top of the run go.
 #[derive(Clone, Copy, Debug)]
 struct LayerEnd {
     /// How many Stamps the build had placed.
@@ -161,6 +163,7 @@ impl MapScene {
             slots: None,
             objects: HashMap::new(),
             ends: HashMap::new(),
+            runs: HashMap::new(),
             build: 0,
             paint: None,
         }
@@ -358,17 +361,20 @@ impl MapScene {
         // What the Layers above an Object decide, worked out once per Layer and not per Object.
         let mut above: HashMap<Option<Id>, (Vec<Id>, f32)> = HashMap::new();
         let mut placements: Vec<(Membership, Placement)> = Vec::new();
-        // Each Layer's ripples draw beneath every fill of that Layer, so they never cover
-        // land of that Layer.
+        let runs = run_keys(map);
+        let run_of = |id: Id| map.parent(id).or_else(|| runs.get(&id).copied());
+        // Each run's ripples draw beneath every fill of that run, so they never cover land of
+        // that run.
         let mut rippled = HashSet::new();
         for &id in &order {
             let Some(Node::Object(object)) = map.node(id) else {
                 continue;
             };
-            let (target, opacity) = above
+            let (target, layers) = above
                 .entry(map.parent(id))
-                .or_insert_with(|| (map.clip_targets(id), layer_opacity(map, id)))
+                .or_insert_with(|| (map.clip_targets(id), opacity_above(map, id)))
                 .clone();
+            let opacity = layers * object.opacity;
             let placement = match placements.iter().find(|(m, _)| *m == object.membership) {
                 Some(&(_, placement)) => placement,
                 None => {
@@ -385,15 +391,12 @@ impl MapScene {
                 }
             }
             let clip = (!open.is_empty()).then(|| clips.len() - 1);
-            if let Some(layer) = map.parent(id)
+            if let Some(run) = run_of(id)
                 && !matches!(object.kind, ObjectKind::Stamp(_))
                 && map.shore(id).is_some()
-                && rippled.insert(layer)
+                && rippled.insert(run)
             {
-                for &sibling in order
-                    .iter()
-                    .filter(|&&other| map.parent(other) == Some(layer))
-                {
+                for &sibling in order.iter().filter(|&&other| run_of(other) == Some(run)) {
                     let (first, placed) = (groups.len(), stamps.len());
                     self.ripples(map, roughness, sibling, &mut groups);
                     if map.shore(sibling).is_some() {
@@ -432,7 +435,7 @@ impl MapScene {
             if let Some(scope) = clips.last_mut().filter(|_| !open.is_empty()) {
                 scope.groups.end = groups.len();
             }
-            if let Some(layer) = map.parent(id)
+            if let Some(run) = run_of(id)
                 && !object.kind.is_water()
             {
                 let end = LayerEnd {
@@ -440,11 +443,11 @@ impl MapScene {
                     groups: groups.len(),
                     ord: emitted,
                 };
-                // Objects of a Layer come in runs, so only a change of Layer needs recording.
+                // A run's Objects draw one after another, so only a change of run needs recording.
                 match &mut latest {
-                    Some((last, at)) if *last == layer => *at = end,
+                    Some((last, at)) if *last == run => *at = end,
                     other => {
-                        if let Some((last, at)) = other.replace((layer, end)) {
+                        if let Some((last, at)) = other.replace((run, end)) {
                             ends.insert(last, at);
                         }
                     }
@@ -465,6 +468,7 @@ impl MapScene {
         self.slots = None;
         self.objects = objects;
         self.ends = ends;
+        self.runs = runs;
         let content = Content::with_clips(groups, stamps, clips);
         self.built = Some(Built {
             revision: map.revision(),
@@ -535,7 +539,7 @@ impl MapScene {
         if content.stamps().len() != self.slot_ids.len() {
             return None;
         }
-        let mut by_layer: HashMap<Id, Vec<Id>> = HashMap::new();
+        let mut by_layer: HashMap<Option<Id>, Vec<Id>> = HashMap::new();
         for &id in ids {
             let Some(Node::Object(object)) = map.node(id) else {
                 return None;
@@ -543,19 +547,29 @@ impl MapScene {
             if !matches!(object.kind, ObjectKind::Stamp(_)) {
                 return None;
             }
-            by_layer.entry(map.parent(id)?).or_default().push(id);
+            by_layer.entry(map.parent(id)).or_default().push(id);
         }
-        // Where each Layer's new Stamps go, in draw order.
+        // Where each run's new Stamps go, in draw order.
         let mut places: Vec<(LayerEnd, Id, Vec<Id>)> = Vec::new();
         for (layer, added) in by_layer {
-            let Some(Node::Layer(held)) = map.node(layer) else {
-                return None;
-            };
-            if held.depth_sort {
-                return None;
+            if let Some(layer) = layer {
+                let Some(Node::Layer(held)) = map.node(layer) else {
+                    return None;
+                };
+                if held.depth_sort {
+                    return None;
+                }
             }
-            let end = *self.ends.get(&layer)?;
-            places.push((end, layer, top_of_layer(map, layer, &added)?));
+            let (top, below) = top_of_run(map, layer, &added)?;
+            let run = match layer {
+                Some(layer) => layer,
+                None => *self.runs.get(&below)?,
+            };
+            let end = *self.ends.get(&run)?;
+            if layer.is_none() {
+                self.runs.extend(top.iter().map(|&id| (id, run)));
+            }
+            places.push((end, run, top));
         }
         places.sort_by_key(|(end, _, _)| (end.ord, end.stamps));
         let total: usize = places.iter().map(|(_, _, added)| added.len()).sum();
@@ -1013,24 +1027,46 @@ struct Place {
     placement: Placement,
 }
 
-/// The Stamps `added` in the order they draw, if they sit on top of Layer `layer`: after every
-/// other child that draws before its Lakes, the last of which is an Object, not a Layer.
-fn top_of_layer(map: &Map, layer: Id, added: &[Id]) -> Option<Vec<Id>> {
+/// The Stamps `added` in the order they draw, if they sit on top of the run of Objects in
+/// `layer` (the top level when `None`): after every other child that draws before its Lakes,
+/// the last of which is an Object, not a Layer. With them, that Object.
+fn top_of_run(map: &Map, layer: Option<Id>, added: &[Id]) -> Option<(Vec<Id>, Id)> {
     let new: HashSet<Id> = added.iter().copied().collect();
     let mut top = Vec::with_capacity(added.len());
-    for &child in map.children(Some(layer)).iter().rev() {
+    let mut below = None;
+    for &child in map.children(layer).iter().rev() {
         if new.contains(&child) {
             top.push(child);
             continue;
         }
         match map.node(child) {
             Some(Node::Object(object)) if object.kind.is_water() => {}
-            Some(Node::Object(_)) => break,
+            Some(Node::Object(_)) => {
+                below = Some(child);
+                break;
+            }
             _ => return None,
         }
     }
     top.reverse();
-    (top.len() == added.len()).then_some(top)
+    (top.len() == added.len()).then_some((top, below?))
+}
+
+/// The run each top-level Object draws in, by the run's key: the lowest Object of the
+/// top-level Objects between two Layers. An Object inside a Layer draws in that Layer's run,
+/// keyed by the Layer, so it is not listed.
+fn run_keys(map: &Map) -> HashMap<Id, Id> {
+    let mut runs = HashMap::new();
+    let mut key = None;
+    for &id in map.children(None) {
+        match map.node(id) {
+            Some(Node::Object(_)) => {
+                runs.insert(id, *key.get_or_insert(id));
+            }
+            _ => key = None,
+        }
+    }
+    runs
 }
 
 /// What the Stamp draws, faded by `opacity` as well as its own.
@@ -1133,8 +1169,17 @@ fn clip_scope(
     }
 }
 
-/// The product of the opacities of every Layer above `id`.
+/// The opacity `id` draws with: its own, times that of every Layer above it.
 fn layer_opacity(map: &Map, id: Id) -> f32 {
+    let own = match map.node(id) {
+        Some(Node::Object(object)) => object.opacity,
+        _ => 1.0,
+    };
+    own * opacity_above(map, id)
+}
+
+/// The product of the opacities of every Layer above `id`.
+fn opacity_above(map: &Map, id: Id) -> f32 {
     std::iter::successors(map.parent(id), |&layer| map.parent(layer))
         .filter_map(|layer| match map.node(layer) {
             Some(Node::Layer(layer)) => Some(layer.opacity),
@@ -1445,7 +1490,7 @@ mod tests {
         .unwrap();
         map.execute(&Command::CreateLabel {
             id: label,
-            parent: layer,
+            parent: Some(layer),
             index: None,
             label: Box::new(Label {
                 text: "Thule".into(),
@@ -1520,7 +1565,7 @@ mod tests {
         .unwrap();
         map.execute(&Command::CreateLandmass {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: None,
             geometry: MultiPolygon(vec![Polygon {
                 exterior: vec![
@@ -1586,7 +1631,7 @@ mod tests {
         for (i, &id) in ids.iter().enumerate() {
             map.execute(&Command::CreateStamp {
                 id,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 stamp: Box::new(ssmap_core::Stamp::new(
                     "base/tree".parse().unwrap(),
@@ -1760,7 +1805,7 @@ mod tests {
         move_stamp(&mut map, ids[0], [3.0, 3.0]);
         map.execute(&Command::CreateStamp {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: None,
             stamp: Box::new(ssmap_core::Stamp::new(
                 "base/tree".parse().unwrap(),
@@ -1841,7 +1886,7 @@ mod tests {
         let stamp = |map: &mut Map, parent: Id, x: f64| {
             map.execute(&Command::CreateStamp {
                 id: Id::new(),
-                parent,
+                parent: Some(parent),
                 index: None,
                 stamp: Box::new(ssmap_core::Stamp::new(
                     "base/tree".parse().unwrap(),
@@ -1862,7 +1907,7 @@ mod tests {
         for (i, &id) in lands.iter().enumerate() {
             map.execute(&Command::CreateLandmass {
                 id,
-                parent: land,
+                parent: Some(land),
                 index: None,
                 geometry: square(i as f64 * 200.0, 100.0),
                 fill: None,
@@ -1876,7 +1921,7 @@ mod tests {
         }
         map.execute(&Command::CreateLabel {
             id: Id::new(),
-            parent: above,
+            parent: Some(above),
             index: None,
             label: Box::new(Label {
                 text: "Thule".into(),
@@ -2242,8 +2287,11 @@ mod tests {
             })
             .collect();
         let ids = stamps.iter().map(|placed| placed.id).collect();
-        map.execute(&Command::PlaceStamps { parent, stamps })
-            .unwrap();
+        map.execute(&Command::PlaceStamps {
+            parent: Some(parent),
+            stamps,
+        })
+        .unwrap();
         ids
     }
 
@@ -2293,6 +2341,118 @@ mod tests {
         assert_matches_fresh(&mut scene, &map, &mut roughness);
     }
 
+    /// `map` with the Layers `ids` dissolved, so what they held sits at the top level.
+    fn ungrouped(map: &Map, ids: Vec<Id>) -> Map {
+        let mut map = map.clone();
+        map.execute(&Command::Ungroup { ids }).unwrap();
+        map
+    }
+
+    /// What a fresh build of `map` draws, without the versions that edits bumped.
+    fn drawn(map: &Map) -> (Vec<VectorGroup>, usize) {
+        let content = MapScene::new(Fonts::bundled()).content(map, &mut RoughnessCache::new());
+        let mut groups = content.groups().to_vec();
+        for object in groups.iter_mut().filter_map(|group| group.object.as_mut()) {
+            object.version = 0;
+        }
+        (groups, content.stamps().len())
+    }
+
+    #[test]
+    fn top_level_objects_draw_as_they_do_in_a_layer() {
+        let (map, _) = map_with_land();
+        let layers: Vec<Id> = map.children(None).to_vec();
+        let in_layers = drawn(&map);
+        // The Landmasses' ripples still draw beneath all three fills, and only theirs.
+        assert_eq!(drawn(&ungrouped(&map, vec![layers[1]])), in_layers);
+        // Each stretch of top-level Objects between two Layers is a run of its own.
+        assert_eq!(
+            drawn(&ungrouped(&map, vec![layers[0], layers[1]])),
+            in_layers
+        );
+        assert_eq!(drawn(&ungrouped(&map, layers)), in_layers);
+    }
+
+    #[test]
+    fn an_objects_own_opacity_draws_as_a_layers_does() {
+        let (map, lands) = map_with_land();
+        let layers: Vec<Id> = map.children(None).to_vec();
+        let mut faded_layer = map.clone();
+        faded_layer
+            .execute(&Command::SetOpacity {
+                id: layers[1],
+                opacity: 0.5,
+            })
+            .unwrap();
+        let mut faded_objects = ungrouped(&map, vec![layers[1]]);
+        let mut scene = MapScene::new(Fonts::bundled());
+        let mut roughness = RoughnessCache::new();
+        scene.content(&faded_objects, &mut roughness);
+        for &id in &lands {
+            faded_objects
+                .execute(&Command::SetOpacity { id, opacity: 0.5 })
+                .unwrap();
+            // Patched one Object at a time, the build stays the same as a fresh one.
+            assert_matches_fresh(&mut scene, &faded_objects, &mut roughness);
+        }
+        assert_eq!(drawn(&faded_objects), drawn(&faded_layer));
+    }
+
+    #[test]
+    fn a_hidden_object_is_left_out() {
+        let (map, lands) = map_with_land();
+        let mut map = ungrouped(&map, vec![map.children(None)[1]]);
+        let mut scene = MapScene::new(Fonts::bundled());
+        let mut roughness = RoughnessCache::new();
+        scene.content(&map, &mut roughness);
+        map.execute(&Command::SetVisible {
+            id: lands[1],
+            visible: false,
+        })
+        .unwrap();
+        let content = assert_matches_fresh(&mut scene, &map, &mut roughness);
+        assert!(
+            content
+                .groups()
+                .iter()
+                .all(|group| group.object.is_none_or(|object| object.id != lands[1]))
+        );
+    }
+
+    #[test]
+    fn stamps_placed_on_top_of_the_top_level_are_patched_in() {
+        let (map, _) = map_with_land();
+        let mut map = ungrouped(&map, map.children(None).to_vec());
+        let mut scene = MapScene::new(Fonts::bundled());
+        let mut roughness = RoughnessCache::new();
+        let before = scene.content(&map, &mut roughness);
+        let place_on_top = |map: &mut Map, xs: &[f64]| {
+            let stamps = xs
+                .iter()
+                .map(|&x| ssmap_core::PlacedStamp {
+                    id: Id::new(),
+                    stamp: ssmap_core::Stamp::new("base/tree".parse().unwrap(), [x, 33.0]),
+                })
+                .collect();
+            map.execute(&Command::PlaceStamps {
+                parent: None,
+                stamps,
+            })
+            .unwrap();
+        };
+        place_on_top(&mut map, &[10.0, 11.0]);
+        let after = assert_matches_fresh(&mut scene, &map, &mut roughness);
+        assert!(
+            std::ptr::eq(after.groups(), before.groups()),
+            "the groups are shared, not rebuilt"
+        );
+        assert_eq!(after.stamps().len(), before.stamps().len() + 2);
+        // The Stamps just placed are part of the run the next ones go on top of.
+        place_on_top(&mut map, &[12.0]);
+        let again = assert_matches_fresh(&mut scene, &map, &mut roughness);
+        assert!(std::ptr::eq(again.groups(), before.groups()));
+    }
+
     #[test]
     fn placing_under_other_things_rebuilds() {
         let (mut map, _) = map_with_land();
@@ -2303,7 +2463,7 @@ mod tests {
         // Below the Layer's other Stamps.
         map.execute(&Command::CreateStamp {
             id: Id::new(),
-            parent: layers[0],
+            parent: Some(layers[0]),
             index: Some(0),
             stamp: Box::new(ssmap_core::Stamp::new(
                 "base/tree".parse().unwrap(),
@@ -2327,7 +2487,7 @@ mod tests {
         // A Landmass is not a Stamp.
         map.execute(&Command::CreateLandmass {
             id: Id::new(),
-            parent: layers[1],
+            parent: Some(layers[1]),
             index: None,
             geometry: square(600.0, 50.0),
             fill: None,
@@ -2443,7 +2603,7 @@ mod tests {
         assert!(scene.content(&map, &mut roughness).paint().is_none());
         map.execute(&Command::CreateLandmass {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: Some(0),
             geometry: MultiPolygon(vec![Polygon {
                 exterior: vec![[0.0, 0.0], [400.0, 0.0], [400.0, 300.0], [0.0, 300.0]],

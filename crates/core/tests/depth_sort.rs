@@ -28,7 +28,7 @@ fn map_with(heights: &[f64]) -> (Map, Id, Vec<Id>) {
             let id = Id::new();
             map.execute(&Command::CreateStamp {
                 id,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 stamp: Box::new(stamp(y)),
             })
@@ -80,7 +80,7 @@ fn layers_and_other_objects_keep_tree_order() {
     let inner_stamp = Id::new();
     map.execute(&Command::CreateStamp {
         id: inner_stamp,
-        parent: inner,
+        parent: Some(inner),
         index: None,
         stamp: Box::new(stamp(99.0)),
     })
