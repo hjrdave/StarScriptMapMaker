@@ -105,8 +105,10 @@ fn map(art_origin: [f64; 2], [left, right]: [f64; 2], on_art_board: Option<bool>
 fn render(headless: &Headless, map: &Map, view: &View) -> RgbaImage {
     let content = MapScene::new(Fonts::bundled()).content(map, &mut RoughnessCache::new());
     let scene = CanvasScene::for_map(map).with_content(content);
-    let mut renderer =
-        CanvasRenderer::new(&headless.device, GpuCapabilities::query(&headless.adapter));
+    let mut renderer = CanvasRenderer::new(
+        &headless.device,
+        GpuCapabilities::query(&headless.adapter, &headless.device),
+    );
     render_to_image(
         &headless.device,
         &headless.queue,
@@ -190,8 +192,10 @@ fn an_object_off_every_board_is_drawn_in_full() {
 }
 
 fn export(headless: &Headless, map: &Map, max_tile_side: Option<u32>) -> RgbaImage {
-    let mut renderer =
-        CanvasRenderer::new(&headless.device, GpuCapabilities::query(&headless.adapter));
+    let mut renderer = CanvasRenderer::new(
+        &headless.device,
+        GpuCapabilities::query(&headless.adapter, &headless.device),
+    );
     let settings = ExportSettings {
         size: SizeMode::Width { pixels: 200 },
         ..Default::default()
