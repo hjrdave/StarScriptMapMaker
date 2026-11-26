@@ -1,6 +1,6 @@
 # Edits upload only the changed Objects' geometry
 
-Status: proposed (builds on ADR 0009; touches ADR 0007). Issue #662, items (a) and (b).
+Status: accepted (builds on ADR 0009; touches ADR 0007). Issue #662, items (a) and (b). Accepted by the owner on 2026-11-26.
 
 ## Context
 
