@@ -71,8 +71,9 @@ impl PropertiesPanel {
 
     /// How a Landmass's fill is drawn: a Flat | Grain | Mottled switch, the settings of the
     /// finish picked, then the texture. Picking a finish turns the other off. A style with both
-    /// (made before the switch) shows Mottled and the settings of both. Each scrub of a value is one Undo step. A Landmass with an override of
-    /// its own also gets a button that returns it to the Map default.
+    /// (made before the switch) shows Mottled and the settings of both. Each scrub of a value
+    /// is one Undo step. A Landmass with an override of its own also gets a button that returns
+    /// it to the Map default.
     pub(super) fn fill_style(
         &mut self,
         ui: &mut egui::Ui,
