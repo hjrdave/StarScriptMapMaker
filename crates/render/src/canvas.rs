@@ -279,6 +279,16 @@ impl CanvasScene {
         scene
     }
 
+    /// Sets what shows around the Canvas for an export: the water, or the editor's off-Canvas
+    /// colour under translucent water, so every pixel is opaque and the Canvas draws as it
+    /// does in the editor.
+    pub fn for_export(mut self) -> Self {
+        if self.backdrop.water.a == u8::MAX {
+            self.off_canvas = self.backdrop.water;
+        }
+        self
+    }
+
     pub fn with_quality(mut self, quality: Quality) -> Self {
         self.quality = quality;
         self
@@ -1040,4 +1050,34 @@ pub(crate) fn canvas_pipeline(
         multiview_mask: None,
         cache: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scene_with_water(water: Color) -> CanvasScene {
+        let mut scene = CanvasScene::new(&ssmap_core::Canvas::new(
+            100,
+            100,
+            ssmap_core::Scale::new(1.0, ssmap_core::DistanceUnit::Miles),
+        ));
+        scene.backdrop.water = water;
+        scene
+    }
+
+    #[test]
+    fn export_around_opaque_water_is_that_water() {
+        let water = Color::rgb(10, 20, 30);
+        assert_eq!(scene_with_water(water).for_export().off_canvas, water);
+    }
+
+    #[test]
+    fn export_under_translucent_water_starts_opaque() {
+        let scene = scene_with_water(Color::rgba(160, 175, 188, 190));
+        let editor = scene.off_canvas;
+        let exported = scene.for_export();
+        assert_eq!(exported.off_canvas, editor);
+        assert_eq!(exported.off_canvas.a, u8::MAX);
+    }
 }

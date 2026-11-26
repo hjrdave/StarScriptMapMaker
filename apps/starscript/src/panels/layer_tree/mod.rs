@@ -2,6 +2,7 @@
 //! rename, hide, lock, collapse and drag-and-drop. Every change goes through a Command.
 //! Rows are virtualised, so a Layer holding 100k Objects only lays out what is on screen.
 
+use std::cell::Cell;
 use std::collections::HashSet;
 
 use eframe::egui;
@@ -43,7 +44,7 @@ pub(crate) struct LayerTree {
     /// Rows cached by Map revision and collapse state, so huge trees aren't walked every frame.
     cache: Option<(u64, u64, Vec<Row>)>,
     /// Object and Layer counts by Map revision, for the same reason.
-    counts: Option<(u64, (usize, usize))>,
+    counts: Cell<Option<(u64, (usize, usize))>>,
     collapse_generation: u64,
     /// Turns the Opacity slider into one Undo step per drag.
     live: LiveEdit,
@@ -132,10 +133,19 @@ pub(crate) fn delete_message(name: &str, inside: usize) -> String {
 }
 
 impl LayerTree {
-    /// The Object and Layer counts for the sidebar's bottom bar, as of the last `show`.
-    pub(crate) fn counts_text(&self) -> Option<String> {
-        self.counts
-            .map(|(_, (objects, layers))| footer_text(objects, layers))
+    /// The Object and Layer counts for the sidebar's bottom bar. They follow the Map whichever
+    /// panel is open, and are only recounted when the Map's revision changes.
+    pub(crate) fn counts_text(&self, map: &Map) -> String {
+        let revision = map.revision();
+        let (objects, layers) = match self.counts.get() {
+            Some((r, counts)) if r == revision => counts,
+            _ => {
+                let fresh = counts(map);
+                self.counts.set(Some((revision, fresh)));
+                fresh
+            }
+        };
+        footer_text(objects, layers)
     }
 
     /// Shows the tree. The sidebar's bottom bar sits under it, so it is not drawn here.
@@ -152,9 +162,6 @@ impl LayerTree {
             Some((r, g, rows)) if r == revision && g == rows_generation => rows,
             _ => rows(editor.map(), &self.collapsed),
         };
-        if !matches!(self.counts, Some((r, _)) if r == revision) {
-            self.counts = Some((revision, counts(editor.map())));
-        }
         if rows.is_empty() {
             ui.weak("No Layers yet. Use New Layer to add one.");
         }
