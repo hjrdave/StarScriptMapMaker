@@ -197,9 +197,7 @@ fn harness(editor: Editor) -> Harness<'static, Fixture> {
                 theme::install(&ui.ctx().clone());
                 fixture.tree.show(ui, &mut fixture.editor);
                 // The sidebar draws the counts in its bottom bar.
-                if let Some(counts) = fixture.tree.counts_text() {
-                    ui.label(counts);
-                }
+                ui.label(fixture.tree.counts_text(fixture.editor.map()));
             },
             Fixture {
                 editor,
@@ -1039,4 +1037,23 @@ fn hide_lock_and_pin_show_off_on_and_mixed_and_one_click_turns_mixed_on_for_all(
         assert!(harness.get_all_by_label(off).next().is_some());
         harness.get_by_label("2 selected");
     }
+}
+
+#[test]
+fn the_counts_follow_the_map_without_the_tree_being_shown() {
+    let (mut editor, _, _) = editor_with_two_layers();
+    let tree = LayerTree::default();
+    assert_eq!(tree.counts_text(editor.map()), "0 Objects · 2 Layers");
+    let id = Id::new();
+    assert!(
+        editor
+            .run(Command::CreateLayer {
+                id,
+                parent: None,
+                index: None,
+                name: "Extra".into(),
+            })
+            .is_ok()
+    );
+    assert_eq!(tree.counts_text(editor.map()), "0 Objects · 3 Layers");
 }

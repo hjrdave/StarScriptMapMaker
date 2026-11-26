@@ -33,6 +33,20 @@ fn app() -> Harness<'static, MapMakerApp> {
 }
 
 #[test]
+fn escape_with_a_popup_open_leaves_the_selection_alone() {
+    let mut harness = app();
+    common::new_layer(&mut harness);
+    let selected = harness.state().editor().selection().to_vec();
+    assert!(!selected.is_empty());
+    // The popup gets Escape first, as the colour picker does.
+    egui::Popup::open_id(&harness.ctx, egui::Id::new("test popup"));
+    harness.run();
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    assert_eq!(harness.state().editor().selection(), selected);
+}
+
+#[test]
 fn launches_and_creates_a_layer() {
     let mut harness = app();
     // A new Map starts with no Layer.
@@ -605,7 +619,12 @@ fn a_landmass_gets_its_own_roughness_in_one_undo_step() {
     assert_eq!(harness.state().editor().selection(), [island]);
     assert_eq!(roughness(&harness), None);
 
-    // Re-rolling gives the island its own copy of the default, with another seed.
+    // Re-rolling, on the Shape tab, gives the island its own copy of the default, with
+    // another seed.
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, "Shape")
+        .click();
+    harness.run();
     harness.get_by_label("Re-roll").click();
     harness.run();
     let default = harness.state().editor().map().defaults().roughness.clone();

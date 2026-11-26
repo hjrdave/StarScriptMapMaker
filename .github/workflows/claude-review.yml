@@ -7,6 +7,9 @@ env:
   # Login of the implementer's PR author. Edit here if it differs.
   # (Job-level `if:` cannot read `env`, so the `gate` job does the comparison.)
   IMPLEMENTER_LOGIN: "claude[bot]"
+  # The owner's PRs are reviewed too (local Claude Code sessions open PRs as the owner). If the
+  # variable is unset, only the implementer's are.
+  OWNER_LOGIN: ${{ vars.ISSUE_OWNER }}
   # Workflow file / name of the CI whose result the reviewer waits for.
   CI_WORKFLOW: "ci.yml"
 
@@ -39,7 +42,8 @@ jobs:
         run: |
           set -euo pipefail
           run=true; why=""
-          [ "$PR_AUTHOR" = "$IMPLEMENTER_LOGIN" ] || { run=false; why="author is $PR_AUTHOR, not $IMPLEMENTER_LOGIN"; }
+          [ "$PR_AUTHOR" = "$IMPLEMENTER_LOGIN" ] || [ "$PR_AUTHOR" = "$OWNER_LOGIN" ] \
+            || { run=false; why="author is $PR_AUTHOR, not $IMPLEMENTER_LOGIN or the owner"; }
           [ "$HEAD_REPO" = "$BASE_REPO" ]         || { run=false; why="PR is from a fork"; }
           [ "$IS_DRAFT" != "true" ]               || { run=false; why="draft PR"; }
           jq -e 'index("needs-human") | not' <<<"$LABELS" >/dev/null || { run=false; why="labelled needs-human"; }
