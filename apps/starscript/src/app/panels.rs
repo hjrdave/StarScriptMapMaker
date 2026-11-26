@@ -185,10 +185,8 @@ impl MapMakerApp {
                 ui.label(text(summary));
             }
             // The Object and Layer counts the Layers list used to show under it.
-            if let Some(counts) = tab.layer_tree.counts_text() {
-                ui.separator();
-                ui.label(text(counts));
-            }
+            ui.separator();
+            ui.label(text(tab.layer_tree.counts_text(tab.editor.map())));
         });
     }
 }
