@@ -323,12 +323,12 @@ impl ShoreStyle {
             },
             glow: ShoreGlow::default(),
             lines: ShoreLines {
-                spacing: 7.0,
-                length: 48.0,
-                width: 3.0,
-                color: Color::rgba(0x3a, 0x30, 0x24, 0xd0),
-                taper: 1.0,
-                variation: 0.6,
+                spacing: 9.0,
+                length: 36.0,
+                width: 5.0,
+                color: Color::rgb(0x2a, 0x20, 0x16),
+                taper: 0.8,
+                variation: 0.7,
                 seed: 1,
             },
             waves: ShoreWaves {
