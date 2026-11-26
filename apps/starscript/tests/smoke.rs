@@ -33,6 +33,20 @@ fn app() -> Harness<'static, MapMakerApp> {
 }
 
 #[test]
+fn escape_with_a_popup_open_leaves_the_selection_alone() {
+    let mut harness = app();
+    common::new_layer(&mut harness);
+    let selected = harness.state().editor().selection().to_vec();
+    assert!(!selected.is_empty());
+    // The popup gets Escape first, as the colour picker does.
+    egui::Popup::open_id(&harness.ctx, egui::Id::new("test popup"));
+    harness.run();
+    harness.key_press(egui::Key::Escape);
+    harness.run();
+    assert_eq!(harness.state().editor().selection(), selected);
+}
+
+#[test]
 fn launches_and_creates_a_layer() {
     let mut harness = app();
     // A new Map starts with no Layer.
