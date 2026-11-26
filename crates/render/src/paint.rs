@@ -19,8 +19,19 @@ use ssmap_core::{Id, PaintStroke};
 use crate::color::{Color, ColorExt as _};
 use crate::vector::{FillRule, ObjectRef, Paint, Placement, VectorGroup, VectorShape};
 
-/// How many bands the soft edge of a stroke is drawn in.
-const SOFT_BANDS: u32 = 6;
+/// The fewest and the most bands the soft edge of a stroke is drawn in.
+const MIN_SOFT_BANDS: u32 = 6;
+const MAX_SOFT_BANDS: u32 = 64;
+/// The widest step, in Canvas units, one band adds to the stroke's radius. It is in Canvas
+/// units so the Canvas and every export draw the same bands (ADR 0007).
+const BAND_STEP: f32 = 1.5;
+
+/// How many bands a stroke of `size` and `softness` draws its soft edge in: enough that no
+/// step is wider than `BAND_STEP`, within the limits that bound the cost of a stroke.
+fn soft_bands(size: f32, softness: f32) -> u32 {
+    let edge = size * softness / 2.0;
+    ((edge / BAND_STEP).ceil() as u32).clamp(MIN_SOFT_BANDS, MAX_SOFT_BANDS)
+}
 
 /// What the Canvas draws of the Map's paint.
 #[derive(Clone, PartialEq, Debug)]
@@ -181,8 +192,9 @@ fn paint_group(stroke: &PaintStroke) -> VectorGroup {
         shapes.push(stroked(&path, stroke.color.faded(stroke.opacity), core));
     }
     if stroke.softness > 0.0 {
-        let bands = SOFT_BANDS as f32;
-        for band in 1..=SOFT_BANDS {
+        let count = soft_bands(size, stroke.softness);
+        let bands = count as f32;
+        for band in 1..=count {
             let b = band as f32;
             let width = core + (size - core) * b / bands;
             // The middle of the band decides how strong it is.
@@ -261,7 +273,7 @@ mod tests {
         soft.softness = 0.5;
         let group = paint_group(&soft);
         let w = widths(&group);
-        assert_eq!(w.len(), 1 + SOFT_BANDS as usize);
+        assert_eq!(w.len(), 1 + MIN_SOFT_BANDS as usize);
         assert!(w.windows(2).all(|pair| pair[0] < pair[1]), "{w:?}");
         assert!((w[0] - 5.0).abs() < 1e-4 && (w[w.len() - 1] - 10.0).abs() < 1e-4);
         let alphas: Vec<u8> = group.shapes.iter().map(|s| s.color.a).collect();
@@ -272,7 +284,24 @@ mod tests {
         );
         // Fully soft has no solid core.
         soft.softness = 1.0;
-        assert_eq!(paint_group(&soft).shapes.len(), SOFT_BANDS as usize);
+        assert_eq!(paint_group(&soft).shapes.len(), MIN_SOFT_BANDS as usize);
+    }
+
+    #[test]
+    fn a_big_soft_edge_gets_more_bands_up_to_a_limit() {
+        let steps = |size: f32, softness: f32| {
+            let mut s = stroke(false);
+            s.size = f64::from(size);
+            s.softness = softness;
+            let w = widths(&paint_group(&s));
+            (w.len(), w[1] - w[0])
+        };
+        // Size 160 fully soft: no step is wider than BAND_STEP in radius.
+        let (n, step) = steps(160.0, 1.0);
+        assert_eq!(n, 54);
+        assert!(step / 2.0 <= BAND_STEP + 1e-4, "{step}");
+        // The count stops at the limit however big the brush.
+        assert_eq!(steps(2000.0, 1.0).0, MAX_SOFT_BANDS as usize);
     }
 
     #[test]
