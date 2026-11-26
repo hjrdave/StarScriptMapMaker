@@ -122,7 +122,7 @@ fn a_layer_cannot_move_into_its_own_descendant() {
 }
 
 #[test]
-fn objects_only_have_the_locked_property() {
+fn objects_refuse_the_properties_only_a_layer_has() {
     let mut map = empty_map();
     let land = insert(&mut map, None, layer("Land"));
     let stamp = insert(
@@ -133,9 +133,9 @@ fn objects_only_have_the_locked_property() {
     assert_eq!(
         map.apply(Op::SetProperty {
             id: stamp,
-            property: Property::Opacity(0.5),
+            property: Property::DepthSort(true),
         }),
-        Err(OpError::NoSuchProperty(stamp, "opacity"))
+        Err(OpError::NoSuchProperty(stamp, "depth_sort"))
     );
     map.apply(Op::SetProperty {
         id: stamp,

@@ -1099,7 +1099,7 @@ fn add_lake(fixture: &mut Fixture, layer: Id) -> Id {
             .editor
             .run(Command::CreateLake {
                 id: lake,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 geometry: square(50.0, 20.0),
                 fill: None,
@@ -1194,7 +1194,7 @@ fn a_multi_selection_and_a_river_have_no_tabs() {
             .editor
             .run(Command::CreateRiver {
                 id: river,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 river: Box::new(ssmap_core::River::new(points)),
             })

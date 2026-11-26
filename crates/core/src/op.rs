@@ -274,19 +274,7 @@ impl Map {
     pub(crate) fn apply_op(&mut self, op: Op) -> Result<Op, OpError> {
         self.check(&op)?;
         self.revision += 1;
-        let change = match &op {
-            // Showing or hiding a node changes what draws, not how one node draws.
-            Op::SetProperty {
-                property: Property::Visible(_),
-                ..
-            } => Change::Other,
-            Op::SetProperty { id, .. } | Op::ReplaceGeometry { id, .. } => Change::Edited(*id),
-            Op::Insert { subtree, .. } if subtree.children.is_empty() => {
-                Change::Inserted(subtree.id)
-            }
-            Op::SetDefaults { .. } => Change::Defaults,
-            _ => Change::Other,
-        };
+        let change = change_of(&op);
         let inverse = match op {
             Op::Insert {
                 parent,
@@ -702,6 +690,21 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
         (Node::Object(_), Property::Attached(_)) => Err("attached"),
         (Node::Object(_), Property::DepthSort(_)) => Err("depth_sort"),
         (Node::Object(object), Property::Fill(_)) => object.kind.fill().map(|_| ()).ok_or("fill"),
+    }
+}
+
+/// What `op` does, as far as patching derived data is concerned.
+fn change_of(op: &Op) -> Change {
+    match op {
+        // Showing or hiding a node changes what draws, not how one node draws.
+        Op::SetProperty {
+            property: Property::Visible(_),
+            ..
+        } => Change::Other,
+        Op::SetProperty { id, .. } | Op::ReplaceGeometry { id, .. } => Change::Edited(*id),
+        Op::Insert { subtree, .. } if subtree.children.is_empty() => Change::Inserted(subtree.id),
+        Op::SetDefaults { .. } => Change::Defaults,
+        _ => Change::Other,
     }
 }
 
