@@ -350,7 +350,9 @@ impl MapMakerApp {
         let Some(tab) = self.tab_mut() else {
             return;
         };
-        ctx.input_mut(|input| edit_shortcuts(&mut tab.editor, input, &off));
+        // An open popup (the colour picker) closes on Escape itself, so leave the key for it.
+        let popup_open = egui::Popup::is_any_open(ctx);
+        ctx.input_mut(|input| edit_shortcuts(&mut tab.editor, input, &off, popup_open));
     }
 
     /// The shortcuts for tabs, files and the panels. Returns whether the rest of the shortcuts
@@ -476,7 +478,12 @@ impl MapMakerApp {
 
 /// The shortcuts that edit the Map or switch tools: undo, grouping, Delete, Escape, the tool
 /// keys and the brush size keys.
-fn edit_shortcuts(editor: &mut Editor, input: &mut egui::InputState, off: &HashSet<menu::Command>) {
+fn edit_shortcuts(
+    editor: &mut Editor,
+    input: &mut egui::InputState,
+    off: &HashSet<menu::Command>,
+    popup_open: bool,
+) {
     use egui::{Key, KeyboardShortcut, Modifiers};
     let shortcut = |modifiers, key| KeyboardShortcut::new(modifiers, key);
     if editor.node_edit().is_some() && consume(input, off, menu::Command::FinishNodeEdit) {
@@ -510,7 +517,10 @@ fn edit_shortcuts(editor: &mut Editor, input: &mut egui::InputState, off: &HashS
             editor.delete_selection();
         }
     }
-    if consume(input, off, menu::Command::CancelGesture) && !editor.cancel_open_gesture() {
+    if !popup_open
+        && consume(input, off, menu::Command::CancelGesture)
+        && !editor.cancel_open_gesture()
+    {
         if editor.node_edit().is_some() {
             editor.leave_node_edit();
         } else if editor.tool_busy {

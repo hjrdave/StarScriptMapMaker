@@ -19,7 +19,7 @@ Inter and JetBrains Mono are registered as UI families (`UI_FAMILIES` in `crates
 apart from the Label families, so the Label font list and the fonts a Map embeds do not
 change. Their folders are the Google Fonts downloads as committed, with `OFL.txt`,
 `README.txt`, the variable fonts and `static/`; the app embeds only
-`Inter/static/Inter_18pt-Regular.ttf` and
+`Inter/static/Inter_18pt-Regular.ttf`, `Inter/static/Inter_18pt-Medium.ttf` and
 `JetBrains_Mono/static/JetBrainsMono-Regular.ttf`. The rest stay in place.
 
 The Label fonts above are unmodified copies from the `ofl/` folders of
