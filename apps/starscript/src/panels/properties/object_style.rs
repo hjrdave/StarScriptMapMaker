@@ -35,6 +35,20 @@ impl FillTarget {
     }
 }
 
+/// How a group of settings is framed: as a section of its own, or on a tab of the Landmass
+/// and Lake panels.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Frame {
+    /// A section with its heading and the "overridden" badge (a multi-selection).
+    Section,
+    /// On a tab: Roughness under a divider heading, Shore style with no heading of its own,
+    /// since the tab already names it.
+    Tab,
+}
+
+/// The finishes of a Landmass's fill, in the order of the switch.
+const FINISHES: [&str; 3] = ["Flat", "Grain", "Mottled"];
+
 impl PropertiesPanel {
     /// Applies what a field did. A reset goes back to the default; anything else is an edit of
     /// `value`, one Undo step per scrub.
@@ -55,9 +69,11 @@ impl PropertiesPanel {
             .apply_all(editor, edit, group.label, || group.commands(apply));
     }
 
-    /// How a Landmass's fill is drawn: Grain and Mottled switches, and the settings of each
-    /// one that is on. Each scrub of a value is one Undo step. A Landmass with an override of
-    /// its own also gets a button that returns it to the Map default.
+    /// How a Landmass's fill is drawn: a Flat | Grain | Mottled switch, the settings of the
+    /// finish picked, then the texture. Picking a finish turns the other off. A style with both
+    /// (made before the switch) shows Mottled and the settings of both. Each scrub of a value
+    /// is one Undo step. A Landmass with an override of its own also gets a button that returns
+    /// it to the Map default.
     pub(super) fn fill_style(
         &mut self,
         ui: &mut egui::Ui,
@@ -79,27 +95,25 @@ impl PropertiesPanel {
                     .apply(editor, Edit::instant(), "Change Fill Style", || clear);
             }
         }
-        let set = |next: FillStyle| target.set(next);
-        let mut grain_on = style.grain.is_some();
-        if prop_widgets::checkbox_row(ui, "Grain", &mut grain_on) {
+        let mut finish = match (&style.grain, &style.mottle) {
+            (_, Some(_)) => 2,
+            (Some(_), None) => 1,
+            (None, None) => 0,
+        };
+        if prop_widgets::segmented(ui, &FINISHES, &mut finish) {
+            // The finish picked keeps its settings if it already had them.
             let next = FillStyle {
-                grain: grain_on.then_some(Grain::DEFAULT),
+                grain: (finish == 1).then(|| style.grain.unwrap_or(Grain::DEFAULT)),
+                mottle: (finish == 2).then(|| style.mottle.unwrap_or(Mottle::DEFAULT)),
                 ..style.clone()
             };
             self.live
-                .apply(editor, Edit::instant(), "Change Fill Style", || set(next));
+                .apply(editor, Edit::instant(), "Change Fill Style", || {
+                    target.set(next)
+                });
         }
         if let Some(grain) = style.grain {
             self.grain_fields(ui, editor, target, style.clone(), grain);
-        }
-        let mut mottle_on = style.mottle.is_some();
-        if prop_widgets::checkbox_row(ui, "Mottled", &mut mottle_on) {
-            let next = FillStyle {
-                mottle: mottle_on.then_some(Mottle::DEFAULT),
-                ..style.clone()
-            };
-            self.live
-                .apply(editor, Edit::instant(), "Change Fill Style", || set(next));
         }
         if let Some(mottle) = style.mottle {
             self.mottle_fields(ui, editor, target, style.clone(), mottle);
@@ -377,7 +391,13 @@ impl PropertiesPanel {
 
     /// The Roughness section of a Landmass or Lake: its own settings, or the Map default.
     /// Rivers have none, so a selection with one shows none.
-    pub(super) fn object_roughness(&mut self, ui: &mut egui::Ui, editor: &mut Editor, ids: &[Id]) {
+    pub(super) fn object_roughness(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        ids: &[Id],
+        frame: Frame,
+    ) {
         let river = |id: Id| matches!(editor.map().node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::River(_)));
         if ids.iter().any(|&id| river(id)) {
             return;
@@ -432,11 +452,17 @@ impl PropertiesPanel {
             badge: any_own.then_some("overridden"),
             action: None,
         };
-        prop_widgets::section(ui, header, |ui| {
+        let body = |ui: &mut egui::Ui| {
             ui.push_id(("roughness", &ids), |ui| {
                 self.roughness_fields(ui, editor, &group);
             });
-        });
+        };
+        match frame {
+            Frame::Section => {
+                prop_widgets::section(ui, header, body);
+            }
+            Frame::Tab => prop_widgets::divider_section(ui, header.title, |_| {}, body),
+        }
     }
 
     /// Amount, scale and seed, and a button that picks a new seed.
@@ -506,7 +532,13 @@ impl PropertiesPanel {
     }
 
     /// The Shore style section of a Landmass or Lake: its own settings, or the Map default.
-    pub(super) fn object_shore(&mut self, ui: &mut egui::Ui, editor: &mut Editor, ids: &[Id]) {
+    pub(super) fn object_shore(
+        &mut self,
+        ui: &mut egui::Ui,
+        editor: &mut Editor,
+        ids: &[Id],
+        frame: Frame,
+    ) {
         let mut shored = Vec::new();
         let mut shore_kind = ShoreKind::Landmass;
         let mut members = Vec::new();
@@ -558,11 +590,17 @@ impl PropertiesPanel {
             badge: any_own.then_some("overridden"),
             action: None,
         };
-        prop_widgets::section(ui, header, |ui| {
+        let mut body = |ui: &mut egui::Ui| {
             ui.push_id(("shore", &shored), |ui| {
                 self.shore_fields(ui, editor, shore_kind, &group);
             });
-        });
+        };
+        match frame {
+            Frame::Section => {
+                prop_widgets::section(ui, header, body);
+            }
+            Frame::Tab => body(ui),
+        }
     }
 
     /// Outline, ripples and inner shade (variant C of the Shores tab): each group under a

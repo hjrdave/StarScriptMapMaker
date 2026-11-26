@@ -87,6 +87,14 @@ pub const UI_FONTS: &[BundledFont] = &[
     },
 ];
 
+/// Inter Medium, for UI text a little bolder than the rest. Not in [`UI_FONTS`], which holds one
+/// regular face per family.
+pub const UI_MEDIUM_FONT: BundledFont = BundledFont {
+    family: UI_PROPORTIONAL_FAMILY,
+    file: "static/Inter_18pt-Medium.ttf",
+    data: include_bytes!("../../../assets/fonts/Inter/static/Inter_18pt-Medium.ttf"),
+};
+
 /// The UI font families and their licences.
 pub const UI_FAMILIES: &[BundledFamily] = &[
     BundledFamily {
@@ -161,7 +169,7 @@ mod tests {
 
     #[test]
     fn font_files_are_truetype() {
-        for font in FONTS.iter().chain(UI_FONTS) {
+        for font in FONTS.iter().chain(UI_FONTS).chain([&UI_MEDIUM_FONT]) {
             assert_eq!(
                 &font.data[..4],
                 b"\0\x01\0\0",

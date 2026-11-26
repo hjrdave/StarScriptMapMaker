@@ -293,6 +293,20 @@ pub fn mono_family() -> FontFamily {
     FontFamily::Monospace
 }
 
+/// The name of the family that starts with Inter Medium.
+const MEDIUM_FAMILY: &str = "Inter Medium";
+
+/// The UI font a little bolder, at `size`. Regular when [`install`] has not run, as egui panics
+/// on a family it doesn't know.
+pub fn medium_font(ctx: &Context, size: f32) -> FontId {
+    let family = FontFamily::Name(MEDIUM_FAMILY.into());
+    if ctx.fonts(|fonts| fonts.definitions().families.contains_key(&family)) {
+        FontId::new(size, family)
+    } else {
+        FontId::new(size, ui_family())
+    }
+}
+
 /// egui's fonts with Inter and JetBrains Mono put first in their families. The built-in fonts
 /// stay after them, so glyphs the new fonts lack still draw.
 pub fn font_definitions() -> egui::FontDefinitions {
@@ -311,6 +325,24 @@ pub fn font_definitions() -> egui::FontDefinitions {
             .or_default()
             .insert(0, font.family.to_owned());
     }
+    // Inter Medium, then the fallbacks of the regular UI family.
+    fonts.font_data.insert(
+        MEDIUM_FAMILY.to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(
+            ssmap_fonts::UI_MEDIUM_FONT.data,
+        )),
+    );
+    let mut medium = vec![MEDIUM_FAMILY.to_owned()];
+    medium.extend(
+        fonts
+            .families
+            .get(&ui_family())
+            .cloned()
+            .unwrap_or_default(),
+    );
+    fonts
+        .families
+        .insert(FontFamily::Name(MEDIUM_FAMILY.into()), medium);
     fonts
 }
 
@@ -585,6 +617,22 @@ mod tests {
         for name in proportional.iter().chain(monospace) {
             assert!(fonts.font_data.contains_key(name), "{name} has no data");
         }
+    }
+
+    #[test]
+    fn medium_font_needs_the_theme_installed() {
+        let mut harness = egui_kittest::Harness::new_ui_state(
+            |ui, font: &mut Option<FontId>| *font = Some(medium_font(ui.ctx(), CAPTION)),
+            None,
+        );
+        harness.run();
+        let family = harness.state().as_ref().map(|font| font.family.clone());
+        assert_eq!(family, Some(ui_family()));
+
+        install(&harness.ctx);
+        harness.run();
+        let family = harness.state().as_ref().map(|font| font.family.clone());
+        assert_eq!(family, Some(FontFamily::Name(MEDIUM_FAMILY.into())));
     }
 
     #[test]

@@ -14,7 +14,7 @@ mod tests;
 use eframe::egui;
 use ssmap_core::{AssetRef, Color, Command, Id, Map, MapTemplate, Node, ObjectKind};
 
-use self::object_style::FillTarget;
+use self::object_style::{FillTarget, Frame};
 use crate::asset_browser::ThumbArt;
 use crate::editor::Editor;
 use crate::icons::Icon;
@@ -233,19 +233,21 @@ impl PropertiesPanel {
                 }
                 // Landmasses and Lakes share Roughness and Shore style; a setting that differs
                 // between them shows "Mixed", and an edit sets all of them.
-                self.object_roughness(ui, editor, &many);
-                self.object_shore(ui, editor, &many);
-                self.combine(ui, editor);
+                self.object_roughness(ui, editor, &many, Frame::Section);
+                self.object_shore(ui, editor, &many, Frame::Section);
+                self.combine(ui, editor, Frame::Section);
             }
         }
-        // A Label shows its Board inside its Appearance section.
-        if !matches!(editor.selection(), [id] if is_label(editor.map(), *id)) {
+        // A Label shows its Board inside its Appearance section, and a Landmass or Lake on
+        // its Shape tab.
+        let own_board = |id: Id| is_label(editor.map(), id) || is_tabbed(editor.map(), id);
+        if !matches!(editor.selection(), [id] if own_board(*id)) {
             self.membership_row(ui, editor, false);
         }
     }
 
-    /// A Landmass, Lake or River: the header with the lock, a River's own settings, its Fill,
-    /// then Roughness (not for a River) and Shore style, and Combine for a Landmass.
+    /// A Landmass, Lake or River: the header with the lock, then for a River its own settings,
+    /// Appearance and Shore style, and for a Landmass or Lake the Fill, Shore and Shape tabs.
     fn object_properties(
         &mut self,
         ui: &mut egui::Ui,
@@ -262,26 +264,43 @@ impl PropertiesPanel {
         self.object_header(ui, editor, &[id], &title, noun);
         if let ObjectKind::River(river) = &object.kind {
             self.river_section(ui, editor, id, river);
+            if let Some(fill) = object.kind.fill() {
+                let header = SectionHeader {
+                    kind: "appearance",
+                    title: "Appearance",
+                    badge: None,
+                    action: None,
+                };
+                prop_widgets::section(ui, header, |ui| self.fill(ui, editor, id, fill));
+            }
+            self.object_shore(ui, editor, &[id], Frame::Section);
+            return;
         }
-        if let Some(fill) = object.kind.fill() {
-            let header = SectionHeader {
-                kind: "appearance",
-                title: "Appearance",
-                badge: None,
-                action: None,
-            };
-            prop_widgets::section(ui, header, |ui| {
-                self.fill(ui, editor, id, fill);
-                if matches!(object.kind, ObjectKind::Landmass(_)) {
-                    let style = editor.map().fill_style(id);
-                    self.fill_style(ui, editor, FillTarget::Landmass(id), style);
+        let landmass = matches!(object.kind, ObjectKind::Landmass(_));
+        match object_tab(ui) {
+            ObjectTab::Fill => {
+                if let Some(fill) = object.kind.fill() {
+                    ui.add_space(theme::SPACING[2]);
+                    self.fill(ui, editor, id, fill);
+                    if landmass {
+                        let style = editor.map().fill_style(id);
+                        self.fill_style(ui, editor, FillTarget::Landmass(id), style);
+                    }
                 }
-            });
-        }
-        self.object_roughness(ui, editor, &[id]);
-        self.object_shore(ui, editor, &[id]);
-        if matches!(object.kind, ObjectKind::Landmass(_)) {
-            self.combine(ui, editor);
+            }
+            ObjectTab::Shore => {
+                ui.add_space(theme::SPACING[2]);
+                self.object_shore(ui, editor, &[id], Frame::Tab);
+            }
+            ObjectTab::Shape => {
+                self.object_roughness(ui, editor, &[id], Frame::Tab);
+                if landmass {
+                    ui.add_space(theme::SPACING[3]);
+                    self.combine(ui, editor, Frame::Tab);
+                }
+                ui.add_space(theme::SPACING[3]);
+                self.membership_row(ui, editor, false);
+            }
         }
     }
 
@@ -289,7 +308,14 @@ impl PropertiesPanel {
     /// pointer is released is one Undo step.
     fn fill(&mut self, ui: &mut egui::Ui, editor: &mut Editor, id: Id, fill: Color) {
         let mut colour = Some(fill);
-        let response = prop_widgets::swatch(ui, "Fill", &mut colour, false, Provenance::Plain);
+        let response = prop_widgets::swatch_shown_as(
+            ui,
+            "Fill colour",
+            "Colour",
+            &mut colour,
+            false,
+            Provenance::Plain,
+        );
         let fill = colour.unwrap_or(fill);
         self.live
             .apply(editor, response.edit, "Change Fill", || Command::SetFill {
@@ -299,14 +325,14 @@ impl PropertiesPanel {
     }
 
     /// Union, Subtract and Split Apart, with the same rules as the Edit actions.
-    fn combine(&mut self, ui: &mut egui::Ui, editor: &mut Editor) {
+    fn combine(&mut self, ui: &mut egui::Ui, editor: &mut Editor, frame: Frame) {
         let header = SectionHeader {
             kind: "combine",
             title: "Combine",
             badge: None,
             action: None,
         };
-        prop_widgets::section(ui, header, |ui| {
+        let body = |ui: &mut egui::Ui| {
             ui.horizontal(|ui| {
                 ui.add_space(theme::SPACING[1]);
                 let combine = editor.can_combine();
@@ -342,8 +368,56 @@ impl PropertiesPanel {
                 ui,
                 "Subtract removes the top Landmass from the one below it.",
             );
-        });
+        };
+        match frame {
+            Frame::Section => {
+                prop_widgets::section(ui, header, body);
+            }
+            Frame::Tab => prop_widgets::divider_section(ui, header.title, |_| {}, body),
+        }
     }
+}
+
+/// The tabs of a selected Landmass or Lake.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ObjectTab {
+    Fill,
+    Shore,
+    Shape,
+}
+
+impl ObjectTab {
+    const ALL: [ObjectTab; 3] = [ObjectTab::Fill, ObjectTab::Shore, ObjectTab::Shape];
+    const NAMES: [&str; 3] = ["Fill", "Shore", "Shape"];
+}
+
+/// Where the chosen tab is kept in UI memory: for as long as the app is open, and the same for
+/// every Landmass and Lake, so selecting another keeps the tab.
+fn object_tab_id() -> egui::Id {
+    egui::Id::new("object panel tab")
+}
+
+/// The tab bar of a Landmass or Lake, and the tab chosen. Shore until another is picked.
+fn object_tab(ui: &mut egui::Ui) -> ObjectTab {
+    let id = object_tab_id();
+    let mut tab = ui
+        .ctx()
+        .data(|d| d.get_temp::<usize>(id))
+        .unwrap_or(1)
+        .min(ObjectTab::ALL.len() - 1);
+    if prop_widgets::tab_bar(ui, &ObjectTab::NAMES, &mut tab) {
+        ui.ctx().data_mut(|d| d.insert_temp(id, tab));
+    }
+    ObjectTab::ALL[tab]
+}
+
+/// Whether `id` is a Landmass or Lake, which show their properties on tabs.
+fn is_tabbed(map: &Map, id: Id) -> bool {
+    matches!(
+        map.node(id),
+        Some(Node::Object(object))
+            if matches!(object.kind, ObjectKind::Landmass(_) | ObjectKind::Lake(_))
+    )
 }
 
 /// "Layer › Object" for a selected Object, or the Layer's own name.

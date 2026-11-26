@@ -141,9 +141,9 @@ impl ExportJob {
                 if !cx.renderer.is_ready(content) {
                     return Ok(ExportStep::Working(ExportStatus::WaitingForDerivedData));
                 }
-                let mut scene = CanvasScene::new(cx.map.canvas()).with_content(content.clone());
-                // A region reaching past the Canvas shows water, not the editor's off-Canvas.
-                scene.off_canvas = scene.backdrop.water;
+                let mut scene = CanvasScene::new(cx.map.canvas())
+                    .for_export()
+                    .with_content(content.clone());
                 // Only the Canvas is exported: its members are clipped at the edge and
                 // off-Canvas Objects are left out.
                 scene.off_canvas_objects = false;
