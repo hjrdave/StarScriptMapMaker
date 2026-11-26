@@ -42,7 +42,7 @@ fn add_river(map: &mut Map, layer: Id, river: River) -> Id {
     let id = Id::new();
     map.execute(&Command::CreateRiver {
         id,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         river: Box::new(river),
     })
@@ -78,7 +78,7 @@ fn a_river_has_an_outline_and_undo_removes_it() {
     let inverses = map
         .execute(&Command::CreateRiver {
             id,
-            parent: layer,
+            parent: Some(layer),
             index: None,
             river: Box::new(River::new(path())),
         })
@@ -98,7 +98,7 @@ fn an_invalid_river_is_refused() {
     let err = map
         .execute(&Command::CreateRiver {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: None,
             river: Box::new(one_point),
         })
@@ -222,7 +222,7 @@ fn rivers_draw_with_the_lakes_above_land() {
     let land = Id::new();
     map.execute(&Command::CreateLandmass {
         id: land,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         geometry: MultiPolygon(vec![Polygon {
             exterior: vec![[0.0, 0.0], [1000.0, 0.0], [1000.0, 1000.0], [0.0, 1000.0]],
@@ -239,7 +239,7 @@ fn a_river_is_picked_and_is_not_land_for_scatter() {
     let (mut map, layer) = map_with_layer();
     map.execute(&Command::CreateLandmass {
         id: Id::new(),
-        parent: layer,
+        parent: Some(layer),
         index: None,
         geometry: MultiPolygon(vec![Polygon {
             exterior: vec![[0.0, 0.0], [1000.0, 0.0], [1000.0, 1000.0], [0.0, 1000.0]],

@@ -53,7 +53,7 @@ impl Editor {
             };
             if !g.run(Command::CreateRiver {
                 id,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 river: Box::new(river),
             }) {

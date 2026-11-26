@@ -275,6 +275,11 @@ impl Map {
         self.check(&op)?;
         self.revision += 1;
         let change = match &op {
+            // Showing or hiding a node changes what draws, not how one node draws.
+            Op::SetProperty {
+                property: Property::Visible(_),
+                ..
+            } => Change::Other,
             Op::SetProperty { id, .. } | Op::ReplaceGeometry { id, .. } => Change::Edited(*id),
             Op::Insert { subtree, .. } if subtree.children.is_empty() => {
                 Change::Inserted(subtree.id)
@@ -684,6 +689,8 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
             Node::Object(_),
             Property::Name(_)
             | Property::Locked(_)
+            | Property::Visible(_)
+            | Property::Opacity(_)
             | Property::MoveLocked(_)
             | Property::Link(_)
             | Property::Membership(_)
@@ -691,8 +698,6 @@ fn check_property(node: &Node, property: &Property) -> Result<(), &'static str> 
             | Property::Roughness(_)
             | Property::Shore(_),
         ) => Ok(()),
-        (Node::Object(_), Property::Visible(_)) => Err("visible"),
-        (Node::Object(_), Property::Opacity(_)) => Err("opacity"),
         (Node::Object(_), Property::Clip(_)) => Err("clip"),
         (Node::Object(_), Property::Attached(_)) => Err("attached"),
         (Node::Object(_), Property::DepthSort(_)) => Err("depth_sort"),
@@ -733,6 +738,12 @@ fn set_property(node: &mut Node, property: Property) -> Property {
         }
         (Node::Object(object), Property::Link(link)) => {
             Property::Link(std::mem::replace(&mut object.link, link))
+        }
+        (Node::Object(object), Property::Visible(visible)) => {
+            Property::Visible(std::mem::replace(&mut object.visible, visible))
+        }
+        (Node::Object(object), Property::Opacity(opacity)) => {
+            Property::Opacity(std::mem::replace(&mut object.opacity, opacity))
         }
         (Node::Object(object), Property::Name(name)) => {
             let new = (!name.is_empty()).then_some(name);

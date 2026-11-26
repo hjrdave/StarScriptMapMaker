@@ -29,7 +29,7 @@ fn stamp(map: &mut Map, parent: Id, x: f64) -> Id {
     let id = Id::new();
     map.execute(&Command::CreateStamp {
         id,
-        parent,
+        parent: Some(parent),
         index: None,
         stamp: Box::new(Stamp::new("pack/asset".parse().unwrap(), [x, 0.0])),
     })
@@ -159,7 +159,7 @@ fn a_clip_follows_a_copied_landmass() {
     let land = Id::new();
     map.execute(&Command::CreateLandmass {
         id: land,
-        parent: l,
+        parent: Some(l),
         index: None,
         geometry: ssmap_core::land::stroke_region(&[[10.0, 10.0], [60.0, 10.0]], 5.0),
         fill: None,

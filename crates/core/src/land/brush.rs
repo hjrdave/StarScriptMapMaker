@@ -298,7 +298,7 @@ pub fn brush_command(
         Some(id) => Command::AddRegion { id, region },
         None => Command::CreateLandmass {
             id: new_id,
-            parent: layer.ok_or(BrushError::NoLayer)?,
+            parent: Some(layer.ok_or(BrushError::NoLayer)?),
             index: None,
             geometry: region,
             fill: None,
@@ -369,9 +369,11 @@ pub fn water_command(
         Some(id) => Command::AddRegion { id, region },
         None => Command::CreateLake {
             id: new_id,
-            parent: layer
-                .filter(|&id| matches!(map.node(id), Some(Node::Layer(_))))
-                .ok_or(BrushError::NoLayer)?,
+            parent: Some(
+                layer
+                    .filter(|&id| matches!(map.node(id), Some(Node::Layer(_))))
+                    .ok_or(BrushError::NoLayer)?,
+            ),
             index: None,
             geometry: region,
             fill: None,

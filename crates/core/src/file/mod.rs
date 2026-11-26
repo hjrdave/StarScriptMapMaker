@@ -39,8 +39,9 @@
 //!   Format 1.19 adds the optional `strokes` meta key (JSON): the paint strokes in drawing order,
 //!   each with its id, points, colour, size, softness, opacity and `erase`. It is left out while
 //!   there are none, so older files open with no paint (ADR 0017).
-//!   Format 1.20 allows an Object at the top level, with a NULL `parent` (ADR 0018). Older files
-//!   have none and open unchanged; an older app cannot open a Map that has one.
+//!   Format 1.20 allows an Object at the top level, with a NULL `parent` (ADR 0018), and adds
+//!   the optional `visible` and `opacity` to Object props. Older files have neither and open
+//!   unchanged; an older app cannot open a Map with a top-level Object.
 //!   Format 1.6 stores Groups: Layers nested inside Layers, with `parent` pointing at the
 //!   enclosing Layer. There is no compatibility with older files.
 //!
@@ -726,6 +727,8 @@ fn encode_node(node: &Node) -> (&'static str, String, Option<Vec<u8>>) {
                 let stripped = Node::Object(Object {
                     name: object.name.clone(),
                     locked: object.locked,
+                    visible: object.visible,
+                    opacity: object.opacity,
                     move_locked: object.move_locked,
                     membership: object.membership,
                     kind: object.kind.without_geometry(),

@@ -391,7 +391,7 @@ fn island_map() -> (ssmap_core::Map, ssmap_core::Id, ssmap_core::Id) {
         },
         Command::CreateLandmass {
             id: island,
-            parent: layer,
+            parent: Some(layer),
             index: None,
             geometry: MultiPolygon(vec![Polygon {
                 exterior: square(0.0, 400.0),
@@ -401,7 +401,7 @@ fn island_map() -> (ssmap_core::Map, ssmap_core::Id, ssmap_core::Id) {
         },
         Command::CreateLake {
             id: lake,
-            parent: layer,
+            parent: Some(layer),
             index: Some(0),
             geometry: MultiPolygon(vec![Polygon {
                 exterior: square(100.0, 100.0),

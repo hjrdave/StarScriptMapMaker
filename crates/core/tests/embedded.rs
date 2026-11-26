@@ -70,7 +70,7 @@ fn map_with_stamps(assets: &[&str]) -> Map {
     for asset in assets {
         map.execute(&Command::CreateStamp {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: None,
             stamp: Box::new(Stamp::new(
                 AssetRef::new("test-pack", *asset).unwrap(),

@@ -214,7 +214,7 @@ mod tests {
         for (id, x) in ids.iter().zip([200.0, 220.0]) {
             map.execute(&Command::CreateStamp {
                 id: *id,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 stamp: Box::new(stamp([x, 200.0])),
             })

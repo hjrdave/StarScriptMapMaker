@@ -314,7 +314,7 @@ fn rivers() -> Map {
         &mut map,
         Command::CreateLandmass {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: None,
             geometry: square(&[[80.0, 60.0], [920.0, 100.0], [880.0, 760.0], [120.0, 900.0]]),
             fill: None,
@@ -324,7 +324,7 @@ fn rivers() -> Map {
         &mut map,
         Command::CreateLake {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: None,
             geometry: square(&[
                 [560.0, 420.0],
@@ -384,7 +384,7 @@ fn rivers() -> Map {
             &mut map,
             Command::CreateRiver {
                 id: Id::new(),
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 river: Box::new(river),
             },
@@ -550,7 +550,7 @@ fn ripples_of_nearby_islands_never_cover_land() {
     ] {
         map.execute(&Command::CreateLandmass {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: None,
             geometry,
             fill: None,
@@ -700,7 +700,7 @@ fn render_labels(headless: &Headless, size: [u32; 2], labels: Vec<Label>) -> Rgb
     for label in labels {
         map.execute(&Command::CreateLabel {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: None,
             label: Box::new(label),
         })
@@ -847,7 +847,7 @@ fn deleting_a_style_in_use_changes_nothing_visually() {
     for (i, style) in styles.iter().enumerate() {
         map.execute(&Command::CreateLabel {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: None,
             label: Box::new(Label {
                 text: "Thule".into(),
@@ -924,7 +924,7 @@ fn render_stamps_sorted(
     for stamp in stamps {
         map.execute(&Command::CreateStamp {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: None,
             stamp: Box::new(stamp),
         })
@@ -1036,7 +1036,7 @@ fn render_clipped(headless: &Headless, clip: bool, stamps: &[ssmap_core::Stamp])
     let land = Id::new();
     map.execute(&Command::CreateLandmass {
         id: land,
-        parent: land_layer,
+        parent: Some(land_layer),
         index: None,
         geometry: square([120.0, 60.0], [360.0, 260.0]),
         fill: None,
@@ -1044,7 +1044,7 @@ fn render_clipped(headless: &Headless, clip: bool, stamps: &[ssmap_core::Stamp])
     .unwrap();
     map.execute(&Command::CreateLake {
         id: Id::new(),
-        parent: land_layer,
+        parent: Some(land_layer),
         index: None,
         geometry: square([220.0, 110.0], [300.0, 200.0]),
         fill: None,
@@ -1061,7 +1061,7 @@ fn render_clipped(headless: &Headless, clip: bool, stamps: &[ssmap_core::Stamp])
     for stamp in stamps {
         map.execute(&Command::CreateStamp {
             id: Id::new(),
-            parent: art,
+            parent: Some(art),
             index: None,
             stamp: Box::new(stamp.clone()),
         })
@@ -1199,7 +1199,7 @@ fn ten_thousand_stamps() {
         s.flip = i % 2 == 0;
         map.execute(&Command::CreateStamp {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: None,
             stamp: Box::new(s),
         })
@@ -1271,7 +1271,7 @@ fn progressive_map() -> Map {
         let y = 200.0 + (i / 4) as f64 * 400.0;
         map.execute(&Command::CreateLandmass {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: None,
             geometry: MultiPolygon(vec![Polygon {
                 exterior: vec![
@@ -1290,7 +1290,7 @@ fn progressive_map() -> Map {
     for i in 0..300usize {
         map.execute(&Command::CreateStamp {
             id: Id::new(),
-            parent: layer,
+            parent: Some(layer),
             index: None,
             stamp: Box::new(stamp(
                 assets[i % assets.len()],

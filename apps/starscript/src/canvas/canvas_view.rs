@@ -946,7 +946,7 @@ mod tests {
             editor
                 .run(ssmap_core::Command::CreateLandmass {
                     id: island,
-                    parent: layer,
+                    parent: Some(layer),
                     index: None,
                     geometry: MultiPolygon(vec![Polygon {
                         exterior: vec![[0.0, 0.0], [40.0, 0.0], [40.0, 40.0], [0.0, 40.0]],
@@ -984,7 +984,7 @@ mod tests {
         editor
             .run(Command::CreateLandmass {
                 id,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 geometry: MultiPolygon(vec![Polygon {
                     exterior: vec![[10.0, 10.0], [60.0, 10.0], [60.0, 60.0], [10.0, 60.0]],

@@ -21,7 +21,7 @@ The space outside the Canvas edge. Objects placed there draw in full instead of 
 _Avoid_: Pasteboard, overflow
 
 **Object**:
-Any single thing placed on a Map, such as a Landmass, a placed asset or a Label. It shows in the Layers panel as a Layer of its own, inside a Group or at the top level of the list.
+Any single thing placed on a Map, such as a Landmass, a placed asset or a Label. It shows in the Layers panel as a Layer of its own, inside a Group or at the top level of the list, and has its own visibility, opacity, lock and pin.
 _Avoid_: Element, shape
 
 **Node**:

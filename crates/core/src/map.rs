@@ -619,7 +619,7 @@ impl Map {
     }
 
     /// The Objects that draw, first lowest: the tree in Stacking order, skipping hidden
-    /// Layers, except that a Layer's Lakes and Rivers draw above all its other content, so
+    /// Layers and Objects, except that a Layer's Lakes and Rivers draw above all its other content, so
     /// water always lies over the land around it. At the top level, water draws above the other
     /// Objects of its run: the Objects with no Layer between them (ADR 0018).
     pub fn draw_order(&self) -> Vec<Id> {
@@ -631,6 +631,7 @@ impl Map {
                     out.append(&mut lakes);
                     self.collect_draw_order(id, &mut out);
                 }
+                Some(Node::Object(object)) if !object.visible => {}
                 Some(Node::Object(object)) if object.kind.is_water() => lakes.push(id),
                 Some(Node::Object(_)) => out.push(id),
                 None => {}
@@ -648,6 +649,7 @@ impl Map {
         for child in self.ordered_children(layer) {
             match self.node(child) {
                 Some(Node::Layer(_)) => self.collect_draw_order(child, out),
+                Some(Node::Object(object)) if !object.visible => {}
                 Some(Node::Object(object)) if object.kind.is_water() => {
                     lakes.push(child);
                 }
@@ -845,8 +847,11 @@ impl Map {
 
     /// `id` is hidden itself or through a Layer above it, so it does not draw.
     pub fn is_hidden(&self, id: Id) -> bool {
-        std::iter::successors(Some(id), |&n| self.parent(n))
-            .any(|n| matches!(self.node(n), Some(Node::Layer(l)) if !l.visible))
+        std::iter::successors(Some(id), |&n| self.parent(n)).any(|n| match self.node(n) {
+            Some(Node::Layer(layer)) => !layer.visible,
+            Some(Node::Object(object)) => !object.visible,
+            None => false,
+        })
     }
 
     /// Whether Layers and Objects can be dragged into `id`: it must be a Layer that is not

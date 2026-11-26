@@ -68,7 +68,7 @@ fn landmass(map: &mut Map, parent: Id, geometry: MultiPolygon, fill: Color) {
         map,
         Command::CreateLandmass {
             id: Id::new(),
-            parent,
+            parent: Some(parent),
             index: None,
             geometry,
             fill: Some(fill),
@@ -267,7 +267,7 @@ fn busy_map() -> Map {
             &mut map,
             Command::CreateStamp {
                 id: Id::new(),
-                parent: assets,
+                parent: Some(assets),
                 index: None,
                 stamp: Box::new(stamp),
             },

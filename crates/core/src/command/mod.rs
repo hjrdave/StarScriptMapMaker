@@ -86,11 +86,11 @@ pub enum Command {
         /// The new place among `parent`'s children.
         index: usize,
     },
-    /// Shows or hides a Layer.
+    /// Shows or hides a Layer or Object.
     SetVisible {
-        /// The Layer.
+        /// The Layer or Object.
         id: Id,
-        /// Whether the Layer is shown.
+        /// Whether it is shown.
         visible: bool,
     },
     /// Locks or unlocks a Layer or Object. Unlocking is refused while a Layer above it is locked.
@@ -175,14 +175,15 @@ pub enum Command {
         /// The nodes to delete.
         ids: Vec<Id>,
     },
-    /// Creates a Landmass with the given id and outline inside Layer `parent`. `index` counts
+    /// Creates a Landmass with the given id and outline inside Layer `parent` (the top level when `None`). `index` counts
     /// from the bottom of the Stacking order; omitted, the Landmass goes on top. Without a
     /// `fill`, it takes the default land colour.
     CreateLandmass {
         /// The id the new Landmass gets.
         id: Id,
-        /// The Layer to create it in.
-        parent: Id,
+        /// The Layer to create it in, or `None` for the top level.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<Id>,
         /// Where the node goes among its siblings, counted from the bottom of the Stacking order.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         index: Option<usize>,
@@ -196,8 +197,9 @@ pub enum Command {
     CreateLake {
         /// The id the new Lake gets.
         id: Id,
-        /// The Layer to create it in.
-        parent: Id,
+        /// The Layer to create it in, or `None` for the top level.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<Id>,
         /// Where the node goes among its siblings, counted from the bottom of the Stacking order.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         index: Option<usize>,
@@ -207,14 +209,15 @@ pub enum Command {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         fill: Option<Color>,
     },
-    /// Creates a River with the given id inside Layer `parent`. `index` counts from the
+    /// Creates a River with the given id inside Layer `parent` (the top level when `None`). `index` counts from the
     /// bottom of the Stacking order; omitted, the River goes on top. Its outline is generated
     /// from its path.
     CreateRiver {
         /// The id the new River gets.
         id: Id,
-        /// The Layer to create it in.
-        parent: Id,
+        /// The Layer to create it in, or `None` for the top level.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<Id>,
         /// Where the node goes among its siblings, counted from the bottom of the Stacking order.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         index: Option<usize>,
@@ -463,13 +466,14 @@ pub enum Command {
         /// The new default Shore style.
         shore: ShoreStyle,
     },
-    /// Places a Label with the given id inside Layer `parent`. `index` counts from the bottom
+    /// Places a Label with the given id inside Layer `parent` (the top level when `None`). `index` counts from the bottom
     /// of the Stacking order; omitted, the Label goes on top.
     CreateLabel {
         /// The id the new Label gets.
         id: Id,
-        /// The Layer to place it in.
-        parent: Id,
+        /// The Layer to place it in, or `None` for the top level.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<Id>,
         /// Where the node goes among its siblings, counted from the bottom of the Stacking order.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         index: Option<usize>,
@@ -507,13 +511,14 @@ pub enum Command {
         /// The Label style to delete.
         id: Id,
     },
-    /// Places a Stamp with the given id inside Layer `parent`. `index` counts from the bottom
+    /// Places a Stamp with the given id inside Layer `parent` (the top level when `None`). `index` counts from the bottom
     /// of the Stacking order; omitted, the Stamp goes on top.
     CreateStamp {
         /// The id the new Stamp gets.
         id: Id,
-        /// The Layer to place it in.
-        parent: Id,
+        /// The Layer to place it in, or `None` for the top level.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<Id>,
         /// Where the node goes among its siblings, counted from the bottom of the Stacking order.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         index: Option<usize>,
@@ -527,11 +532,12 @@ pub enum Command {
         /// Its new content.
         stamp: Box<Stamp>,
     },
-    /// Places many Stamps inside Layer `parent` on top, in the order given, as one edit. A
+    /// Places many Stamps inside Layer `parent` (the top level when `None`) on top, in the order given, as one edit. A
     /// brush resolves its randomness first, so this names every Stamp it creates.
     PlaceStamps {
-        /// The Layer to place them in.
-        parent: Id,
+        /// The Layer to place them in, or `None` for the top level.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent: Option<Id>,
         /// The Stamps to place, each with its id.
         stamps: Vec<PlacedStamp>,
     },

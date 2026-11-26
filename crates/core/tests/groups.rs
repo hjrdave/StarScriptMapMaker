@@ -30,7 +30,7 @@ fn stamp(map: &mut Map, parent: Id) -> Id {
     let id = Id::new();
     map.execute(&Command::CreateStamp {
         id,
-        parent,
+        parent: Some(parent),
         index: None,
         stamp: Box::new(Stamp::default()),
     })

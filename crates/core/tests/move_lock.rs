@@ -51,7 +51,7 @@ fn every_new_object_starts_unpinned_and_can_be_moved() {
     let (land, lake, stamp) = (Id::new(), Id::new(), Id::new());
     map.execute(&Command::CreateLandmass {
         id: land,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         geometry: square(),
         fill: None,
@@ -59,7 +59,7 @@ fn every_new_object_starts_unpinned_and_can_be_moved() {
     .unwrap();
     map.execute(&Command::CreateLake {
         id: lake,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         geometry: square(),
         fill: None,
@@ -67,7 +67,7 @@ fn every_new_object_starts_unpinned_and_can_be_moved() {
     .unwrap();
     map.execute(&Command::CreateStamp {
         id: stamp,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         stamp: Box::new(Stamp::default()),
     })
@@ -82,7 +82,7 @@ fn a_move_locked_object_can_still_be_edited_and_unlocking_allows_the_move() {
     let land = Id::new();
     map.execute(&Command::CreateLandmass {
         id: land,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         geometry: square(),
         fill: None,
@@ -125,7 +125,7 @@ fn a_linked_move_locked_object_blocks_the_whole_set() {
     for id in [a, b] {
         map.execute(&Command::CreateLandmass {
             id,
-            parent: layer,
+            parent: Some(layer),
             index: None,
             geometry: square(),
             fill: None,
@@ -150,7 +150,7 @@ fn free_land(map: &mut Map, parent: Id) -> Id {
     let id = Id::new();
     map.execute(&Command::CreateLandmass {
         id,
-        parent,
+        parent: Some(parent),
         index: None,
         geometry: square(),
         fill: None,

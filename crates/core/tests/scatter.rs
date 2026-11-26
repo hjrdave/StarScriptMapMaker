@@ -52,7 +52,7 @@ fn island() -> (Map, Id, Id, Id) {
     let land = Id::new();
     map.execute(&Command::CreateLandmass {
         id: land,
-        parent: terrain,
+        parent: Some(terrain),
         index: None,
         geometry: region(square(0.0, 400.0)),
         fill: None,
@@ -60,7 +60,7 @@ fn island() -> (Map, Id, Id, Id) {
     .unwrap();
     map.execute(&Command::CreateLake {
         id: Id::new(),
-        parent: terrain,
+        parent: Some(terrain),
         index: None,
         geometry: region(square(100.0, 200.0)),
         fill: None,
@@ -262,7 +262,7 @@ fn the_eraser_removes_stamps_in_the_active_layer_only() {
         for x in [10.0, 50.0, 300.0] {
             map.execute(&Command::CreateStamp {
                 id: Id::new(),
-                parent,
+                parent: Some(parent),
                 index: None,
                 stamp: Box::new(Stamp::new(asset("peak-1"), [x, 20.0])),
             })
@@ -289,7 +289,7 @@ fn shuffle_variant_rerolls_within_the_group() {
         let id = Id::new();
         map.execute(&Command::CreateStamp {
             id,
-            parent: mountains,
+            parent: Some(mountains),
             index: None,
             stamp: Box::new(Stamp::new(asset("peak-1"), [f64::from(x), 0.0])),
         })
@@ -300,7 +300,7 @@ fn shuffle_variant_rerolls_within_the_group() {
     let lone = Id::new();
     map.execute(&Command::CreateStamp {
         id: lone,
-        parent: mountains,
+        parent: Some(mountains),
         index: None,
         stamp: Box::new(Stamp::new(asset("tower"), [0.0, 0.0])),
     })

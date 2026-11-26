@@ -24,7 +24,7 @@ fn fixture() -> (Fixture, Id, Id) {
         editor
             .run(Command::CreateLandmass {
                 id: island,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 geometry: square(0.0, 40.0),
                 fill: None,
@@ -394,7 +394,7 @@ fn a_lake_has_no_fill_style() {
             .editor
             .run(Command::CreateLake {
                 id: lake,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 geometry: square(50.0, 20.0),
                 fill: None,
@@ -435,7 +435,7 @@ fn a_multi_selection_is_summarised_and_can_be_combined() {
             .editor
             .run(Command::CreateLandmass {
                 id: other,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 geometry: square(10.0, 50.0),
                 fill: None,
@@ -465,7 +465,7 @@ fn an_overridden_label_size_resets_to_the_styles_size() {
             .editor
             .run(Command::CreateLabel {
                 id: label,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 label: Box::new(Label {
                     text: "Hello".to_owned(),
@@ -501,7 +501,7 @@ fn manage_label_styles_asks_for_the_window() {
             .editor
             .run(Command::CreateLabel {
                 id: label,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 label: Box::new(Label {
                     text: "Hello".to_owned(),
@@ -526,7 +526,7 @@ fn fixture_with_overridden_label() -> (Fixture, Id) {
             .editor
             .run(Command::CreateLabel {
                 id: label,
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 label: Box::new(Label {
                     text: "Hello".to_owned(),
@@ -824,7 +824,7 @@ fn the_board_row_says_mixed_for_objects_on_different_boards() {
         .editor
         .run(Command::CreateLake {
             id: lake,
-            parent: layer,
+            parent: Some(layer),
             index: None,
             geometry: square(50.0, 10.0),
             fill: None,
@@ -1357,7 +1357,7 @@ fn add_stamp(fixture: &mut Fixture, layer: Id, x: f64) -> Id {
         .editor
         .run(Command::CreateStamp {
             id,
-            parent: layer,
+            parent: Some(layer),
             index: None,
             stamp: Box::new(stamp),
         })
@@ -1534,7 +1534,7 @@ fn a_labels_halo_colour_always_shows_and_overrides_can_be_reset_from_the_header(
         .editor
         .run(Command::CreateLabel {
             id,
-            parent: layer,
+            parent: Some(layer),
             index: None,
             label: Box::new(Label {
                 text: "Hello".to_owned(),
@@ -1581,7 +1581,7 @@ fn a_labels_board_is_a_full_width_field_in_its_appearance_section() {
         .editor
         .run(Command::CreateLabel {
             id,
-            parent: layer,
+            parent: Some(layer),
             index: None,
             label: Box::new(Label {
                 text: "Hello".to_owned(),
@@ -1933,7 +1933,7 @@ fn the_label_panel_groups_its_fields_into_divider_sections() {
         .editor
         .run(Command::CreateLabel {
             id,
-            parent: layer,
+            parent: Some(layer),
             index: None,
             label: Box::new(Label {
                 text: "Hello".to_owned(),
@@ -2055,7 +2055,7 @@ fn properties_states() -> Vec<(&'static str, fn(&mut Fixture, Id, Id, Id))> {
             f.editor
                 .run(Command::CreateRiver {
                     id,
-                    parent: layer,
+                    parent: Some(layer),
                     index: None,
                     river: Box::new(river),
                 })
@@ -2068,7 +2068,7 @@ fn properties_states() -> Vec<(&'static str, fn(&mut Fixture, Id, Id, Id))> {
             f.editor
                 .run(Command::CreateStamp {
                     id,
-                    parent: layer,
+                    parent: Some(layer),
                     index: None,
                     stamp: Box::new(ssmap_core::Stamp::default()),
                 })
@@ -2082,7 +2082,7 @@ fn properties_states() -> Vec<(&'static str, fn(&mut Fixture, Id, Id, Id))> {
                 f.editor
                     .run(Command::CreateStamp {
                         id,
-                        parent: layer,
+                        parent: Some(layer),
                         index: None,
                         stamp: Box::new(ssmap_core::Stamp::default()),
                     })
@@ -2123,7 +2123,7 @@ fn no_properties_state_reaches_outside_a_narrow_panel() {
                 .editor
                 .run(Command::CreateLake {
                     id: lake,
-                    parent: layer,
+                    parent: Some(layer),
                     index: None,
                     geometry: square(50.0, 10.0),
                     fill: None,

@@ -8,10 +8,10 @@ ADR 0014 put every Object inside a Layer, and made a Layer when the Map had none
 
 - **Terms.** A Layer is one row in the Layers panel, and every Object is its own Layer. A Group is a container that holds Objects and other Groups. Object stays the term for the thing placed on the Map.
 - **Objects can sit at the top level**, beside Groups in one mixed list, which is the Stacking order. A new Map starts with nothing in the list, and tools never create a Group. This replaces "If the Map has no Layer, one is made" in ADR 0014. When a Group is active, new Objects still go into it.
-- **Settings.** An Object at the top level has only its own settings. Attach to Layer Below works on any row, not only a Group.
+- **Settings.** An Object at the top level has only its own settings. Every Object, in a Group or not, has its own visibility, opacity, lock and pin, as any Layer row does; inside a Group, the Group's settings apply as well (hidden if either is hidden, opacities multiplied). Attach to Layer Below works on any row, not only a Group.
 - **No active Group:** Select All, the Stamp Eraser and Paste act on the top level.
 - **Water at the top level.** Inside a Group, Lakes and Rivers draw above its other content. At the top level they draw above the other Objects of their run, the Objects with no Group between them, so water still lies over the land beside it and Groups keep their place in the order.
-- **File format.** An Object row with a NULL `parent` is format 1.20, a minor bump with no migration. Older files open unchanged. An older app can't open a Map that has a top-level Object.
+- **File format.** An Object row with a NULL `parent` is format 1.20, a minor bump with no migration. The same version adds the optional `visible` and `opacity` to Object props, left out at their defaults (shown, opaque). Older files open unchanged. An older app can't open a Map that has a top-level Object.
 
 ## Consequences
 
