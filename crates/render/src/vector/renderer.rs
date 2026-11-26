@@ -1,15 +1,13 @@
 //! The lyon renderer: its pipelines, GPU buffers and draw calls.
 
 use std::ops::Range;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use wgpu::util::DeviceExt;
 
 use super::cache::TessellationCache;
-use super::chunk::{
-    Built, Chunked, Draw, EMPTY_BOUNDS, Tessellators, Vertex, build, resolve, split, union,
-};
-use super::resident::{Pages, Resident};
+use super::chunk::{Built, Draw, Tessellators, Vertex, build, resolve, split};
+use super::resident::{Budget, Pages, Resident};
 use super::{DrawFilter, VectorGroup, overlaps};
 use crate::canvas::{CLIP_INSIDE, StencilUse};
 use crate::fill_texture::FillTextures;
@@ -27,9 +25,6 @@ pub(crate) struct LyonRenderer {
     /// Draws no colour, and sets the stencil to the reference.
     mask: wgpu::RenderPipeline,
     mesh: Option<Mesh>,
-    /// Drawn instead of `mesh` while set: the groups applied chunk by chunk (see
-    /// [`LyonRenderer::apply_chunks`]).
-    chunked: Option<Chunked<ChunkMesh>>,
     /// Drawn instead of `mesh` while `drawing_resident`: meshes kept on the GPU between
     /// updates (see [`LyonRenderer::update_runs`]).
     resident: Option<Resident>,
@@ -127,7 +122,6 @@ impl LyonRenderer {
             reset: pipeline("fill reset", StencilUse::Reset),
             mask: pipeline("fill mask", StencilUse::Mask),
             mesh: None,
-            chunked: None,
             resident: None,
             resident_pages: Vec::new(),
             drawing_resident: false,
@@ -150,7 +144,6 @@ impl LyonRenderer {
     pub(crate) fn set_cache(&mut self, cache: TessellationCache) {
         self.cache = cache;
         self.mesh = None;
-        self.chunked = None;
         self.resident = None;
         self.resident_pages.clear();
         self.drawing_resident = false;
@@ -169,7 +162,6 @@ impl LyonRenderer {
         cuts: &[usize],
     ) {
         let built = build(groups, cuts, &self.cache);
-        self.chunked = None;
         self.drawing_resident = false;
         let parts = upload_parts(device, built, "vector");
         self.mesh = (!parts.is_empty()).then_some(Mesh { parts });
@@ -177,23 +169,31 @@ impl LyonRenderer {
 
     /// Like [`LyonRenderer::set_runs`], but keeps every mesh on the GPU between calls and writes
     /// only the meshes that are not there yet, so an edit uploads only what it changed
-    /// (ADR 0019). The draw list is rebuilt in stacking order each time.
+    /// (ADR 0019). The draw list is rebuilt in stacking order each time. With a `budget`, it
+    /// stops writing once that is spent; the meshes left are drawn once a later call writes
+    /// them. Returns whether every mesh is written.
     pub(crate) fn update_runs(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         groups: &[VectorGroup],
         cuts: &[usize],
-    ) {
+        budget: Option<Duration>,
+    ) -> bool {
+        let origin = Instant::now();
+        let elapsed = || origin.elapsed();
         let meshes = resolve(groups, &self.cache, &mut Tessellators::default());
-        self.chunked = None;
         self.mesh = None;
         let resident = self
             .resident
             .get_or_insert_with(|| Resident::new(device.limits().max_buffer_size));
-        resident.update(
+        let update = resident.update(
             &meshes,
             cuts,
+            budget.map(|limit| Budget {
+                limit,
+                elapsed: &elapsed,
+            }),
             &mut GpuPages {
                 device,
                 queue,
@@ -201,35 +201,7 @@ impl LyonRenderer {
             },
         );
         self.drawing_resident = true;
-    }
-
-    /// Whether the groups are drawn chunk by chunk (see [`LyonRenderer::start_chunks`]).
-    pub(crate) fn is_chunked(&self) -> bool {
-        self.chunked.is_some()
-    }
-
-    /// Like [`LyonRenderer::set_runs`], but only splits the groups into chunks, which
-    /// [`LyonRenderer::apply_chunks`] then builds. What was drawn stays until its chunk is
-    /// replaced.
-    pub(crate) fn start_chunks(&mut self, groups: &[VectorGroup], cuts: &[usize]) {
-        self.mesh = None;
-        self.drawing_resident = false;
-        let previous = self.chunked.take();
-        self.chunked = Some(Chunked::new(previous, groups, cuts, &self.cache));
-    }
-
-    /// Builds the chunks of the groups last given to [`LyonRenderer::start_chunks`] that are
-    /// out of date, within `budget` (all of them if `None`). Returns whether all are built.
-    pub(crate) fn apply_chunks(
-        &mut self,
-        device: &wgpu::Device,
-        groups: &[VectorGroup],
-        budget: Option<Duration>,
-    ) -> bool {
-        let Some(chunked) = &mut self.chunked else {
-            return true;
-        };
-        chunked.apply(groups, &self.cache, budget, |built| upload(device, built))
+        update.done
     }
 
     /// Draws run `run` of the groups last given to [`LyonRenderer::set_runs`], only inside the
@@ -241,22 +213,6 @@ impl LyonRenderer {
         clipped: bool,
         filter: &DrawFilter,
     ) {
-        if let Some(chunked) = &self.chunked {
-            let Some(range) = chunked.runs.get(run) else {
-                return;
-            };
-            for chunk in chunked.chunks[range.clone()]
-                .iter()
-                .filter_map(|chunk| chunk.part.as_ref())
-                .filter(|part| overlaps(part.bounds, filter.bounds))
-            {
-                for part in &chunk.parts {
-                    part.bind(pass);
-                    self.draw_draws(pass, &part.draws, clipped, filter);
-                }
-            }
-            return;
-        }
         if let Some(resident) = self.drawn_resident() {
             let Some(range) = resident.runs.get(run) else {
                 return;
@@ -362,24 +318,6 @@ impl LyonRenderer {
     }
 }
 
-/// A chunk's triangles on the GPU.
-struct ChunkMesh {
-    /// Empty for a chunk with nothing to draw.
-    parts: Vec<Part>,
-    bounds: [f32; 4],
-}
-
-fn upload(device: &wgpu::Device, built: Built) -> ChunkMesh {
-    let bounds = built
-        .draws
-        .iter()
-        .fold(EMPTY_BOUNDS, |all, d| union(all, d.bounds));
-    ChunkMesh {
-        parts: upload_parts(device, built, "chunk"),
-        bounds,
-    }
-}
-
 /// One page of [`Resident`]: a vertex buffer and an index buffer that meshes are written into.
 struct GpuPage {
     vertices: wgpu::Buffer,
@@ -387,6 +325,30 @@ struct GpuPage {
 }
 
 impl GpuPage {
+    /// An empty page with room for `vertices` and `indices`, which writes fill.
+    fn new(device: &wgpu::Device, (vertices, indices): (u32, u32)) -> Self {
+        let buffer = |count: u32, size: usize, usage: wgpu::BufferUsages| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("vector page"),
+                size: u64::from(count) * size as u64,
+                usage: usage | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        };
+        Self {
+            vertices: buffer(
+                vertices,
+                std::mem::size_of::<Vertex>(),
+                wgpu::BufferUsages::VERTEX,
+            ),
+            indices: buffer(
+                indices,
+                std::mem::size_of::<u32>(),
+                wgpu::BufferUsages::INDEX,
+            ),
+        }
+    }
+
     fn bind(&self, pass: &mut wgpu::RenderPass<'_>) {
         pass.set_vertex_buffer(0, self.vertices.slice(..));
         pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
@@ -403,29 +365,14 @@ struct GpuPages<'a> {
 
 impl Pages for GpuPages<'_> {
     fn reset(&mut self, sizes: &[(u32, u32)]) {
-        let buffer = |count: u32, size: usize, usage: wgpu::BufferUsages| {
-            self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("vector page"),
-                size: u64::from(count) * size as u64,
-                usage: usage | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            })
-        };
         *self.pages = sizes
             .iter()
-            .map(|&(vertices, indices)| GpuPage {
-                vertices: buffer(
-                    vertices,
-                    std::mem::size_of::<Vertex>(),
-                    wgpu::BufferUsages::VERTEX,
-                ),
-                indices: buffer(
-                    indices,
-                    std::mem::size_of::<u32>(),
-                    wgpu::BufferUsages::INDEX,
-                ),
-            })
+            .map(|&size| GpuPage::new(self.device, size))
             .collect();
+    }
+
+    fn add(&mut self, size: (u32, u32)) {
+        self.pages.push(GpuPage::new(self.device, size));
     }
 
     fn write(

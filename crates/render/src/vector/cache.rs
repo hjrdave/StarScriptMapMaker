@@ -124,14 +124,6 @@ impl TessellationCache {
         inner.current.retain(|&id, _| keep(id));
     }
 
-    /// Whether some tessellation of Object `id` at `version` is kept, whatever its groups.
-    pub(super) fn has_version(&self, id: Id, version: u64) -> bool {
-        self.inner()
-            .entries
-            .get(&id)
-            .is_some_and(|entry| entry.version == version)
-    }
-
     /// Whether Object `id` is tessellated for exactly these groups.
     pub fn is_ready(&self, id: Id, version: u64, groups: &[VectorGroup]) -> bool {
         let sources: Vec<&VectorGroup> = groups.iter().collect();
