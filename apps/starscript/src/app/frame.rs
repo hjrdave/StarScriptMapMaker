@@ -64,7 +64,10 @@ impl MapMakerApp {
             let panel = egui::Panel::left("layers")
                 .resizable(false)
                 .exact_size(width)
-                .show(ui, |ui| layers_panel(ui, &mut self.win.shell, tab));
+                .show(ui, |ui| {
+                    let edges = ui.clip_rect().x_range();
+                    theme::panel_scope(ui, edges, |ui| layers_panel(ui, &mut self.win.shell, tab));
+                });
             layers_divider = Some(panel.response.rect);
         }
         match layout.properties {
@@ -84,7 +87,12 @@ impl MapMakerApp {
                 let panel = egui::Panel::right("properties")
                     .resizable(false)
                     .exact_size(width)
-                    .show(ui, |ui| tab.properties.show(ui, &mut tab.editor));
+                    .show(ui, |ui| {
+                        let edges = ui.clip_rect().x_range();
+                        theme::panel_scope(ui, edges, |ui| {
+                            tab.properties.show(ui, &mut tab.editor)
+                        });
+                    });
                 if tab.properties.take_manage_label_styles() {
                     tab.label_styles.open = true;
                 }
@@ -244,7 +252,10 @@ impl MapMakerApp {
                     overlay_frame.show(ui, |ui| {
                         ui.set_width(width);
                         ui.set_height(canvas_rect.height());
-                        layers_panel(ui, &mut self.win.shell, tab);
+                        let edges = ui.max_rect().x_range();
+                        theme::panel_scope(ui, edges, |ui| {
+                            layers_panel(ui, &mut self.win.shell, tab)
+                        });
                     });
                 });
             overlay_rect = Some(area.response.rect);
@@ -259,7 +270,10 @@ impl MapMakerApp {
                     overlay_frame.show(ui, |ui| {
                         ui.set_width(width);
                         ui.set_height(height);
-                        tab.properties.show(ui, &mut tab.editor);
+                        let edges = ui.max_rect().x_range();
+                        theme::panel_scope(ui, edges, |ui| {
+                            tab.properties.show(ui, &mut tab.editor)
+                        });
                     });
                 });
             if tab.properties.take_manage_label_styles() {
