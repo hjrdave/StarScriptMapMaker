@@ -213,25 +213,50 @@ pub fn shadow_e3() -> Shadow {
     }
 }
 
-/// Records the outer x-range of the panel `ui` is the top-level content of, so that
-/// [`panel_rule`] can run flush to the panel's edges. Call it first in a panel's closure,
-/// before any scroll area narrows the clip rect.
-pub(crate) fn remember_panel_edges(ui: &egui::Ui) {
-    let edges = ui.clip_rect().x_range();
+fn panel_edges_id() -> egui::Id {
+    egui::Id::new("panel edges")
+}
+
+/// Runs `add_contents` as a panel whose outer x-range is `edges`, so that [`panel_rule`] runs
+/// flush to the panel's edges inside it. The host passes the edges, because only it knows them:
+/// in an `egui::Panel` they are the clip rect, in an overlay `Area` the frame's rect. The
+/// edges are taken away again afterwards, so nothing outside the panel picks them up.
+pub(crate) fn panel_scope<R>(
+    ui: &mut egui::Ui,
+    edges: egui::Rangef,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    let id = panel_edges_id();
+    let outer = ui.ctx().data_mut(|data| {
+        let outer = data.get_temp::<egui::Rangef>(id);
+        data.insert_temp(id, edges);
+        outer
+    });
+    let result = add_contents(ui);
+    ui.ctx().data_mut(|data| {
+        if let Some(outer) = outer {
+            data.insert_temp(id, outer);
+        } else {
+            data.remove::<egui::Rangef>(id);
+        }
+    });
+    result
+}
+
+/// The x-range a [`panel_rule`] spans: the enclosing [`panel_scope`]'s edges, or `ui`'s
+/// content width outside one.
+fn rule_range(ui: &egui::Ui) -> egui::Rangef {
     ui.ctx()
-        .data_mut(|data| data.insert_temp(egui::Id::new("panel edges"), edges));
+        .data(|data| data.get_temp::<egui::Rangef>(panel_edges_id()))
+        .unwrap_or_else(|| ui.max_rect().x_range())
 }
 
 /// A 1 pt divider line at `y` that spans the whole panel, past its inner margin. Outside a
-/// panel that recorded its edges it spans `ui`'s content width.
+/// [`panel_scope`] it spans `ui`'s content width.
 pub(crate) fn panel_rule(ui: &egui::Ui, y: f32) {
     let palette = palette(ui.ctx());
-    let edges = ui
-        .ctx()
-        .data(|data| data.get_temp::<egui::Rangef>(egui::Id::new("panel edges")))
-        .unwrap_or_else(|| ui.max_rect().x_range());
-    let clip = ui.clip_rect();
-    let clip = egui::Rect::from_x_y_ranges(edges, clip.y_range());
+    let edges = rule_range(ui);
+    let clip = egui::Rect::from_x_y_ranges(edges, ui.clip_rect().y_range());
     ui.painter()
         .with_clip_rect(clip)
         .hline(edges, y, Stroke::new(1.0, palette.border_subtle));
@@ -450,22 +475,97 @@ mod tests {
 
     const TOKENS: &str = include_str!("../../../../docs/design/ui-handoff/tokens.json");
 
+    /// The x-ranges seen by a panel's rules and by the host's own content: (panel, rule, host).
+    type Seen = std::rc::Rc<std::cell::Cell<Option<(egui::Rangef, egui::Rangef, egui::Rangef)>>>;
+
+    fn close(a: egui::Rangef, b: egui::Rangef) -> bool {
+        (a.min - b.min).abs() < 0.5 && (a.max - b.max).abs() < 0.5
+    }
+
     #[test]
-    fn a_panel_rule_runs_past_the_content_margin() {
-        let mut harness = egui_kittest::Harness::new_ui(|ui| {
-            egui::Frame::NONE
-                .inner_margin(Margin::same(8))
+    fn a_panel_rule_spans_an_egui_panel_past_its_margin() {
+        let seen: Seen = Default::default();
+        let out = seen.clone();
+        let mut harness = egui_kittest::Harness::new_ui(move |ui| {
+            let mut rule = None;
+            let panel = egui::Panel::left("test panel")
+                .resizable(false)
+                .exact_size(200.0)
                 .show(ui, |ui| {
-                    remember_panel_edges(ui);
+                    let edges = ui.clip_rect().x_range();
+                    panel_scope(ui, edges, |ui| {
+                        // Content sits inside the panel's margin; the rule doesn't.
+                        assert!(ui.max_rect().left() > edges.min);
+                        rule = Some(rule_range(ui));
+                    });
                 });
+            let host = rule_range(ui);
+            if let Some(rule) = rule {
+                out.set(Some((panel.response.rect.x_range(), rule, host)));
+            }
         });
         harness.run();
-        let edges = harness
-            .ctx
-            .data(|d| d.get_temp::<egui::Rangef>(egui::Id::new("panel edges")))
-            .expect("edges recorded");
-        let screen = harness.ctx.content_rect();
-        assert!(edges.min <= screen.left() + 0.5 && edges.max >= screen.right() - 0.5);
+        let (panel, rule, _) = seen.get().expect("panel shown");
+        assert!(close(rule, panel), "rule {rule:?}, panel {panel:?}");
+    }
+
+    #[test]
+    fn a_panel_rule_spans_an_overlay_not_the_screen() {
+        let seen: Seen = Default::default();
+        let out = seen.clone();
+        let mut harness = egui_kittest::Harness::new_ui(move |ui| {
+            let ctx = ui.ctx().clone();
+            let mut rule = None;
+            let area = egui::Area::new(egui::Id::new("test overlay"))
+                .fixed_pos(egui::pos2(300.0, 40.0))
+                .show(&ctx, |ui| {
+                    egui::Frame::new().show(ui, |ui| {
+                        ui.set_width(180.0);
+                        ui.set_height(100.0);
+                        let edges = ui.max_rect().x_range();
+                        panel_scope(ui, edges, |ui| rule = Some(rule_range(ui)));
+                    });
+                });
+            let host = rule_range(ui);
+            if let Some(rule) = rule {
+                out.set(Some((area.response.rect.x_range(), rule, host)));
+            }
+        });
+        harness.run();
+        let (overlay, rule, _) = seen.get().expect("overlay shown");
+        assert!(close(rule, overlay), "rule {rule:?}, overlay {overlay:?}");
+        let screen = harness.ctx.content_rect().x_range();
+        assert!(!close(rule, screen));
+    }
+
+    #[test]
+    fn a_rule_outside_a_panel_scope_does_not_use_the_last_panels_edges() {
+        let seen: Seen = Default::default();
+        let out = seen.clone();
+        let mut harness = egui_kittest::Harness::new_ui(move |ui| {
+            let mut rule = None;
+            let panel = egui::Panel::right("test panel")
+                .resizable(false)
+                .exact_size(150.0)
+                .show(ui, |ui| {
+                    let edges = ui.clip_rect().x_range();
+                    panel_scope(ui, edges, |ui| rule = Some(rule_range(ui)));
+                });
+            // The rest of the screen, after the panel: its rules span its own width.
+            let host = rule_range(ui);
+            out.set(Some((
+                panel.response.rect.x_range(),
+                rule.unwrap_or(host),
+                host,
+            )));
+            assert!(close(host, ui.max_rect().x_range()));
+        });
+        harness.run();
+        let (panel, _, host) = seen.get().expect("shown");
+        assert!(
+            !close(host, panel),
+            "host {host:?} took the panel's {panel:?}"
+        );
     }
 
     fn parse(hex: &str) -> Color32 {
