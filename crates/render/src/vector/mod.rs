@@ -57,7 +57,10 @@ impl PartialEq for VectorShape {
         self.color == other.color
             && self.paint == other.paint
             && self.style == other.style
-            && self.path.iter().eq(other.path.iter())
+            // A Path never changes once built, so the same Arc is the same path. Unchanged
+            // Objects keep their Arcs between frames, which keeps the tessellation cache's
+            // lookup from walking every point of every path (#662).
+            && (Arc::ptr_eq(&self.path, &other.path) || self.path.iter().eq(other.path.iter()))
     }
 }
 
@@ -152,4 +155,37 @@ impl DrawFilter {
 /// Whether two `[min_x, min_y, max_x, max_y]` boxes overlap.
 pub(crate) fn overlaps(a: [f32; 4], b: [f32; 4]) -> bool {
     a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lyon::math::point;
+
+    fn shape(x: f32) -> VectorShape {
+        let mut builder = Path::builder();
+        builder.begin(point(x, 0.0));
+        builder.line_to(point(x + 10.0, 0.0));
+        builder.line_to(point(x + 10.0, 10.0));
+        builder.close();
+        VectorGroup::fill(builder.build(), Color::rgb(1, 2, 3), FillRule::NonZero)
+            .shapes
+            .remove(0)
+    }
+
+    #[test]
+    fn shapes_sharing_a_path_are_equal_unless_another_field_differs() {
+        let a = shape(0.0);
+        let mut b = a.clone();
+        assert!(Arc::ptr_eq(&a.path, &b.path));
+        assert_eq!(a, b);
+        b.color = Color::rgb(9, 9, 9);
+        assert_ne!(a, b, "the colour still counts when the path is shared");
+    }
+
+    #[test]
+    fn shapes_with_separate_paths_compare_the_points() {
+        assert_eq!(shape(0.0), shape(0.0));
+        assert_ne!(shape(0.0), shape(1.0));
+    }
 }
