@@ -120,9 +120,9 @@ impl TiledExport<'_> {
         let content = self.scene.complete_content(self.map, self.roughness);
         self.renderer.wait_until_ready(&content);
 
-        let mut scene = CanvasScene::new(self.map.canvas()).with_content(content);
-        // A region reaching past the Canvas shows water, not the editor's off-Canvas.
-        scene.off_canvas = scene.backdrop.water;
+        let mut scene = CanvasScene::new(self.map.canvas())
+            .for_export()
+            .with_content(content);
         // Only the Canvas is exported: its members are clipped at the edge and off-Canvas
         // Objects are left out.
         scene.off_canvas_objects = false;
