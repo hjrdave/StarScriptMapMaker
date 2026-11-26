@@ -7,7 +7,7 @@ use crate::map::{Map, Subtree};
 use crate::node::{Node, Object, ObjectKind, Stamp};
 use crate::op::{Op, Property};
 
-use super::check::{existing, layer, set, unlocked};
+use super::check::{container, existing, set, unlocked};
 use super::object::default_name;
 use super::{CommandError, PlacedStamp};
 use crate::map::numbered_name;
@@ -15,19 +15,18 @@ use crate::map::numbered_name;
 pub(super) fn create_stamp(
     map: &Map,
     id: Id,
-    parent: Id,
+    parent: Option<Id>,
     index: Option<usize>,
     stamp: &Stamp,
 ) -> Result<Vec<Op>, CommandError> {
     if map.contains(id) {
         return Err(CommandError::IdInUse(id));
     }
-    layer(map, parent)?;
-    unlocked(map, parent)?;
+    container(map, parent)?;
     check_stamp(stamp)?;
     Ok(vec![Op::Insert {
-        parent: Some(parent),
-        index: index.unwrap_or(map.children(Some(parent)).len()),
+        parent,
+        index: index.unwrap_or(map.children(parent).len()),
         subtree: Subtree {
             id,
             node: Node::Object({
@@ -55,12 +54,11 @@ pub(super) fn set_stamp(map: &Map, id: Id, stamp: &Stamp) -> Result<Vec<Op>, Com
 
 pub(super) fn place_stamps(
     map: &Map,
-    parent: Id,
+    parent: Option<Id>,
     stamps: &[PlacedStamp],
 ) -> Result<Vec<Op>, CommandError> {
-    layer(map, parent)?;
-    unlocked(map, parent)?;
-    let start = map.children(Some(parent)).len();
+    container(map, parent)?;
+    let start = map.children(parent).len();
     // Numbered one after another from the next free number.
     let first = map.next_number("Stamp");
     let mut seen = HashSet::new();
@@ -71,7 +69,7 @@ pub(super) fn place_stamps(
         }
         check_stamp(&placed.stamp)?;
         ops.push(Op::Insert {
-            parent: Some(parent),
+            parent,
             index: start + offset,
             subtree: Subtree {
                 id: placed.id,

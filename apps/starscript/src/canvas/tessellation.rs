@@ -71,7 +71,7 @@ mod tests {
             let min = 20.0 * i as f64;
             map.execute(&Command::CreateLandmass {
                 id: Id::new(),
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 geometry: MultiPolygon(vec![Polygon {
                     exterior: vec![

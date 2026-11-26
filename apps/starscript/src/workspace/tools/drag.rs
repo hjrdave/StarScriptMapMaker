@@ -440,14 +440,14 @@ mod link_tests {
             let command = if n == 2 {
                 Command::CreateStamp {
                     id: *id,
-                    parent: layer,
+                    parent: Some(layer),
                     index: None,
                     stamp: Box::new(MapStamp::new("pack/asset".parse().unwrap(), [200.0, 5.0])),
                 }
             } else {
                 Command::CreateLandmass {
                     id: *id,
-                    parent: layer,
+                    parent: Some(layer),
                     index: None,
                     geometry: square(n as f64 * 100.0),
                     fill: None,

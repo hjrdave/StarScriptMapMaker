@@ -999,14 +999,14 @@ mod tests {
             },
             Command::CreateLandmass {
                 id: Id::new(),
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 geometry: square(0.0, 500.0),
                 fill: Some(Landmass::DEFAULT_FILL),
             },
             Command::CreateLake {
                 id: Id::new(),
-                parent: layer,
+                parent: Some(layer),
                 index: None,
                 geometry: square(300.0, 400.0),
                 fill: None,

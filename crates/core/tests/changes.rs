@@ -32,7 +32,7 @@ fn with_stamps(count: usize) -> (Map, Id, Vec<Id>) {
     for (i, &id) in ids.iter().enumerate() {
         map.execute(&Command::CreateStamp {
             id,
-            parent: layer,
+            parent: Some(layer),
             index: None,
             stamp: stamp_at(i as f64),
         })
@@ -130,7 +130,7 @@ fn moving_an_outline_is_an_edit_of_that_landmass() {
     let land = Id::new();
     map.execute(&Command::CreateLandmass {
         id: land,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         geometry: MultiPolygon(vec![Polygon {
             exterior: vec![[0.0, 0.0], [40.0, 0.0], [40.0, 40.0], [0.0, 40.0]],
@@ -162,7 +162,7 @@ fn placed_stamps_are_inserted_and_an_inserted_node_edited_later_is_only_inserted
     let fresh = Id::new();
     map.execute(&Command::CreateStamp {
         id: fresh,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         stamp: stamp_at(80.0),
     })

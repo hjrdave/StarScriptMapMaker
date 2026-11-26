@@ -43,7 +43,7 @@ fn landmass(map: &mut Map, parent: Id, min: [f64; 2]) -> Id {
     let id = Id::new();
     map.execute(&Command::CreateLandmass {
         id,
-        parent,
+        parent: Some(parent),
         index: None,
         geometry: square(min, 10.0),
         fill: None,
@@ -58,7 +58,7 @@ fn stamp(map: &mut Map, parent: Id) -> Id {
     let id = Id::new();
     map.execute(&Command::CreateStamp {
         id,
-        parent,
+        parent: Some(parent),
         index: None,
         stamp: Box::new(Stamp::default()),
     })

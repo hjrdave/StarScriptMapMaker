@@ -149,7 +149,7 @@ fn large_map(scale: f64) -> Map {
         })
         .collect();
     map.execute(&Command::PlaceStamps {
-        parent: layer,
+        parent: Some(layer),
         stamps,
     })
     .unwrap();

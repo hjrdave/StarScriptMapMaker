@@ -34,7 +34,7 @@ fn stamp(map: &mut Map, parent: Id) -> Id {
     let id = Id::new();
     map.execute(&Command::CreateStamp {
         id,
-        parent,
+        parent: Some(parent),
         index: None,
         stamp: Box::new(Stamp::default()),
     })
@@ -60,7 +60,7 @@ fn stamps_count_up_from_001_and_each_kind_counts_on_its_own() {
     let land = Id::new();
     map.execute(&Command::CreateLandmass {
         id: land,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         geometry: square(),
         fill: None,
@@ -69,7 +69,7 @@ fn stamps_count_up_from_001_and_each_kind_counts_on_its_own() {
     let lake = Id::new();
     map.execute(&Command::CreateLake {
         id: lake,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         geometry: square(),
         fill: None,
@@ -113,7 +113,7 @@ fn placed_stamps_are_numbered_one_after_another() {
         .collect();
     let ids: Vec<Id> = placed.iter().map(|p| p.id).collect();
     map.execute(&Command::PlaceStamps {
-        parent: layer,
+        parent: Some(layer),
         stamps: placed,
     })
     .unwrap();
@@ -128,7 +128,7 @@ fn a_name_is_stored_so_undo_and_redo_keep_it() {
     let inverse = map
         .execute(&Command::CreateStamp {
             id,
-            parent: layer,
+            parent: Some(layer),
             index: None,
             stamp: Box::new(Stamp::default()),
         })
@@ -138,7 +138,7 @@ fn a_name_is_stored_so_undo_and_redo_keep_it() {
     // The same Command run again after the undo names it the same way.
     map.execute(&Command::CreateStamp {
         id,
-        parent: layer,
+        parent: Some(layer),
         index: None,
         stamp: Box::new(Stamp::default()),
     })

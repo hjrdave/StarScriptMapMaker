@@ -627,7 +627,7 @@ mod tests {
             editor
                 .run(Command::CreateLabel {
                     id,
-                    parent: layer,
+                    parent: Some(layer),
                     index: None,
                     label: Box::new(label),
                 })

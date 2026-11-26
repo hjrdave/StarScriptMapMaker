@@ -39,7 +39,7 @@ fn landmass(map: &mut Map, parent: Id, geometry: MultiPolygon) -> Id {
         map,
         Command::CreateLandmass {
             id,
-            parent,
+            parent: Some(parent),
             index: None,
             geometry,
             fill: None,
@@ -54,7 +54,7 @@ fn lake(map: &mut Map, parent: Id, index: Option<usize>, geometry: MultiPolygon)
         map,
         Command::CreateLake {
             id,
-            parent,
+            parent: Some(parent),
             index,
             geometry,
             fill: Some(Color::rgb(0, 0, 255)),
@@ -271,7 +271,7 @@ fn the_water_brush_creates_a_lake_then_merges_and_erases() {
     .unwrap()
     .expect("a stroke on bare ground makes a Lake");
     assert!(
-        matches!(&command, Command::CreateLake { id, parent, .. } if *id == new_id && *parent == water)
+        matches!(&command, Command::CreateLake { id, parent, .. } if *id == new_id && *parent == Some(water))
     );
     run(&mut map, command);
 

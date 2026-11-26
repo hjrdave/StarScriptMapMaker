@@ -5,7 +5,7 @@ A native, cross-platform desktop application for drawing fantasy maps. Its defin
 ## Language
 
 **Map**:
-One document the user creates and edits, made of a Canvas and a tree of Layers.
+One document the user creates and edits, made of a Canvas and a tree of Groups and Objects.
 _Avoid_: Project, file
 
 **Canvas**:
@@ -21,20 +21,20 @@ The space outside the Canvas edge. Objects placed there draw in full instead of 
 _Avoid_: Pasteboard, overflow
 
 **Object**:
-Any single thing placed on a Map, such as a coastline, a placed asset or a label.
+Any single thing placed on a Map, such as a Landmass, a placed asset or a Label. It shows in the Layers panel as a Layer of its own, inside a Group or at the top level of the list, and has its own visibility, opacity, lock and pin.
 _Avoid_: Element, shape
 
 **Node**:
-An entry in the Map's tree: a Layer or an Object. Used in `core` and the layer tree (`Node`, `Map::node()`). It is not a Coastline vertex; those are called points in the UI and `NodeRef` in code.
+An entry in the Map's tree: a Group or an Object. Used in `core` and the layer tree (`Node`, `Map::node()`). It is not a Coastline vertex; those are called points in the UI and `NodeRef` in code.
 _Avoid_: Item (for a single entry), element
 
 **Layer**:
-A container in the Map's ordered tree that holds Objects and other Layers, and has a name, visibility, lock and opacity.
-_Avoid_: Folder, frame
+One row in the Layers panel. Every Landmass, Lake, River, Stamp and Label is its own Layer. Code still uses `Layer` for the Group container until it is renamed (ADR 0018).
+_Avoid_: Container, frame
 
 **Group**:
-A Layer the user creates to move, hide or clip several Objects together. Layers nest, so a Group is just a nested Layer.
-_Avoid_: Folder, collection
+A container in the Map's ordered tree that holds Objects and other Groups, and has a name, visibility, lock and opacity. It shows as a folder in the Layers panel. Groups exist only when the user makes one; tools never create a Group.
+_Avoid_: Folder, collection, Layer (for the container)
 
 **Link**:
 A relationship that makes Layers and Objects move and transform together while each keeps its own place in the tree, even in different Groups. A locked member blocks the move for the whole set.

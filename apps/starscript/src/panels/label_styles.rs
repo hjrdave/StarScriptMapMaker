@@ -499,7 +499,7 @@ mod tests {
             editor
                 .run(Command::CreateLabel {
                     id: label_id,
-                    parent: layer,
+                    parent: Some(layer),
                     index: None,
                     label: Box::new(Label {
                         text: "Valdren".into(),

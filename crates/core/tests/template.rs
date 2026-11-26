@@ -65,7 +65,7 @@ fn land_painted_into_a_new_map_follows_the_default_land_colour() {
     let id = Id::new();
     map.execute(&Command::CreateLandmass {
         id,
-        parent: land,
+        parent: Some(land),
         index: None,
         geometry: MultiPolygon(vec![square]),
         fill: None,
@@ -297,7 +297,7 @@ fn a_saved_map_reads_back_as_a_template_with_the_same_look() {
     };
     map.execute(&Command::CreateLandmass {
         id,
-        parent: land,
+        parent: Some(land),
         index: None,
         geometry: MultiPolygon(vec![square]),
         fill: None,
