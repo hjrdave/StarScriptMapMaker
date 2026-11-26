@@ -69,6 +69,16 @@ impl GpuCapabilities {
     }
 }
 
+/// The limits to open a device with on `adapter`: `base`, with the adapter's own
+/// `max_buffer_size`. wgpu's defaults cap a buffer at 256 MiB, which the merged vertices of a
+/// large Map pass (issue #678); the adapter usually allows far more.
+pub fn device_limits(adapter: &wgpu::Adapter, base: wgpu::Limits) -> wgpu::Limits {
+    wgpu::Limits {
+        max_buffer_size: adapter.limits().max_buffer_size,
+        ..base
+    }
+}
+
 /// A device with no window, for export and tests.
 pub struct Headless {
     pub adapter: wgpu::Adapter,
@@ -104,8 +114,10 @@ impl Headless {
             let (device, queue) = adapter
                 .request_device(&wgpu::DeviceDescriptor {
                     label: Some("headless"),
-                    required_limits: wgpu::Limits::downlevel_defaults()
-                        .using_resolution(adapter.limits()),
+                    required_limits: device_limits(
+                        &adapter,
+                        wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
+                    ),
                     ..Default::default()
                 })
                 .await
@@ -167,5 +179,18 @@ mod tests {
     fn too_small_wins_over_software() {
         let caps = capabilities(wgpu::DeviceType::Cpu, 1024);
         assert!(matches!(caps.suitability(), Suitability::BelowFloor(_)));
+    }
+
+    /// Issue #678: a headless device may hold buffers as big as the adapter allows, not just
+    /// wgpu's default 256 MiB. Without an adapter there is nothing to check.
+    #[test]
+    fn headless_devices_take_the_adapters_buffer_limit() {
+        let Ok(headless) = Headless::new(true).or_else(|_| Headless::new(false)) else {
+            return;
+        };
+        assert_eq!(
+            headless.device.limits().max_buffer_size,
+            headless.adapter.limits().max_buffer_size
+        );
     }
 }
