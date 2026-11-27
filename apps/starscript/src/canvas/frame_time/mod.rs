@@ -9,6 +9,7 @@
 mod baseline;
 mod scripts;
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
 use std::f64::consts::TAU;
 use std::ffi::OsString;
@@ -311,9 +312,12 @@ fn measure(
         f64::from(world.map.canvas().height),
     ];
     let views = scripts::views(script, canvas_size);
+    // Whether the last frame drawn still left background rings to draw.
+    let rings_pending = Cell::new(false);
     let mut draw = |world: &mut World, view: &View| -> (Duration, Duration) {
         let started = Instant::now();
         let content = scene.content(&world.map, &mut world.cache);
+        rings_pending.set(scene.rings_pending());
         let canvas = CanvasScene::new(world.map.canvas()).with_content(content);
         let built = started.elapsed();
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
@@ -327,9 +331,14 @@ fn measure(
         }
         (built, started.elapsed() - built)
     };
-    // The first frame uploads the Map's geometry and Stamps and roughens every outline, which
-    // is not what the script measures.
+    // The first frame uploads the Map's geometry and Stamps and roughens every outline, and the
+    // Shore rings computed in the background land over the frames after it (#662 (d)). That is
+    // the cost of opening the Map, not what the script measures, so it all happens first.
     draw(&mut world, &views[0]);
+    while rings_pending.get() {
+        std::thread::sleep(Duration::from_millis(5));
+        draw(&mut world, &views[0]);
+    }
     take_stages();
     let mut measured = Measured {
         total: Vec::new(),
