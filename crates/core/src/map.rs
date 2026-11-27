@@ -470,10 +470,15 @@ impl Map {
     /// River is always smooth: its bends and banks are its detail. `None` for anything without
     /// an outline.
     pub fn roughness(&self, id: Id) -> Option<&Roughness> {
-        static SMOOTH: LazyLock<Roughness> = LazyLock::new(|| Roughness::new(0.0, 32.0, 0));
         let Node::Object(Object { kind, .. }) = self.node(id)? else {
             return None;
         };
+        self.roughness_of(kind)
+    }
+
+    /// [`Map::roughness`] for an Object of this `kind`, for a caller that already has it.
+    pub(crate) fn roughness_of<'a>(&'a self, kind: &'a ObjectKind) -> Option<&'a Roughness> {
+        static SMOOTH: LazyLock<Roughness> = LazyLock::new(|| Roughness::new(0.0, 32.0, 0));
         kind.geometry()?;
         if matches!(kind, ObjectKind::River(_)) {
             return Some(&SMOOTH);
