@@ -557,6 +557,45 @@ fn the_shore_preset_picker_shows_custom_when_no_preset_matches() {
     );
 }
 
+/// The Shore groups only Landmasses draw (ADR 0016).
+const LANDMASS_ONLY_GROUPS: [&str; 3] = ["Outer glow", "Water lines", "Wave marks"];
+
+#[test]
+fn a_lake_s_shore_tab_offers_only_what_lakes_draw() {
+    let (mut fixture, layer, island) = fixture();
+    let lake = add_lake(&mut fixture, layer);
+    fixture.editor.select(vec![lake]);
+    let mut harness = harness(fixture);
+    for group in ["Outline", "Ripples", "Inner shade"] {
+        harness.get_by_label(group);
+    }
+    for group in LANDMASS_ONLY_GROUPS {
+        assert!(harness.query_by_label(group).is_none(), "{group}");
+    }
+    // A Landmass still has them.
+    harness.state_mut().editor.select(vec![island]);
+    harness.run();
+    for group in LANDMASS_ONLY_GROUPS {
+        harness.get_by_label(group);
+    }
+}
+
+#[test]
+fn the_default_lake_shore_offers_only_what_lakes_draw() {
+    let mut harness = map_harness(ocean_fixture());
+    click(&mut harness, "Shores");
+    for group in LANDMASS_ONLY_GROUPS {
+        harness.get_by_label(group);
+    }
+    click(&mut harness, "Lake");
+    for group in ["Outline", "Ripples", "Inner shade"] {
+        harness.get_by_label(group);
+    }
+    for group in LANDMASS_ONLY_GROUPS {
+        assert!(harness.query_by_label(group).is_none(), "{group}");
+    }
+}
+
 #[test]
 fn a_lake_has_no_fill_style() {
     let (mut fixture, layer, _) = fixture();

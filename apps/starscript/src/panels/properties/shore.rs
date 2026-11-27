@@ -131,16 +131,14 @@ struct Group {
     on: f64,
 }
 
-/// The groups of the Details, in order.
-fn groups() -> [Group; 6] {
-    [
-        outline(),
-        ripples(),
-        inner_shade(),
-        outer_glow(),
-        water_lines(),
-        wave_marks(),
-    ]
+/// The groups of the Details that `kind` draws, in order. Lakes draw no outer glow, water
+/// lines or wave marks (ADR 0016), so their Details leave those out (#700).
+fn groups(kind: ShoreKind) -> Vec<Group> {
+    let mut groups = vec![outline(), ripples(), inner_shade()];
+    if kind == ShoreKind::Landmass {
+        groups.extend([outer_glow(), water_lines(), wave_marks()]);
+    }
+    groups
 }
 
 fn outline() -> Group {
@@ -505,7 +503,7 @@ impl PropertiesPanel {
                 }
             },
             |ui| {
-                for each in groups() {
+                for each in groups(kind) {
                     self.shore_group(ui, editor, kind, group, &each);
                 }
             },
