@@ -187,6 +187,13 @@ impl MapScene {
         self.built = None;
     }
 
+    /// Whether rings computed in the background (see [`MapScene::compute_rings_in_background`])
+    /// are still to be drawn: some are being computed, or have landed and the next
+    /// [`MapScene::content`] will pick them up.
+    pub fn rings_pending(&self) -> bool {
+        self.rings.is_busy()
+    }
+
     /// Like [`MapScene::content`], but always rebuilt, from roughened outlines only and with
     /// every ring computed for the outline it is drawn around, as export needs.
     pub fn complete_content(&mut self, map: &Map, roughness: &mut RoughnessCache) -> Content {

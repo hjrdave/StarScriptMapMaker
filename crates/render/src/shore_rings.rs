@@ -215,6 +215,12 @@ impl RingStore {
         self.worker.as_ref().map_or(0, RingWorker::generation)
     }
 
+    /// Whether background rings are still to be drawn: some are queued or being computed, or
+    /// have landed but no build has picked them up yet. Always `false` without a worker.
+    pub(crate) fn is_busy(&self) -> bool {
+        self.worker.as_ref().is_some_and(RingWorker::is_busy)
+    }
+
     /// Makes sure `id` has every ring `shore` draws around `outline`. Without a worker, or when
     /// `complete`, missing rings are computed now; otherwise they are queued, and until they
     /// land the Object draws the rings it had.
@@ -369,6 +375,11 @@ impl RingWorker {
 
     fn generation(&self) -> u64 {
         self.shared.generation.load(Ordering::SeqCst)
+    }
+
+    fn is_busy(&self) -> bool {
+        let queue = self.shared.queue();
+        !queue.waiting.is_empty() || queue.running.is_some() || !queue.done.is_empty()
     }
 
     /// Asks for the rings at `distances` around `outline`, unless they are already asked for.
@@ -581,6 +592,24 @@ mod tests {
         assert_eq!(store.objects[&id].rings.len(), 1, "undrawn distances go");
         store.end_build();
         assert_eq!(store.len(), 0);
+    }
+
+    #[test]
+    fn a_store_is_busy_until_a_build_picks_up_what_landed() {
+        assert!(
+            !RingStore::default().is_busy(),
+            "no worker, nothing to wait for"
+        );
+        let (mut store, landed) = background();
+        assert!(!store.is_busy());
+        let id = Id::new();
+        let outline = rough_island(3);
+        store.prepare(id, &outline, &shore(), false);
+        assert!(store.is_busy(), "queued");
+        wait(&landed);
+        assert!(store.is_busy(), "landed, not drawn yet");
+        store.prepare(id, &outline, &shore(), false);
+        assert!(!store.is_busy());
     }
 
     #[test]

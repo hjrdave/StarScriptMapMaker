@@ -61,7 +61,9 @@ Map-wide Roughness (amount 60, scale 200) and frame one landmass at about 4x zoo
 | `marquee` | A marquee rectangle growing from the middle to the whole Canvas, on the whole-Canvas view. |
 
 The editing scripts run 90 frames. A first frame is rendered before measuring, to upload the Map
-and roughen every outline once; it isn't counted.
+and roughen every outline once, and then more frames until the Shore rings computed in the
+background have all landed and been drawn. That is the cost of opening the Map, so none of these
+frames are counted (before #662 they were, and every script's worst frame was one of them).
 
 `slider-amount` and `slider-scale` compute the new outlines on a thread of their own, as the
 editor does when the Map-wide Roughness changes: the `roughness` stage stays small, and frames
