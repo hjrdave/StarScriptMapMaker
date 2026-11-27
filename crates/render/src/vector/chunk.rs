@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use lyon::tessellation::{
     BuffersBuilder, FillOptions, FillTessellator, FillVertex, LineCap, LineJoin, StrokeOptions,
@@ -13,8 +14,8 @@ use ssmap_core::{
     MIN_MOTTLE_SCALE, MIN_TEXTURE_SCALE,
 };
 
-use super::cache::{TessellationCache, mesh_object};
-use super::{Paint, VectorGroup, VectorShape};
+use super::cache::{Previous, TessellationCache, mesh_object};
+use super::{ObjectRef, Paint, VectorGroup, VectorShape};
 use crate::color::ColorExt as _;
 use crate::fill_texture::slot_for;
 use crate::profile::{self, Stage};
@@ -374,14 +375,39 @@ pub(super) fn resolve(
 ) -> Vec<Option<Arc<GroupMesh>>> {
     let _stage = profile::stage(Stage::Tessellation);
     let mut by_object: HashMap<Id, Vec<&VectorGroup>> = HashMap::new();
+    let mut objects: Vec<ObjectRef> = Vec::new();
     for group in groups {
         if let Some(object) = group.object {
-            by_object.entry(object.id).or_default().push(group);
+            let sources = by_object.entry(object.id).or_default();
+            if sources.is_empty() {
+                objects.push(object);
+            }
+            sources.push(group);
             cache.note_version(object.id, object.version);
         }
     }
     let building = cache.is_building();
+    // Every Object is looked up first, so the ones to tessellate are meshed together.
     let mut found: HashMap<Id, Option<ObjectMeshes>> = HashMap::new();
+    let mut misses: Vec<(ObjectRef, Option<Previous>)> = Vec::new();
+    for &object in &objects {
+        if let Some(meshes) = cache.lookup(object, &by_object[&object.id]) {
+            found.insert(object.id, Some(meshes.into_iter()));
+        } else if building {
+            found.insert(object.id, None);
+        } else {
+            misses.push((object, cache.previous(object.id)));
+        }
+    }
+    let jobs: Vec<(&[&VectorGroup], Option<&Previous>)> = misses
+        .iter()
+        .map(|(object, previous)| (by_object[&object.id].as_slice(), previous.as_ref()))
+        .collect();
+    let meshed = mesh_objects(&jobs, tessellators);
+    for ((object, _), meshes) in misses.iter().zip(meshed) {
+        cache.store(*object, &by_object[&object.id], meshes.clone());
+        found.insert(object.id, Some(meshes.into_iter()));
+    }
     let out = groups
         .iter()
         .map(|group| {
@@ -389,21 +415,8 @@ pub(super) fn resolve(
                 return Some(Arc::new(mesh_group(group, tessellators)));
             };
             found
-                .entry(object.id)
-                .or_insert_with(|| {
-                    let sources = &by_object[&object.id];
-                    if let Some(meshes) = cache.lookup(object, sources) {
-                        return Some(meshes.into_iter());
-                    }
-                    if building {
-                        return None;
-                    }
-                    let previous = cache.previous(object.id);
-                    let meshes = mesh_object(sources, previous.as_ref(), tessellators);
-                    cache.store(object, sources, meshes.clone());
-                    Some(meshes.into_iter())
-                })
-                .as_mut()
+                .get_mut(&object.id)
+                .and_then(Option::as_mut)
                 .and_then(Iterator::next)
         })
         .collect();
@@ -411,6 +424,55 @@ pub(super) fn resolve(
         cache.retain(|id| by_object.contains_key(&id));
     }
     out
+}
+
+/// Meshes the groups of each Object in `jobs` (see [`mesh_object`]), giving the same meshes in
+/// the same order as meshing them one by one. Several Objects are meshed on a thread per core,
+/// as when a Shore setting changes every Landmass's outline at once (#692); one is meshed here.
+pub(super) fn mesh_objects(
+    jobs: &[(&[&VectorGroup], Option<&Previous>)],
+    tessellators: &mut Tessellators,
+) -> Vec<Vec<Arc<GroupMesh>>> {
+    let threads = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZeroUsize::get)
+        .min(jobs.len());
+    if threads <= 1 {
+        return jobs
+            .iter()
+            .map(|&(sources, previous)| mesh_object(sources, previous, tessellators))
+            .collect();
+    }
+    let next = AtomicUsize::new(0);
+    let mut meshed: Vec<Vec<Arc<GroupMesh>>> = vec![Vec::new(); jobs.len()];
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut tessellators = Tessellators::default();
+                    let mut done = Vec::new();
+                    loop {
+                        let at = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(&(sources, previous)) = jobs.get(at) else {
+                            break;
+                        };
+                        done.push((at, mesh_object(sources, previous, &mut tessellators)));
+                    }
+                    done
+                })
+            })
+            .collect();
+        for worker in workers {
+            match worker.join() {
+                Ok(done) => {
+                    for (at, meshes) in done {
+                        meshed[at] = meshes;
+                    }
+                }
+                Err(panic) => std::panic::resume_unwind(panic),
+            }
+        }
+    });
+    meshed
 }
 
 #[cfg(test)]
@@ -582,6 +644,51 @@ mod tests {
         let built = build(&groups, &[2], &background);
         assert_eq!(built.geometry.indices, expected.indices);
         assert_eq!(positions(&built.geometry), positions(&expected));
+    }
+
+    /// The corners of `mesh`'s triangles, in order.
+    fn corners(mesh: &GroupMesh) -> Vec<[f32; 2]> {
+        mesh.indices
+            .iter()
+            .map(|&i| mesh.vertices[i as usize].position)
+            .collect()
+    }
+
+    #[test]
+    fn objects_meshed_together_get_the_meshes_of_one_by_one() {
+        let objects: Vec<ObjectRef> = (0..40).map(|_| object(1)).collect();
+        let groups: Vec<VectorGroup> = objects
+            .iter()
+            .enumerate()
+            .flat_map(|(i, &o)| {
+                let x = 30.0 * i as f32;
+                [stroke(x, o), fill(x, Some(o))]
+            })
+            .collect();
+        let sources: Vec<Vec<&VectorGroup>> = objects
+            .iter()
+            .map(|o| groups.iter().filter(|g| g.object == Some(*o)).collect())
+            .collect();
+        let jobs: Vec<(&[&VectorGroup], Option<&Previous>)> =
+            sources.iter().map(|s| (s.as_slice(), None)).collect();
+        let together = mesh_objects(&jobs, &mut Tessellators::default());
+        let mut tessellators = Tessellators::default();
+        assert_eq!(together.len(), objects.len());
+        for (job, meshes) in jobs.iter().zip(&together) {
+            let alone = mesh_object(job.0, None, &mut tessellators);
+            let corners_of = |meshes: &[Arc<GroupMesh>]| -> Vec<Vec<[f32; 2]>> {
+                meshes.iter().map(|m| corners(m)).collect()
+            };
+            assert_eq!(corners_of(meshes), corners_of(&alone));
+        }
+        // And through `resolve`, which stores each in the cache.
+        let cache = TessellationCache::new();
+        let resolved = resolve(&groups, &cache, &mut Tessellators::default());
+        assert_eq!(cache.len(), objects.len());
+        for (group, mesh) in groups.iter().zip(&resolved) {
+            let alone = mesh_group(group, &mut tessellators);
+            assert_eq!(corners(mesh.as_ref().unwrap()), corners(&alone));
+        }
     }
 
     #[test]
