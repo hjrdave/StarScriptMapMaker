@@ -11,10 +11,12 @@ use ssmap_core::{
 };
 
 use super::object_style::Frame;
+use super::shore_presets;
 use super::{Defaults, Inherit, PropertiesPanel};
 use crate::editor::Editor;
 use crate::prop_widgets::{self, Edit, ScrubSpec, SectionHeader};
 use crate::theme;
+use ssmap_render::ShoreSample;
 
 /// A number in a Shore style: its accessible name, the short name painted in its box, how it
 /// is read and written, and how it is shown.
@@ -644,8 +646,8 @@ impl PropertiesPanel {
             .apply_all(editor, Edit::instant(), group.label, || commands);
     }
 
-    /// A dropdown of the named Shore presets for `kind`. It shows the preset every selected
-    /// style matches, or "Custom". Choosing one sets the whole Shore style (an override, on a
+    /// The row of Shore preset thumbnails for `kind`, with the one every selected style
+    /// matches ringed, or "Custom". Choosing one sets the whole Shore style (an override, on a
     /// Landmass or Lake, which remembers the name); the fields below stay editable.
     fn shore_preset_picker(
         &mut self,
@@ -654,33 +656,19 @@ impl PropertiesPanel {
         kind: ShoreKind,
         group: &Inherit<'_, ShoreStyle>,
     ) {
-        let mut names = group.members.iter().map(|s| s.preset_name(kind));
-        let shown = names
-            .next()
-            .flatten()
-            .filter(|first| names.all(|n| n == Some(*first)))
-            .unwrap_or("Custom");
-        let mut picked = None;
-        ui.horizontal(|ui| {
-            ui.label("Preset");
-            egui::ComboBox::from_id_salt("shore preset")
-                .selected_text(shown)
-                .show_ui(ui, |ui| {
-                    for (name, style) in ShoreStyle::presets(kind) {
-                        if ui.selectable_label(shown == name, name).clicked() {
-                            picked = Some(if group.defaults.is_some() {
-                                ShoreStyle {
-                                    preset: Some(name.to_owned()),
-                                    ..style
-                                }
-                            } else {
-                                style
-                            });
-                        }
-                    }
-                });
-        });
-        if let Some(style) = picked {
+        let sample = ShoreSample::of(editor.map());
+        let Some(name) = shore_presets::preset_row(ui, kind, group.members, &sample) else {
+            return;
+        };
+        // Only a Landmass or Lake remembers the preset it was given.
+        let style = if group.defaults.is_some() {
+            ShoreStyle::picked(kind, name)
+        } else {
+            ShoreStyle::presets(kind)
+                .into_iter()
+                .find_map(|(preset, style)| (preset == name).then_some(style))
+        };
+        if let Some(style) = style {
             self.live
                 .apply_all(editor, Edit::instant(), group.label, || {
                     group.commands(|s| *s = style.clone())
