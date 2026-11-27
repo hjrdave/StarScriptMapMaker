@@ -407,25 +407,31 @@ impl RoughnessCache {
     /// their stored outlines. It can be sent to another thread.
     pub fn rebuild(&self, map: &Map) -> Rebuild {
         let mut jobs = Vec::new();
-        for id in map.ids() {
-            let (Some(version), Some(roughness)) = (map.version(id), map.roughness(id)) else {
+        // One pass over the Map's entries, with the cache locked once: a Map holds many more
+        // Stamps than outlines, so looking each node up again by id costs more than the rest.
+        let ready = self.shared.entries();
+        for (&id, entry) in &map.entries {
+            let crate::Node::Object(object) = &entry.node else {
                 continue;
             };
-            let Some(crate::Node::Object(object)) = map.node(id) else {
+            let (Some(geometry), Some(roughness)) =
+                (object.kind.geometry(), map.roughness_of(&object.kind))
+            else {
                 continue;
             };
-            let Some(geometry) = object.kind.geometry() else {
-                continue;
-            };
-            if self.lookup(id, version, roughness).is_none() {
+            let stored = ready.get(&id);
+            if !stored.is_some_and(|stored| {
+                stored.version == entry.version && stored.roughness == *roughness
+            }) {
                 jobs.push(Job {
                     id,
-                    version,
+                    version: entry.version,
                     roughness: roughness.clone(),
                     geometry: geometry.clone(),
                 });
             }
         }
+        drop(ready);
         self.shared.rebuilding.fetch_add(1, Ordering::SeqCst);
         // A rebuild with nothing to compute leaves an older one running.
         let epoch = if jobs.is_empty() {

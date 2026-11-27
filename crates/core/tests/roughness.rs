@@ -320,3 +320,61 @@ fn a_rebuild_with_nothing_to_do_does_not_supersede_an_older_one() {
     drop(empty);
     assert!(!cache.is_rebuilding());
 }
+
+#[test]
+fn a_rebuild_takes_every_outline_and_nothing_else_in_a_map_full_of_stamps() {
+    let (mut map, west, east, _) = two_islands();
+    let layer = map.parent(west).unwrap();
+    let lake = insert(
+        &mut map,
+        Some(layer),
+        Node::Object(Object::new(ObjectKind::Lake(ssmap_core::Lake {
+            geometry: island(2000.0),
+            ..Default::default()
+        }))),
+    );
+    for _ in 0..500 {
+        insert(
+            &mut map,
+            Some(layer),
+            Node::Object(Object::new(ObjectKind::Stamp(ssmap_core::Stamp::default()))),
+        );
+    }
+    insert(&mut map, Some(layer), Node::Layer(Layer::new("Empty")));
+    // East keeps a Roughness of its own when the default changes.
+    map.apply(Op::SetProperty {
+        id: east,
+        property: Property::Roughness(Some(Roughness::new(3.0, 20.0, 9))),
+    })
+    .unwrap();
+
+    let cache = RoughnessCache::new();
+    let rebuild = cache.rebuild(&map);
+    assert_eq!(
+        rebuild.len(),
+        3,
+        "the two Landmasses and the Lake, no Stamp or Layer"
+    );
+    rebuild.run(|| {});
+    assert!(cache.rebuild(&map).is_empty(), "everything is ready");
+
+    let mut defaults = map.defaults().clone();
+    defaults.roughness = Roughness::new(12.0, 60.0, 2);
+    map.apply(Op::SetDefaults { defaults }).unwrap();
+    let rebuild = cache.rebuild(&map);
+    assert_eq!(
+        rebuild.len(),
+        2,
+        "West and the Lake follow the default; East has its own"
+    );
+    rebuild.run(|| {});
+    let mut cache = cache;
+    for id in [west, east, lake] {
+        let roughness = map.roughness(id).unwrap().clone();
+        let Some(Node::Object(object)) = map.node(id) else {
+            panic!("an Object")
+        };
+        let expected = roughen(object.kind.geometry().unwrap(), &roughness);
+        assert_eq!(*cache.outline(&map, id).unwrap(), expected);
+    }
+}
