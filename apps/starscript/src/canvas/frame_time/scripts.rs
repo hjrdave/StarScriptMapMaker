@@ -242,8 +242,7 @@ pub(super) fn edit(script: Script, frame: usize, world: &mut World) {
                 Some(world.layer),
                 stroke,
                 Id::new(),
-            )
-            .expect("the layer exists");
+            );
             if let Some(command) = command {
                 run(&mut world.map, &command, "the stroke applies");
             }
@@ -293,7 +292,7 @@ pub(super) fn edit(script: Script, frame: usize, world: &mut World) {
                 ScatterStroke {
                     points: &points,
                     radius: 150.0,
-                    parent: world.layer,
+                    parent: Some(world.layer),
                     base: &world.base_stamp,
                     variants: &[],
                 },

@@ -219,9 +219,9 @@ impl Editor {
         done.is_some_and(|result| result.is_ok()).then_some(tops)
     }
 
-    /// The Layer (`None` for the root) and position pasted items go in. Layers go just above
-    /// the selected item; Objects need a Layer, so they go on top of the selected Layer, or
-    /// of the Layer holding the selected Object, or of the active Layer.
+    /// The Group (`None` for the top level) and position pasted items go in. Groups go just
+    /// above the selected item; Objects go on top of the selected Group, or of the Group
+    /// holding the selected Object, or of the active Group, else on top of the top level.
     pub(super) fn paste_destination(
         &mut self,
         has_objects: bool,
@@ -237,17 +237,11 @@ impl Editor {
                 None => (None, None),
             });
         }
-        let layer = match selected.and_then(|id| self.map.node(id).map(|n| (id, n.is_layer()))) {
+        let group = match selected.and_then(|id| self.map.node(id).map(|n| (id, n.is_layer()))) {
             Some((id, true)) => Some(id),
             Some((id, false)) => self.map.parent(id),
             None => self.active_layer.filter(|&id| self.map.contains(id)),
         };
-        match layer {
-            Some(layer) => Some((Some(layer), None)),
-            None => {
-                self.info("Select a layer to paste into");
-                None
-            }
-        }
+        Some((group, None))
     }
 }

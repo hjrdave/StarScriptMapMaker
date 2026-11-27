@@ -13,51 +13,37 @@ impl Editor {
     /// nothing, or is refused, leaves no Undo step.
     pub fn finish_brush_stroke(&mut self, id: GestureId, stroke: BrushStroke) {
         let new_id = Id::new();
-        let existing = self.water_layer();
-        let mut planned = land::brush_command(
+        let group = self.placement_parent(Placing::Land);
+        let planned = land::brush_command(
             &self.map,
             self.caches.roughness(),
             &self.selection,
-            existing,
-            stroke.clone(),
+            group,
+            stroke,
             new_id,
         );
-        if planned == Err(land::BrushError::NoLayer) {
-            let Some(layer) = self.create_stroke_layer(&id) else {
-                self.cancel_gesture(id);
-                return;
-            };
-            planned = land::brush_command(
-                &self.map,
-                self.caches.roughness(),
-                &self.selection,
-                Some(layer),
-                stroke,
-                new_id,
-            );
-        }
-        match planned {
-            Ok(Some(command)) => {
-                let creates = matches!(command, Command::CreateLandmass { .. });
-                if self.gesture(&id, command) {
-                    if creates {
-                        self.select(vec![new_id]);
-                    }
-                    self.end_gesture(id);
-                } else {
-                    self.cancel_gesture(id);
-                }
+        self.commit_stroke(id, planned, new_id);
+    }
+
+    /// Runs a brush stroke's planned Command as the gesture `id`'s Undo step, and selects the
+    /// Object it creates, if any, so the next stroke extends it. Nothing planned, or a refused
+    /// Command, leaves no Undo step.
+    fn commit_stroke(&mut self, id: GestureId, planned: Option<Command>, new_id: Id) {
+        let Some(command) = planned else {
+            self.cancel_gesture(id);
+            return;
+        };
+        let creates = matches!(
+            command,
+            Command::CreateLandmass { .. } | Command::CreateLake { .. }
+        );
+        if self.gesture(&id, command) {
+            if creates {
+                self.select(vec![new_id]);
             }
-            Ok(None) => {
-                self.cancel_gesture(id);
-            }
-            Err(err) => {
-                self.cancel_gesture(id);
-                let text = err.to_string();
-                let mut chars = text.chars();
-                let first = chars.next().map(|c| c.to_uppercase().to_string());
-                self.error(first.unwrap_or_default() + chars.as_str());
-            }
+            self.end_gesture(id);
+        } else {
+            self.cancel_gesture(id);
         }
     }
 
@@ -67,44 +53,27 @@ impl Editor {
     /// when the stroke changes nothing.
     pub fn brush_preview(&mut self, stroke: BrushStroke, water: bool) -> Option<MultiPolygon> {
         let new_id = Id::new();
-        let (add, region) = (!stroke.erase, stroke.region.clone());
+        let group = self.placement_parent(Placing::Land);
         let planned = if water {
-            let layer = self.water_layer();
             land::water_command(
                 &self.map,
                 self.caches.roughness(),
                 &self.selection,
-                layer,
+                group,
                 stroke,
                 new_id,
             )
         } else {
-            let layer = self.water_layer();
             land::brush_command(
                 &self.map,
                 self.caches.roughness(),
                 &self.selection,
-                layer,
+                group,
                 stroke,
                 new_id,
             )
-        };
-        match planned {
-            Ok(Some(command)) => land::preview_area(&self.map, self.caches.roughness(), &command),
-            // A first water stroke has no Layer yet; it will create one and a Lake in it.
-            Err(_) if add => land::preview_area(
-                &self.map,
-                self.caches.roughness(),
-                &Command::CreateLake {
-                    id: new_id,
-                    parent: Some(new_id),
-                    index: None,
-                    geometry: region,
-                    fill: None,
-                },
-            ),
-            _ => None,
-        }
+        }?;
+        land::preview_area(&self.map, self.caches.roughness(), &planned)
     }
 
     /// What a paint stroke started now would be called in the undo history.
@@ -138,77 +107,21 @@ impl Editor {
         if erase { "Erase Water" } else { "Paint Water" }
     }
 
-    /// Creates a plain Layer inside the gesture `id` for the first stroke on a Map with none,
-    /// and makes it the active Layer.
-    fn create_stroke_layer(&mut self, id: &GestureId) -> Option<Id> {
-        let layer = Id::new();
-        let command = Command::CreateLayer {
-            id: layer,
-            parent: None,
-            index: None,
-            name: self.map.next_name("Layer"),
-        };
-        let created = self.gesture(id, command);
-        if created {
-            self.active_layer = Some(layer);
-        }
-        created.then_some(layer)
-    }
-
-    /// The Layer the brushes paint into: where new Objects go, if the Map has a Layer.
-    pub(super) fn water_layer(&self) -> Option<Id> {
-        self.placement_layer_or_new(Placing::Land).ok()
-    }
-
     /// Finishes the water brush stroke whose gesture `id` opened, as [`Self::finish_brush_stroke`]
-    /// does for land: one Command ([`land::water_command`]) as the gesture's Undo step. The
-    /// first stroke on a Map with no Layer also creates a plain Layer, in the same Undo step.
-    /// A new Lake becomes the
-    /// Selection, so the next stroke extends it.
+    /// does for land: one Command ([`land::water_command`]) as the gesture's Undo step. With no
+    /// Group active, a new Lake goes at the top level. A new Lake becomes the Selection, so the
+    /// next stroke extends it.
     pub fn finish_water_stroke(&mut self, id: GestureId, stroke: BrushStroke) {
         let new_id = Id::new();
-        let existing = self.water_layer();
-        let mut planned = land::water_command(
+        let group = self.placement_parent(Placing::Land);
+        let planned = land::water_command(
             &self.map,
             self.caches.roughness(),
             &self.selection,
-            existing,
-            stroke.clone(),
+            group,
+            stroke,
             new_id,
         );
-        if planned == Err(land::BrushError::NoLayer) {
-            let Some(layer) = self.create_stroke_layer(&id) else {
-                self.cancel_gesture(id);
-                return;
-            };
-            planned = land::water_command(
-                &self.map,
-                self.caches.roughness(),
-                &self.selection,
-                Some(layer),
-                stroke,
-                new_id,
-            );
-        }
-        match planned {
-            Ok(Some(command)) => {
-                let creates = matches!(command, Command::CreateLake { .. });
-                if self.gesture(&id, command) {
-                    if creates {
-                        self.select(vec![new_id]);
-                    }
-                    self.end_gesture(id);
-                } else {
-                    self.cancel_gesture(id);
-                }
-            }
-            Ok(None) => {
-                self.cancel_gesture(id);
-            }
-            Err(err) => {
-                self.cancel_gesture(id);
-                self.error(err.to_string());
-            }
-        }
+        self.commit_stroke(id, planned, new_id);
     }
 }

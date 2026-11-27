@@ -83,7 +83,6 @@ fn the_live_preview_is_the_committed_shore() {
             stroke(erase),
             Id::new(),
         )
-        .unwrap()
         .unwrap();
         let preview = preview_area(&map, &mut cache, &command).expect("the stroke changes land");
         map.execute(&command).unwrap();

@@ -228,28 +228,29 @@ pub struct BrushStroke {
     pub erase: bool,
 }
 
-/// What a land brush stroke does, given the editor's Selection and active Layer:
+/// What a land brush stroke does, given the editor's Selection and the active Group (`None` for
+/// the top level):
 ///
 /// The land brush only makes or changes Landmasses; a selected Lake or any other Object is
 /// ignored (the water brush, [`water_command`], is for Lakes).
 ///
 /// - **Add** merges into the selected Landmass (the last selected, if several). With none
 ///   selected, it merges into the topmost Landmass under the stroke's start, or creates a
-///   Landmass with id `new_id` in the active Layer if the stroke starts on water.
+///   Landmass with id `new_id` in the active Group, or at the top level, if the stroke starts
+///   on water.
 /// - **Erase** cuts the stroke out of the selected Landmasses, or with none selected, out of
-///   every Landmass directly in the active Layer that it touches.
+///   every Landmass directly in the active Group (or at the top level) that it touches.
 ///
-/// Returns `None` when an erase touches nothing, and [`BrushError::NoLayer`] when a stroke
-/// needs the active Layer and there is none. Locked targets are kept, so the Command fails and
-/// says why.
+/// Returns `None` when an erase touches nothing. An `active_group` that is not a Group on the
+/// Map counts as the top level. Locked targets are kept, so the Command fails and says why.
 pub fn brush_command(
     map: &Map,
     roughness: &mut RoughnessCache,
     selection: &[Id],
-    active_layer: Option<Id>,
+    active_group: Option<Id>,
     stroke: BrushStroke,
     new_id: Id,
-) -> Result<Option<Command>, BrushError> {
+) -> Option<Command> {
     let selected = |want: fn(&ObjectKind) -> bool| -> Vec<Id> {
         selection
             .iter()
@@ -258,7 +259,7 @@ pub fn brush_command(
             .collect()
     };
     let is_landmass = |kind: &ObjectKind| matches!(kind, ObjectKind::Landmass(_));
-    let layer = active_layer.filter(|&id| matches!(map.node(id), Some(Node::Layer(_))));
+    let group = group_on(map, active_group);
     let BrushStroke {
         region,
         start,
@@ -268,8 +269,7 @@ pub fn brush_command(
     if erase {
         let selected_land = selected(is_landmass);
         let ids = if selected_land.is_empty() {
-            let layer = layer.ok_or(BrushError::NoLayer)?;
-            map.children(Some(layer))
+            map.children(group)
                 .iter()
                 .copied()
                 .filter(|&id| match map.node(id) {
@@ -283,11 +283,11 @@ pub fn brush_command(
         } else {
             selected_land
         };
-        return Ok((!ids.is_empty()).then_some(Command::SubtractRegion { ids, region }));
+        return (!ids.is_empty()).then_some(Command::SubtractRegion { ids, region });
     }
 
     if let Some(&id) = selected(is_landmass).last() {
-        return Ok(Some(Command::AddRegion { id, region }));
+        return Some(Command::AddRegion { id, region });
     }
     let under_start = map.draw_order().into_iter().rev().find(|&id| {
         matches!(map.node(id), Some(Node::Object(o)) if is_landmass(&o.kind))
@@ -295,37 +295,43 @@ pub fn brush_command(
                 .outline(map, id)
                 .is_some_and(|outline| outline.contains(start))
     });
-    Ok(Some(match under_start {
+    Some(match under_start {
         Some(id) => Command::AddRegion { id, region },
         None => Command::CreateLandmass {
             id: new_id,
-            parent: Some(layer.ok_or(BrushError::NoLayer)?),
+            parent: group,
             index: None,
             geometry: region,
             fill: None,
         },
-    }))
+    })
+}
+
+/// `group` if it is a Group on the Map, else `None`: the top level.
+fn group_on(map: &Map, group: Option<Id>) -> Option<Id> {
+    group.filter(|&id| matches!(map.node(id), Some(Node::Layer(_))))
 }
 
 /// What a water brush stroke does, given the editor's Selection:
 ///
 /// - **Add** merges into the selected Lake (the last selected, if several). With none
 ///   selected, it merges into the topmost Lake under the stroke's start, or creates a Lake with
-///   id `new_id` in `layer` if the stroke starts anywhere else. Narrow strokes make rivers and
+///   id `new_id` in `group` (`None`, or anything but a Group, for the top level) if the stroke
+///   starts anywhere else. Narrow strokes make rivers and
 ///   wide ones lakes; both are Lakes, drawn above land.
 /// - **Erase** cuts the stroke out of the selected Lakes, or with none selected, out of every
 ///   Lake it touches.
 ///
-/// Returns `None` when an erase touches nothing, and [`BrushError::NoLayer`] when a stroke
-/// needs a Layer and there is none. Locked targets are kept, so the Command fails and says why.
+/// Returns `None` when an erase touches nothing. Locked targets are kept, so the Command fails
+/// and says why.
 pub fn water_command(
     map: &Map,
     roughness: &mut RoughnessCache,
     selection: &[Id],
-    layer: Option<Id>,
+    group: Option<Id>,
     stroke: BrushStroke,
     new_id: Id,
-) -> Result<Option<Command>, BrushError> {
+) -> Option<Command> {
     let is_lake = |id: Id| matches!(map.node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Lake(_)));
     let BrushStroke {
         region,
@@ -350,7 +356,7 @@ pub fn water_command(
                 })
                 .collect();
         }
-        return Ok((!ids.is_empty()).then_some(Command::SubtractRegion { ids, region }));
+        return (!ids.is_empty()).then_some(Command::SubtractRegion { ids, region });
     }
 
     let target = selection
@@ -366,20 +372,16 @@ pub fn water_command(
                         .is_some_and(|outline| outline.contains(start))
             })
         });
-    Ok(Some(match target {
+    Some(match target {
         Some(id) => Command::AddRegion { id, region },
         None => Command::CreateLake {
             id: new_id,
-            parent: Some(
-                layer
-                    .filter(|&id| matches!(map.node(id), Some(Node::Layer(_))))
-                    .ok_or(BrushError::NoLayer)?,
-            ),
+            parent: group_on(map, group),
             index: None,
             geometry: region,
             fill: None,
         },
-    }))
+    })
 }
 
 /// The live preview of a brush stroke: the area, with its rough shoreline, that `command` (from
@@ -426,14 +428,6 @@ fn outline_of(map: &Map, id: Id) -> Option<&MultiPolygon> {
         Node::Object(o) => o.kind.geometry(),
         _ => None,
     }
-}
-
-/// Why a land brush stroke could not be made.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, thiserror::Error)]
-pub enum BrushError {
-    /// There is no Layer to paint into.
-    #[error("choose a Layer to paint land into")]
-    NoLayer,
 }
 
 fn centreline(points: &[Point]) -> LineString<f64> {

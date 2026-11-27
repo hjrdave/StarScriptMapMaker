@@ -113,12 +113,11 @@ fn run(script: Script) -> Value {
                     stroke,
                     new_id,
                 ) {
-                    Ok(Some(command)) => json!({
+                    Some(command) => json!({
                         "command": command,
                         "result": result(history.execute_step(&mut map, &command, selection)),
                     }),
-                    Ok(None) => json!("nothing to do"),
-                    Err(err) => json!({ "error": err.to_string() }),
+                    None => json!("nothing to do"),
                 }
             }
             Action::Snapshot => json!({ "view": map.view() }),

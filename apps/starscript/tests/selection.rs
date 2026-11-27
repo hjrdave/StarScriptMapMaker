@@ -33,6 +33,8 @@ fn app() -> (Harness<'static, MapMakerApp>, [Id; 3]) {
     harness.run();
     common::expand_layers(&mut harness);
     let editor = harness.state_mut().active_editor_mut().unwrap();
+    // A Group to hold the Labels, so the Layers panel has a row that holds them.
+    editor.new_layer().expect("a Group is made");
     let ids = [A, B, C].map(|at| {
         let (id, gesture) = editor.place_label(at).expect("a Label is placed");
         editor.end_gesture(gesture);
@@ -195,7 +197,7 @@ fn the_canvas_and_the_layers_panel_share_one_selection() {
     let (mut harness, [a, b, _]) = app();
     let (from, to) = around(&harness, A, B);
     box_drag(&mut harness, from, to, egui::Modifiers::NONE);
-    // Both Labels sit in the template's Layer, which the panel shows with the selection's
+    // Both Labels sit in the Group the fixture made, which the panel shows as the selection's
     // active Layer: grouping from the panel's menu acts on what the Canvas selected.
     let layer = harness.state().editor().map().parent(a).unwrap();
     assert_eq!(harness.state().editor().map().parent(b), Some(layer));

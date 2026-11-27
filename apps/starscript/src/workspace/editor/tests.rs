@@ -314,7 +314,7 @@ fn a_duplicate_with_nothing_selected_does_nothing() {
 }
 
 #[test]
-fn a_land_stroke_on_a_map_with_no_layer_makes_one_in_the_same_undo_step() {
+fn a_land_stroke_on_a_map_with_no_group_makes_a_top_level_landmass() {
     let mut editor = editor();
     assert!(editor.map.children(None).is_empty());
     let stroke = BrushStroke {
@@ -325,17 +325,17 @@ fn a_land_stroke_on_a_map_with_no_layer_makes_one_in_the_same_undo_step() {
     let gesture = editor.begin_gesture(editor.brush_label(false));
     editor.finish_brush_stroke(gesture, stroke);
     assert_eq!(editor.undo_label(), Some("Paint Land"));
-    let layers = editor.map.children(None).to_vec();
-    assert_eq!(layers.len(), 1);
-    assert_eq!(editor.active_layer(), Some(layers[0]));
-    assert_eq!(editor.map.children(Some(layers[0])).len(), 1);
+    let top = editor.map.children(None).to_vec();
+    assert_eq!(top.len(), 1);
+    assert!(matches!(editor.map.node(top[0]), Some(Node::Object(_))));
+    assert_eq!(editor.active_layer(), None);
 
     editor.undo();
     assert!(editor.map.children(None).is_empty());
 }
 
 #[test]
-fn a_land_stroke_goes_into_the_top_layer_when_none_is_active() {
+fn a_land_stroke_goes_to_the_top_level_when_no_group_is_active() {
     let mut editor = editor();
     let layer = editor.new_layer().unwrap();
     editor.deselect();
@@ -349,12 +349,14 @@ fn a_land_stroke_goes_into_the_top_layer_when_none_is_active() {
             erase: false,
         },
     );
-    assert_eq!(editor.map.children(None), &[layer]);
-    assert_eq!(editor.map.children(Some(layer)).len(), 1);
+    let top = editor.map.children(None).to_vec();
+    assert_eq!(top.len(), 2);
+    assert_eq!(top[0], layer);
+    assert!(editor.map.children(Some(layer)).is_empty());
 }
 
 #[test]
-fn a_river_on_a_map_with_no_layer_makes_one_and_it_becomes_active() {
+fn a_river_on_a_map_with_no_group_goes_to_the_top_level() {
     use ssmap_core::RiverPoint;
     let mut editor = editor();
     let path = [
@@ -362,15 +364,16 @@ fn a_river_on_a_map_with_no_layer_makes_one_and_it_becomes_active() {
         RiverPoint::new([90.0, 90.0], 6.0),
     ];
     assert!(editor.finish_river(&path, 1));
-    let layers = editor.map.children(None).to_vec();
-    assert_eq!(layers.len(), 1);
-    assert_eq!(editor.active_layer(), Some(layers[0]));
+    let top = editor.map.children(None).to_vec();
+    assert_eq!(top.len(), 1);
+    assert!(matches!(editor.map.node(top[0]), Some(Node::Object(_))));
+    assert_eq!(editor.active_layer(), None);
     editor.undo();
     assert!(editor.map.children(None).is_empty());
 }
 
 #[test]
-fn a_water_stroke_makes_a_lake_in_a_plain_layer_in_one_undo_step() {
+fn with_no_group_a_water_stroke_makes_a_top_level_lake_in_one_undo_step() {
     let mut editor = editor();
     let stroke = |erase| BrushStroke {
         region: land::stroke_region(&[[10.0, 10.0], [60.0, 10.0]], 5.0),
@@ -380,22 +383,22 @@ fn a_water_stroke_makes_a_lake_in_a_plain_layer_in_one_undo_step() {
     let gesture = editor.begin_gesture(Editor::water_label(false));
     editor.finish_water_stroke(gesture, stroke(false));
     assert_eq!(editor.undo_label(), Some("Paint Water"));
-    let layer = editor.water_layer().expect("a Layer");
-    let lakes = editor.map.children(Some(layer)).to_vec();
+    let lakes = editor.map.children(None).to_vec();
     assert_eq!(lakes.len(), 1);
+    assert!(matches!(editor.map.node(lakes[0]), Some(Node::Object(_))));
     assert_eq!(editor.selection(), lakes);
+    assert_eq!(editor.active_layer(), None);
 
-    // A second stroke extends the Lake and reuses the Layer.
+    // A second stroke extends the Lake.
     let gesture = editor.begin_gesture(Editor::water_label(false));
     editor.finish_water_stroke(gesture, stroke(false));
-    assert_eq!(editor.map.children(Some(layer)), lakes);
-    assert_eq!(editor.map.children(None), &[layer]);
+    assert_eq!(editor.map.children(None), lakes);
 
-    // Undoing both steps removes the Lake and the Layer it created.
+    // Undoing both steps removes the Lake.
     editor.undo();
     assert!(editor.map.contains(lakes[0]));
     editor.undo();
-    assert!(!editor.map.contains(layer));
+    assert!(editor.map.children(None).is_empty());
 }
 
 #[test]
@@ -495,6 +498,7 @@ fn cancelling_a_placement_restores_the_selection() {
 #[test]
 fn picking_finds_the_topmost_unlocked_visible_label() {
     let mut editor = editor();
+    editor.new_layer().unwrap();
     let (below, gesture) = editor.place_label([50.0, 50.0]).unwrap();
     editor.end_gesture(gesture);
     let (above, gesture) = editor.place_label([52.0, 50.0]).unwrap();
@@ -759,7 +763,7 @@ fn adding_the_credits_as_a_label_is_one_undo_step() {
 }
 
 #[test]
-fn a_new_map_has_no_layer_and_the_first_object_makes_one() {
+fn a_new_map_has_no_group_and_new_objects_go_to_the_top_level() {
     use ssmap_core::{Canvas, DistanceUnit, Scale};
     let canvas = Canvas::new(1000, 800, Scale::new(1.0, DistanceUnit::Miles));
     let (map, layers, problem) = crate::new_map::start_map(canvas);
@@ -772,12 +776,11 @@ fn a_new_map_has_no_layer_and_the_first_object_makes_one() {
 
     editor.selected_asset = Some(asset("test-pack/castle"));
     let stamp = editor.place_stamp([40.0, 50.0]).unwrap();
-    let layer = editor.map.parent(stamp).unwrap();
-    assert_eq!(editor.map.children(None), [layer]);
     let (label, gesture) = editor.place_label([60.0, 50.0]).unwrap();
     editor.end_gesture(gesture);
-    // Layers are not categorised, so the Label follows the Stamp into the same Layer.
-    assert_eq!(editor.map.children(Some(layer)), [stamp, label]);
+    // Tools never create a Group.
+    assert_eq!(editor.map.children(None), [stamp, label]);
+    assert_eq!(editor.active_layer(), None);
 }
 
 #[test]
@@ -792,8 +795,8 @@ fn the_stamp_tool_places_the_selected_asset_in_one_undo_step() {
     assert_eq!(stamp.asset, asset("test-pack/castle"));
     assert_eq!(stamp.position, [40.0, 50.0]);
     assert_eq!(editor.selection(), &[id]);
-    // The Layer the Map lacked was made in the same step.
-    assert_eq!(editor.map.children(None).len(), 1);
+    // With no Group, the Stamp sits at the top level.
+    assert_eq!(editor.map.children(None), &[id]);
     assert_eq!(editor.undo_label(), Some("Add Stamp"));
     editor.undo();
     assert!(editor.map.children(None).is_empty());
@@ -1253,4 +1256,34 @@ fn new_objects_go_into_the_active_layer_whatever_their_kind() {
     let (label, gesture) = editor.place_label([60.0, 50.0]).unwrap();
     editor.end_gesture(gesture);
     assert_eq!(editor.map.parent(label), Some(layer));
+}
+
+#[test]
+fn with_no_group_active_select_all_eraser_and_paste_act_on_the_top_level() {
+    let mut editor = editor_with_assets();
+    editor.selected_asset = Some(asset("test-pack/castle"));
+    let top = editor.place_stamp([40.0, 50.0]).unwrap();
+    let group = editor.new_layer().unwrap();
+    let inside = editor.place_stamp([40.0, 50.0]).unwrap();
+    assert_eq!(editor.map.parent(inside), Some(group));
+    editor.active_layer = None;
+
+    // Select All takes the top-level Objects only, which a Group is not.
+    editor.select_all();
+    assert_eq!(editor.selection(), &[top]);
+
+    // Paste with nothing selected goes on top of the top level.
+    assert!(editor.copy_selection());
+    editor.deselect();
+    editor.active_layer = None;
+    let pasted = editor.paste([300.0, 300.0]).unwrap();
+    assert_eq!(pasted.len(), 1);
+    assert_eq!(editor.map.parent(pasted[0]), None);
+    assert_eq!(editor.map.children(None).last(), Some(&pasted[0]));
+
+    // The Stamp eraser removes top-level Stamps and leaves the Group's.
+    editor.active_layer = None;
+    assert!(editor.erase_stamps(&[[40.0, 50.0]]));
+    assert!(!editor.map.contains(top));
+    assert!(editor.map.contains(inside));
 }
