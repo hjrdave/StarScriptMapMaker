@@ -70,6 +70,82 @@ fn island() -> (Map, Id, Id, Id) {
     (map, terrain, land, mountains)
 }
 
+/// Terrain's answer for every point of a grid over `map`, against the outlines' own
+/// `contains`: land is inside a Landmass and outside every Lake.
+fn assert_terrain_matches_outlines(map: &Map) {
+    let mut cache = RoughnessCache::new();
+    let terrain = Terrain::of(map, &mut cache);
+    let mut land = Vec::new();
+    let mut lakes = Vec::new();
+    for id in map.ids() {
+        let Some(Node::Object(object)) = map.node(id) else {
+            continue;
+        };
+        let target = match object.kind {
+            ObjectKind::Landmass(_) => &mut land,
+            ObjectKind::Lake(_) | ObjectKind::River(_) => &mut lakes,
+            _ => continue,
+        };
+        target.push(cache.outline(map, id).unwrap());
+    }
+    let mut checked = [0; 2];
+    // Every 12.5 units, so points land on edges and corners as well as between them.
+    for i in -8..=88 {
+        for j in -8..=88 {
+            let point = [f64::from(i) * 12.5, f64::from(j) * 12.5];
+            let is_land = land.iter().any(|outline| outline.contains(point))
+                && !lakes.iter().any(|outline| outline.contains(point));
+            assert_eq!(terrain.allows(Placement::Land, point), is_land, "{point:?}");
+            assert_eq!(
+                terrain.allows(Placement::Water, point),
+                !is_land,
+                "{point:?}"
+            );
+            assert!(terrain.allows(Placement::Anywhere, point));
+            checked[usize::from(is_land)] += 1;
+        }
+    }
+    assert!(
+        checked[0] > 0 && checked[1] > 0,
+        "the grid has land and water"
+    );
+}
+
+#[test]
+fn terrain_agrees_with_the_outlines_everywhere() {
+    let (map, ..) = island();
+    assert_terrain_matches_outlines(&map);
+}
+
+#[test]
+fn terrain_agrees_with_outlines_of_several_parts_with_holes() {
+    let (mut map, terrain, ..) = island();
+    // Two islands in one Landmass, the second with a hole, far from the first.
+    map.execute(&Command::CreateLandmass {
+        id: Id::new(),
+        parent: Some(terrain),
+        index: None,
+        geometry: MultiPolygon(vec![
+            Polygon {
+                exterior: vec![[600.0, 50.0], [900.0, 120.0], [700.0, 300.0]],
+                holes: Vec::new(),
+            },
+            Polygon {
+                exterior: square(500.0, 950.0),
+                holes: vec![square(600.0, 700.0), square(800.0, 900.0)],
+            },
+        ]),
+        fill: None,
+    })
+    .unwrap();
+    // A rough default outline, so the outlines are not the shapes as drawn.
+    map.execute(&Command::SetDefaultRoughness {
+        roughness: ssmap_core::Roughness::new(20.0, 80.0, 3),
+    })
+    .unwrap();
+    assert_terrain_matches_outlines(&map);
+}
+
 fn brush(placement: Placement) -> ScatterBrush {
     ScatterBrush {
         density: 40.0,

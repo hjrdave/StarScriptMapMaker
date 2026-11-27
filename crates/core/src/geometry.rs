@@ -53,6 +53,11 @@ impl Rect {
         self.max[1] - self.min[1]
     }
 
+    /// Whether `point` is inside the box or on its edge.
+    pub fn contains(&self, [x, y]: Point) -> bool {
+        (self.min[0]..=self.max[0]).contains(&x) && (self.min[1]..=self.max[1]).contains(&y)
+    }
+
     /// The smallest box holding both.
     pub fn union(&self, other: &Rect) -> Rect {
         Rect {
@@ -132,6 +137,11 @@ impl Polygon {
             0 => Some(&mut self.exterior),
             hole => self.holes.get_mut(hole - 1),
         }
+    }
+
+    /// The box around the exterior (holes lie inside it), or `None` when it has no points.
+    pub fn bounds(&self) -> Option<Rect> {
+        Rect::around(self.exterior.iter().copied())
     }
 
     /// Inside the exterior and outside every hole.
@@ -273,6 +283,45 @@ mod tests {
                 max: [100.0, 100.0]
             })
         );
+    }
+
+    #[test]
+    fn a_rect_holds_its_inside_and_its_edges() {
+        let rect = Rect {
+            min: [10.0, 20.0],
+            max: [30.0, 40.0],
+        };
+        for inside in [[20.0, 30.0], [10.0, 20.0], [30.0, 40.0], [10.0, 35.0]] {
+            assert!(rect.contains(inside), "{inside:?}");
+        }
+        for outside in [
+            [9.9, 30.0],
+            [20.0, 40.1],
+            [f64::NAN, 30.0],
+            [20.0, f64::INFINITY],
+        ] {
+            assert!(!rect.contains(outside), "{outside:?}");
+        }
+    }
+
+    #[test]
+    fn a_polygon_s_bounds_are_its_exterior_s() {
+        let ring = Polygon {
+            exterior: vec![[5.0, 0.0], [20.0, 10.0], [0.0, 30.0]],
+            holes: vec![vec![[6.0, 8.0], [9.0, 8.0], [7.0, 12.0]]],
+        };
+        assert_eq!(
+            ring.bounds(),
+            Some(Rect {
+                min: [0.0, 0.0],
+                max: [20.0, 30.0]
+            })
+        );
+        let empty = Polygon {
+            exterior: Vec::new(),
+            holes: Vec::new(),
+        };
+        assert_eq!(empty.bounds(), None);
     }
 
     #[test]

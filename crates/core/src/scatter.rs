@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use crate::asset::AssetRef;
 use crate::command::{Command, PlacedStamp};
-use crate::geometry::{MultiPolygon, Point};
+use crate::geometry::{MultiPolygon, Point, Rect};
 use crate::id::Id;
 use crate::map::Map;
 use crate::node::{Node, Object, ObjectKind, Stamp};
@@ -64,8 +64,36 @@ impl Default for ScatterBrush {
 /// The roughened outlines of a Map's Landmasses and Lakes, taken at the moment of placement.
 #[derive(Clone, Default, Debug)]
 pub struct Terrain {
-    land: Vec<Arc<MultiPolygon>>,
-    lakes: Vec<Arc<MultiPolygon>>,
+    land: Vec<Boxed>,
+    lakes: Vec<Boxed>,
+}
+
+/// An outline with the box around each of its parts, so a point outside a part's box is
+/// rejected without walking its rings. A scatter stroke tests thousands of points against
+/// every outline of the Map, and most are far from most outlines.
+#[derive(Clone, Debug)]
+struct Boxed {
+    outline: Arc<MultiPolygon>,
+    /// One per part of `outline`; `None` for a part with no points.
+    parts: Vec<Option<Rect>>,
+}
+
+impl Boxed {
+    fn new(outline: Arc<MultiPolygon>) -> Self {
+        let parts = outline.0.iter().map(|part| part.bounds()).collect();
+        Self { outline, parts }
+    }
+
+    /// The same as [`MultiPolygon::contains`].
+    fn contains(&self, point: Point) -> bool {
+        self.outline
+            .0
+            .iter()
+            .zip(&self.parts)
+            .any(|(part, bounds)| {
+                bounds.is_some_and(|bounds| bounds.contains(point)) && part.contains(point)
+            })
+    }
 }
 
 impl Terrain {
@@ -82,7 +110,7 @@ impl Terrain {
                 _ => continue,
             };
             if let Some(outline) = cache.outline(map, id) {
-                target.push(outline);
+                target.push(Boxed::new(outline));
             }
         }
         terrain
