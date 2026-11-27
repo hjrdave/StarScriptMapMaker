@@ -1,6 +1,6 @@
 //! The Map: a Canvas and one ordered tree of Layers and Objects.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::LazyLock;
 
 use schemars::JsonSchema;
@@ -274,6 +274,9 @@ pub struct Map {
     pub(crate) entries: HashMap<Id, Entry>,
     /// The members of each Link set, kept in step with the nodes' `link` fields.
     links: HashMap<Id, HashSet<Id>>,
+    /// For each prefix, how many nodes are named `<prefix> <number>` with each number, kept in
+    /// step with the names so [`Map::next_number`] needn't read every node.
+    numbers: HashMap<String, BTreeMap<u32, usize>>,
     /// Increases with every applied Op; touched nodes take its new value as their version.
     pub(crate) revision: u64,
     /// The last Ops applied, for [`Map::changes_since`].
@@ -298,6 +301,7 @@ impl Map {
             root: Vec::new(),
             entries: HashMap::new(),
             links: HashMap::new(),
+            numbers: HashMap::new(),
             revision: 0,
             changes: ChangeLog::default(),
         }
@@ -761,13 +765,10 @@ impl Map {
     /// highest in the Map now, or 1. Layers and Objects are counted together, so a number is not
     /// reused while the Map holds it.
     pub fn next_number(&self, prefix: &str) -> u32 {
-        self.ids()
-            .filter_map(|id| match self.node(id)? {
-                Node::Layer(layer) => numbered_suffix(&layer.name, prefix),
-                Node::Object(object) => numbered_suffix(object.name.as_deref()?, prefix),
-            })
-            .max()
-            .map_or(1, |highest| highest + 1)
+        self.numbers
+            .get(prefix)
+            .and_then(|numbers| numbers.last_key_value())
+            .map_or(1, |(&highest, _)| highest + 1)
     }
 
     /// `<prefix> NNN` with the next free number, such as "Stamp 004".
@@ -930,6 +931,7 @@ impl Map {
         if let Some(set) = node.link() {
             self.links.entry(set).or_default().insert(id);
         }
+        self.renumber(None, node_name(&node));
         self.entries.insert(
             id,
             Entry {
@@ -949,6 +951,7 @@ impl Map {
     pub(crate) fn remove_entries(&mut self, id: Id) -> Subtree {
         let entry = self.entries.remove(&id).expect("a known id");
         self.relink(id, entry.node.link(), None);
+        self.renumber(node_name(&entry.node), None);
         Subtree {
             id,
             node: entry.node,
@@ -980,6 +983,30 @@ impl Map {
         }
         if let Some(set) = now {
             self.links.entry(set).or_default().insert(id);
+        }
+    }
+
+    /// Moves a node in the number index from name `was` to name `now`.
+    pub(crate) fn renumber(&mut self, was: Option<&str>, now: Option<&str>) {
+        if let Some((prefix, number)) = was.and_then(split_number)
+            && let Some(numbers) = self.numbers.get_mut(prefix)
+            && let Some(count) = numbers.get_mut(&number)
+        {
+            *count -= 1;
+            if *count == 0 {
+                numbers.remove(&number);
+                if numbers.is_empty() {
+                    self.numbers.remove(prefix);
+                }
+            }
+        }
+        if let Some((prefix, number)) = now.and_then(split_number) {
+            // Looked up first, so a prefix already indexed costs no allocation.
+            let numbers = match self.numbers.get_mut(prefix) {
+                Some(numbers) => numbers,
+                None => self.numbers.entry(prefix.to_owned()).or_default(),
+            };
+            *numbers.entry(number).or_default() += 1;
         }
     }
 
@@ -1045,6 +1072,21 @@ pub enum InvariantError {
 /// `<prefix> NNN`: the prefix, a space and the number at least three digits wide.
 pub(crate) fn numbered_name(prefix: &str, number: u32) -> String {
     format!("{prefix} {number:03}")
+}
+
+/// A node's name, if it has one.
+pub(crate) fn node_name(node: &Node) -> Option<&str> {
+    match node {
+        Node::Layer(layer) => Some(&layer.name),
+        Node::Object(object) => object.name.as_deref(),
+    }
+}
+
+/// A name that reads `<prefix> <digits>`, split into the prefix and the number: the one
+/// prefix for which [`numbered_suffix`] gives a number.
+fn split_number(name: &str) -> Option<(&str, u32)> {
+    let (prefix, _) = name.rsplit_once(' ')?;
+    Some((prefix, numbered_suffix(name, prefix)?))
 }
 
 /// The number in a name that reads `<prefix> <digits>`, if it does.
