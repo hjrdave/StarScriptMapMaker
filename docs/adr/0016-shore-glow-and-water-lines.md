@@ -45,3 +45,12 @@ Status: accepted. Issue #604 asks for a Shore style like the soft one Wonderdraf
 - **File format.** `waves` is left out of the file while it equals the default (density 0), and a file without it reads as the default, so existing Maps look the same. Optional field only, so a **minor** bump (format 1.17). `ShoreStyle::problem` checks the ranges above.
 - **Properties.** A "Wave marks" group has Density, Size, Seed and a colour.
 - The golden image `hand_drawn_shore.png` is not committed yet: it needs a software GPU. The test compares to it once the file exists.
+
+## Addendum: hand-drawn lines fade smoothly (issue #636)
+
+The owner decided that the three-step fade made hand-drawn lines look like thorns up close. Only lines with a taper or variation change; plain lines (Default and Soft glow) keep the three stroked stretches of `LINE_FADE`.
+
+- **Drawing.** A hand-drawn line is filled in 12 slices (`HAND_SLICES` in `crates/render/src/scene.rs`). One fill has one colour, so the ink steps once per slice, by at most about a tenth, which reads as one continuous fade at 200%. Each slice's edges follow the width curve at several points, so the width has no steps at all.
+- **Curves.** The width stays near full off the coast and then thins: `1 - taper × t²` of the line's width, with `t` from 0 at the coast to 1 at the far end. The ink goes from full at the coast to 15% at the tip: `1 - 0.85 × t^1.6`.
+- **Hand drawn preset.** Its water lines are retuned for the smooth strokes: width 6, length 40, spacing 10 (rows stay apart at 1.5 widths), taper 0.9. Colour, variation, outline and wave marks are unchanged. There is no Wonderdraft reference; the owner judges the look from screenshots on the PR.
+- The golden image `hand_drawn_shore.png` still needs a software GPU and is still not committed.
