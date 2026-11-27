@@ -2,7 +2,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use rusqlite::Connection;
-use ssmap_core::file::MapFile;
+use ssmap_core::file::{FORMAT_VERSION, MapFile};
 use ssmap_core::{
     BrushSettings, Canvas, Color, DistanceUnit, LandBrushSettings, Map, MapTemplate,
     PaintBrushSettings, Scale,
@@ -106,7 +106,10 @@ fn an_older_file_without_the_key_opens_with_the_defaults() {
     assert_eq!(loaded.brush_settings, BrushSettings::default());
     // Its next save writes the current version.
     file.save(&loaded, None).unwrap();
-    assert_eq!(meta(&path, "format_version").as_deref(), Some("1.21"));
+    assert_eq!(
+        meta(&path, "format_version").as_deref(),
+        Some(FORMAT_VERSION.to_string().as_str())
+    );
 }
 
 #[test]

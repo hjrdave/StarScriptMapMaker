@@ -184,6 +184,11 @@ pub struct ShoreStyle {
     /// The wavy marks scattered over open water. Files saved before they existed have none.
     #[serde(default, skip_serializing_if = "is_default_waves")]
     pub waves: ShoreWaves,
+    /// The name of the Shore preset last picked for this style (issue 651), so the panel can
+    /// show that the style was changed since and offer to go back to it. Files saved before it
+    /// existed have none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset: Option<String>,
     /// Fields from a newer file format that this version keeps without reading.
     #[serde(flatten)]
     pub extra: Extra,
@@ -224,6 +229,7 @@ impl ShoreStyle {
             glow: ShoreGlow::default(),
             lines: ShoreLines::default(),
             waves: ShoreWaves::default(),
+            preset: None,
             extra: Extra::new(),
         }
     }
@@ -246,6 +252,7 @@ impl ShoreStyle {
             glow: ShoreGlow::default(),
             lines: ShoreLines::default(),
             waves: ShoreWaves::default(),
+            preset: None,
             extra: Extra::new(),
         }
     }
@@ -269,6 +276,7 @@ impl ShoreStyle {
             glow: ShoreGlow::default(),
             lines: ShoreLines::default(),
             waves: ShoreWaves::default(),
+            preset: None,
             extra: Extra::new(),
         }
     }
@@ -299,6 +307,7 @@ impl ShoreStyle {
                 ..ShoreLines::default()
             },
             waves: ShoreWaves::default(),
+            preset: None,
             extra: Extra::new(),
         }
     }
@@ -337,6 +346,7 @@ impl ShoreStyle {
                 color: Color::rgba(0x3a, 0x30, 0x24, 0xb0),
                 seed: 1,
             },
+            preset: None,
             extra: Extra::new(),
         }
     }
@@ -354,14 +364,43 @@ impl ShoreStyle {
         }
     }
 
-    /// The name of the preset for `kind` whose fields equal this style's, if any. Fields from
-    /// a newer file format are not compared.
+    /// The name of the preset for `kind` whose fields equal this style's, if any. The name of
+    /// the preset last picked and fields from a newer file format are not compared.
     pub fn preset_name(&self, kind: ShoreKind) -> Option<&'static str> {
-        let mut plain = self.clone();
-        plain.extra = Extra::new();
         Self::presets(kind)
             .into_iter()
-            .find_map(|(name, preset)| (preset == plain).then_some(name))
+            .find_map(|(name, preset)| preset.same_look(self).then_some(name))
+    }
+
+    /// The preset for `kind` called `name`, with `preset` set to that name: the style a pick
+    /// of it gives.
+    pub fn picked(kind: ShoreKind, name: &str) -> Option<Self> {
+        Self::presets(kind)
+            .into_iter()
+            .find(|(preset, _)| *preset == name)
+            .map(|(name, style)| Self {
+                preset: Some(name.to_owned()),
+                ..style
+            })
+    }
+
+    /// The preset last picked for this style, as [`ShoreStyle::picked`] gives it, while the
+    /// style no longer looks like it. `None` when no preset was picked, its name is not a
+    /// preset for `kind`, or nothing changed since.
+    pub fn changed_from_preset(&self, kind: ShoreKind) -> Option<Self> {
+        let picked = Self::picked(kind, self.preset.as_deref()?)?;
+        (!picked.same_look(self)).then_some(picked)
+    }
+
+    /// Whether the two styles draw the same: every field but the preset name and fields from
+    /// a newer file format.
+    pub fn same_look(&self, other: &Self) -> bool {
+        let plain = |style: &Self| Self {
+            preset: None,
+            extra: Extra::new(),
+            ..style.clone()
+        };
+        plain(self) == plain(other)
     }
 
     /// Why these settings cannot be used, if they cannot.

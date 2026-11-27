@@ -72,6 +72,25 @@ pub fn swatch_field(
     swatch_row(ui, label, label, Column::None, colour, optional, provenance)
 }
 
+/// [`swatch_field`] for a colour whose opacity has a field of its own beside it: the box shows
+/// the hex alone, not the opacity again.
+pub fn swatch_beside_opacity(
+    ui: &mut egui::Ui,
+    label: &str,
+    colour: &mut Option<Color>,
+    provenance: Provenance,
+) -> SwatchResponse {
+    swatch_row(
+        ui,
+        label,
+        label,
+        Column::NoneBesideOpacity,
+        colour,
+        false,
+        provenance,
+    )
+}
+
 /// What the swatch row puts before the chip.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Column {
@@ -81,6 +100,8 @@ enum Column {
     Blank,
     /// Nothing: the chip starts at the left edge.
     None,
+    /// As `None`, and the box leaves out the opacity, which a field beside it shows.
+    NoneBesideOpacity,
 }
 
 /// [`swatch`] under the row that chose it (Colour: Tint): the label column stays empty and
@@ -116,7 +137,7 @@ fn swatch_row(
     let enabled = ui.is_enabled();
     let response = ui
         .horizontal(|ui| {
-            if column != Column::None {
+            if !matches!(column, Column::None | Column::NoneBesideOpacity) {
                 let (label_rect, _) = ui.allocate_exact_size(
                     Vec2::new(LABEL_COLUMN, metrics::FIELD[0]),
                     Sense::hover(),
@@ -140,7 +161,8 @@ fn swatch_row(
                 info.current_text_value = Some(colour.map_or("None".to_owned(), spoken));
                 info
             });
-            paint_closed(ui, rect, *colour, enabled, response.hovered());
+            let alpha = column != Column::NoneBesideOpacity;
+            paint_closed(ui, rect, *colour, enabled, response.hovered(), alpha);
             if trailing(ui, label, provenance) {
                 edit.reset = true;
             }
@@ -202,7 +224,15 @@ fn spoken(colour: Color) -> String {
 
 /// The closed field: the height, border and corners of the other fields, with the swatch and hex
 /// inside and a translucent colour's opacity muted at the right edge.
-fn paint_closed(ui: &egui::Ui, rect: egui::Rect, colour: Option<Color>, enabled: bool, hot: bool) {
+/// The closed field: the chip, the hex and, with `alpha`, the opacity of a translucent colour.
+fn paint_closed(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    colour: Option<Color>,
+    enabled: bool,
+    hot: bool,
+    alpha: bool,
+) {
     let palette = theme::palette(ui.ctx());
     let outline = if hot && enabled {
         palette.border_strong
@@ -223,7 +253,7 @@ fn paint_closed(ui: &egui::Ui, rect: egui::Rect, colour: Option<Color>, enabled:
     );
     paint_chip(ui, chip, colour, palette);
     let mut right = rect.right() - 6.0;
-    if let Some(c) = colour.filter(|c| c.a < 255) {
+    if let Some(c) = colour.filter(|c| alpha && c.a < 255) {
         let percent = ui.painter().text(
             egui::pos2(right, rect.center().y),
             egui::Align2::RIGHT_CENTER,

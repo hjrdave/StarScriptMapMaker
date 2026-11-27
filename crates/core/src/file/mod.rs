@@ -45,6 +45,8 @@
 //!   Format 1.21 adds the optional `brush_settings` meta key (JSON): the settings of each mode
 //!   of the Land Brush, the Lake Brush and the Paint tool. Older files get the defaults
 //!   (ADR 0020).
+//!   Format 1.22 adds the optional `preset` to a Shore style (in a Landmass or Lake's props or
+//!   the Map defaults): the name of the Shore preset last picked. Older files have none.
 //!   Format 1.6 stores Groups: Layers nested inside Layers, with `parent` pointing at the
 //!   enclosing Layer. There is no compatibility with older files.
 //!
@@ -87,7 +89,7 @@ use crate::paint::PaintStroke;
 /// anything else, and needs a migration.
 pub const FORMAT_VERSION: FormatVersion = FormatVersion {
     major: 1,
-    minor: 21,
+    minor: 22,
 };
 
 /// What the `boards` meta key holds.
