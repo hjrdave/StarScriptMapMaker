@@ -14,6 +14,8 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 mod common;
 
+use common::settle;
+
 use ssmap_app::MapMakerApp;
 use ssmap_core::file::MapFile;
 use ssmap_core::{Canvas, DistanceUnit, Map, Scale};
@@ -29,7 +31,7 @@ fn app(recovery_dir: Option<&Path>) -> Harness<'static, MapMakerApp> {
         .build_eframe(move |cc| MapMakerApp::with_recovery_dir(cc, recovery_dir.clone()));
     // Independent of the macOS hide-on-close default: here close means quit.
     harness.state_mut().set_close_hides_window(false);
-    harness.run();
+    settle(&mut harness);
     // The app starts on Home with no Map; these tests begin with one open.
     assert!(harness.state().tabs().is_empty());
     harness.state_mut().new_map(canvas());
@@ -274,7 +276,7 @@ fn closing_the_window_where_it_keeps_the_app_running_empties_it_and_only_quit_ex
 
     request_close(&mut harness);
     harness.get_by_label("Don’t Save").click();
-    harness.run();
+    settle(&mut harness);
     assert!(harness.state().window_hidden());
     assert!(!harness.state().is_closing(), "the app keeps running");
     assert!(harness.state().tabs().is_empty());
@@ -394,7 +396,7 @@ fn number_shortcuts_jump_to_home_a_tab_and_the_last_tab() {
     let command = egui::Modifiers::COMMAND;
 
     harness.key_press_modifiers(command, egui::Key::Num1);
-    harness.run();
+    settle(&mut harness);
     assert!(harness.state().home_active());
     harness.key_press_modifiers(command, egui::Key::Num3);
     harness.run();
@@ -419,7 +421,7 @@ fn control_tab_cycles_through_home_and_the_maps() {
     open_three(&mut harness, dir.path());
 
     harness.key_press_modifiers(egui::Modifiers::CTRL, egui::Key::Tab);
-    harness.run();
+    settle(&mut harness);
     assert!(harness.state().home_active());
     harness.key_press_modifiers(egui::Modifiers::CTRL, egui::Key::Tab);
     harness.run();
@@ -450,7 +452,7 @@ fn close_tab_shortcut_closes_a_map_but_never_home() {
     harness.run();
     assert_eq!(harness.state().tabs().len(), 2);
     harness.key_press_modifiers(command, egui::Key::Num1);
-    harness.run();
+    settle(&mut harness);
     harness.key_press_modifiers(command, egui::Key::W);
     harness.run();
     assert_eq!(harness.state().tabs().len(), 2);
@@ -478,7 +480,7 @@ fn clicking_home_and_a_map_tab_switches_between_them() {
     let mut harness = app(None);
     open_three(&mut harness, dir.path());
     harness.get_by_label("Home").click();
-    harness.run();
+    settle(&mut harness);
     assert!(harness.state().home_active());
     harness.get_by_label("a.ssmap").click();
     harness.run();

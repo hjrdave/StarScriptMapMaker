@@ -12,6 +12,9 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+mod common;
+
+use common::settle;
 use ssmap_app::MapMakerApp;
 use ssmap_core::file::MapFile;
 use ssmap_core::{Canvas, DistanceUnit, Map, Scale};
@@ -22,19 +25,6 @@ fn app() -> Harness<'static, MapMakerApp> {
         .build_eframe(|cc| MapMakerApp::with_recovery_dir(cc, None));
     harness.run();
     harness
-}
-
-/// Runs until the screen is idle. Recent cards are read on a worker thread and repaint every
-/// 50 ms until done, so on a slow machine a plain `run` can hit its step limit first.
-fn settle(harness: &mut Harness<'static, MapMakerApp>) {
-    let started = Instant::now();
-    while harness.try_run().is_err() {
-        assert!(
-            started.elapsed() < Duration::from_secs(10),
-            "the screen never settled"
-        );
-        std::thread::sleep(Duration::from_millis(20));
-    }
 }
 
 fn saved_map(dir: &Path, name: &str) -> PathBuf {

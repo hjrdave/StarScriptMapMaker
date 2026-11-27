@@ -6,6 +6,8 @@
     reason = "tests and benches may panic on failure"
 )]
 
+use std::time::{Duration, Instant};
+
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use ssmap_app::menu::{self, Command};
@@ -15,6 +17,20 @@ pub(crate) fn item_label(title: &str, command: Command) -> String {
     match menu::shortcut(command) {
         Some(shortcut) => format!("{title} {}", shortcut.label(cfg!(target_os = "macos"))),
         None => title.to_owned(),
+    }
+}
+
+/// Runs until the screen is idle. Home reads the Recent cards on a worker thread and repaints
+/// every 50 ms until done, so on a slow machine a plain `run` can hit its step limit first
+/// (#674, #687). Use it after every step that shows Home.
+pub(crate) fn settle<S>(harness: &mut Harness<'_, S>) {
+    let started = Instant::now();
+    while harness.try_run().is_err() {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the screen never settled"
+        );
+        std::thread::sleep(Duration::from_millis(20));
     }
 }
 
