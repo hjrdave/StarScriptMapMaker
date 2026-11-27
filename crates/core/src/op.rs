@@ -313,6 +313,13 @@ impl Map {
                     let now = self.node(id).and_then(Node::link);
                     self.relink(id, *was, now);
                 }
+                if let Property::Name(was) = &old {
+                    let now = self
+                        .node(id)
+                        .and_then(crate::map::node_name)
+                        .map(str::to_owned);
+                    self.renumber(Some(was), now.as_deref());
+                }
                 self.touch(Some(id));
                 Op::SetProperty { id, property: old }
             }
