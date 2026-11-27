@@ -103,7 +103,7 @@ fn scatter(map: &Map, layer: Id, placement: Placement, seed: u64) -> Option<Comm
         ScatterStroke {
             points: &points,
             radius: 80.0,
-            parent: layer,
+            parent: Some(layer),
             base: &base,
             variants: &variants,
         },
@@ -206,7 +206,7 @@ fn nothing_is_placed_when_the_constraint_allows_nowhere() {
         ScatterStroke {
             points: &points,
             radius: 50.0,
-            parent: mountains,
+            parent: Some(mountains),
             base: &base,
             variants: &[],
         },
@@ -269,15 +269,64 @@ fn the_eraser_removes_stamps_in_the_active_layer_only() {
             .unwrap();
         }
     }
-    let command = erase_command(&map, mountains, &[[0.0, 20.0], [60.0, 20.0]], 15.0).unwrap();
+    let command = erase_command(&map, Some(mountains), &[[0.0, 20.0], [60.0, 20.0]], 15.0).unwrap();
     map.execute(&command).unwrap();
     let left: Vec<f64> = positions(&map, mountains).iter().map(|p| p[0]).collect();
     assert_eq!(left, vec![300.0]);
     assert_eq!(positions(&map, other).len(), 3);
     assert_eq!(
-        erase_command(&map, mountains, &[[600.0, 600.0]], 15.0),
+        erase_command(&map, Some(mountains), &[[600.0, 600.0]], 15.0),
         None
     );
+}
+
+#[test]
+fn with_no_group_the_eraser_removes_top_level_stamps_only() {
+    let (mut map, _, _, mountains) = island();
+    for parent in [None, Some(mountains)] {
+        map.execute(&Command::CreateStamp {
+            id: Id::new(),
+            parent,
+            index: None,
+            stamp: Box::new(Stamp::new(asset("peak-1"), [10.0, 20.0])),
+        })
+        .unwrap();
+    }
+    let command = erase_command(&map, None, &[[0.0, 20.0], [60.0, 20.0]], 15.0).unwrap();
+    map.execute(&command).unwrap();
+    let top_stamps = map
+        .children(None)
+        .iter()
+        .filter(|&&id| matches!(map.node(id), Some(Node::Object(o)) if matches!(o.kind, ObjectKind::Stamp(_))))
+        .count();
+    assert_eq!(top_stamps, 0);
+    assert_eq!(positions(&map, mountains).len(), 1);
+}
+
+#[test]
+fn a_scatter_with_no_group_places_stamps_at_the_top_level() {
+    let (mut map, _, _, _) = island();
+    let terrain = Terrain::of(&map, &mut RoughnessCache::new());
+    let base = Stamp::new(asset("peak-1"), [0.0, 0.0]);
+    let points = [[50.0, 150.0], [250.0, 150.0]];
+    let command = scatter_command(
+        &brush(Placement::Anywhere),
+        ScatterStroke {
+            points: &points,
+            radius: 80.0,
+            parent: None,
+            base: &base,
+            variants: &[],
+        },
+        &terrain,
+        1,
+        sequential_ids(),
+    )
+    .unwrap();
+    assert!(matches!(command, Command::PlaceStamps { parent: None, .. }));
+    let before = map.children(None).len();
+    map.execute(&command).unwrap();
+    assert!(map.children(None).len() > before);
 }
 
 #[test]

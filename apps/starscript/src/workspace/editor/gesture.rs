@@ -60,21 +60,6 @@ impl Gesture<'_> {
     pub fn replace(&mut self, command: Command) -> bool {
         self.editor.gesture_replace(self.id, command)
     }
-
-    /// The Layer a new Object goes into, creating one inside the gesture if the Map has none.
-    pub(super) fn placement_layer(&mut self, placing: Placing) -> Option<Id> {
-        match self.editor.placement_layer_or_new(placing) {
-            Ok(layer) => Some(layer),
-            Err(create) => {
-                let (id, command) = *create;
-                let created = self.run(command);
-                if created {
-                    self.editor.active_layer = Some(id);
-                }
-                created.then_some(id)
-            }
-        }
-    }
 }
 
 impl Editor {

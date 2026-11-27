@@ -1,13 +1,11 @@
 use super::*;
 
 impl Editor {
-    /// The Objects directly on the active Layer.
+    /// The Objects directly in the active Group, or at the top level when no Group is active.
     pub fn active_layer_objects(&self) -> Vec<Id> {
-        let Some(layer) = self.active_layer.filter(|&id| self.map.contains(id)) else {
-            return Vec::new();
-        };
+        let group = self.active_layer.filter(|&id| self.map.contains(id));
         self.map
-            .children(Some(layer))
+            .children(group)
             .iter()
             .copied()
             .filter(|&id| matches!(self.map.node(id), Some(Node::Object(_))))
@@ -54,15 +52,12 @@ impl Editor {
         None
     }
 
-    /// Opens an "Add Label" gesture and places a Label at `position` in the active Layer,
-    /// creating a Layer if the Map has none. The gesture stays open for typing the text.
+    /// Opens an "Add Label" gesture and places a Label at `position` where new Objects go
+    /// ([`Self::placement_parent`]). The gesture stays open for typing the text.
     pub fn place_label(&mut self, position: [f64; 2]) -> Option<(Id, GestureId)> {
         self.end_open_gesture();
         let gesture = self.begin_gesture("Add Label");
-        let Some(parent) = self.placement_layer(&gesture, Placing::Label) else {
-            self.cancel_gesture(gesture);
-            return None;
-        };
+        let parent = self.placement_parent(Placing::Label);
         let id = Id::new();
         let label = Label {
             text: "Label".into(),
@@ -73,7 +68,7 @@ impl Editor {
             &gesture,
             Command::CreateLabel {
                 id,
-                parent: Some(parent),
+                parent,
                 index: None,
                 label: Box::new(label),
             },
@@ -122,10 +117,10 @@ impl Editor {
         let id = Id::new();
         self.end_open_gesture();
         self.in_gesture("Add Credits Label", |g| {
-            let parent = g.placement_layer(Placing::Label).ok_or(())?;
+            let parent = g.editor.placement_parent(Placing::Label);
             let created = g.run(Command::CreateLabel {
                 id,
-                parent: Some(parent),
+                parent,
                 index: None,
                 label: Box::new(label),
             });
@@ -140,17 +135,17 @@ impl Editor {
     }
 
     /// Places the selected Asset (or a random member of its Variant group) as a Stamp at
-    /// `position` in the active Layer, as one Undo step, and selects it. Does nothing when no
+    /// `position` where new Objects go ([`Self::placement_parent`]), as one Undo step, and selects it. Does nothing when no
     /// Asset is selected.
     pub fn place_stamp(&mut self, position: [f64; 2]) -> Option<Id> {
         let asset = self.placement_asset()?;
         let id = Id::new();
         self.end_open_gesture();
         self.in_gesture("Add Stamp", |g| {
-            let parent = g.placement_layer(Placing::Stamp).ok_or(())?;
+            let parent = g.editor.placement_parent(Placing::Stamp);
             let created = g.run(Command::CreateStamp {
                 id,
-                parent: Some(parent),
+                parent,
                 index: None,
                 stamp: Box::new(Stamp::new(asset, position)),
             });
@@ -165,7 +160,7 @@ impl Editor {
     }
 
     /// Finishes a scatter brush stroke: scatters Stamps of the selected Asset along `points` in
-    /// the active Layer as one Undo step ([`scatter::scatter_command`]). Does nothing, with a
+    /// where new Objects go ([`Self::placement_parent`]) as one Undo step ([`scatter::scatter_command`]). Does nothing, with a
     /// message, when no Asset is chosen, and leaves no Undo step when nothing could be placed.
     pub fn scatter_stamps(&mut self, points: &[Point]) -> bool {
         let Some(selected) = self.selected_asset.clone() else {
@@ -182,7 +177,7 @@ impl Editor {
         let brush = self.scatter.clone();
         let radius = self.brush_size / 2.0;
         let placed = self.in_gesture("Scatter Stamps", |g| {
-            let parent = g.placement_layer(Placing::Stamp).ok_or(())?;
+            let parent = g.editor.placement_parent(Placing::Stamp);
             let base = Stamp::new(selected, [0.0, 0.0]);
             let command = scatter::scatter_command(
                 &brush,
@@ -203,14 +198,12 @@ impl Editor {
         matches!(placed, Some(Ok(())))
     }
 
-    /// Finishes a Stamp eraser stroke: removes the Stamps in the active Layer whose Anchor is
-    /// inside the brush, as one Undo step. Other Layers are never touched.
+    /// Finishes a Stamp eraser stroke: removes the Stamps directly in the active Group (at the
+    /// top level when no Group is active) whose Anchor is inside the brush, as one Undo step.
+    /// Stamps in other Groups are never touched.
     pub fn erase_stamps(&mut self, points: &[Point]) -> bool {
-        let Some(layer) = self.active_layer.filter(|&id| self.map.contains(id)) else {
-            self.info("Select a Layer to erase Stamps from");
-            return false;
-        };
-        match scatter::erase_command(&self.map, layer, points, self.brush_size / 2.0) {
+        let group = self.active_layer.filter(|&id| self.map.contains(id));
+        match scatter::erase_command(&self.map, group, points, self.brush_size / 2.0) {
             Some(command) => self.run(command).is_ok(),
             None => false,
         }
@@ -301,50 +294,12 @@ impl Editor {
         layer.filter(|&id| matches!(self.map.node(id), Some(Node::Layer(_))))
     }
 
-    /// The active Layer, else the template's Layer for `placing`. Layers are not categorised
-    /// (ADR 0014), so what is being placed does not pick the Layer.
-    pub(super) fn target_layer(&self, placing: Placing) -> Option<Id> {
+    /// The Group new Objects go into: the active Group, else the template's Group for
+    /// `placing`. `None` puts them at the top level; tools never create a Group (#640). Groups
+    /// are not categorised (ADR 0014), so what is being placed does not pick the Group.
+    pub(super) fn placement_parent(&self, placing: Placing) -> Option<Id> {
         self.active_layer
             .filter(|&id| self.map.contains(id))
             .or_else(|| self.default_layer(placing))
-    }
-
-    /// The Layer new Objects go into: see [`Self::target_layer`], else the top Layer, creating
-    /// a Layer if the Map has none. Runs inside the open gesture.
-    pub(super) fn placement_layer(&mut self, gesture: &GestureId, placing: Placing) -> Option<Id> {
-        match self.placement_layer_or_new(placing) {
-            Ok(layer) => Some(layer),
-            Err(create) => {
-                let (id, command) = *create;
-                let created = self.gesture(gesture, command);
-                if created {
-                    self.active_layer = Some(id);
-                }
-                created.then_some(id)
-            }
-        }
-    }
-
-    /// The Layer a new Object goes into, or, when the Map has none, the Id and Command of a
-    /// Layer to create first.
-    pub(super) fn placement_layer_or_new(
-        &self,
-        placing: Placing,
-    ) -> Result<Id, Box<(Id, Command)>> {
-        if let Some(layer) = self.target_layer(placing) {
-            return Ok(layer);
-        }
-        if let Some(&top) = self.map.children(None).last() {
-            return Ok(top);
-        }
-        let id = Id::new();
-        let name = self.map.next_name("Layer");
-        let command = Command::CreateLayer {
-            id,
-            parent: None,
-            index: None,
-            name,
-        };
-        Err(Box::new((id, command)))
     }
 }

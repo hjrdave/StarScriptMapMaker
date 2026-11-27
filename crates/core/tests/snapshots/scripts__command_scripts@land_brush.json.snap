@@ -1127,7 +1127,33 @@ input_file: crates/core/tests/scripts/land_brush.json
     },
     {
       "outcome": {
-        "error": "choose a Layer to paint land into"
+        "command": {
+          "command": "create_landmass",
+          "geometry": [
+            {
+              "exterior": [
+                [
+                  850.0,
+                  850.0
+                ],
+                [
+                  950.0,
+                  850.0
+                ],
+                [
+                  950.0,
+                  950.0
+                ],
+                [
+                  850.0,
+                  950.0
+                ]
+              ]
+            }
+          ],
+          "id": "00000000-0000-7000-8000-000000000099"
+        },
+        "result": "ok"
       },
       "step": {
         "brush": {
@@ -1542,6 +1568,38 @@ input_file: crates/core/tests/scripts/land_brush.json
               "opacity": 1.0,
               "type": "layer",
               "visible": true
+            },
+            {
+              "id": "00000000-0000-7000-8000-000000000099",
+              "kind": {
+                "fill": "#d8c49a",
+                "geometry": [
+                  {
+                    "exterior": [
+                      [
+                        850.0,
+                        850.0
+                      ],
+                      [
+                        950.0,
+                        850.0
+                      ],
+                      [
+                        950.0,
+                        950.0
+                      ],
+                      [
+                        850.0,
+                        950.0
+                      ]
+                    ]
+                  }
+                ],
+                "kind": "landmass"
+              },
+              "locked": false,
+              "name": "Landmass 003",
+              "type": "object"
             }
           ],
           "primary": "00000000-0000-0000-0000-000000000001"
@@ -1551,7 +1609,7 @@ input_file: crates/core/tests/scripts/land_brush.json
     }
   ],
   "redo_steps": 0,
-  "undo_steps": 11,
+  "undo_steps": 12,
   "view": {
     "boards": [
       {
@@ -1787,6 +1845,38 @@ input_file: crates/core/tests/scripts/land_brush.json
         "opacity": 1.0,
         "type": "layer",
         "visible": true
+      },
+      {
+        "id": "00000000-0000-7000-8000-000000000099",
+        "kind": {
+          "fill": "#d8c49a",
+          "geometry": [
+            {
+              "exterior": [
+                [
+                  850.0,
+                  850.0
+                ],
+                [
+                  950.0,
+                  850.0
+                ],
+                [
+                  950.0,
+                  950.0
+                ],
+                [
+                  850.0,
+                  950.0
+                ]
+              ]
+            }
+          ],
+          "kind": "landmass"
+        },
+        "locked": false,
+        "name": "Landmass 003",
+        "type": "object"
       }
     ],
     "primary": "00000000-0000-0000-0000-000000000001"

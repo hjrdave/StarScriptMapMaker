@@ -252,7 +252,7 @@ fn water_stroke(region: MultiPolygon, start: Point, erase: bool) -> ssmap_core::
 
 #[test]
 fn the_water_brush_creates_a_lake_then_merges_and_erases() {
-    use ssmap_core::land::{BrushError, water_command};
+    use ssmap_core::land::water_command;
 
     let mut map = empty_map();
     let water = layer(&mut map, "Water");
@@ -268,7 +268,6 @@ fn the_water_brush_creates_a_lake_then_merges_and_erases() {
         water_stroke(river, [10.0, 10.0], false),
         new_id,
     )
-    .unwrap()
     .expect("a stroke on bare ground makes a Lake");
     assert!(
         matches!(&command, Command::CreateLake { id, parent, .. } if *id == new_id && *parent == Some(water))
@@ -285,7 +284,6 @@ fn the_water_brush_creates_a_lake_then_merges_and_erases() {
         water_stroke(more, [18.0, 10.0], false),
         Id::new(),
     )
-    .unwrap()
     .unwrap();
     assert!(matches!(&command, Command::AddRegion { id, .. } if *id == new_id));
     run(&mut map, command);
@@ -300,11 +298,11 @@ fn the_water_brush_creates_a_lake_then_merges_and_erases() {
         water_stroke(cut, [0.0, 0.0], true),
         Id::new(),
     )
-    .unwrap()
     .unwrap();
     assert!(matches!(&command, Command::SubtractRegion { ids, .. } if ids == &vec![new_id]));
 
-    // Erasing away from every Lake does nothing, and painting needs a Layer.
+    // Erasing away from every Lake does nothing, and painting with no Group makes a top-level
+    // Lake.
     let far = region(square([500.0, 500.0], 10.0), vec![]);
     let erased = water_command(
         &map,
@@ -314,16 +312,73 @@ fn the_water_brush_creates_a_lake_then_merges_and_erases() {
         water_stroke(far.clone(), [505.0, 505.0], true),
         Id::new(),
     );
-    assert_eq!(erased, Ok(None));
+    assert_eq!(erased, None);
+    let top = Id::new();
     let painted = water_command(
         &map,
         &mut cache,
         &[],
         None,
         water_stroke(far, [505.0, 505.0], false),
+        top,
+    );
+    assert!(matches!(&painted, Some(Command::CreateLake { id, parent: None, .. }) if *id == top));
+}
+
+#[test]
+fn with_no_group_the_land_brush_works_at_the_top_level() {
+    use ssmap_core::land::brush_command;
+
+    let mut map = empty_map();
+    let group = layer(&mut map, "Land");
+    let mut cache = RoughnessCache::default();
+
+    // A stroke on water with no Group makes a top-level Landmass.
+    let top = Id::new();
+    let command = brush_command(
+        &map,
+        &mut cache,
+        &[],
+        None,
+        water_stroke(
+            region(square([0.0, 0.0], 20.0), vec![]),
+            [10.0, 10.0],
+            false,
+        ),
+        top,
+    )
+    .expect("a stroke makes land");
+    assert!(matches!(&command, Command::CreateLandmass { id, parent: None, .. } if *id == top));
+    run(&mut map, command);
+
+    // A Landmass in the Group under the same spot, made with the Group active.
+    let inside = Id::new();
+    let command = brush_command(
+        &map,
+        &mut cache,
+        &[],
+        Some(group),
+        water_stroke(
+            region(square([200.0, 0.0], 20.0), vec![]),
+            [210.0, 10.0],
+            false,
+        ),
+        inside,
+    )
+    .expect("a stroke makes land");
+    run(&mut map, command);
+
+    // Erasing over both with no Group cuts only the top-level Landmass.
+    let cut = region(square([-5.0, -5.0], 300.0), vec![]);
+    let erased = brush_command(
+        &map,
+        &mut cache,
+        &[],
+        None,
+        water_stroke(cut, [0.0, 0.0], true),
         Id::new(),
     );
-    assert_eq!(painted, Err(BrushError::NoLayer));
+    assert!(matches!(&erased, Some(Command::SubtractRegion { ids, .. }) if ids == &vec![top]));
 }
 
 #[test]
@@ -351,7 +406,6 @@ fn the_land_brush_ignores_a_selected_lake() {
         water_stroke(stroke, [110.0, 110.0], false),
         new_id,
     )
-    .unwrap()
     .expect("a stroke makes land");
     assert!(
         matches!(&command, Command::CreateLandmass { id, parent, .. } if *id == new_id && *parent == Some(layer_id))
@@ -367,5 +421,5 @@ fn the_land_brush_ignores_a_selected_lake() {
         water_stroke(cut, [0.0, 0.0], true),
         Id::new(),
     );
-    assert_eq!(erased, Ok(None));
+    assert_eq!(erased, None);
 }

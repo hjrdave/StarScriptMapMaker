@@ -17,8 +17,8 @@ mod tests;
 mod wave_marks;
 
 pub use brush::{
-    BrushError, BrushStroke, MAX_IRREGULARITY, brush_command, brush_region, irregular_region,
-    lasso_region, preview_area, simplify_tolerance, stroke_region, water_command,
+    BrushStroke, MAX_IRREGULARITY, brush_command, brush_region, irregular_region, lasso_region,
+    preview_area, simplify_tolerance, stroke_region, water_command,
 };
 pub use nodes::{NodeEditError, delete_nodes, insert_node, move_nodes, signed_area};
 pub use shore_lines::{DrawnLine, MAX_LINE_ROWS, ShoreLine, hand_drawn, shore_lines};

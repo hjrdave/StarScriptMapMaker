@@ -146,8 +146,8 @@ pub struct ScatterStroke<'a> {
     pub points: &'a [Point],
     /// The brush radius in Canvas units.
     pub radius: f64,
-    /// The Layer that receives the Stamps.
-    pub parent: Id,
+    /// The Group that receives the Stamps, or `None` for the top level.
+    pub parent: Option<Id>,
     /// Supplies the Asset, scale, rotation, flip, tint, fill and opacity the jitter varies.
     pub base: &'a Stamp,
     /// The Assets `random_variant` may pick from; empty means only the base Asset.
@@ -243,18 +243,23 @@ pub fn scatter_command(
         None
     } else {
         Some(Command::PlaceStamps {
-            parent: Some(parent),
+            parent,
             stamps: placed,
         })
     }
 }
 
-/// The Command for a Stamp eraser stroke: removes Stamps directly inside `layer` whose Anchor
-/// is within `radius` of `stroke`. Stamps in other Layers, and locked ones, stay. `None` when
-/// the stroke touches none.
-pub fn erase_command(map: &Map, layer: Id, stroke: &[Point], radius: f64) -> Option<Command> {
+/// The Command for a Stamp eraser stroke: removes Stamps directly inside `group` (`None` for the
+/// top level) whose Anchor is within `radius` of `stroke`. Stamps in other Groups, and locked
+/// ones, stay. `None` when the stroke touches none.
+pub fn erase_command(
+    map: &Map,
+    group: Option<Id>,
+    stroke: &[Point],
+    radius: f64,
+) -> Option<Command> {
     let ids: Vec<Id> = map
-        .children(Some(layer))
+        .children(group)
         .iter()
         .copied()
         .filter(|&id| !map.is_locked(id))

@@ -23,37 +23,21 @@ impl Editor {
             .with_open_source(open_source)
     }
 
-    /// Adds the River the tool's `path` makes ([`Self::planned_river`]) to the Layer new Objects go
-    /// into and selects it, as one Undo step. On a Map with no Layer it also creates one. Returns whether it was added.
+    /// Adds the River the tool's `path` makes ([`Self::planned_river`]) where new Objects go
+    /// ([`Self::placement_parent`]) and selects it, as one Undo step. Returns whether it was
+    /// added.
     pub fn finish_river(&mut self, path: &[RiverPoint], seed: u32) -> bool {
         let river = self.planned_river(path, seed);
         if let Some(problem) = river.problem() {
             self.info(format!("Can't add the River: {problem}"));
             return false;
         }
-        let existing = self.water_layer();
+        let parent = self.placement_parent(Placing::Land);
         let id = Id::new();
         let added = self.in_gesture("Add River", |g| {
-            let layer = match existing {
-                Some(layer) => layer,
-                None => {
-                    let layer = Id::new();
-                    let created = g.run(Command::CreateLayer {
-                        id: layer,
-                        parent: None,
-                        index: None,
-                        name: g.editor.map.next_name("Layer"),
-                    });
-                    if !created {
-                        return Err(());
-                    }
-                    g.editor.active_layer = Some(layer);
-                    layer
-                }
-            };
             if !g.run(Command::CreateRiver {
                 id,
-                parent: Some(layer),
+                parent,
                 index: None,
                 river: Box::new(river),
             }) {

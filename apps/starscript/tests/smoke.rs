@@ -307,12 +307,8 @@ fn the_label_tool_places_a_label_and_types_its_text_in_one_undo_step() {
     let id = *id;
     assert_eq!(editor.label(id).map(|l| l.text.as_str()), Some("Ærendál"));
     assert_eq!(editor.undo_label(), Some("Add Label"));
-    // The Map had no Layer, so one was made for it.
-    let parent = editor.map().parent(id).unwrap();
-    assert!(matches!(
-        editor.map().node(parent),
-        Some(ssmap_core::Node::Layer(layer)) if layer.name == "Layer 001"
-    ));
+    // The Map had no Group, so the Label sits at the top level.
+    assert_eq!(editor.map().parent(id), None);
     // Its first line names it in the Layers panel and, with the Select tool back, in the
     // Properties breadcrumb. The Properties title is "Label", not its name.
     assert_eq!(
@@ -362,7 +358,7 @@ fn the_label_tool_places_a_label_and_types_its_text_in_one_undo_step() {
         harness.run();
     }
     let editor = harness.state().editor();
-    assert!(editor.map().children(Some(parent)).is_empty());
+    assert!(!editor.map().contains(id));
 }
 
 /// One Layer holding an island with a hole (0..400) and a Lake (100..200) above it.
