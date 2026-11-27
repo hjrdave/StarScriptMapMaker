@@ -11,6 +11,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::sync::Arc;
+use std::time::Duration;
 
 use super::chunk::{Draw, GroupMesh, MERGE_LIMIT, Vertex, union};
 
@@ -21,6 +22,10 @@ const SPARE: (u64, u64) = (1, 2);
 /// The smallest page, in vertices and indices, so a small Map does not lay out again on every
 /// edit that grows it a little.
 const MIN_PAGE: (u32, u32) = (4096, 16_384);
+
+/// What a frame may spend writing finished background results to the pages. Anything over
+/// carries to the next frame, so input is never held up for more than about one frame.
+pub(crate) const APPLY_BUDGET: Duration = Duration::from_millis(4);
 
 /// Free ranges of a page's vertices or indices, kept sorted and merged with their neighbours.
 #[derive(Debug)]
@@ -82,6 +87,8 @@ impl Allocator {
 pub(super) trait Pages {
     /// Drops every page and makes new, empty ones of these sizes (vertices, indices).
     fn reset(&mut self, sizes: &[(u32, u32)]);
+    /// Adds an empty page of this size (vertices, indices) after the others, which are kept.
+    fn add(&mut self, size: (u32, u32));
     /// Writes `vertices` from vertex `vertex_at` and `indices` from index `index_at` of `page`.
     fn write(
         &mut self,
@@ -112,6 +119,22 @@ struct Page {
 pub(super) struct Segment {
     pub(super) page: usize,
     pub(super) draws: Range<usize>,
+}
+
+/// How long an update may spend writing meshes, and how long it has spent so far (a test gives
+/// it a clock it controls, so the budget is checked without depending on the machine).
+pub(super) struct Budget<'a> {
+    pub(super) limit: Duration,
+    pub(super) elapsed: &'a dyn Fn() -> Duration,
+}
+
+/// What an update did.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct Update {
+    /// How many vertices were written.
+    pub(super) written: usize,
+    /// Whether every mesh is drawn; `false` if the budget ran out first.
+    pub(super) done: bool,
 }
 
 /// Every mesh drawn, where it sits in the pages, and the draws in stacking order.
@@ -162,13 +185,17 @@ impl Resident {
 
     /// Draws `meshes` in order, split into runs at `cuts` (as `merge` does), writing to `pages`
     /// only the meshes that are not there yet. Meshes no longer drawn give their space back.
-    /// Returns how many vertices were written.
+    /// With a `budget`, writing stops before a mesh that would spend it, judged by the slowest
+    /// write so far (at least one mesh is always written), and the meshes not written are left
+    /// out of the draws until a later update writes them. A budgeted update that runs out of
+    /// room adds a page instead of laying every page out again, which would write everything.
     pub(super) fn update(
         &mut self,
         meshes: &[Option<Arc<GroupMesh>>],
         cuts: &[usize],
+        budget: Option<Budget<'_>>,
         pages: &mut impl Pages,
-    ) -> usize {
+    ) -> Update {
         let drawn: Vec<&Arc<GroupMesh>> = meshes
             .iter()
             .flatten()
@@ -190,23 +217,44 @@ impl Resident {
         }
         let mut written = 0;
         let mut placed = true;
-        for &mesh in &drawn {
+        let mut done = true;
+        let mut slowest = Duration::ZERO;
+        for (at, &mesh) in drawn.iter().enumerate() {
             if self.slots.contains_key(&key(mesh)) {
                 continue;
             }
-            match self.place(mesh, pages) {
+            let began = budget.as_ref().map(|budget| (budget.elapsed)());
+            if let (Some(budget), Some(began)) = (&budget, began)
+                && written > 0
+                && began + slowest > budget.limit
+            {
+                done = false;
+                break;
+            }
+            let mut count = self.place(mesh, pages);
+            if count.is_none() && budget.is_some() {
+                self.add_page(&drawn[at..], pages);
+                count = self.place(mesh, pages);
+            }
+            match count {
                 Some(count) => written += count,
                 None => {
                     placed = false;
                     break;
                 }
             }
+            if let (Some(budget), Some(began)) = (&budget, began) {
+                slowest = slowest.max((budget.elapsed)().saturating_sub(began));
+            }
         }
-        if !placed || self.mostly_empty() {
+        // A budgeted update has only begun filling the page it may have added, so it never
+        // counts as mostly empty.
+        if !placed || (budget.is_none() && self.mostly_empty()) {
             written = self.lay_out(&drawn, pages);
+            done = true;
         }
         self.list_draws(meshes, cuts);
-        written
+        Update { written, done }
     }
 
     /// Finds room for `mesh` in some page and writes it there. `None` if no page has room.
@@ -233,6 +281,48 @@ impl Resident {
             return Some(vertices as usize);
         }
         None
+    }
+
+    /// Adds a page with room for the meshes of `rest` that are not written yet, with spare room,
+    /// and at least as big as the pages so far together, so a Map that lands bit by bit needs
+    /// only a few pages.
+    fn add_page(&mut self, rest: &[&Arc<GroupMesh>], pages: &mut impl Pages) {
+        let unwritten: Vec<&&Arc<GroupMesh>> = rest
+            .iter()
+            .filter(|&&mesh| !self.slots.contains_key(&key(mesh)))
+            .collect();
+        let with_spare = |n: u64| n + n * SPARE.0 / SPARE.1;
+        let total = |count: fn(&GroupMesh) -> usize| -> u64 {
+            unwritten.iter().map(|mesh| count(mesh) as u64).sum()
+        };
+        let so_far = |capacity: fn(&Page) -> u32| -> u64 {
+            self.pages
+                .iter()
+                .map(|page| u64::from(capacity(page)))
+                .sum()
+        };
+        let size = |want: u64, so_far: u64, min: u32, max: u32| {
+            want.max(so_far).max(u64::from(min)).min(u64::from(max)) as u32
+        };
+        let page_size = (
+            size(
+                with_spare(total(|m| m.vertices.len())),
+                so_far(|page| page.vertices.capacity()),
+                MIN_PAGE.0,
+                self.max.0,
+            ),
+            size(
+                with_spare(total(|m| m.indices.len())),
+                so_far(|page| page.indices.capacity()),
+                MIN_PAGE.1,
+                self.max.1,
+            ),
+        );
+        pages.add(page_size);
+        self.pages.push(Page {
+            vertices: Allocator::new(page_size.0),
+            indices: Allocator::new(page_size.1),
+        });
     }
 
     /// Whether the pages hold under a quarter of their room, so laying them out again (with
@@ -416,16 +506,21 @@ fn write(
 mod tests {
     use super::*;
     use crate::color::Color;
-    use crate::vector::VectorGroup;
-    use crate::vector::chunk::{Tessellators, merge, mesh_group};
+    use crate::vector::cache::TessellationCache;
+    use crate::vector::chunk::{Tessellators, merge, mesh_group, resolve};
+    use crate::vector::{ObjectRef, Paint, Placement, VectorGroup, VectorShape};
     use lyon::math::point;
     use lyon::path::Path;
+    use ssmap_core::{FillStyle, Id};
+    use std::cell::Cell;
 
     /// Pages as plain arrays, counting what is written.
     #[derive(Default)]
     struct Arrays {
         pages: Vec<(Vec<Vertex>, Vec<u32>)>,
         resets: usize,
+        adds: usize,
+        writes: usize,
     }
 
     impl Pages for Arrays {
@@ -450,9 +545,18 @@ mod tests {
             index_at: u32,
             indices: &[u32],
         ) {
+            self.writes += 1;
             let (v, i) = &mut self.pages[page];
             v[vertex_at as usize..vertex_at as usize + vertices.len()].copy_from_slice(vertices);
             i[index_at as usize..index_at as usize + indices.len()].copy_from_slice(indices);
+        }
+
+        fn add(&mut self, (v, i): (u32, u32)) {
+            self.adds += 1;
+            self.pages.push((
+                vec![bytemuck::Zeroable::zeroed(); v as usize],
+                vec![u32::MAX; i as usize],
+            ));
         }
     }
 
@@ -563,7 +667,7 @@ mod tests {
         let cuts = [3, 3, 8];
         let mut resident = Resident::new(u64::MAX);
         let mut arrays = Arrays::default();
-        resident.update(&meshes, &cuts, &mut arrays);
+        resident.update(&meshes, &cuts, None, &mut arrays);
         check_every_run(&resident, &arrays, &meshes, &cuts);
         // Laid out in order on one page, so neighbours merge into as few draws as `merge`.
         assert_eq!(resident.draws.len(), merge(&meshes, &cuts).draws.len());
@@ -576,19 +680,22 @@ mod tests {
         let cuts = [10];
         let mut resident = Resident::new(u64::MAX);
         let mut arrays = Arrays::default();
-        resident.update(&meshes, &cuts, &mut arrays);
+        resident.update(&meshes, &cuts, None, &mut arrays);
         // Group 4 is edited into a bigger shape, which no longer fits its old place.
         let edited = meshes_of(&[blob(80.0, 40)]).remove(0);
         let size = edited.as_ref().unwrap().vertices.len();
         meshes[4] = edited;
-        let written = resident.update(&meshes, &cuts, &mut arrays);
+        let written = resident.update(&meshes, &cuts, None, &mut arrays).written;
         assert_eq!(written, size, "only the edited mesh is written");
         assert_eq!(arrays.resets, 1, "the spare room took it");
         check_every_run(&resident, &arrays, &meshes, &cuts);
         // The edited group now sits apart from its neighbours, so its draw splits from theirs.
         assert!(resident.draws.len() > merge(&meshes, &cuts).draws.len());
         // Nothing changed: nothing is written.
-        assert_eq!(resident.update(&meshes, &cuts, &mut arrays), 0);
+        assert_eq!(
+            resident.update(&meshes, &cuts, None, &mut arrays).written,
+            0
+        );
         check_every_run(&resident, &arrays, &meshes, &cuts);
     }
 
@@ -598,10 +705,10 @@ mod tests {
         let mut meshes = meshes_of(&groups);
         let mut resident = Resident::new(u64::MAX);
         let mut arrays = Arrays::default();
-        resident.update(&meshes, &[], &mut arrays);
+        resident.update(&meshes, &[], None, &mut arrays);
         // A Layer moved up: the same meshes in another stacking order.
         meshes.swap(1, 4);
-        assert_eq!(resident.update(&meshes, &[], &mut arrays), 0);
+        assert_eq!(resident.update(&meshes, &[], None, &mut arrays).written, 0);
         check_every_run(&resident, &arrays, &meshes, &[]);
     }
 
@@ -611,12 +718,12 @@ mod tests {
         let mut meshes = meshes_of(&groups);
         let mut resident = Resident::new(u64::MAX);
         let mut arrays = Arrays::default();
-        resident.update(&meshes, &[], &mut arrays);
+        resident.update(&meshes, &[], None, &mut arrays);
         // Far more than the spare room: every group becomes a big blob.
         let blobs: Vec<VectorGroup> = (0..4).map(|i| blob(i as f32 * 30.0, 4000)).collect();
         meshes = meshes_of(&blobs);
         let total: usize = meshes.iter().flatten().map(|m| m.vertices.len()).sum();
-        let written = resident.update(&meshes, &[], &mut arrays);
+        let written = resident.update(&meshes, &[], None, &mut arrays).written;
         assert_eq!(arrays.resets, 2);
         assert_eq!(written, total);
         check_every_run(&resident, &arrays, &meshes, &[]);
@@ -641,7 +748,7 @@ mod tests {
         let limit = (biggest * 8).max(MIN_PAGE.1 as usize * 4) as u64;
         let mut resident = Resident::new(limit);
         let mut arrays = Arrays::default();
-        resident.update(&meshes, &[7], &mut arrays);
+        resident.update(&meshes, &[7], None, &mut arrays);
         assert!(resident.page_count() > 1);
         for (vertices, indices) in &arrays.pages {
             assert!(vertices.len() as u64 * 36 <= limit);
@@ -655,7 +762,7 @@ mod tests {
         let meshes = meshes_of(&[square(0.0, 10.0), blob(30.0, 4000), square(60.0, 10.0)]);
         let mut resident = Resident::new(1024 * 36);
         let mut arrays = Arrays::default();
-        resident.update(&meshes, &[], &mut arrays);
+        resident.update(&meshes, &[], None, &mut arrays);
         let small: Vec<_> = vec![meshes[0].clone(), None, meshes[2].clone()];
         assert_eq!(drawn(&resident, &arrays, 0), merged(&small, &[], 0));
     }
@@ -666,12 +773,238 @@ mod tests {
         let meshes = meshes_of(&groups);
         let mut resident = Resident::new(u64::MAX);
         let mut arrays = Arrays::default();
-        resident.update(&meshes, &[], &mut arrays);
+        resident.update(&meshes, &[], None, &mut arrays);
         let before = arrays.pages[0].0.len();
         let few = meshes[..2].to_vec();
-        resident.update(&few, &[], &mut arrays);
+        resident.update(&few, &[], None, &mut arrays);
         assert_eq!(arrays.resets, 2);
         assert!(arrays.pages[0].0.len() < before / 4);
         check_every_run(&resident, &arrays, &few, &[]);
+    }
+
+    fn object() -> ObjectRef {
+        ObjectRef {
+            id: Id::new(),
+            version: 1,
+        }
+    }
+
+    fn outline(x: f32, object: ObjectRef) -> VectorGroup {
+        let mut group = square(x, 10.0).of_object(object);
+        group.shapes = vec![VectorShape {
+            paint: Paint::Stroke { width: 2.0 },
+            style: FillStyle::FLAT,
+            ..group.shapes.remove(0)
+        }];
+        group.placement = Placement::Canvas;
+        group
+    }
+
+    /// Objects whose groups are not next to each other, like ripples drawn before the fill.
+    fn interleaved(objects: usize, plain: bool) -> Vec<VectorGroup> {
+        let refs: Vec<ObjectRef> = (0..objects).map(|_| object()).collect();
+        let mut groups: Vec<VectorGroup> = refs
+            .iter()
+            .enumerate()
+            .map(|(i, &o)| outline(30.0 * i as f32, o))
+            .collect();
+        for (i, &o) in refs.iter().enumerate() {
+            groups.push(square(30.0 * i as f32, 10.0).of_object(o));
+            if plain {
+                groups.push(square(-30.0 * i as f32, 10.0));
+            }
+        }
+        groups
+    }
+
+    fn resolved(groups: &[VectorGroup], cache: &TessellationCache) -> Vec<Option<Arc<GroupMesh>>> {
+        resolve(groups, cache, &mut Tessellators::default())
+    }
+
+    #[test]
+    fn objects_split_across_the_stacking_order_draw_what_merge_draws() {
+        let groups = interleaved(100, true);
+        let cuts = [70, 70, 140];
+        let cache = TessellationCache::new();
+        cache.rebuild(&groups).run(|| {});
+        let meshes = resolved(&groups, &cache);
+        let mut resident = Resident::new(u64::MAX);
+        let mut arrays = Arrays::default();
+        resident.update(&meshes, &cuts, None, &mut arrays);
+        check_every_run(&resident, &arrays, &meshes, &cuts);
+    }
+
+    #[test]
+    fn a_landing_object_writes_only_its_meshes() {
+        let groups = interleaved(300, true);
+        let cache = TessellationCache::new();
+        let rebuild = cache.rebuild(&groups);
+        let mut resident = Resident::new(u64::MAX);
+        let mut arrays = Arrays::default();
+        // Nothing is ready: only the groups of no Object are drawn.
+        let before = resolved(&groups, &cache);
+        resident.update(&before, &[], None, &mut arrays);
+        let plain: usize = before.iter().flatten().map(|m| m.vertices.len()).sum();
+        let mut landed = 0;
+        let mut first = None;
+        rebuild.run(|| {
+            landed += 1;
+            if landed == 1 {
+                let meshes = resolved(&groups, &cache);
+                let new: Vec<usize> = (0..groups.len())
+                    .filter(|&i| before[i].is_none() && meshes[i].is_some())
+                    .collect();
+                let size: usize = new
+                    .iter()
+                    .filter_map(|&i| meshes[i].as_ref())
+                    .map(|m| m.vertices.len())
+                    .sum();
+                let budget = Some(Budget {
+                    limit: APPLY_BUDGET,
+                    elapsed: &|| Duration::ZERO,
+                });
+                let update = resident.update(&meshes, &[], budget, &mut arrays);
+                check_every_run(&resident, &arrays, &meshes, &[]);
+                first = Some((new.len(), update, size));
+            }
+        });
+        let (new, update, size) = first.unwrap();
+        // The first Object has one group in the outlines and one in the fills. The groups of
+        // no Object are tessellated again on every update, so they are written again too.
+        assert_eq!(new, 2);
+        assert_eq!(
+            update,
+            Update {
+                written: size + plain,
+                done: true
+            }
+        );
+        assert_eq!(arrays.resets, 1, "the spare room took it");
+    }
+
+    #[test]
+    fn an_update_with_no_budget_left_writes_one_mesh() {
+        let groups = interleaved(10, false);
+        let cache = TessellationCache::new();
+        cache.rebuild(&groups).run(|| {});
+        let meshes = resolved(&groups, &cache);
+        let mut resident = Resident::new(u64::MAX);
+        let mut arrays = Arrays::default();
+        let over = || Duration::from_secs(1);
+        let mut updates = 0;
+        loop {
+            let budget = Some(Budget {
+                limit: Duration::ZERO,
+                elapsed: &over,
+            });
+            let update = resident.update(&meshes, &[], budget, &mut arrays);
+            assert!(update.written > 0, "an update always writes a mesh");
+            updates += 1;
+            if update.done {
+                break;
+            }
+            // What is written so far draws as `merge` draws it, the rest left out.
+            let written: Vec<_> = meshes
+                .iter()
+                .map(|m| m.clone().filter(|m| resident.slots.contains_key(&key(m))))
+                .collect();
+            check_every_run(&resident, &arrays, &written, &[]);
+        }
+        assert_eq!(updates, groups.len());
+        assert_eq!(arrays.resets, 0, "never laid out again");
+        check_every_run(&resident, &arrays, &meshes, &[]);
+    }
+
+    #[test]
+    fn writing_results_stays_inside_the_frame_budget() {
+        // Big outlines, as on the large benchmark Map.
+        let groups: Vec<VectorGroup> = (0..600)
+            .map(|i| blob(50.0 * i as f32, 400).of_object(object()))
+            .collect();
+        let cache = TessellationCache::new();
+        let rebuild = cache.rebuild(&groups);
+        let mut resident = Resident::new(u64::MAX);
+        let mut arrays = Arrays::default();
+        // A fake clock: every mesh written costs a millisecond, whatever the machine.
+        let clock = Cell::new(Duration::ZERO);
+        let tick = Duration::from_millis(1);
+        let allowed = APPLY_BUDGET.as_millis() as usize;
+        let mut frames = Vec::new();
+        let mut frame = |resident: &mut Resident, arrays: &mut Arrays| {
+            let meshes = resolved(&groups, &cache);
+            let start = clock.get();
+            let elapsed = || clock.get() - start;
+            let before = arrays.writes;
+            let update = resident.update(
+                &meshes,
+                &[],
+                Some(Budget {
+                    limit: APPLY_BUDGET,
+                    elapsed: &elapsed,
+                }),
+                &mut Ticking {
+                    arrays: &mut *arrays,
+                    clock: &clock,
+                    tick,
+                },
+            );
+            frames.push(arrays.writes - before);
+            update.done
+        };
+        // Frames are slower than landings, so results pile up between them.
+        let mut landed = 0;
+        rebuild.run(|| {
+            landed += 1;
+            if landed % 10 == 0 {
+                frame(&mut resident, &mut arrays);
+            }
+        });
+        while !frame(&mut resident, &mut arrays) {}
+        assert!(
+            frames.iter().all(|&writes| writes <= allowed),
+            "a frame wrote more meshes than the {APPLY_BUDGET:?} budget allows: {frames:?}"
+        );
+        assert!(frames.contains(&allowed), "{frames:?}");
+        assert_eq!(
+            arrays.resets, 0,
+            "never laid out again, which writes everything"
+        );
+        assert!(
+            resident.page_count() < 12,
+            "{} pages",
+            resident.page_count()
+        );
+        let meshes = resolved(&groups, &cache);
+        check_every_run(&resident, &arrays, &meshes, &[]);
+    }
+
+    /// Pages whose writes move a fake clock on.
+    struct Ticking<'a> {
+        arrays: &'a mut Arrays,
+        clock: &'a Cell<Duration>,
+        tick: Duration,
+    }
+
+    impl Pages for Ticking<'_> {
+        fn reset(&mut self, sizes: &[(u32, u32)]) {
+            self.arrays.reset(sizes);
+        }
+
+        fn add(&mut self, size: (u32, u32)) {
+            self.arrays.add(size);
+        }
+
+        fn write(
+            &mut self,
+            page: usize,
+            vertex_at: u32,
+            vertices: &[Vertex],
+            index_at: u32,
+            indices: &[u32],
+        ) {
+            self.clock.set(self.clock.get() + self.tick);
+            self.arrays
+                .write(page, vertex_at, vertices, index_at, indices);
+        }
     }
 }

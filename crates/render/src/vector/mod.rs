@@ -15,8 +15,8 @@ pub use lyon::tessellation::FillRule;
 use crate::color::Color;
 
 pub use cache::{TessellationCache, TessellationRebuild};
-pub(crate) use chunk::APPLY_BUDGET;
 pub(crate) use renderer::LyonRenderer;
+pub(crate) use resident::APPLY_BUDGET;
 
 /// Where an Object is drawn and which edge clips it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]

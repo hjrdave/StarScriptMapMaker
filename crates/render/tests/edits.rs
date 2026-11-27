@@ -11,6 +11,7 @@
 )]
 
 use std::convert::Infallible;
+use std::time::Duration;
 
 use ssmap_core::{
     Canvas, Color, Command, DistanceUnit, ExportSettings, Id, Map, MultiPolygon, Polygon,
@@ -254,6 +255,56 @@ fn a_renderer_that_drew_each_edit_matches_a_fresh_one() {
             "after \"{name}\""
         );
     }
+}
+
+#[test]
+fn results_landing_a_mesh_per_frame_end_as_a_fresh_renderer_draws() {
+    let Some(headless) = gpu() else { return };
+    let (map, _, _) = map();
+    let mut kept = renderer(&headless);
+    // No time to spare: each frame writes one mesh and carries the rest to the next.
+    kept.set_apply_budget(Some(Duration::ZERO));
+    let mut scene = MapScene::new(Fonts::bundled());
+    let content = scene.content(&map, &mut RoughnessCache::new());
+    let canvas = CanvasScene::new(map.canvas()).with_content(content);
+    let frame = |renderer: &mut CanvasRenderer| {
+        let mut encoder = headless.device.create_command_encoder(&Default::default());
+        renderer.render(
+            &headless.device,
+            &headless.queue,
+            &mut encoder,
+            &canvas,
+            &view(),
+        );
+        headless.queue.submit([encoder.finish()]);
+    };
+    let rebuild = kept.start_tessellation(&canvas.content);
+    frame(&mut kept);
+    let mut carried = false;
+    rebuild.run(|| {
+        frame(&mut kept);
+        carried |= kept.apply_pending();
+    });
+    let mut frames = 0;
+    while kept.apply_pending() {
+        frame(&mut kept);
+        frames += 1;
+        assert!(frames < 1000, "the results are all written in the end");
+    }
+    assert!(
+        carried && frames > 0,
+        "the budget carried results to later frames"
+    );
+    // Drawn with the budget off, but nothing is left to write by now.
+    let last = render_to_image(
+        &headless.device,
+        &headless.queue,
+        &mut kept,
+        &canvas,
+        &view(),
+    )
+    .expect("the readback succeeds");
+    assert_eq!(differing(&last, &fresh(&headless, &map)), 0);
 }
 
 #[test]

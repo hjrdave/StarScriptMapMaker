@@ -510,41 +510,33 @@ impl CanvasRenderer {
         let tessellation = self.content.cache().generation();
         let building = self.content.cache().is_building();
         let content_changed = new_art || self.drawn_content.as_ref() != Some(&scene.content);
+        // The groups or their cuts changed, so the meshes were written above.
+        let mut rewritten = false;
         if content_changed {
             self.stamps
                 .prepare(device, queue, scene.content.shared_stamps());
             let clips = scene.content.clips();
-            let cuts: Vec<usize> = {
-                let mut cuts: Vec<usize> = self
-                    .stamps
-                    .cuts()
-                    .chain(clips.iter().flat_map(|c| [c.groups.start, c.groups.end]))
-                    .chain(scene.content.paint().map(|paint| paint.after))
-                    .collect();
-                // Each board scissors its members, and Objects off the boards draw unscissored,
-                // so a run never mixes placements.
-                let groups = scene.content.groups();
-                cuts.extend(
-                    (1..groups.len()).filter(|&i| groups[i].placement != groups[i - 1].placement),
-                );
-                cuts.sort_unstable();
-                cuts.dedup();
-                cuts
-            };
-            // Only the Stamps changed: the very same groups, cut in the same places, with nothing
-            // new tessellated, are already merged.
-            let same_groups = self.drawn_content.as_ref().is_some_and(|drawn| {
+            let cuts = self.cuts(&scene.content);
+            // Only the Stamps changed: the very same groups, cut in the same places.
+            let same_layout = self.drawn_content.as_ref().is_some_and(|drawn| {
                 std::ptr::eq(drawn.groups(), scene.content.groups())
                     && std::ptr::eq(drawn.clips(), clips)
-            }) && cuts == self.content_cuts
-                && tessellation == self.drawn_tessellation;
-            // While a rebuild runs (or a carried apply is unfinished), take the new content in
-            // chunks within the frame budget; otherwise merge it all at once.
-            if building || self.carry {
-                self.content.start_chunks(scene.content.groups(), &cuts);
-            } else if !same_groups {
-                self.content
-                    .update_runs(device, queue, scene.content.groups(), &cuts);
+            }) && cuts == self.content_cuts;
+            // ...and with nothing new tessellated, so they are already merged.
+            let same_groups = same_layout && tessellation == self.drawn_tessellation;
+            // Only the meshes that changed are written (ADR 0019). An edit writes them all
+            // at once, so it shows in this frame. While a Map opens (a rebuild runs, or the
+            // last frame left results), the content also changes as outlines and Shore rings
+            // land, so it is written within the frame budget, as landed results are.
+            if !same_layout {
+                let budget = (building || self.carry)
+                    .then_some(self.apply_budget)
+                    .flatten();
+                self.carry =
+                    !self
+                        .content
+                        .update_runs(device, queue, scene.content.groups(), &cuts, budget);
+                rewritten = true;
             }
             // Run 2n of the masks is scope n's land and run 2n + 1 its Lakes.
             let mut mask_groups = Vec::new();
@@ -562,20 +554,19 @@ impl CanvasRenderer {
             self.content_cuts = cuts;
             self.drawn_content = Some(scene.content.clone());
         }
-        if content_changed || tessellation != self.drawn_tessellation || self.carry {
-            self.drawn_tessellation = tessellation;
-            if self.content.is_chunked() {
-                self.carry =
-                    !self
-                        .content
-                        .apply_chunks(device, scene.content.groups(), self.apply_budget);
-            } else if !content_changed {
-                // Results landed with no chunks to take them: merge everything.
-                self.content
-                    .update_runs(device, queue, scene.content.groups(), &self.content_cuts);
-            }
+        // Background results landed (or the last frame's budget left some): write them within
+        // the frame budget, carrying the rest to the next frame.
+        if !rewritten && (tessellation != self.drawn_tessellation || self.carry) {
+            self.carry = !self.content.update_runs(
+                device,
+                queue,
+                scene.content.groups(),
+                &self.content_cuts,
+                self.apply_budget,
+            );
         }
-        // After the chunks above are built, so every texture a vertex names is loaded.
+        self.drawn_tessellation = tessellation;
+        // After the meshes above are written, so every texture a vertex names is loaded.
         if self.fill_textures.refresh(device, queue) {
             let textures = self.fill_textures.bind_group();
             self.backdrop.set_textures(textures);
@@ -660,6 +651,29 @@ impl CanvasRenderer {
 
     /// Builds the geometry of the Map's paint: its strokes, one run per step, and the shapes it
     /// is clipped to and erased by. Does nothing if `paint` is the layer already built.
+    /// Where the groups of `content` are split into runs: around Stamps, Clips and the paint,
+    /// and wherever the placement changes.
+    fn cuts(&self, content: &Content) -> Vec<usize> {
+        let mut cuts: Vec<usize> = self
+            .stamps
+            .cuts()
+            .chain(
+                content
+                    .clips()
+                    .iter()
+                    .flat_map(|c| [c.groups.start, c.groups.end]),
+            )
+            .chain(content.paint().map(|paint| paint.after))
+            .collect();
+        // Each board scissors its members, and Objects off the boards draw unscissored, so a
+        // run never mixes placements.
+        let groups = content.groups();
+        cuts.extend((1..groups.len()).filter(|&i| groups[i].placement != groups[i - 1].placement));
+        cuts.sort_unstable();
+        cuts.dedup();
+        cuts
+    }
+
     fn set_paint(&mut self, device: &wgpu::Device, paint: Option<&Arc<PaintLayer>>) {
         let same = match (&self.drawn_paint, paint) {
             (Some(drawn), Some(paint)) => Arc::ptr_eq(drawn, paint),
