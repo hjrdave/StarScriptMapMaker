@@ -326,7 +326,7 @@ fn wait_until_journaled(harness: &mut Harness<'_, MapMakerApp>, tabs: usize) {
             .tabs()
             .iter()
             .take(tabs)
-            .all(|tab| tab.recovery_journal().is_some())
+            .all(|tab| tab.recovery_journal().is_some() && !tab.has_unjournaled_changes())
         {
             return;
         }

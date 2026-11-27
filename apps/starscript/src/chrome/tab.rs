@@ -132,6 +132,11 @@ impl MapTab {
         self.recovery.journal_path()
     }
 
+    /// Whether this tab has Ops queued for its Recovery journal but not yet written.
+    pub fn has_unjournaled_changes(&self) -> bool {
+        self.recovery.has_pending()
+    }
+
     /// This tab's tessellation cache; `None` without a wgpu device.
     pub fn tessellation_cache(&self) -> Option<&TessellationCache> {
         self.canvas_view.cache()
