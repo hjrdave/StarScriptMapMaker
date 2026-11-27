@@ -321,12 +321,17 @@ fn wait_until_journaled(harness: &mut Harness<'_, MapMakerApp>, tabs: usize) {
     let started = Instant::now();
     loop {
         harness.step();
+        // A journal is started by its first write, which may not hold later edits: on a busy
+        // machine they can come after the flush delay. So wait for the active tab's queue to
+        // empty too. The other tabs were edited once each, before the active one was opened,
+        // so their journals hold everything once they exist.
         if harness
             .state()
             .tabs()
             .iter()
             .take(tabs)
             .all(|tab| tab.recovery_journal().is_some())
+            && !harness.state().has_unjournaled_changes()
         {
             return;
         }
