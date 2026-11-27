@@ -274,7 +274,7 @@ fn closing_the_window_where_it_keeps_the_app_running_empties_it_and_only_quit_ex
 
     request_close(&mut harness);
     harness.get_by_label("Don’t Save").click();
-    harness.run();
+    settle(&mut harness);
     assert!(harness.state().window_hidden());
     assert!(!harness.state().is_closing(), "the app keeps running");
     assert!(harness.state().tabs().is_empty());
@@ -301,6 +301,19 @@ fn quitting_asks_about_unsaved_maps_and_exits() {
     harness.get_by_label("Don’t Save").click();
     harness.run();
     assert!(harness.state().is_closing());
+}
+
+/// Runs until the screen is idle. Home reads its Recent cards on a worker thread and repaints
+/// every 50 ms until done, so on a slow machine a plain `run` can hit its step limit first.
+fn settle(harness: &mut Harness<'_, MapMakerApp>) {
+    let started = Instant::now();
+    while harness.try_run().is_err() {
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the screen never settled"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 /// Runs frames until every tab's edits have reached its Recovery journal.
@@ -394,7 +407,7 @@ fn number_shortcuts_jump_to_home_a_tab_and_the_last_tab() {
     let command = egui::Modifiers::COMMAND;
 
     harness.key_press_modifiers(command, egui::Key::Num1);
-    harness.run();
+    settle(&mut harness);
     assert!(harness.state().home_active());
     harness.key_press_modifiers(command, egui::Key::Num3);
     harness.run();
@@ -419,7 +432,7 @@ fn control_tab_cycles_through_home_and_the_maps() {
     open_three(&mut harness, dir.path());
 
     harness.key_press_modifiers(egui::Modifiers::CTRL, egui::Key::Tab);
-    harness.run();
+    settle(&mut harness);
     assert!(harness.state().home_active());
     harness.key_press_modifiers(egui::Modifiers::CTRL, egui::Key::Tab);
     harness.run();
@@ -450,7 +463,7 @@ fn close_tab_shortcut_closes_a_map_but_never_home() {
     harness.run();
     assert_eq!(harness.state().tabs().len(), 2);
     harness.key_press_modifiers(command, egui::Key::Num1);
-    harness.run();
+    settle(&mut harness);
     harness.key_press_modifiers(command, egui::Key::W);
     harness.run();
     assert_eq!(harness.state().tabs().len(), 2);
@@ -478,7 +491,7 @@ fn clicking_home_and_a_map_tab_switches_between_them() {
     let mut harness = app(None);
     open_three(&mut harness, dir.path());
     harness.get_by_label("Home").click();
-    harness.run();
+    settle(&mut harness);
     assert!(harness.state().home_active());
     harness.get_by_label("a.ssmap").click();
     harness.run();
