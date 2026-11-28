@@ -9,7 +9,8 @@ use ssmap_core::file::{FileError, MapFile};
 use ssmap_core::{
     Canvas, Color, Command, CommandError, DistanceUnit, History, Id, InvariantError,
     MAX_PAINT_STROKES, MAX_RAW_STROKE_POINTS, MAX_STROKE_POINTS, MAX_STROKE_SIZE, Map, MapView, Op,
-    OpError, PaintStroke, STROKE_TOLERANCE, Scale, Selection, StrokeError, simplify_path,
+    OpError, PaintStroke, STROKE_TOLERANCE, Scale, Selection, StrokeError, erases_any,
+    simplify_path,
 };
 
 fn new_map() -> Map {
@@ -543,4 +544,48 @@ fn set_meta(path: &std::path::Path, key: &str, value: &str) {
         [key, value],
     )
     .unwrap();
+}
+
+/// Issue #710: an eraser that meets no earlier paint changes nothing.
+#[test]
+fn an_eraser_erases_only_where_it_meets_earlier_paint() {
+    let paint = stroke(vec![[10.0, 10.0], [50.0, 10.0]]);
+    // Crossing the stroke.
+    assert!(erases_any(
+        std::slice::from_ref(&paint),
+        &eraser(vec![[30.0, 0.0], [30.0, 30.0]])
+    ));
+    // Running beside it, near enough that the brushes (both 12 wide) overlap: 11 apart.
+    assert!(erases_any(
+        std::slice::from_ref(&paint),
+        &eraser(vec![[10.0, 21.0], [50.0, 21.0]])
+    ));
+    // A single dab past its end, just within reach.
+    assert!(erases_any(
+        std::slice::from_ref(&paint),
+        &eraser(vec![[61.5, 10.0]])
+    ));
+    // Far away, and just out of reach (13 apart against a reach of 12).
+    assert!(!erases_any(
+        std::slice::from_ref(&paint),
+        &eraser(vec![[10.0, 60.0], [50.0, 60.0]])
+    ));
+    assert!(!erases_any(
+        std::slice::from_ref(&paint),
+        &eraser(vec![[10.0, 23.0], [50.0, 23.0]])
+    ));
+    // Nothing to erase on an empty Map, or where only an earlier eraser passed.
+    assert!(!erases_any(&[], &eraser(vec![[30.0, 0.0], [30.0, 30.0]])));
+    let old_eraser = eraser(vec![[10.0, 10.0], [50.0, 10.0]]);
+    assert!(!erases_any(
+        &[old_eraser],
+        &eraser(vec![[30.0, 0.0], [30.0, 30.0]])
+    ));
+    // A long, many-point eraser is judged by the path it commits to.
+    let wiggle: Vec<[f64; 2]> = (0..2000)
+        .map(|i| [f64::from(i) * 0.05, 70.0 + 0.01 * f64::from(i % 2)])
+        .collect();
+    assert!(!erases_any(std::slice::from_ref(&paint), &eraser(wiggle)));
+    let across: Vec<[f64; 2]> = (0..2000).map(|i| [30.0, f64::from(i) * 0.05]).collect();
+    assert!(erases_any(&[paint], &eraser(across)));
 }

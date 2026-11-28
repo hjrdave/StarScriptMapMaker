@@ -156,6 +156,94 @@ pub fn simplify_path(points: &[Point], tolerance: f64) -> Vec<Point> {
         .collect()
 }
 
+/// Whether `eraser` would remove any paint: whether its path, widened to its brush, meets the
+/// widened path of a paint stroke in `strokes`, all of which come before it. An eraser only
+/// touches paint drawn before it (ADR 0017), so one that meets none changes nothing and can be
+/// left out. Paint that an earlier eraser already removed still counts as met.
+pub fn erases_any(strokes: &[PaintStroke], eraser: &PaintStroke) -> bool {
+    let path = simplify_path(&eraser.points, STROKE_TOLERANCE);
+    let Some(eraser_box) = bounds(&path) else {
+        return false;
+    };
+    strokes.iter().filter(|stroke| !stroke.erase).any(|stroke| {
+        let reach = (stroke.size + eraser.size) / 2.0;
+        bounds(&stroke.points).is_some_and(|stroke_box| boxes_within(stroke_box, eraser_box, reach))
+            && paths_within(&stroke.points, &path, reach)
+    })
+}
+
+/// The box around `points`, as `[min_x, min_y, max_x, max_y]`; `None` with no points.
+fn bounds(points: &[Point]) -> Option<[f64; 4]> {
+    let first = points.first()?;
+    Some(
+        points
+            .iter()
+            .fold([first[0], first[1], first[0], first[1]], |b, p| {
+                [
+                    b[0].min(p[0]),
+                    b[1].min(p[1]),
+                    b[2].max(p[0]),
+                    b[3].max(p[1]),
+                ]
+            }),
+    )
+}
+
+/// Whether boxes `a` and `b` come within `reach` of each other.
+fn boxes_within(a: [f64; 4], b: [f64; 4], reach: f64) -> bool {
+    a[0] - reach <= b[2] && b[0] - reach <= a[2] && a[1] - reach <= b[3] && b[1] - reach <= a[3]
+}
+
+/// Whether the paths `a` and `b` (a single point counts as a path) come within `reach` of
+/// each other anywhere.
+fn paths_within(a: &[Point], b: &[Point], reach: f64) -> bool {
+    let segments = |path: &[Point]| -> Vec<(Point, Point)> {
+        match path {
+            [only] => vec![(*only, *only)],
+            _ => path.windows(2).map(|w| (w[0], w[1])).collect(),
+        }
+    };
+    let (a, b) = (segments(a), segments(b));
+    a.iter().any(|&(p, q)| {
+        let a_box = [
+            p[0].min(q[0]),
+            p[1].min(q[1]),
+            p[0].max(q[0]),
+            p[1].max(q[1]),
+        ];
+        b.iter().any(|&(r, s)| {
+            let b_box = [
+                r[0].min(s[0]),
+                r[1].min(s[1]),
+                r[0].max(s[0]),
+                r[1].max(s[1]),
+            ];
+            boxes_within(a_box, b_box, reach) && segment_distance(p, q, r, s) <= reach
+        })
+    })
+}
+
+/// The shortest distance between the segments `p`–`q` and `r`–`s`.
+fn segment_distance(p: Point, q: Point, r: Point, s: Point) -> f64 {
+    if segments_cross(p, q, r, s) {
+        return 0.0;
+    }
+    distance_to_segment(p, r, s)
+        .min(distance_to_segment(q, r, s))
+        .min(distance_to_segment(r, p, q))
+        .min(distance_to_segment(s, p, q))
+}
+
+/// Whether the segments `p`–`q` and `r`–`s` cross (touching ends are caught by the distances).
+fn segments_cross(p: Point, q: Point, r: Point, s: Point) -> bool {
+    let side = |a: Point, b: Point, c: Point| {
+        (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+    };
+    let (d1, d2) = (side(r, s, p), side(r, s, q));
+    let (d3, d4) = (side(p, q, r), side(p, q, s));
+    d1 * d2 < 0.0 && d3 * d4 < 0.0
+}
+
 /// How far `p` is from the segment `a` to `b`.
 fn distance_to_segment(p: Point, a: Point, b: Point) -> f64 {
     let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
