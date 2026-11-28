@@ -232,16 +232,13 @@ impl MapMakerApp {
         };
         // A rail's panel opened over the Canvas: Layers from the left, Properties as a
         // floating inspector pinned to the top right.
-        let palette = theme::palette(ctx);
-        let overlay_frame = egui::Frame::new()
-            .fill(palette.bg_panel)
-            .stroke(egui::Stroke::new(1.0, palette.border_strong))
-            .shadow(egui::Shadow {
-                offset: [0, 4],
-                blur: 16,
-                spread: 0,
-                color: theme::SCRIM,
-            });
+        let overlay_frame = overlay_frame(ctx);
+        let margin = overlay_frame.inner_margin;
+        // The rules of the panel reach the frame's edges, past the margin, as they do docked.
+        let edges = |ui: &egui::Ui| {
+            let inner = ui.max_rect().x_range();
+            egui::Rangef::new(inner.min - margin.leftf(), inner.max + margin.rightf())
+        };
         let mut overlay_rect = None;
         if self.win.shell.layers_overlay() {
             let width = self.win.shell.width(shell::Side::Left);
@@ -250,9 +247,9 @@ impl MapMakerApp {
                 .fixed_pos(canvas_rect.min)
                 .show(ctx, |ui| {
                     overlay_frame.show(ui, |ui| {
-                        ui.set_width(width);
-                        ui.set_height(canvas_rect.height());
-                        let edges = ui.max_rect().x_range();
+                        ui.set_width(width - margin.sum().x);
+                        ui.set_height(canvas_rect.height() - margin.sum().y);
+                        let edges = edges(ui);
                         theme::panel_scope(ui, edges, |ui| {
                             layers_panel(ui, &mut self.win.shell, tab)
                         });
@@ -268,9 +265,9 @@ impl MapMakerApp {
                 .fixed_pos(canvas_rect.right_top() + egui::vec2(-width - MARGIN, MARGIN))
                 .show(ctx, |ui| {
                     overlay_frame.show(ui, |ui| {
-                        ui.set_width(width);
-                        ui.set_height(height);
-                        let edges = ui.max_rect().x_range();
+                        ui.set_width(width - margin.sum().x);
+                        ui.set_height(height - margin.sum().y);
+                        let edges = edges(ui);
                         theme::panel_scope(ui, edges, |ui| {
                             tab.properties.show(ui, &mut tab.editor)
                         });
@@ -296,4 +293,28 @@ impl MapMakerApp {
             }
         }
     }
+}
+
+/// The frame of a sidebar panel opened over the Canvas, with a border and shadow to lift it off
+/// the Canvas. Border and inner margin together match a docked panel's inner margin (egui's
+/// side panel frame), so the content sits where it does docked (issue #699).
+fn overlay_frame(ctx: &egui::Context) -> egui::Frame {
+    const BORDER: i8 = 1;
+    let palette = theme::palette(ctx);
+    let docked = egui::Frame::side_top_panel(&ctx.global_style()).inner_margin;
+    egui::Frame::new()
+        .inner_margin(egui::Margin {
+            left: (docked.left - BORDER).max(0),
+            right: (docked.right - BORDER).max(0),
+            top: (docked.top - BORDER).max(0),
+            bottom: (docked.bottom - BORDER).max(0),
+        })
+        .fill(palette.bg_panel)
+        .stroke(egui::Stroke::new(f32::from(BORDER), palette.border_strong))
+        .shadow(egui::Shadow {
+            offset: [0, 4],
+            blur: 16,
+            spread: 0,
+            color: theme::SCRIM,
+        })
 }

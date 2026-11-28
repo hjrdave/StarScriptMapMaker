@@ -273,6 +273,28 @@ fn a_press_outside_the_overlay_closes_it() {
     assert!(!harness.state().shell().layers_overlay());
 }
 
+/// How far the Layers panel's heading sits from the rail's Layers icon.
+fn heading_inset(harness: &Harness<'static, MapMakerApp>) -> f32 {
+    let heading = harness.get_by_label("Layers").rect();
+    heading.left() - harness.get_by_label(RAIL_LAYERS).rect().right()
+}
+
+/// Issue #699: a panel opened over the Canvas keeps a docked panel's inner margin, so its
+/// content sits where it does docked instead of against the overlay's edge.
+#[test]
+fn an_overlay_keeps_the_docked_panels_margin() {
+    let docked = heading_inset(&app());
+    let mut harness = app_sized(0.25, 1100.0);
+    harness.get_by_label(RAIL_LAYERS).click();
+    harness.run();
+    assert!(harness.state().shell().layers_overlay());
+    let overlay = heading_inset(&harness);
+    assert!(
+        (overlay - docked).abs() < 0.5,
+        "docked {docked}, overlay {overlay}"
+    );
+}
+
 #[test]
 fn at_the_minimum_properties_is_a_rail_that_opens_a_floating_inspector() {
     let mut harness = app_sized(0.25, 1024.0);
