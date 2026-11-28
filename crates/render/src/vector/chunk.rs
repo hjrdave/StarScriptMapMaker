@@ -120,24 +120,45 @@ fn bounds_of(vertices: &[Vertex]) -> [f32; 4] {
 /// Curve flattening tolerance in Canvas units.
 const TOLERANCE: f32 = 0.05;
 
-/// Adds one shape's triangles. A path lyon cannot tessellate draws nothing rather than
+/// Builds stroke vertices and records, for each, where it sits on the path and its normal, so
+/// the mesh can be moved to another width (see [`rescaled`]).
+struct StrokeVertices<'a> {
+    color: [f32; 4],
+    basis: Option<&'a mut Vec<[f32; 4]>>,
+}
+
+impl lyon::tessellation::StrokeVertexConstructor<Vertex> for StrokeVertices<'_> {
+    fn new_vertex(&mut self, vertex: StrokeVertex) -> Vertex {
+        if let Some(basis) = &mut self.basis {
+            let [x, y] = vertex.position_on_path().to_array();
+            let [nx, ny] = vertex.normal().to_array();
+            basis.push([x, y, nx, ny]);
+        }
+        Vertex {
+            position: vertex.position().to_array(),
+            color: self.color,
+            look: [0; 4],
+            tint: [0; 4],
+            texture: [0; 4],
+        }
+    }
+}
+
+/// Adds one shape's triangles, and to `basis`, if given, each new vertex's place on the path and
+/// normal (a fill's vertices have no normal). A path lyon cannot tessellate draws nothing rather than
 /// failing the frame.
 fn tessellate(
     shape: &VectorShape,
     geometry: &mut VertexBuffers<Vertex, u32>,
+    basis: Option<&mut Vec<[f32; 4]>>,
     fill: &mut FillTessellator,
     stroke: &mut StrokeTessellator,
 ) {
     let color = shape.color.to_linear_premultiplied();
-    let (look, tint, texture) = match shape.paint {
-        Paint::Fill(_) => {
-            let (look, tint) = pack_style(&shape.style);
-            (look, tint, pack_texture(&shape.style))
-        }
-        Paint::Stroke { .. } => ([0; 4], [0; 4], [0; 4]),
-    };
     match shape.paint {
         Paint::Fill(rule) => {
+            let (look, tint) = pack_style(&shape.style);
+            let texture = pack_texture(&shape.style);
             let options = FillOptions::tolerance(TOLERANCE).with_fill_rule(rule);
             let _ = fill.tessellate_path(
                 &*shape.path,
@@ -159,15 +180,19 @@ fn tessellate(
             let _ = stroke.tessellate_path(
                 &*shape.path,
                 &options,
-                &mut BuffersBuilder::new(geometry, |vertex: StrokeVertex| Vertex {
-                    position: vertex.position().to_array(),
-                    color,
-                    look,
-                    tint,
-                    texture,
-                }),
+                &mut BuffersBuilder::new(geometry, StrokeVertices { color, basis }),
             );
+            return;
         }
+    }
+    // A fill's vertices stay where they are whatever the width.
+    if let Some(basis) = basis {
+        let from = basis.len();
+        basis.extend(
+            geometry.vertices[from..]
+                .iter()
+                .map(|vertex| [vertex.position[0], vertex.position[1], 0.0, 0.0]),
+        );
     }
 }
 
@@ -178,23 +203,49 @@ pub(super) struct GroupMesh {
     pub(super) once: bool,
     pub(super) effect: bool,
     pub(super) bounds: [f32; 4],
+    /// For a group with a stroke: each vertex's place on its path and its normal, and where
+    /// each shape's vertices end, so [`rescaled`] can move the mesh to new stroke widths.
+    pub(super) basis: Option<Arc<StrokeBasis>>,
+    /// Moved to new stroke widths by [`rescaled`] rather than tessellated: good enough while a
+    /// slider is held, tessellated again once it is let go (#692).
+    pub(super) approximate: bool,
+}
+
+pub(super) struct StrokeBasis {
+    vertices: Vec<[f32; 4]>,
+    shape_ends: Vec<usize>,
 }
 
 #[derive(Default)]
 pub(super) struct Tessellators {
     fill: FillTessellator,
     stroke: StrokeTessellator,
+    /// Reused for each group's [`StrokeBasis`], which is then copied out at its exact size.
+    basis: Vec<[f32; 4]>,
+    /// Whether to record a [`StrokeBasis`] at all: only while a slider is held, so other
+    /// edits pay nothing for it.
+    record_basis: bool,
 }
 
 pub(super) fn mesh_group(group: &VectorGroup, tessellators: &mut Tessellators) -> GroupMesh {
     let mut geometry: VertexBuffers<Vertex, u32> = VertexBuffers::new();
+    let stroked = tessellators.record_basis
+        && group
+            .shapes
+            .iter()
+            .any(|shape| matches!(shape.paint, Paint::Stroke { .. }));
+    let basis = &mut tessellators.basis;
+    basis.clear();
+    let mut shape_ends = Vec::with_capacity(group.shapes.len());
     for shape in &group.shapes {
         tessellate(
             shape,
             &mut geometry,
+            stroked.then_some(&mut *basis),
             &mut tessellators.fill,
             &mut tessellators.stroke,
         );
+        shape_ends.push(geometry.vertices.len());
     }
     GroupMesh {
         bounds: bounds_of(&geometry.vertices),
@@ -202,7 +253,66 @@ pub(super) fn mesh_group(group: &VectorGroup, tessellators: &mut Tessellators) -
         indices: geometry.indices,
         once: group.may_overlap(),
         effect: group.effect,
+        basis: stroked.then(|| {
+            Arc::new(StrokeBasis {
+                vertices: basis.as_slice().to_vec(),
+                shape_ends,
+            })
+        }),
+        approximate: false,
     }
+}
+
+/// `mesh`, made for `old`, moved to the stroke widths of `group`, if the two differ only in
+/// their stroke widths. Each vertex goes to its place on the path plus its normal times half
+/// the new width, as lyon places it. lyon folds joins and subdivides round joins by width, so
+/// a mesh made narrow and widened can stick a few units out at sharp inner joins (#701): it
+/// is only a stand-in while a slider is held.
+pub(super) fn rescaled(
+    mesh: &GroupMesh,
+    old: &VectorGroup,
+    group: &VectorGroup,
+) -> Option<GroupMesh> {
+    let basis = mesh.basis.as_ref()?;
+    if old.effect != group.effect
+        || old.shapes.len() != group.shapes.len()
+        || basis.shape_ends.len() != group.shapes.len()
+    {
+        return None;
+    }
+    let mut widths = Vec::with_capacity(group.shapes.len());
+    for (a, b) in old.shapes.iter().zip(&group.shapes) {
+        let same_path = Arc::ptr_eq(&a.path, &b.path) || a.path.iter().eq(b.path.iter());
+        if a.color != b.color || a.style != b.style || !same_path {
+            return None;
+        }
+        match (a.paint, b.paint) {
+            (Paint::Stroke { .. }, Paint::Stroke { width }) => widths.push(width),
+            (a, b) if a == b => widths.push(0.0),
+            _ => return None,
+        }
+    }
+    let mut vertices = mesh.vertices.clone();
+    let mut start = 0;
+    for (&end, &width) in basis.shape_ends.iter().zip(&widths) {
+        let half = width / 2.0;
+        for (vertex, &[x, y, nx, ny]) in vertices[start..end]
+            .iter_mut()
+            .zip(&basis.vertices[start..end])
+        {
+            vertex.position = [x + nx * half, y + ny * half];
+        }
+        start = end;
+    }
+    Some(GroupMesh {
+        bounds: bounds_of(&vertices),
+        vertices,
+        indices: mesh.indices.clone(),
+        once: mesh.once,
+        effect: mesh.effect,
+        basis: Some(basis.clone()),
+        approximate: true,
+    })
 }
 
 /// The merged buffers and draws for a list of groups.
@@ -387,6 +497,7 @@ pub(super) fn resolve(
         }
     }
     let building = cache.is_building();
+    let preview = cache.is_previewing();
     // Every Object is looked up first, so the ones to tessellate are meshed together.
     let mut found: HashMap<Id, Option<ObjectMeshes>> = HashMap::new();
     let mut misses: Vec<(ObjectRef, Option<Previous>)> = Vec::new();
@@ -403,7 +514,7 @@ pub(super) fn resolve(
         .iter()
         .map(|(object, previous)| (by_object[&object.id].as_slice(), previous.as_ref()))
         .collect();
-    let meshed = mesh_objects(&jobs, tessellators);
+    let meshed = mesh_objects(&jobs, preview, tessellators);
     for ((object, _), meshes) in misses.iter().zip(meshed) {
         cache.store(*object, &by_object[&object.id], meshes.clone());
         found.insert(object.id, Some(meshes.into_iter()));
@@ -431,15 +542,17 @@ pub(super) fn resolve(
 /// as when a Shore setting changes every Landmass's outline at once (#692); one is meshed here.
 pub(super) fn mesh_objects(
     jobs: &[(&[&VectorGroup], Option<&Previous>)],
+    preview: bool,
     tessellators: &mut Tessellators,
 ) -> Vec<Vec<Arc<GroupMesh>>> {
+    tessellators.record_basis = preview;
     let threads = std::thread::available_parallelism()
         .map_or(1, std::num::NonZeroUsize::get)
         .min(jobs.len());
     if threads <= 1 {
         return jobs
             .iter()
-            .map(|&(sources, previous)| mesh_object(sources, previous, tessellators))
+            .map(|&(sources, previous)| mesh_object(sources, previous, preview, tessellators))
             .collect();
     }
     let next = AtomicUsize::new(0);
@@ -448,14 +561,20 @@ pub(super) fn mesh_objects(
         let workers: Vec<_> = (0..threads)
             .map(|_| {
                 scope.spawn(|| {
-                    let mut tessellators = Tessellators::default();
+                    let mut tessellators = Tessellators {
+                        record_basis: preview,
+                        ..Tessellators::default()
+                    };
                     let mut done = Vec::new();
                     loop {
                         let at = next.fetch_add(1, Ordering::Relaxed);
                         let Some(&(sources, previous)) = jobs.get(at) else {
                             break;
                         };
-                        done.push((at, mesh_object(sources, previous, &mut tessellators)));
+                        done.push((
+                            at,
+                            mesh_object(sources, previous, preview, &mut tessellators),
+                        ));
                     }
                     done
                 })
@@ -610,7 +729,7 @@ mod tests {
         let mut fill = FillTessellator::new();
         let mut stroke = StrokeTessellator::new();
         for shape in groups.iter().flat_map(|group| &group.shapes) {
-            tessellate(shape, &mut geometry, &mut fill, &mut stroke);
+            tessellate(shape, &mut geometry, None, &mut fill, &mut stroke);
         }
         geometry
     }
@@ -671,11 +790,11 @@ mod tests {
             .collect();
         let jobs: Vec<(&[&VectorGroup], Option<&Previous>)> =
             sources.iter().map(|s| (s.as_slice(), None)).collect();
-        let together = mesh_objects(&jobs, &mut Tessellators::default());
+        let together = mesh_objects(&jobs, false, &mut Tessellators::default());
         let mut tessellators = Tessellators::default();
         assert_eq!(together.len(), objects.len());
         for (job, meshes) in jobs.iter().zip(&together) {
-            let alone = mesh_object(job.0, None, &mut tessellators);
+            let alone = mesh_object(job.0, None, false, &mut tessellators);
             let corners_of = |meshes: &[Arc<GroupMesh>]| -> Vec<Vec<[f32; 2]>> {
                 meshes.iter().map(|m| corners(m)).collect()
             };
@@ -931,6 +1050,65 @@ mod tests {
         );
         assert!(!Arc::ptr_eq(&old[1], &new[1]), "the outline is");
         assert_eq!(positions(&built.geometry), positions(&batched(&after)));
+    }
+
+    #[test]
+    fn a_held_slider_moves_the_outline_and_letting_go_tessellates_it() {
+        let id = Id::new();
+        let cache = TessellationCache::new();
+        let before = landmass(id, 1, 0.0, 2.0);
+        build(&before, &[], &cache);
+        let old = kept(&cache, &before);
+        cache.set_preview(true);
+        // The first held frame tessellates, keeping where each vertex sits on its path.
+        let held = landmass(id, 2, 0.0, 4.0);
+        build(&held, &[], &cache);
+        let first = kept(&cache, &held);
+        assert!(Arc::ptr_eq(&old[0], &first[0]), "the fill is kept");
+        assert!(!first[1].approximate && first[1].basis.is_some());
+        // The next ones move that mesh instead.
+        let wider = landmass(id, 3, 0.0, 6.0);
+        build(&wider, &[], &cache);
+        let moved = kept(&cache, &wider);
+        assert!(
+            moved[1].approximate,
+            "the outline is moved, not tessellated"
+        );
+        assert_eq!(moved[1].indices, first[1].indices);
+        let generation = cache.generation();
+        cache.set_preview(false);
+        assert!(
+            cache.generation() > generation,
+            "letting go asks for a frame"
+        );
+        let built = build(&wider, &[], &cache);
+        let exact = kept(&cache, &wider);
+        assert!(!exact[1].approximate, "letting go tessellates the outline");
+        assert!(Arc::ptr_eq(&old[0], &exact[0]), "and still keeps the fill");
+        assert_eq!(positions(&built.geometry), positions(&batched(&wider)));
+    }
+
+    #[test]
+    fn moving_an_outline_to_its_own_width_changes_nothing() {
+        let group = stroke(0.0, object(1));
+        let mut tessellators = Tessellators {
+            record_basis: true,
+            ..Tessellators::default()
+        };
+        let mesh = mesh_group(&group, &mut tessellators);
+        let same = rescaled(&mesh, &group, &group).map(|mesh| mesh.vertices);
+        let same = same.as_deref().unwrap_or_default();
+        assert_eq!(same.len(), mesh.vertices.len());
+        for (a, b) in same.iter().zip(&mesh.vertices) {
+            assert!((a.position[0] - b.position[0]).abs() < 1e-4);
+            assert!((a.position[1] - b.position[1]).abs() < 1e-4);
+        }
+        let mut recoloured = group.clone();
+        recoloured.shapes[0].color = Color::rgb(0, 0, 200);
+        assert!(
+            rescaled(&mesh, &group, &recoloured).is_none(),
+            "only a width can change"
+        );
     }
 
     #[test]

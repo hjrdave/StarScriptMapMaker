@@ -85,6 +85,14 @@ impl Script {
         }
     }
 
+    /// Whether the script drags a Properties slider.
+    pub(super) fn is_slider(self) -> bool {
+        matches!(
+            self,
+            Script::SliderAmount | Script::SliderScale | Script::SliderShore
+        )
+    }
+
     pub(super) fn parse(name: &str) -> Option<Script> {
         Script::ALL.into_iter().find(|script| script.name() == name)
     }

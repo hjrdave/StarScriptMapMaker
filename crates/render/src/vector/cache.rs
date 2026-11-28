@@ -1,12 +1,12 @@
 //! The tessellation cache, which a worker thread can fill while the editor keeps drawing.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 
 use ssmap_core::Id;
 
-use super::chunk::{GroupMesh, Tessellators, mesh_group};
+use super::chunk::{GroupMesh, Tessellators, mesh_group, rescaled};
 use super::{ObjectRef, VectorGroup};
 
 /// Tessellated Objects, kept so only an edited Object is tessellated again.
@@ -26,6 +26,9 @@ struct TessellationShared {
     generation: AtomicU64,
     /// How many rebuilds are still running.
     building: AtomicUsize,
+    /// A slider is held: an Object whose groups differ only in stroke widths has its last
+    /// mesh moved to them instead of being tessellated again (#692).
+    preview: AtomicBool,
     /// Held while a rebuild ends, so a waiter never misses the wake-up.
     ended: Mutex<()>,
     ended_signal: Condvar,
@@ -77,7 +80,9 @@ impl TessellationCache {
     ) -> Option<Vec<Arc<GroupMesh>>> {
         let inner = self.inner();
         let entry = inner.entries.get(&object.id)?;
-        (entry.version == object.version
+        let exact = self.is_previewing() || !entry.meshes.iter().any(|mesh| mesh.approximate);
+        (exact
+            && entry.version == object.version
             && entry.source.len() == sources.len()
             && entry.source.iter().zip(sources).all(|(a, &b)| a == b))
         .then(|| entry.meshes.clone())
@@ -165,6 +170,28 @@ impl TessellationCache {
         inner.current.clear();
     }
 
+    /// Lets frames move the last meshes of outlines to new stroke widths instead of
+    /// tessellating them, while a slider that changes widths is held. Turning it off makes the
+    /// next frame tessellate exactly whatever was moved (#692).
+    pub fn set_preview(&self, preview: bool) {
+        let was = self.shared.preview.swap(preview, Ordering::SeqCst);
+        if was && !preview {
+            let moved = self
+                .inner()
+                .entries
+                .values()
+                .any(|entry| entry.meshes.iter().any(|mesh| mesh.approximate));
+            if moved {
+                self.shared.generation.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+    }
+
+    /// Whether [`TessellationCache::set_preview`] is on.
+    pub fn is_previewing(&self) -> bool {
+        self.shared.preview.load(Ordering::SeqCst)
+    }
+
     /// Whether a [`TessellationRebuild`] is still running.
     pub fn is_building(&self) -> bool {
         self.shared.building.load(Ordering::SeqCst) > 0
@@ -233,24 +260,52 @@ pub(super) struct Previous {
 }
 
 impl Previous {
+    /// Where the group that meshes like `group` (by `same`) sits, looking first at the same
+    /// `position`.
+    fn find(&self, position: usize, same: impl Fn(&VectorGroup) -> bool) -> Option<usize> {
+        if self.source.get(position).is_some_and(&same) {
+            return Some(position);
+        }
+        self.source.iter().position(same)
+    }
+
     /// The mesh made for a group that meshes like `group`, looking first at the same
     /// `position`. A mesh depends only on a group's shapes and whether it is an effect, not on
-    /// the Object's version or placement, so it is the mesh `group` would get.
-    fn mesh(&self, position: usize, group: &VectorGroup) -> Option<Arc<GroupMesh>> {
-        let same = |old: &VectorGroup| old.effect == group.effect && old.shapes == group.shapes;
-        if self.source.get(position).is_some_and(same) {
-            return self.meshes.get(position).cloned();
-        }
-        let found = self.source.iter().position(same)?;
-        self.meshes.get(found).cloned()
+    /// the Object's version or placement, so it is the mesh `group` would get. A mesh moved to
+    /// new widths counts only while `preview` is on.
+    fn mesh(&self, position: usize, group: &VectorGroup, preview: bool) -> Option<Arc<GroupMesh>> {
+        let found = self.find(position, |old| {
+            old.effect == group.effect && old.shapes == group.shapes
+        })?;
+        self.meshes
+            .get(found)
+            .filter(|mesh| preview || !mesh.approximate)
+            .cloned()
+    }
+
+    /// The mesh of the group that differs from `group` only in stroke widths, moved to them.
+    fn rescaled(&self, position: usize, group: &VectorGroup) -> Option<Arc<GroupMesh>> {
+        let candidate = |at: usize| {
+            let old = self.source.get(at)?;
+            rescaled(self.meshes.get(at)?, old, group)
+        };
+        candidate(position)
+            .or_else(|| {
+                (0..self.source.len())
+                    .filter(|&at| at != position)
+                    .find_map(candidate)
+            })
+            .map(Arc::new)
     }
 }
 
 /// Meshes an Object's groups, keeping from `previous` the mesh of every group that is
-/// unchanged. A Shore edit then tessellates the Shore again but keeps the fill (#662).
+/// unchanged. A Shore edit then tessellates the Shore again but keeps the fill (#662). While
+/// `preview` is on, a group whose stroke widths alone changed gets its last mesh moved to them.
 pub(super) fn mesh_object(
     groups: &[&VectorGroup],
     previous: Option<&Previous>,
+    preview: bool,
     tessellators: &mut Tessellators,
 ) -> Vec<Arc<GroupMesh>> {
     groups
@@ -258,7 +313,13 @@ pub(super) fn mesh_object(
         .enumerate()
         .map(|(position, &group)| {
             previous
-                .and_then(|previous| previous.mesh(position, group))
+                .and_then(|previous| {
+                    previous.mesh(position, group, preview).or_else(|| {
+                        preview
+                            .then(|| previous.rescaled(position, group))
+                            .flatten()
+                    })
+                })
                 .unwrap_or_else(|| Arc::new(mesh_group(group, tessellators)))
         })
         .collect()
@@ -295,7 +356,7 @@ impl TessellationRebuild {
         for job in std::mem::take(&mut self.jobs) {
             let sources: Vec<&VectorGroup> = job.groups.iter().collect();
             let previous = self.cache.previous(job.object.id);
-            let meshes = mesh_object(&sources, previous.as_ref(), &mut tessellators);
+            let meshes = mesh_object(&sources, previous.as_ref(), false, &mut tessellators);
             if self.cache.store(job.object, &sources, meshes) {
                 self.cache.shared.generation.fetch_add(1, Ordering::SeqCst);
                 ready();

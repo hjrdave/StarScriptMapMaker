@@ -76,6 +76,9 @@ struct Options {
     /// Compare with, or rewrite, the checked-in baseline (issue #338).
     baseline: Option<BaselineMode>,
     baseline_path: PathBuf,
+    /// Hold the slider scripts' slider as the editor would: outlines are moved to the new
+    /// width each frame and tessellated once when it is let go (#692).
+    preview: bool,
 }
 
 fn parse(args: &[OsString]) -> Result<Options, String> {
@@ -86,12 +89,14 @@ fn parse(args: &[OsString]) -> Result<Options, String> {
         frames: None,
         baseline: None,
         baseline_path: PathBuf::from(baseline::DEFAULT_PATH),
+        preview: false,
     };
     let mut args = args.iter().map(|arg| arg.to_string_lossy());
     while let Some(arg) = args.next() {
         match &*arg {
             FLAG => {}
             "--software-adapter" => options.software = true,
+            "--preview" => options.preview = true,
             "--scale" => {
                 options.scale = args
                     .next()
@@ -285,6 +290,8 @@ struct Measured {
     render: Vec<Duration>,
     /// The six stages of each frame, when built with the `profiling` feature.
     stages: Vec<StageTimes>,
+    /// With `--preview`, the frame after the slider is let go, and its stages.
+    release: Option<(Duration, Option<StageTimes>)>,
 }
 
 #[allow(
@@ -304,6 +311,7 @@ fn measure(
     let mut world = World::new(map, layer, LANDMASSES, script);
     let mut renderer = CanvasRenderer::new(&gpu.device, capabilities);
     renderer.set_sprites(SpriteStore::synchronous(library.clone()));
+    let cache = renderer.tessellation_cache();
     let mut scene = MapScene::new(Fonts::bundled());
     // As in the editor, shore rings are computed off the frame.
     scene.compute_rings_in_background(|| {});
@@ -346,8 +354,11 @@ fn measure(
         scene: Vec::new(),
         render: Vec::new(),
         stages: Vec::new(),
+        release: None,
     };
     let frames = scripts::frames(script).min(options.frames.unwrap_or(usize::MAX));
+    let preview = options.preview && script.is_slider();
+    cache.set_preview(preview);
     for frame in 0..frames {
         let view = views.get(frame + 1).unwrap_or(&views[views.len() - 1]);
         let started = Instant::now();
@@ -362,6 +373,14 @@ fn measure(
         measured.edit.push(edit);
         measured.scene.push(scene);
         measured.render.push(render);
+    }
+    if preview {
+        // The slider is let go: one more frame, which tessellates what was moved.
+        cache.set_preview(false);
+        let view = views.get(frames + 1).unwrap_or(&views[views.len() - 1]);
+        let started = Instant::now();
+        draw(&mut world, view);
+        measured.release = Some((started.elapsed(), take_stages()));
     }
     measured
 }
@@ -504,6 +523,15 @@ fn report(script: Script, measured: &Measured) -> String {
             share * 100.0
         );
     }
+    if let Some((frame, stages)) = &measured.release {
+        let _ = write!(text, "release frame: {:.2} ms", ms(*frame));
+        if let Some(stages) = stages {
+            for stage in Stage::ALL {
+                let _ = write!(text, ", {} {:.2}", stage.name(), ms(stages[stage]));
+            }
+        }
+        let _ = writeln!(text);
+    }
     text
 }
 
@@ -620,6 +648,7 @@ mod tests {
             scene: Vec::new(),
             render: Vec::new(),
             stages: Vec::new(),
+            release: None,
         };
         for frame in 0..10 {
             let mut stages = StageTimes::default();
@@ -652,6 +681,7 @@ mod tests {
             scene: vec![Duration::from_millis(2)],
             render: vec![Duration::from_millis(2)],
             stages: Vec::new(),
+            release: None,
         };
         assert_eq!(coverage(&measured), None);
         let text = report(Script::Paint, &measured);
