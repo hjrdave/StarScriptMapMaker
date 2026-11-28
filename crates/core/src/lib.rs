@@ -66,7 +66,7 @@ pub use node::{
 pub use op::{Op, OpError, Property};
 pub use paint::{
     MAX_PAINT_STROKES, MAX_RAW_STROKE_POINTS, MAX_STROKE_POINTS, MAX_STROKE_SIZE, PaintStroke,
-    STROKE_TOLERANCE, StrokeError, simplify_path,
+    STROKE_TOLERANCE, StrokeError, erases_any, simplify_path,
 };
 pub use paste_gaps::PasteGaps;
 pub use pick::PickIndex;

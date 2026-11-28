@@ -83,7 +83,8 @@ impl Editor {
 
     /// Finishes the paint stroke whose gesture `id` opened: one `AddPaintStroke` Command with the
     /// brush's settings, committed as the gesture's Undo step. A stroke the Command refuses
-    /// leaves no Undo step, and the status bar says why.
+    /// leaves no Undo step, and the status bar says why. An eraser that meets no paint changes
+    /// nothing, so it leaves no Undo step either (issue #710).
     pub fn finish_paint_stroke(&mut self, id: GestureId, points: Vec<Point>, erase: bool) {
         let settings = *self.paint_settings(erase);
         let stroke = PaintStroke {
@@ -95,6 +96,10 @@ impl Editor {
             opacity: settings.opacity as f32,
             erase,
         };
+        if erase && !ssmap_core::erases_any(self.map.paint_strokes(), &stroke) {
+            self.cancel_gesture(id);
+            return;
+        }
         if self.gesture(&id, Command::AddPaintStroke { stroke }) {
             self.end_gesture(id);
         } else {
