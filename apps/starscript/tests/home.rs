@@ -57,7 +57,7 @@ fn launching_with_no_arguments_shows_home_and_no_map_tab() {
     harness.get_by_label("Recent");
     harness.get_by_label("Open in tabs");
     harness.get_by_label("Credits & licences");
-    assert!(harness.query_by_label("New Layer").is_none());
+    assert!(harness.query_by_label("New Group").is_none());
 }
 
 #[test]
@@ -122,7 +122,7 @@ fn a_new_tab_shows_a_start_page_that_is_not_a_map() {
     harness.get_by_label("Recents");
     // Neither the rail nor the Map's panels.
     assert!(harness.query_by_label("Credits & licences").is_none());
-    assert!(harness.query_by_label("New Layer").is_none());
+    assert!(harness.query_by_label("New Group").is_none());
     // Nothing to save, so closing asks nothing.
     harness.state_mut().close_tab(0);
     settle(&mut harness);

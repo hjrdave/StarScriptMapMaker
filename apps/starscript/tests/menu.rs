@@ -63,7 +63,7 @@ fn the_toolbar_command_buttons_are_gone() {
     for label in [
         "Undo",
         "Redo",
-        "New Layer",
+        "New Group",
         "Union",
         "Subtract",
         "Label styles",
@@ -180,7 +180,7 @@ fn a_switched_off_shortcut_is_left_alone() {
     let mut harness = app();
     harness
         .state_mut()
-        .set_shortcut_enabled(Command::NewLayer, false);
+        .set_shortcut_enabled(Command::NewGroup, false);
     let layers = harness.state().tabs()[0]
         .editor()
         .map()
@@ -201,7 +201,7 @@ fn a_switched_off_shortcut_is_left_alone() {
     );
     harness
         .state_mut()
-        .set_shortcut_enabled(Command::NewLayer, true);
+        .set_shortcut_enabled(Command::NewGroup, true);
     harness.key_press_modifiers(
         egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
         egui::Key::N,

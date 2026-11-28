@@ -205,7 +205,7 @@ fn the_canvas_and_the_layers_panel_share_one_selection() {
     // And the other way: a row clicked in the panel is what the Canvas now has selected.
     // The Properties header names the Layer too; the Layers panel is the first match.
     harness
-        .get_all_by_label("Layer 001")
+        .get_all_by_label("Group 001")
         .next()
         .expect("the Layers row")
         .click();
@@ -219,8 +219,9 @@ fn right_click_on_an_unselected_object_selects_it_and_opens_the_menu() {
     click_at(&mut harness, A, false);
     right_click(&mut harness, B);
     assert_eq!(selection(&harness), vec![b]);
+    // By role: the Properties header also has a "Group" (the icon of the Group it is in).
     for item in ["Copy", "Cut", "Paste", "Group", "Delete"] {
-        harness.get_by_label(item);
+        harness.get_by_role_and_label(egui::accesskit::Role::Button, item);
     }
     assert!(harness.state().editor().map().contains(a));
 }
@@ -272,7 +273,9 @@ fn the_menu_groups_and_deletes() {
     box_drag(&mut harness, from, to, egui::Modifiers::NONE);
 
     right_click(&mut harness, A);
-    harness.get_by_label("Group").click();
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::Button, "Group")
+        .click();
     harness.run();
     let editor = harness.state().editor();
     let [group] = editor.selection() else {
@@ -304,7 +307,7 @@ fn the_panel_menu_pastes_what_the_canvas_copied() {
     let layer = harness.state().editor().map().parent(a).unwrap();
     let before = harness.state().editor().map().children(Some(layer)).len();
     harness
-        .get_all_by_label("Layer 001")
+        .get_all_by_label("Group 001")
         .next()
         .expect("the Layers row")
         .click_secondary();

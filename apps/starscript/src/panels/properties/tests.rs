@@ -123,7 +123,7 @@ fn a_selected_layer_shows_no_map_section_and_no_layer_section() {
     let (mut fixture, layer, _) = fixture();
     fixture.editor.select(vec![layer]);
     let harness = harness(fixture);
-    for label in ["Depth sort", "Opacity", "Clip to", "Layer"] {
+    for label in ["Depth sort", "Opacity", "Clip to", "Group"] {
         assert!(harness.query_by_label(label).is_none(), "{label}");
     }
     assert!(harness.query_by_label("Map").is_none());
@@ -1223,7 +1223,7 @@ fn the_summary_counts_each_kind() {
     assert_eq!(selection_summary(map, &[island]), "1 Landmass");
     assert_eq!(
         selection_summary(map, &[island, layer]),
-        "1 Layer + 1 Landmass"
+        "1 Group + 1 Landmass"
     );
     assert_eq!(selection_summary(map, &[]), "");
 }
@@ -2242,27 +2242,84 @@ fn the_chain_is_off_at_first_and_keeps_the_aspect_ratio_once_on() {
     assert_eq!(board_size(&harness), (600, 200));
 }
 
+fn rename(fixture: &mut Fixture, id: Id, name: &str) {
+    assert!(
+        fixture
+            .editor
+            .run(Command::RenameObject {
+                id,
+                name: name.into(),
+            })
+            .is_ok()
+    );
+}
+
 #[test]
-fn every_object_breadcrumb_has_a_layers_icon_while_the_selection_shares_a_layer() {
+fn an_object_in_a_group_shows_the_group_then_its_name_with_a_group_icon() {
+    let (mut fixture, _, island) = fixture();
+    rename(&mut fixture, island, "Landmass 001");
+    fixture.editor.select(vec![island]);
+    let mut harness = harness(fixture);
+    for part in ["Group 001", "›", "Landmass 001"] {
+        harness.get_by_label(part);
+    }
+    // The icon in front says Group, to assistive tools and in its tooltip.
+    let icon = harness.get_by_label("Group");
+    icon.hover();
+    harness.run();
+    assert!(
+        harness.get_all_by_label("Group").count() >= 2,
+        "the tooltip says Group too"
+    );
+    assert!(harness.query_by_label("Layer").is_none());
+}
+
+#[test]
+fn an_object_at_the_top_level_shows_only_its_own_name() {
+    let (mut fixture, ..) = fixture();
+    let island = Id::new();
+    assert!(
+        fixture
+            .editor
+            .run(Command::CreateLandmass {
+                id: island,
+                parent: None,
+                index: None,
+                geometry: square(50.0, 20.0),
+                fill: None,
+            })
+            .is_ok()
+    );
+    rename(&mut fixture, island, "Landmass 001");
+    fixture.editor.select(vec![island]);
+    let harness = harness(fixture);
+    harness.get_by_label("Landmass 001");
+    for label in ["Group", "Group 001", "›", "Layer"] {
+        assert!(harness.query_by_label(label).is_none(), "{label}");
+    }
+}
+
+#[test]
+fn every_object_breadcrumb_has_a_group_icon_while_the_selection_shares_a_group() {
     let (mut fixture, layer, island) = fixture();
     install_test_pack(&mut fixture.editor, false);
     let stamp = add_stamp(&mut fixture, layer, 10.0);
-    // One Object: the breadcrumb shows its Layer, so it has the icon.
+    // One Object: the breadcrumb shows its Group, so it has the icon.
     fixture.editor.select(vec![stamp]);
     let harness = harness(fixture);
-    harness.get_by_label("Layer");
+    harness.get_by_label("Group");
     let (mut fixture, ..) = (harness.into_state(), ());
-    // Objects in the same Layer still share it.
+    // Objects in the same Group still share it.
     fixture.editor.select(vec![stamp, island]);
     let harness = self::harness(fixture);
-    harness.get_by_label("Layer");
-    // Objects in different Layers have no Layer to show, and no icon.
+    harness.get_by_label("Group");
+    // Objects in different Groups have no Group to show, and no icon.
     let mut fixture = harness.into_state();
-    let other = fixture.editor.new_layer().expect("a Layer");
+    let other = fixture.editor.new_layer().expect("a Group");
     let apart = add_stamp(&mut fixture, other, 30.0);
     fixture.editor.select(vec![stamp, apart]);
     let harness = self::harness(fixture);
-    assert!(harness.query_by_label("Layer").is_none());
+    assert!(harness.query_by_label("Group").is_none());
 }
 
 #[test]

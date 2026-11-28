@@ -527,7 +527,7 @@ fn row(ui: &mut egui::Ui, label: &str, body: impl FnOnce(&mut egui::Ui)) {
 /// "2 Landmasses + 1 Lake": what a multi-selection holds.
 fn selection_summary(map: &Map, ids: &[Id]) -> String {
     const KINDS: [(&str, &str); 6] = [
-        ("Layer", "Layers"),
+        ("Group", "Groups"),
         ("Landmass", "Landmasses"),
         ("Lake", "Lakes"),
         ("River", "Rivers"),

@@ -11,7 +11,7 @@ impl MapMakerApp {
         };
         let (mut save, mut cancel) = (false, false);
         let shown = dialog::show(ctx, "save_template", "Save as Template", 380.0, |ui| {
-            ui.label("New Maps made from it get this Map’s background, shore and lake styles, Label styles and Layers.");
+            ui.label("New Maps made from it get this Map’s background, shore and lake styles, Label styles and Groups.");
             ui.add_space(8.0);
             let field = ui.add(
                 egui::TextEdit::singleline(&mut name)

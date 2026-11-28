@@ -749,7 +749,7 @@ impl Editor {
             // the attempt, so a toast would only stack up. The Object just stays put.
             ExecuteError::Command(CommandError::MoveLocked(_)) => return,
             ExecuteError::Command(CommandError::InLockedLayer { target, layer }) => {
-                format!("{} is inside locked Layer {}", name(*target), name(*layer))
+                format!("{} is inside locked Group {}", name(*target), name(*layer))
             }
             ExecuteError::Command(CommandError::ContainsLocked { target, locked }) => {
                 format!("{} contains locked {}", name(*target), name(*locked))

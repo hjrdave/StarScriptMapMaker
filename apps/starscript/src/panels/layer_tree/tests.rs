@@ -259,7 +259,7 @@ fn a_child_of_a_locked_layer_shows_a_dashed_padlock_that_does_nothing() {
     let selection = editor.selection().to_vec();
     let mut harness = harness(editor);
     harness.get_by_label("Locked"); // the parent's own filled padlock
-    harness.get_by_label("Locked by parent Layer").click();
+    harness.get_by_label("Locked by its Group").click();
     harness.run();
     let editor = &harness.state().editor;
     assert_eq!(editor.map().revision(), revision);
@@ -276,7 +276,7 @@ fn the_active_layer_shows_the_target() {
     // One target, on the one active Layer.
     assert_eq!(
         harness
-            .query_all_by_label("Active Layer (new Objects go here)")
+            .query_all_by_label("Active Group (new Objects go here)")
             .count(),
         1
     );
@@ -384,8 +384,8 @@ fn a_stamp_can_be_renamed_and_an_empty_name_restores_the_default() {
 fn the_footer_counts_objects_and_layers() {
     use ssmap_core::{MultiPolygon, Polygon};
     let (mut editor, a, _) = editor_with_two_layers();
-    assert_eq!(footer_text(0, 2), "0 Objects · 2 Layers");
-    assert_eq!(footer_text(1, 1), "1 Object · 1 Layer");
+    assert_eq!(footer_text(0, 2), "0 Objects · 2 Groups");
+    assert_eq!(footer_text(1, 1), "1 Object · 1 Group");
     assert!(
         editor
             .run(Command::CreateLandmass {
@@ -402,11 +402,11 @@ fn the_footer_counts_objects_and_layers() {
     );
     assert_eq!(counts(editor.map()), (1, 2));
     let mut harness = harness(editor);
-    harness.get_by_label("1 Object · 2 Layers");
+    harness.get_by_label("1 Object · 2 Groups");
     // The count follows the Map.
     harness.state_mut().editor.new_layer();
     harness.run();
-    harness.get_by_label("1 Object · 3 Layers");
+    harness.get_by_label("1 Object · 3 Groups");
 }
 
 #[test]
@@ -458,6 +458,62 @@ fn layers_drag_into_and_out_of_a_group() {
     assert_eq!(editor.map().parent(a), None);
     editor.undo();
     assert_eq!(editor.map().parent(a), Some(group));
+}
+
+#[test]
+fn top_level_objects_are_rows_that_drag_into_and_out_of_a_group() {
+    use ssmap_core::{MultiPolygon, Polygon};
+    let mut editor = Editor::new(Map::new(Canvas::new(
+        100,
+        100,
+        Scale::new(1.0, DistanceUnit::Miles),
+    )));
+    let landmass = |editor: &mut Editor, x: f64| {
+        let id = Id::new();
+        let geometry = MultiPolygon(vec![Polygon {
+            exterior: vec![[x, 0.0], [x + 10.0, 0.0], [x + 10.0, 10.0], [x, 10.0]],
+            holes: Vec::new(),
+        }]);
+        assert!(
+            editor
+                .run(Command::CreateLandmass {
+                    id,
+                    parent: None,
+                    index: None,
+                    geometry,
+                    fill: None,
+                })
+                .is_ok()
+        );
+        id
+    };
+    let x = landmass(&mut editor, 0.0);
+    let group = editor.new_group().unwrap();
+    let y = landmass(&mut editor, 20.0);
+    // One mixed list at the top level, top of the Stacking order first.
+    let top = |editor: &Editor| -> Vec<(Id, usize)> {
+        rows(editor.map(), &HashSet::new())
+            .iter()
+            .map(|r| (r.id, r.depth))
+            .collect()
+    };
+    assert_eq!(top(&editor), vec![(y, 0), (group, 0), (x, 0)]);
+    let drag = |editor: &mut Editor, id, target| {
+        let command = move_command(editor.map(), id, target).expect("a move");
+        assert!(editor.run(command).is_ok());
+    };
+    // Into the Group, then out of it above the other top-level Object.
+    drag(&mut editor, x, DropTarget::Into(group));
+    assert_eq!(editor.map().parent(x), Some(group));
+    assert_eq!(top(&editor), vec![(y, 0), (group, 0), (x, 1)]);
+    drag(&mut editor, x, DropTarget::Above(y));
+    assert_eq!(editor.map().parent(x), None);
+    assert_eq!(top(&editor), vec![(x, 0), (y, 0), (group, 0)]);
+    // And reordered among the top-level rows.
+    drag(&mut editor, x, DropTarget::Below(group));
+    assert_eq!(top(&editor), vec![(y, 0), (group, 0), (x, 0)]);
+    editor.undo();
+    assert_eq!(top(&editor), vec![(x, 0), (y, 0), (group, 0)]);
 }
 
 #[test]
@@ -872,7 +928,7 @@ fn a_layers_pin_shows_on_the_row_and_what_is_inside_it_shows_a_dashed_pin() {
     assert!(RowState::of(editor.map(), a).pinned);
     let harness = harness(editor);
     harness.get_by_label("Pinned to Canvas");
-    harness.get_by_label("Pinned by parent Layer");
+    harness.get_by_label("Pinned by its Group");
 }
 
 #[test]
@@ -1043,7 +1099,7 @@ fn hide_lock_and_pin_show_off_on_and_mixed_and_one_click_turns_mixed_on_for_all(
 fn the_counts_follow_the_map_without_the_tree_being_shown() {
     let (mut editor, _, _) = editor_with_two_layers();
     let tree = LayerTree::default();
-    assert_eq!(tree.counts_text(editor.map()), "0 Objects · 2 Layers");
+    assert_eq!(tree.counts_text(editor.map()), "0 Objects · 2 Groups");
     let id = Id::new();
     assert!(
         editor
@@ -1055,5 +1111,5 @@ fn the_counts_follow_the_map_without_the_tree_being_shown() {
             })
             .is_ok()
     );
-    assert_eq!(tree.counts_text(editor.map()), "0 Objects · 3 Layers");
+    assert_eq!(tree.counts_text(editor.map()), "0 Objects · 3 Groups");
 }
