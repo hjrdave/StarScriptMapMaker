@@ -222,7 +222,7 @@ pub enum OpError {
     #[error("no node has id {0}")]
     NotFound(Id),
     /// The node is an Object, and only Layers hold children.
-    #[error("{0} is an Object; only Layers hold children")]
+    #[error("{0} is an Object; only Groups hold children")]
     NotALayer(Id),
     /// The index is past the end of the parent's children.
     #[error("index {index} is past the end of {len} children")]

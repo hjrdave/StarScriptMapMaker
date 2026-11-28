@@ -1046,7 +1046,7 @@ pub enum InvariantError {
     #[error("id {0} appears more than once")]
     DuplicateId(Id),
     /// The Object has children, which only Layers can.
-    #[error("Object {0} has children; only Layers can")]
+    #[error("Object {0} has children; only Groups can")]
     ObjectWithChildren(Id),
     /// The node is listed as a child but does not exist.
     #[error("node {0} is listed as a child but missing")]

@@ -6,8 +6,8 @@ use crate::layer_tree::node_name;
 
 fn kind_noun(map: &Map, id: Id, plural: bool) -> &'static str {
     match (map.node(id), plural) {
-        (Some(Node::Layer(_)), false) => "Layer",
-        (Some(Node::Layer(_)), true) => "Layers",
+        (Some(Node::Layer(_)), false) => "Group",
+        (Some(Node::Layer(_)), true) => "Groups",
         (Some(Node::Object(object)), plural) => match (&object.kind, plural) {
             (ObjectKind::Landmass(_), false) => "Landmass",
             (ObjectKind::Landmass(_), true) => "Landmasses",
@@ -25,11 +25,11 @@ fn kind_noun(map: &Map, id: Id, plural: bool) -> &'static str {
     }
 }
 
-/// "2 Landmasses", "Stamp · Pine", or "Active Layer: Roads" when nothing is selected.
+/// "2 Landmasses", "Stamp · Pine", or "Active Group: Roads" when nothing is selected.
 pub fn selection_summary(map: &Map, selection: &[Id], active_layer: Option<Id>) -> String {
     match selection {
         [] => active_layer
-            .map(|layer| format!("Active Layer: {}", node_name(map, layer)))
+            .map(|layer| format!("Active Group: {}", node_name(map, layer)))
             .unwrap_or_default(),
         [id] => {
             let noun = kind_noun(map, *id, false);

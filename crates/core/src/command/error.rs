@@ -15,7 +15,7 @@ pub enum CommandError {
     #[error("{0} has no Layer below it to attach to")]
     NothingBelow(Id),
     /// The node is an Object where a Layer is needed.
-    #[error("{0} is not a Layer")]
+    #[error("{0} is not a Group")]
     NotALayer(Id),
     /// A new node was given an id that already exists.
     #[error("id {0} is already in use")]
@@ -27,7 +27,7 @@ pub enum CommandError {
     #[error("{0} is pinned to the Canvas")]
     MoveLocked(Id),
     /// The node sits inside a locked Layer.
-    #[error("{target} is inside locked Layer {layer}")]
+    #[error("{target} is inside locked Group {layer}")]
     InLockedLayer {
         /// The node the Command acts on.
         target: Id,
@@ -63,7 +63,7 @@ pub enum CommandError {
     #[error("{0} is listed more than once")]
     DuplicateTarget(Id),
     /// The node is a Stamp in a Layer with Depth sort on, which orders its Stamps.
-    #[error("{0} is in a Layer with Depth sort on, which orders its Stamps")]
+    #[error("{0} is in a Group with Depth sort on, which orders its Stamps")]
     DepthSorted(Id),
     /// The opacity is outside 0 to 1.
     #[error("opacity must be from 0 to 1, not {0}")]

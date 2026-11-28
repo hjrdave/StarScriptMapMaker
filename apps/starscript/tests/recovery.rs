@@ -155,7 +155,7 @@ fn killing_the_app_after_edits_then_reopening_replays_them() {
     let saved_bytes = std::fs::read(&file).unwrap();
 
     let child_names = edit_and_kill(&file, dir.path());
-    assert_eq!(child_names, r#"["Base", "Layer 001", "Layer 002"]"#);
+    assert_eq!(child_names, r#"["Base", "Group 001", "Group 002"]"#);
     let journal = recovery_path(&file);
     assert!(journal.exists());
     assert_eq!(std::fs::read(&file).unwrap(), saved_bytes, "nothing saved");
@@ -169,7 +169,7 @@ fn killing_the_app_after_edits_then_reopening_replays_them() {
     let state = harness.state();
     assert_eq!(
         layer_names(state.editor().map()),
-        ["Base", "Layer 001", "Layer 002"]
+        ["Base", "Group 001", "Group 002"]
     );
     assert!(state.document().has_unsaved_changes(state.editor().map()));
     assert!(
@@ -196,7 +196,7 @@ fn killing_the_app_after_edits_then_reopening_replays_them() {
     harness.run();
     assert_eq!(
         layer_names(harness.state().editor().map()),
-        ["Base", "Layer 001", "Layer 002", "Layer 003"]
+        ["Base", "Group 001", "Group 002", "Group 003"]
     );
 
     assert!(harness.state_mut().save());
@@ -240,7 +240,7 @@ fn a_replaced_map_file_gets_a_separate_recovered_copy_and_is_left_untouched() {
     let (_, recovered) = MapFile::open(&copy).unwrap();
     assert_eq!(
         layer_names(&recovered),
-        ["Elsewhere", "Layer 001", "Layer 002"]
+        ["Elsewhere", "Group 001", "Group 002"]
     );
 }
 
@@ -292,7 +292,7 @@ fn a_map_never_saved_journals_under_the_data_dir_and_is_offered_at_startup() {
     // The two Layers made above.
     assert_eq!(
         layer_names(state.editor().map()),
-        ["Layer 001", "Layer 002"]
+        ["Group 001", "Group 002"]
     );
     assert!(state.document().path().is_none());
     assert!(state.document().has_unsaved_changes(state.editor().map()));
@@ -357,7 +357,7 @@ fn saving_from_the_close_prompt_saves_then_closes() {
     assert!(harness.state().is_closing());
     assert!(!recovery_path(&file).exists());
     let (_, saved) = MapFile::open(&file).unwrap();
-    assert_eq!(layer_names(&saved), ["Base", "Layer 001"]);
+    assert_eq!(layer_names(&saved), ["Base", "Group 001"]);
 }
 
 #[test]

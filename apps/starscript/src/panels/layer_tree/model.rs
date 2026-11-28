@@ -103,7 +103,7 @@ pub(crate) fn is_depth_sorted_stamp(map: &Map, id: Id) -> bool {
 
 pub(crate) fn node_name(map: &Map, id: Id) -> String {
     match map.node(id) {
-        Some(Node::Layer(layer)) if layer.name.trim().is_empty() => "Layer".to_owned(),
+        Some(Node::Layer(layer)) if layer.name.trim().is_empty() => "Group".to_owned(),
         Some(Node::Layer(layer)) => layer.name.clone(),
         Some(Node::Object(Object {
             name: Some(name), ..
@@ -204,18 +204,18 @@ pub(crate) fn counts(map: &Map) -> (usize, usize) {
     (map.ids().count() - layers, layers)
 }
 
-/// "3 Objects · 2 Layers".
+/// "3 Objects · 2 Groups".
 pub(crate) fn footer_text(objects: usize, layers: usize) -> String {
     let plural =
         |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
     format!(
         "{} · {}",
         plural(objects, "Object", "Objects"),
-        plural(layers, "Layer", "Layers")
+        plural(layers, "Group", "Groups")
     )
 }
 
-pub(super) fn kind_icon(node: &Node) -> Icon {
+pub(crate) fn kind_icon(node: &Node) -> Icon {
     match node {
         Node::Layer(_) => Icon::Layer,
         Node::Object(object) => match object.kind {

@@ -1,5 +1,6 @@
-//! The header of a selected Object: "Layer › Name" with the lock at the right end. The name
-//! appears here once, so no section under it repeats it.
+//! The header of a selected Object: "Group › Name" with the lock at the right end, or only the
+//! name for an Object at the top level (ADR 0018). The name appears here once, so no section
+//! under it repeats it.
 
 use eframe::egui;
 use ssmap_core::{Command, Id, Node};
@@ -7,7 +8,7 @@ use ssmap_core::{Command, Id, Node};
 use super::PropertiesPanel;
 use crate::editor::Editor;
 use crate::icons::{self, Icon};
-use crate::layer_tree::node_name;
+use crate::layer_tree::{kind_icon, node_name};
 use crate::prop_widgets::Edit;
 use crate::theme;
 
@@ -48,21 +49,22 @@ impl PropertiesPanel {
         ui.horizontal(|ui| {
             ui.add_space(theme::SPACING[3]);
             ui.spacing_mut().item_spacing.x = theme::SPACING[1];
-            if let Some(layer) = layer {
-                // The Layers icon says the first part of the breadcrumb is the Layer.
+            if let Some((layer, node)) = layer.and_then(|id| Some((id, map.node(id)?))) {
+                // The icon of the Group's row in the Layers panel says the first part is the
+                // Group the Objects are in.
                 let (rect, hover) =
                     ui.allocate_exact_size(egui::Vec2::splat(16.0), egui::Sense::hover());
                 hover.widget_info(|| {
-                    egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), "Layer")
+                    egui::WidgetInfo::labeled(egui::WidgetType::Label, ui.is_enabled(), "Group")
                 });
                 icons::paint(
                     ui,
                     rect,
-                    Icon::LayerGroup,
+                    kind_icon(node),
                     icons::GRID,
                     palette.text_tertiary,
                 );
-                hover.on_hover_text("Layer");
+                hover.on_hover_text("Group");
                 for (text, colour) in [
                     (node_name(map, layer), palette.text_tertiary),
                     ("›".to_owned(), palette.text_tertiary),
