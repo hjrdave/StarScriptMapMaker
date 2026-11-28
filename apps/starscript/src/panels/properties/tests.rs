@@ -367,8 +367,7 @@ fn the_shore_style_has_glow_and_water_lines_and_a_soft_glow_preset() {
         );
     }
 
-    open_shore_presets(&mut harness);
-    click(&mut harness, "Soft glow");
+    pick_preset(&mut harness, "Soft glow");
     let editor = &harness.state().editor;
     assert_eq!(
         editor.map().shore(island),
@@ -391,8 +390,7 @@ fn the_shore_style_has_glow_and_water_lines_and_a_soft_glow_preset() {
         harness.get_by_label(label);
     }
 
-    open_shore_presets(&mut harness);
-    click(&mut harness, "Hand drawn");
+    pick_preset(&mut harness, "Hand drawn");
     assert_eq!(
         harness.state().editor.map().shore(island),
         ShoreStyle::picked(ShoreKind::Landmass, "Hand drawn").as_ref()
@@ -497,8 +495,7 @@ fn reset_to_preset_shows_after_an_edit_and_goes_back_to_the_preset_last_picked()
     let mut harness = harness(fixture);
     assert!(harness.query_by_label("Reset to preset").is_none());
 
-    open_shore_presets(&mut harness);
-    click(&mut harness, "Soft glow");
+    pick_preset(&mut harness, "Soft glow");
     // Just picked: nothing to go back to.
     assert!(harness.query_by_label("Reset to preset").is_none());
 
@@ -506,10 +503,9 @@ fn reset_to_preset_shows_after_an_edit_and_goes_back_to_the_preset_last_picked()
     edited.outline.width += 3.0;
     set_shore(harness.state_mut(), island, Some(edited));
     harness.run();
-    assert!(
-        harness.query_by_value("Custom").is_some(),
-        "the picker says Custom after the edit"
-    );
+    // Custom now, naming the preset it came from, with none of them ringed.
+    harness.get_by_label("Custom, from Soft glow");
+    assert!(!preset_picked(&harness, "Soft glow"));
 
     click(&mut harness, "Reset to preset");
     let editor = &harness.state().editor;
@@ -542,19 +538,20 @@ fn the_shore_preset_picker_shows_custom_when_no_preset_matches() {
     );
     fixture.editor.select(vec![island]);
     let mut harness = harness(fixture);
-    open_shore_presets(&mut harness);
-    harness.get_by_label("Default");
-    click(&mut harness, "Soft glow");
+    // No preset is ringed, and with none picked before, nothing names one.
+    for name in ["Default", "Soft glow", "Hand drawn"] {
+        assert!(!preset_picked(&harness, name), "{name}");
+    }
+    harness.get_by_label("Custom");
+    pick_preset(&mut harness, "Soft glow");
     assert_eq!(
         harness.state().editor.map().shore(island),
         ssmap_core::ShoreStyle::picked(ssmap_core::ShoreKind::Landmass, "Soft glow").as_ref()
     );
-    // The picker now names the preset instead of "Custom".
-    assert!(
-        harness
-            .query_all_by_role(egui::accesskit::Role::ComboBox)
-            .any(|n| n.accesskit_node().value().as_deref() == Some("Soft glow"))
-    );
+    // The row now rings the preset, and no longer says "Custom".
+    assert!(preset_picked(&harness, "Soft glow"));
+    assert!(!preset_picked(&harness, "Default"));
+    assert!(harness.query_by_label("Custom").is_none());
 }
 
 /// The Shore groups only Landmasses draw (ADR 0016).
@@ -1244,21 +1241,21 @@ fn board_combo<'a>(harness: &'a Harness<'static, Fixture>) -> egui_kittest::Node
     combo
 }
 
-fn open_shore_presets(harness: &mut Harness<'static, Fixture>) {
-    let presets: Vec<_> = harness
-        .query_all_by_role(egui::accesskit::Role::ComboBox)
-        .filter(|node| {
-            matches!(
-                node.accesskit_node().value().as_deref(),
-                Some("Default" | "Soft glow" | "Hand drawn" | "Custom")
-            )
-        })
-        .collect();
-    let [combo] = presets.as_slice() else {
-        panic!("one Preset picker, found {}", presets.len())
-    };
-    combo.click();
+/// Clicks the Shore preset `name` in the preset row.
+fn pick_preset(harness: &mut Harness<'static, Fixture>, name: &str) {
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::RadioButton, name)
+        .click();
     harness.run();
+}
+
+/// Whether the preset row rings `name` as the preset every selected style matches.
+fn preset_picked(harness: &Harness<'static, Fixture>, name: &str) -> bool {
+    harness
+        .get_by_role_and_label(egui::accesskit::Role::RadioButton, name)
+        .accesskit_node()
+        .toggled()
+        == Some(egui::accesskit::Toggled::True)
 }
 
 /// Opens the tab of a Landmass or Lake named `name`.
@@ -2079,6 +2076,39 @@ const SHORE_FIELDS: [&str; 9] = [
     "Shade width",
     "Shade colour",
 ];
+
+#[test]
+fn the_shores_tab_has_the_preset_row_and_a_pick_sets_the_default_without_a_name() {
+    use ssmap_core::{ShoreKind, ShoreStyle};
+    let mut harness = map_harness(ocean_fixture());
+    click(&mut harness, "Shores");
+    assert!(preset_picked(&harness, "Default"));
+    pick_preset(&mut harness, "Hand drawn");
+    let defaults = harness.state().editor.map().defaults().clone();
+    assert_eq!(defaults.shore, ShoreStyle::hand_drawn());
+    // The Map defaults don't remember a pick, so they never offer Reset to preset.
+    assert_eq!(defaults.shore.preset, None);
+    assert!(preset_picked(&harness, "Hand drawn"));
+    assert!(harness.query_by_label("Reset to preset").is_none());
+
+    // A Lake has its own presets: only Default for now.
+    click(&mut harness, "Lake");
+    assert!(preset_picked(&harness, "Default"));
+    assert!(
+        harness
+            .query_by_role_and_label(egui::accesskit::Role::RadioButton, "Hand drawn")
+            .is_none()
+    );
+    assert_eq!(
+        harness
+            .state()
+            .editor
+            .map()
+            .defaults()
+            .shore_for(ShoreKind::Lake),
+        &ShoreStyle::lake_default()
+    );
+}
 
 #[test]
 fn the_shores_tab_edits_one_shore_and_the_mode_buttons_pick_which() {

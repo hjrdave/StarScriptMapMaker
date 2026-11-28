@@ -23,6 +23,7 @@ pub mod profile;
 pub mod raster;
 mod scene;
 mod shore_rings;
+mod shore_thumbnail;
 pub mod silhouette;
 pub mod sprite;
 mod stamp;
@@ -41,6 +42,10 @@ pub use offscreen::{ReadbackError, RgbaImage, read_texture, render_to_image};
 pub use png_writer::{PngMeta, PngWriteError, PngWriter};
 pub use present::Presenter;
 pub use scene::MapScene;
+pub use shore_thumbnail::{
+    SHORE_THUMBNAIL_SCALE, SHORE_THUMBNAIL_SIZE, ShoreSample, ShoreThumbnailError,
+    ShoreThumbnailer, shore_sample_map,
+};
 pub use sprite::{PLACEHOLDER_SIZE, Sprite, SpriteError, SpriteState, SpriteStore, placeholder};
 pub use stamp::{PlacedStamp, StampDraw};
 pub use text::{Fonts, LabelLayout};

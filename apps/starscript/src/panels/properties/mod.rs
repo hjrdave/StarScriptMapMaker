@@ -8,6 +8,8 @@ mod map;
 mod object_style;
 mod river;
 mod shore;
+mod shore_presets;
+pub(crate) use shore_presets::install as install_shore_thumbnails;
 mod stamp;
 #[cfg(test)]
 mod tests;

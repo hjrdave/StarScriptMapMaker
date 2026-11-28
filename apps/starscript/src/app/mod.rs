@@ -31,6 +31,7 @@ use crate::editor::Editor;
 use crate::export_dialog::DialogAction;
 use crate::export_run::{ExportRun, Outcome};
 use crate::new_map::NewMapDialog;
+use crate::properties;
 use crate::recent::RecentFiles;
 use crate::recovery::{Found, Recovery};
 use crate::tab::MapTab;
@@ -192,7 +193,13 @@ impl MapMakerApp {
         let ctx = cc.egui_ctx.clone();
         sprites.set_repaint(move || ctx.request_repaint());
         let gpu = match cc.wgpu_render_state.as_ref() {
-            Some(render_state) => canvas_view::install(render_state, sprites.clone()),
+            Some(render_state) => {
+                let installed = canvas_view::install(render_state, sprites.clone());
+                if installed {
+                    properties::install_shore_thumbnails(&cc.egui_ctx, render_state);
+                }
+                installed
+            }
             None => false,
         };
         let unsaved = UnsavedOffer::new(Recovery::new(recovery_dir.clone()).find_unsaved());
