@@ -203,12 +203,13 @@ mod tests {
         editor.paint_settings_mut(false).softness = 0.9;
         assert_eq!(editor.paint_settings(true).softness, 0.3);
         let alt = |frame: CanvasFrame| CanvasFrame { alt: true, ..frame };
+        drag(&mut editor, &mut state);
         paint(
             &mut editor,
             &mut state,
             &[alt(press(100.0, 100.0)), alt(release(120.0, 100.0))],
         );
-        let stroke = &editor.map().paint_strokes()[0];
+        let stroke = &editor.map().paint_strokes()[1];
         assert!(stroke.erase);
         assert_eq!((stroke.size, stroke.opacity), (33.0, 0.5));
     }
@@ -225,9 +226,10 @@ mod tests {
     #[test]
     fn the_eraser_mode_and_the_erase_modifier_add_an_eraser_stroke() {
         let (mut editor, mut state) = (paint_editor(), ToolState::default());
+        drag(&mut editor, &mut state);
         editor.paint.erase = true;
         drag(&mut editor, &mut state);
-        assert!(editor.map().paint_strokes()[0].erase);
+        assert!(editor.map().paint_strokes()[1].erase);
         assert_eq!(editor.undo_label(), Some("Erase Paint"));
 
         // The modifier flips the mode: Alt in the Eraser mode paints.
@@ -237,8 +239,26 @@ mod tests {
             &mut state,
             &[alt(press(100.0, 100.0)), alt(release(120.0, 100.0))],
         );
-        assert!(!editor.map().paint_strokes()[1].erase);
+        assert!(!editor.map().paint_strokes()[2].erase);
         assert_eq!(editor.undo_label(), Some("Paint"));
+    }
+
+    #[test]
+    fn an_eraser_stroke_that_meets_no_paint_adds_no_undo_step() {
+        let (mut editor, mut state) = (paint_editor(), ToolState::default());
+        editor.paint.erase = true;
+        drag(&mut editor, &mut state);
+        assert!(editor.map().paint_strokes().is_empty());
+        assert!(!editor.gesture_open());
+        assert_eq!(editor.history_steps().1, 0);
+
+        // Paint far from the eraser: still nothing to erase.
+        editor.paint.erase = false;
+        paint(&mut editor, &mut state, &[click_at(900.0, 900.0)]);
+        editor.paint.erase = true;
+        drag(&mut editor, &mut state);
+        assert_eq!(editor.map().paint_strokes().len(), 1);
+        assert_eq!(editor.history_steps().1, 1);
     }
 
     #[test]

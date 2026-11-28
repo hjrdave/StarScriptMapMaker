@@ -95,11 +95,50 @@ impl Editor {
             opacity: settings.opacity as f32,
             erase,
         };
+        if erase && !self.erases_paint(&stroke) {
+            // An eraser only removes paint drawn before it (ADR 0017), so one that meets none
+            // can't change the picture and leaves no Undo step.
+            self.cancel_gesture(id);
+            return;
+        }
         if self.gesture(&id, Command::AddPaintStroke { stroke }) {
             self.end_gesture(id);
         } else {
             self.cancel_gesture(id);
         }
+    }
+
+    /// Whether the eraser `stroke` may touch any earlier paint stroke: the brush-wide boxes
+    /// around their paths overlap. A cheap, conservative test; it never rules out real overlap.
+    fn erases_paint(&self, stroke: &PaintStroke) -> bool {
+        let bounds = |s: &PaintStroke| {
+            let half = s.size / 2.0;
+            s.points.iter().fold(
+                [
+                    f64::INFINITY,
+                    f64::INFINITY,
+                    f64::NEG_INFINITY,
+                    f64::NEG_INFINITY,
+                ],
+                |b, p| {
+                    [
+                        b[0].min(p[0] - half),
+                        b[1].min(p[1] - half),
+                        b[2].max(p[0] + half),
+                        b[3].max(p[1] + half),
+                    ]
+                },
+            )
+        };
+        let e = bounds(stroke);
+        self.map
+            .paint_strokes()
+            .iter()
+            .filter(|s| !s.erase)
+            .any(|s| {
+                let b = bounds(s);
+                b[0] <= e[2] && e[0] <= b[2] && b[1] <= e[3] && e[1] <= b[3]
+            })
     }
 
     /// What a water brush stroke would be called in the undo history.
