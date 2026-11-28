@@ -1,6 +1,6 @@
 # Stroke width is applied in the vertex shader
 
-Status: proposed (builds on ADR 0009 and ADR 0019). Issue #692. Waiting for the owner.
+Status: accepted (builds on ADR 0009 and ADR 0019). Issue #692. Accepted by the owner on 2026-11-28.
 
 ## Context
 
