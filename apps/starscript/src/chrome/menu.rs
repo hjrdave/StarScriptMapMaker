@@ -58,7 +58,6 @@ pub enum Command {
     NewArtBoard,
     EmbedAssets,
     UpdateFromPacks,
-    NewLayer,
     NewGroup,
     Group,
     Ungroup,
@@ -207,7 +206,7 @@ pub fn shortcut(command: Command) -> Option<Shortcut> {
         HidePanels => Shortcut::new(!c, !s, !a, Key::Tab),
         Home => Shortcut::new(c, !s, !a, Key::Num(1)),
         Tab(n @ 2..=9) => Shortcut::new(c, !s, !a, Key::Num(n)),
-        NewLayer => Shortcut::new(c, s, !a, Key::N),
+        NewGroup => Shortcut::new(c, s, !a, Key::N),
         Group => Shortcut::new(c, !s, !a, Key::G),
         Ungroup => Shortcut::new(c, s, !a, Key::G),
         _ => return None,
@@ -430,7 +429,6 @@ pub fn menus(state: &State) -> Vec<Menu> {
         Menu {
             title: "Layer",
             entries: vec![
-                item(NewLayer, "New Layer", map),
                 item(NewGroup, "New Group", map),
                 Separator,
                 item(Group, "Group", map && state.has_selection),
@@ -513,7 +511,7 @@ mod tests {
             ("File", Command::ExportPng),
             ("Map", Command::EmbedAssets),
             ("Map", Command::UpdateFromPacks),
-            ("Layer", Command::NewLayer),
+            ("Layer", Command::NewGroup),
             ("View", Command::ZoomIn),
         ] {
             assert!(!find(&menus, title, command).enabled, "{command:?}");

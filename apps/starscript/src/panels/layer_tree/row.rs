@@ -242,7 +242,7 @@ fn trailing_indicators(ui: &mut egui::Ui, editor: &Editor, paint: &RowPaint<'_>)
             &mut trailing,
             Icon::LockDashed,
             palette.text_tertiary,
-            "Locked by parent Layer",
+            "Locked by its Group",
         );
         trailing_left = trailing.min_rect().left();
     } else if state.locked {
@@ -271,7 +271,7 @@ fn trailing_indicators(ui: &mut egui::Ui, editor: &Editor, paint: &RowPaint<'_>)
                 &mut trailing,
                 Icon::ActiveLayer,
                 palette.gold,
-                "Active Layer (new Objects go here)",
+                "Active Group (new Objects go here)",
             );
             trailing_left = trailing.min_rect().left();
         }
@@ -327,7 +327,7 @@ fn pin_indicator(trailing: &mut egui::Ui, paint: &RowPaint<'_>) -> bool {
             trailing,
             Icon::PinDashed,
             palette.text_tertiary,
-            "Pinned by parent Layer",
+            "Pinned by its Group",
         );
         return true;
     }
@@ -400,7 +400,7 @@ fn row_context_menu(
             ui.close();
         }
         let duplicate = if layer.is_some() {
-            "Duplicate Layer"
+            "Duplicate Group"
         } else {
             "Duplicate"
         };

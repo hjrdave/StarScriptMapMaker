@@ -1,17 +1,15 @@
 use super::*;
 
 impl Editor {
-    /// Creates a Layer above the active one (or on top), selects it and returns its id.
+    /// Creates an empty Group named "Group 001" (the next free number) above the active one,
+    /// or on top, selects it and returns its id (ADR 0018). The name stays until the container
+    /// is renamed in code (#640 stage 5).
     pub fn new_layer(&mut self) -> Option<Id> {
-        self.new_container("Layer")
+        self.new_group()
     }
 
-    /// Creates an empty Group (a Layer named "Group N") where `new_layer` would put a Layer.
+    /// Creates an empty Group above the active one (or on top), selects it and returns its id.
     pub fn new_group(&mut self) -> Option<Id> {
-        self.new_container("Group")
-    }
-
-    pub(super) fn new_container(&mut self, kind: &str) -> Option<Id> {
         let (parent, index) = match self.active_layer.filter(|&id| self.map.contains(id)) {
             Some(active) => {
                 let parent = self.map.parent(active);
@@ -25,7 +23,7 @@ impl Editor {
             None => (None, None),
         };
         let id = Id::new();
-        let name = self.map.next_name(kind);
+        let name = self.map.next_name("Group");
         let command = Command::CreateLayer {
             id,
             parent,
@@ -215,7 +213,7 @@ impl Editor {
             .all(|&id| self.map.node(id).is_some_and(Node::is_layer));
         let (command, copies) = self.duplicate_command(&ids, [0.0, 0.0]);
         let label = if only_layers {
-            "Duplicate Layer"
+            "Duplicate Group"
         } else {
             "Duplicate Objects"
         };

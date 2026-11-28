@@ -21,12 +21,12 @@ const ROW_BUTTON: f32 = 18.0;
 const ROW_GLYPH: f32 = 14.0;
 
 /// Why a Depth-sorted Layer's Stamps can't be reordered by hand.
-pub(crate) const DEPTH_SORT_HINT: &str = "Depth sort is on for this Layer: Stamps are listed in the order they draw, by Anchor height. Move a Stamp to re-sort it.";
+pub(crate) const DEPTH_SORT_HINT: &str = "Depth sort is on for this Group: Stamps are listed in the order they draw, by Anchor height. Move a Stamp to re-sort it.";
 
 mod model;
 mod row;
 mod settings_row;
-use model::kind_icon;
+pub(crate) use model::kind_icon;
 pub(crate) use model::{
     DropTarget, Row, RowState, counts, footer_text, is_depth_sorted_stamp, move_command, node_name,
     rows,
@@ -164,7 +164,7 @@ impl LayerTree {
             _ => rows(editor.map(), &self.collapsed),
         };
         if rows.is_empty() {
-            ui.weak("No Layers yet. Use New Layer to add one.");
+            ui.weak("No Layers yet. Draw on the Map, or use New Group to add a Group.");
         }
 
         let mut actions = Vec::new();

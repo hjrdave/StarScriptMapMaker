@@ -184,7 +184,7 @@ fn undo_and_redo_labels_list_the_steps_in_the_order_they_are_taken() {
     history.execute_step(&mut map, &rename, vec![]).unwrap();
     assert_eq!(
         history.undo_labels().collect::<Vec<_>>(),
-        ["Create Layer", "Rename Layer"]
+        ["Create Group", "Rename Group"]
     );
     assert_eq!(history.redo_labels().count(), 0);
 
@@ -194,7 +194,7 @@ fn undo_and_redo_labels_list_the_steps_in_the_order_they_are_taken() {
     // Redo takes the oldest undone step first.
     assert_eq!(
         history.redo_labels().collect::<Vec<_>>(),
-        ["Create Layer", "Rename Layer"]
+        ["Create Group", "Rename Group"]
     );
-    assert_eq!(history.redo_label(), Some("Create Layer"));
+    assert_eq!(history.redo_label(), Some("Create Group"));
 }

@@ -35,7 +35,7 @@ fn on_strip(harness: &Harness<'_, MapMakerApp>, tab: usize) -> egui::Pos2 {
 #[test]
 fn a_tab_dropped_on_the_strip_reorders() {
     let mut harness = app();
-    harness.state_mut().run_command(Command::NewLayer);
+    harness.state_mut().run_command(Command::NewGroup);
     harness.run();
     let layers = harness.state().editor().map().children(None).len();
     // The active second tab goes before the first.
@@ -50,7 +50,7 @@ fn a_tab_dropped_on_the_strip_reorders() {
 #[test]
 fn a_tab_dropped_off_the_strip_stays_put() {
     let mut harness = app();
-    harness.state_mut().run_command(Command::NewLayer);
+    harness.state_mut().run_command(Command::NewGroup);
     harness.run();
     let layers = harness.state().editor().map().children(None).len();
     harness.state_mut().drop_tab(1, egui::pos2(600.0, 400.0));

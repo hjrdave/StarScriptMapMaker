@@ -613,8 +613,8 @@ impl Command {
     /// A short name for menus and the undo history.
     pub fn label(&self) -> &'static str {
         match self {
-            Command::CreateLayer { .. } => "Create Layer",
-            Command::RenameLayer { .. } => "Rename Layer",
+            Command::CreateLayer { .. } => "Create Group",
+            Command::RenameLayer { .. } => "Rename Group",
             Command::RenameObject { .. } => "Rename Object",
             Command::Move { .. } => "Move",
             Command::SetVisible { .. } => "Change Visibility",

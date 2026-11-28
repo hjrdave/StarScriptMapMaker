@@ -307,9 +307,6 @@ impl MapMakerApp {
                     editor.info("Nothing was updated: no installed pack has newer art");
                 }
             }
-            C::NewLayer => {
-                editor.new_layer();
-            }
             C::NewGroup => {
                 editor.new_group();
             }
@@ -499,8 +496,8 @@ fn edit_shortcuts(
     if consume(input, off, menu::Command::Duplicate) {
         editor.duplicate_selection();
     }
-    if consume(input, off, menu::Command::NewLayer) {
-        editor.new_layer();
+    if consume(input, off, menu::Command::NewGroup) {
+        editor.new_group();
     }
     if consume(input, off, menu::Command::Ungroup) {
         editor.ungroup_selection();

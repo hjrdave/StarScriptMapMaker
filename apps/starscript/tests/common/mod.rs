@@ -51,11 +51,11 @@ pub(crate) fn undo<S>(harness: &mut Harness<'_, S>) {
     harness.run();
 }
 
-/// Layer ▸ New Layer.
+/// Layer ▸ New Group.
 pub(crate) fn new_layer<S>(harness: &mut Harness<'_, S>) {
     choose(
         harness,
         "Layer",
-        &item_label("New Layer", Command::NewLayer),
+        &item_label("New Group", Command::NewGroup),
     );
 }

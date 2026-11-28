@@ -18,7 +18,7 @@ pub(super) fn step_icon(label: &str) -> Option<Icon> {
         "Move Points" | "Add Point" | "Delete Points" => Icon::Nodes,
         "Add Stamp" | "Edit Stamp" | "Place Stamps" => Icon::Stamp,
         "Add Label" | "Edit Label" => Icon::Label,
-        "Create Layer" | "Rename Layer" => Icon::Layer,
+        "Create Group" | "Rename Group" => Icon::Layer,
         "Group" | "Ungroup" => Icon::LayerGroup,
         "Link" | "Unlink" => Icon::Link,
         "Change Visibility" => Icon::Visible,

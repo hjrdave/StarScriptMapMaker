@@ -62,7 +62,7 @@ input_file: crates/core/tests/scripts/lock.json
     },
     {
       "outcome": {
-        "error": "00000000-0000-7000-8000-000000000003 is inside locked Layer 00000000-0000-7000-8000-000000000001"
+        "error": "00000000-0000-7000-8000-000000000003 is inside locked Group 00000000-0000-7000-8000-000000000001"
       },
       "step": {
         "step": {
@@ -74,7 +74,7 @@ input_file: crates/core/tests/scripts/lock.json
     },
     {
       "outcome": {
-        "error": "00000000-0000-7000-8000-000000000002 is inside locked Layer 00000000-0000-7000-8000-000000000001"
+        "error": "00000000-0000-7000-8000-000000000002 is inside locked Group 00000000-0000-7000-8000-000000000001"
       },
       "step": {
         "step": {
@@ -87,7 +87,7 @@ input_file: crates/core/tests/scripts/lock.json
     },
     {
       "outcome": {
-        "error": "00000000-0000-7000-8000-000000000003 is inside locked Layer 00000000-0000-7000-8000-000000000001"
+        "error": "00000000-0000-7000-8000-000000000003 is inside locked Group 00000000-0000-7000-8000-000000000001"
       },
       "step": {
         "step": {
@@ -100,7 +100,7 @@ input_file: crates/core/tests/scripts/lock.json
     },
     {
       "outcome": {
-        "error": "00000000-0000-7000-8000-000000000003 is inside locked Layer 00000000-0000-7000-8000-000000000001"
+        "error": "00000000-0000-7000-8000-000000000003 is inside locked Group 00000000-0000-7000-8000-000000000001"
       },
       "step": {
         "step": {
@@ -113,7 +113,7 @@ input_file: crates/core/tests/scripts/lock.json
     },
     {
       "outcome": {
-        "error": "00000000-0000-7000-8000-000000000002 is inside locked Layer 00000000-0000-7000-8000-000000000001"
+        "error": "00000000-0000-7000-8000-000000000002 is inside locked Group 00000000-0000-7000-8000-000000000001"
       },
       "step": {
         "step": {
