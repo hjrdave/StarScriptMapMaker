@@ -1322,44 +1322,65 @@ fn wave_groups(
     );
 }
 
-/// Water lines that taper and differ in weight: each is filled, in the same fading stretches
-/// as a plain line, thickest at the coast and thinning by `taper` towards its far end.
+/// Slices a hand-drawn water line is filled in. One fill has one colour, so the ink fades in
+/// this many steps; at 12 they read as one continuous fade even at 200%.
+const HAND_SLICES: usize = 12;
+
+/// Points along each slice's edges, so the width curve stays smooth between slices.
+const HAND_SLICE_POINTS: usize = 3;
+
+/// How strong the ink of a hand-drawn line is at `t`, from 0 at the coast to 1 at its far end:
+/// full at the coast, fading smoothly to 15% at the tip, like a pen running dry.
+fn hand_strength(t: f64) -> f64 {
+    1.0 - 0.85 * t.clamp(0.0, 1.0).powf(1.6)
+}
+
+/// How much of a hand-drawn line's half width is left at `t` (0 at the coast, 1 at the far
+/// end): thick near the coast, then thinning by `taper` as the pen lifts.
+fn hand_width(t: f64, taper: f64) -> f64 {
+    1.0 - taper * t.clamp(0.0, 1.0).powf(2.0)
+}
+
+/// Water lines that taper and differ in weight, as ink strokes: each is filled with a width
+/// that narrows smoothly by `taper` towards its far end and ink that fades smoothly along it
+/// (see [`hand_strength`] and [`hand_width`]). Plain lines keep [`LINE_FADE`].
 fn hand_drawn_groups(
     drawn: &[land::DrawnLine],
     lines: &ssmap_core::ShoreLines,
     opacity: f32,
     groups: &mut Vec<VectorGroup>,
 ) {
+    if drawn.is_empty() {
+        return;
+    }
     let taper = lines.taper.clamp(0.0, 1.0);
-    let stretches = LINE_FADE.len();
-    for (k, strength) in LINE_FADE.into_iter().enumerate() {
+    for k in 0..HAND_SLICES {
         let (from, to) = (
-            k as f64 / stretches as f64,
-            (k + 1) as f64 / stretches as f64,
+            k as f64 / HAND_SLICES as f64,
+            (k + 1) as f64 / HAND_SLICES as f64,
         );
+        let along: Vec<f64> = (0..=HAND_SLICE_POINTS)
+            .map(|i| from + (to - from) * i as f64 / HAND_SLICE_POINTS as f64)
+            .collect();
         let mut builder = Path::builder();
-        let mut any = false;
         for line in drawn {
-            let half = |t: f64| lines.width * line.weight * 0.5 * (1.0 - taper * t);
+            let half = |t: f64| lines.width * line.weight * 0.5 * hand_width(t, taper);
             let x = |t: f64| line.from[0] + (line.to[0] - line.from[0]) * t;
             let y = line.from[1];
-            let (a, b) = (half(from), half(to));
-            let quad = [
-                [x(from), y - a],
-                [x(to), y - b],
-                [x(to), y + b],
-                [x(from), y + a],
-            ];
-            builder.begin(point(quad[0][0] as f32, quad[0][1] as f32));
-            for q in &quad[1..] {
+            let top = along.iter().map(|&t| [x(t), y - half(t)]);
+            let bottom = along.iter().rev().map(|&t| [x(t), y + half(t)]);
+            let mut outline = top.chain(bottom);
+            let Some(first) = outline.next() else {
+                continue;
+            };
+            builder.begin(point(first[0] as f32, first[1] as f32));
+            for q in outline {
                 builder.line_to(point(q[0] as f32, q[1] as f32));
             }
             builder.close();
-            any = true;
         }
-        if !any {
-            return;
-        }
+        // The middle of the slice sets its ink, so the steps sit evenly on the curve.
+        let strength = hand_strength((from + to) / 2.0);
         groups.push(
             VectorGroup::fill(
                 builder.build(),
@@ -2090,11 +2111,77 @@ mod tests {
         style.lines.variation = 0.5;
         style.lines.seed = 1;
         let first = effect_shapes(&style);
-        // One filled shape for each fading stretch.
-        assert_eq!(first.len(), LINE_FADE.len());
+        // One filled shape for each slice of the smooth fade.
+        assert_eq!(first.len(), HAND_SLICES);
         assert_eq!(effect_shapes(&style), first);
         style.lines.seed = 2;
         assert_ne!(effect_shapes(&style), first);
+    }
+
+    /// Issue #636: only hand-drawn lines fade smoothly. Plain lines (no taper and no variation,
+    /// as in Default and Soft glow) are still three strokes at [`LINE_FADE`]'s strengths, and
+    /// hand-drawn ink fades from full at the coast, slice by slice, with no slice brighter
+    /// than the one before.
+    #[test]
+    fn plain_lines_keep_the_three_step_fade_and_hand_drawn_ink_fades_smoothly() {
+        let (mut map, lands) = map_with_land();
+        let mut line_colors = |style: &ShoreStyle| {
+            map.execute(&Command::SetShore {
+                ids: vec![lands[1]],
+                shore: Some(style.clone()),
+            })
+            .unwrap();
+            let content = MapScene::new(Fonts::bundled()).content(&map, &mut RoughnessCache::new());
+            content
+                .groups()
+                .iter()
+                .filter(|g| g.object.is_some_and(|o| o.id == lands[1]) && g.effect)
+                .flat_map(|g| g.shapes.iter())
+                .filter(|s| {
+                    let ink = style.lines.color;
+                    (s.color.r, s.color.g, s.color.b) == (ink.r, ink.g, ink.b)
+                })
+                .map(|s| (s.color, matches!(s.paint, Paint::Stroke { .. })))
+                .collect::<Vec<_>>()
+        };
+        let plain = ShoreStyle::soft_glow();
+        let strokes = line_colors(&plain);
+        let expected: Vec<_> = LINE_FADE
+            .iter()
+            .map(|&strength| (faded(plain.lines.color, strength), true))
+            .collect();
+        assert_eq!(strokes, expected);
+
+        let hand = ShoreStyle::hand_drawn();
+        let slices = line_colors(&hand);
+        assert_eq!(slices.len(), HAND_SLICES);
+        assert!(
+            slices.iter().all(|&(_, stroke)| !stroke),
+            "filled, not stroked"
+        );
+        let alphas: Vec<u8> = slices.iter().map(|(c, _)| c.a).collect();
+        assert!(alphas[0] >= 250, "full ink at the coast: {alphas:?}");
+        assert!(alphas.windows(2).all(|w| w[1] <= w[0]), "{alphas:?}");
+        // Small steps: no jump like the three-step fade's 40% drop.
+        assert!(alphas.windows(2).all(|w| w[0] - w[1] <= 30), "{alphas:?}");
+        assert!(alphas[HAND_SLICES - 1] < alphas[0] / 3, "{alphas:?}");
+    }
+
+    #[test]
+    fn hand_drawn_width_and_ink_are_continuous_curves() {
+        // The ends of the curves, and no step anywhere along them.
+        assert_eq!(hand_width(0.0, 0.9), 1.0);
+        assert!((hand_width(1.0, 0.9) - 0.1).abs() < 1e-12);
+        assert_eq!(hand_strength(0.0), 1.0);
+        assert!((hand_strength(1.0) - 0.15).abs() < 1e-12);
+        let samples: Vec<f64> = (0..=1000).map(|i| f64::from(i) / 1000.0).collect();
+        for pair in samples.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            assert!(hand_width(b, 0.9) <= hand_width(a, 0.9));
+            assert!((hand_width(a, 0.9) - hand_width(b, 0.9)).abs() < 0.002);
+            assert!(hand_strength(b) <= hand_strength(a));
+            assert!((hand_strength(a) - hand_strength(b)).abs() < 0.002);
+        }
     }
 
     #[test]
