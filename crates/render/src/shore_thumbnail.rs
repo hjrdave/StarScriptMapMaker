@@ -57,12 +57,12 @@ pub enum ShoreThumbnailError {
 /// on the right.
 fn coast() -> Polygon {
     let [w, h] = SHORE_THUMBNAIL_SIZE.map(f64::from);
-    let steps = 24;
+    let steps = 48;
     let mut exterior = vec![[-20.0, -20.0]];
     exterior.extend((0..=steps).map(|i| {
         let t = f64::from(i) / f64::from(steps);
         let y = -20.0 + (h + 40.0) * t;
-        let x = w * (0.4 + 0.09 * (t * std::f64::consts::TAU * 1.2).sin());
+        let x = w * (0.4 + 0.06 * (t * std::f64::consts::TAU).sin());
         [x, y]
     }));
     exterior.push([-20.0, h + 20.0]);
